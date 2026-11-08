@@ -136,3 +136,62 @@ fn every_shape_gets_a_card() {
         "{cards}"
     );
 }
+
+/// Unsafe code is left alone, code near it is marked and runs isolated, and a crash counts as caught
+/// only where it can't be undefined behaviour, and then not as a test's catch. The fixture turns
+/// overflow checks and debug assertions off for tests, and mutastic turns them back on.
+#[test]
+fn unsafe_code_is_fenced_off_and_crashes_are_told_apart() {
+    let dir = fixture("unsafety");
+    let (_, stdout) = mutastic(&["run", &dir, "--format=jsonl"]);
+    let events = events(&stdout);
+    let started = &events[0];
+    assert_eq!(started["profile"]["overflowChecks"], true, "{started}");
+    assert_eq!(started["profile"]["debugAssertions"], true, "{started}");
+    assert_eq!(started["unsafe"], "skip");
+    let finished = events.last().unwrap();
+    assert_eq!(finished["notMutated"]["unsafe"], 4, "halve() and first()");
+    let fate = |method: &str, replacement: &str| -> &Value {
+        events
+            .iter()
+            .find(|e| {
+                e["location"]["method"] == method && e["mutation"]["replacement"] == replacement
+            })
+            .unwrap_or_else(|| panic!("{method} {replacement}: {stdout}"))
+    };
+    let checked = fate("checked", "true");
+    assert_eq!(checked["status"], "RuntimeError", "{checked}");
+    assert_eq!(checked["nearUnsafe"], "in a module with unsafe code");
+    let positive = fate("positive", "false");
+    assert_eq!(positive["status"], "RuntimeError", "{positive}");
+    assert!(
+        positive["statusReason"]
+            .as_str()
+            .unwrap()
+            .contains("std's debug check of an unsafe precondition"),
+        "{positive}"
+    );
+    let guarded = fate("guarded", "true");
+    assert_eq!(guarded["status"], "Killed", "{guarded}");
+    assert_eq!(guarded["killedWith"], "crash: SIGABRT");
+    assert!(
+        guarded.get("killedBy").is_none(),
+        "no test caught it: {guarded}"
+    );
+    let total = fate("total", "-");
+    assert_eq!(
+        total["killedWith"], "panic: attempt to subtract with overflow",
+        "{total}"
+    );
+    assert!(events
+        .iter()
+        .all(|e| e["location"]["method"] != "halve" && e["location"]["method"] != "helper"));
+
+    let id = guarded["id"].as_str().unwrap();
+    let (code, stdout) = mutastic(&["verify", id, &dir]);
+    assert_eq!(code, 0);
+    assert!(
+        stdout.contains("caught only because the test process crashed (SIGABRT)"),
+        "{stdout}"
+    );
+}

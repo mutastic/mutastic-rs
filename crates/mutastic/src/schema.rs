@@ -210,7 +210,23 @@ impl Emitter<'_> {
 
 /// The module that holds the switches, appended to each crate root. It has no dependencies, so
 /// `Cargo.toml` is never touched and `--locked`, `--offline` and vendored builds still work.
-pub fn runtime(sites: usize) -> String {
+///
+/// The switch is read once, before `main`, where the platform runs initialisers (Linux, the BSDs,
+/// macOS): reading the environment allocates, and done there it can never happen inside code that
+/// must not allocate or take a lock. Elsewhere, or if the linker drops the initialiser, the first
+/// read does it, as `at` still checks.
+pub fn runtime(sites: usize, edition: &str) -> String {
+    // Edition 2024 wants `link_section` marked unsafe; earlier editions, and older compilers,
+    // don't take the marked form.
+    let section = |name: &str| {
+        if edition >= "2024" {
+            format!("unsafe(link_section = \"{name}\")")
+        } else {
+            format!("link_section = \"{name}\"")
+        }
+    };
+    let apple = section("__DATA,__mod_init_func");
+    let elf = section(".init_array");
     format!(
         r#"
 
@@ -243,6 +259,17 @@ pub(crate) mod __mutastic {{
         }}
         active
     }}
+
+    #[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd", target_os = "netbsd", target_os = "openbsd", target_os = "macos", target_os = "ios"))]
+    #[used]
+    #[cfg_attr(any(target_os = "macos", target_os = "ios"), {apple})]
+    #[cfg_attr(not(any(target_os = "macos", target_os = "ios")), {elf})]
+    static EAGER: extern "C" fn() = {{
+        extern "C" fn eager() {{
+            read();
+        }}
+        eager
+    }};
 
     #[cold]
     fn read() -> u32 {{

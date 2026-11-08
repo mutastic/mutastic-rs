@@ -50,6 +50,9 @@ pub struct Built {
     pub rounds: Vec<Round>,
     /// Mutants that didn't compile, with the error that said so.
     pub unviable: BTreeMap<usize, String>,
+    /// The profile Cargo built the package with, from its own report: `opt_level`,
+    /// `debug_assertions`, `overflow_checks`.
+    pub profile: Value,
 }
 
 /// Builds the copy with the `live` mutants, withdrawing those that don't compile.
@@ -100,6 +103,7 @@ pub fn build(
                     binaries: binaries(&stdout, project),
                     rounds,
                     unviable,
+                    profile: profile(&stdout, project),
                 });
             }
         }
@@ -122,7 +126,8 @@ pub fn rewrite(
     for file in &found.files {
         let mut out = schema::emit(found, &file.path, &file.text, live, recorders);
         if project.roots.contains(&file.path) {
-            out.text.push_str(&schema::runtime(found.mutants.len()));
+            out.text
+                .push_str(&schema::runtime(found.mutants.len(), &project.edition));
         }
         if out.text != file.text {
             overrides.insert(file.path.clone(), out.text.clone());
@@ -162,16 +167,26 @@ fn cargo(project: &Project, phase: &str) -> Result<(bool, String), String> {
 }
 
 /// A profile of mutastic's own, from the `test` profile with line tables only: line numbers in
-/// panics stay, and the rest of the debug info, which slows builds, goes.
+/// panics stay, and the rest of the debug info, which slows builds, goes. Overflow checks and debug
+/// assertions are on whatever the project's own profiles say, because they decide what a mutant
+/// does: with them, `a - b` going below zero panics, and std checks unsafe preconditions; without,
+/// it wraps silently, and scores from two projects' settings couldn't be compared.
 pub fn profile_args() -> Vec<String> {
-    vec![
-        "--profile".into(),
-        "mutastic".into(),
-        "--config".into(),
-        "profile.mutastic.inherits=\"test\"".into(),
-        "--config".into(),
-        "profile.mutastic.debug=\"line-tables-only\"".into(),
+    [
+        "inherits=\"test\"",
+        "debug=\"line-tables-only\"",
+        "overflow-checks=true",
+        "debug-assertions=true",
     ]
+    .iter()
+    .flat_map(|setting| {
+        [
+            "--config".to_string(),
+            format!("profile.mutastic.{setting}"),
+        ]
+    })
+    .chain(["--profile".to_string(), "mutastic".to_string()])
+    .collect()
 }
 
 pub fn environment(command: &mut Command, project: &Project) {
@@ -327,6 +342,25 @@ fn blame_one(
         }
     }
     (BTreeSet::new(), false)
+}
+
+/// The profile Cargo reports for the package's own artifacts.
+fn profile(stdout: &str, project: &Project) -> Value {
+    let manifest = project
+        .copy_dir()
+        .join(&project.package_dir)
+        .join("Cargo.toml");
+    stdout
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|message| message["reason"] == "compiler-artifact")
+        .find(|message| {
+            message["manifest_path"]
+                .as_str()
+                .is_some_and(|path| Path::new(path) == manifest)
+        })
+        .map(|message| message["profile"].clone())
+        .unwrap_or(Value::Null)
 }
 
 /// The test binaries of the package under test, from the build's messages.

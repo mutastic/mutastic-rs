@@ -1,0 +1,15 @@
+[package]
+name = "unsafety"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+
+[features]
+fuzzing = []
+
+# mutastic turns both back on: what a mutant does mustn't depend on these.
+[profile.test]
+overflow-checks = false
+debug-assertions = false

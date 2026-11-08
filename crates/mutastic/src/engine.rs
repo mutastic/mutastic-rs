@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crate::compile::{self, Binary, Round};
-use crate::sites::{self, Crate};
+use crate::sites::{self, Crate, UnsafeMode};
 use crate::testrun::{self, Outcome, Test};
 use crate::workspace::Project;
 
@@ -17,6 +17,9 @@ pub enum Status {
     Timeout,
     NoCoverage,
     Ignored,
+    /// Crashed where the crash may be undefined behaviour, or where std's own debug check of an
+    /// unsafe precondition stopped it: no test can be said to have caught it. Out of the score.
+    RuntimeError,
 }
 
 impl Status {
@@ -28,6 +31,7 @@ impl Status {
             Status::Timeout => "Timeout",
             Status::NoCoverage => "NoCoverage",
             Status::Ignored => "Ignored",
+            Status::RuntimeError => "RuntimeError",
         }
     }
 
@@ -67,6 +71,10 @@ pub struct Report {
     pub coverage: Duration,
     pub mutants: Duration,
     pub took: Duration,
+    pub unsafe_mode: UnsafeMode,
+    /// The settings the user's crate was built with, from Cargo: `opt_level`, `debug_assertions`,
+    /// `overflow_checks`.
+    pub profile: serde_json::Value,
 }
 
 impl Report {
@@ -74,17 +82,21 @@ impl Report {
         self.results.iter().filter(|r| r.status == status).count()
     }
 
-    /// (caught + timed out) / (all − skipped), or `None` with nothing to score.
+    /// Mutants out of the score: skipped, or crashed where a crash proves nothing.
+    pub fn unscored(&self) -> usize {
+        self.count(Status::Ignored) + self.count(Status::RuntimeError)
+    }
+
+    /// (caught + timed out) / (all − unscored), or `None` with nothing to score.
     pub fn score(&self) -> Option<f64> {
-        let scored = self.results.len() - self.count(Status::Ignored);
+        let scored = self.results.len() - self.unscored();
         let detected = self.count(Status::Killed) + self.count(Status::Timeout);
         (scored > 0).then(|| 100.0 * detected as f64 / scored as f64)
     }
 
     /// The score of the code the tests reach.
     pub fn covered_score(&self) -> Option<f64> {
-        let scored =
-            self.results.len() - self.count(Status::Ignored) - self.count(Status::NoCoverage);
+        let scored = self.results.len() - self.unscored() - self.count(Status::NoCoverage);
         let detected = self.count(Status::Killed) + self.count(Status::Timeout);
         (scored > 0).then(|| 100.0 * detected as f64 / scored as f64)
     }
@@ -100,6 +112,7 @@ pub struct Options {
     pub operators: Vec<&'static str>,
     pub threshold: f64,
     pub workers: usize,
+    pub unsafe_mode: UnsafeMode,
 }
 
 /// What the coverage pass found for one test.
@@ -112,17 +125,22 @@ struct Reach {
 }
 
 pub fn find(project: &Project, operators: &[&str]) -> Crate {
-    sites::find(
+    find_with(project, operators, UnsafeMode::Skip)
+}
+
+pub fn find_with(project: &Project, operators: &[&str], mode: UnsafeMode) -> Crate {
+    sites::find_with(
         &project.workspace,
         &project.crate_name,
         &project.roots,
         operators,
+        mode,
     )
 }
 
-/// Every mutant, under every operator mutastic has.
+/// Every mutant, under every operator mutastic has, unsafe code included: what an id can name.
 pub fn find_all(project: &Project) -> Crate {
-    find(project, sites::ALL)
+    find_with(project, sites::ALL, UnsafeMode::All)
 }
 
 pub fn run(
@@ -131,7 +149,13 @@ pub fn run(
     progress: &mut dyn FnMut(&str),
 ) -> Result<Report, String> {
     let started = Instant::now();
-    let found = find(project, &options.operators);
+    // An id names its mutant whatever was chosen when it was shown, so `--only` and `verify`
+    // look among them all.
+    let found = if options.only.is_empty() {
+        find_with(project, &options.operators, options.unsafe_mode)
+    } else {
+        find_all(project)
+    };
     let selected: BTreeSet<usize> = found
         .mutants
         .iter()
@@ -186,6 +210,8 @@ pub fn run(
         coverage: coverage_took,
         mutants: mutants_started.elapsed(),
         took: started.elapsed(),
+        unsafe_mode: options.unsafe_mode,
+        profile: built.profile,
     })
 }
 
@@ -348,35 +374,78 @@ fn result(
     groups.sort();
     let started = Instant::now();
     for (baseline, binary, group) in groups {
-        let names: Vec<&str> = group.iter().map(|&t| tests[t].name.as_str()).collect();
+        let mut names: Vec<&str> = group.iter().map(|&t| tests[t].name.as_str()).collect();
+        // Near unsafe code, one test at a time: a mutant that corrupts memory mustn't make a
+        // different test fail and take the credit.
+        if mutant.near_unsafe.is_some() {
+            names.push("--test-threads=1");
+        }
         let timeout = (baseline * 5 + Duration::from_secs(1)).max(Duration::from_secs(10));
-        let outcome: Outcome = testrun::run(
-            &built.binaries[binary],
-            cwd,
-            &names,
-            &[("MUTASTIC_ACTIVE", mutant.ordinal.to_string())],
-            timeout,
-        );
+        let active = [("MUTASTIC_ACTIVE", mutant.ordinal.to_string())];
+        let outcome: Outcome = testrun::run(&built.binaries[binary], cwd, &names, &active, timeout);
         result.tests_run += group.len();
         if outcome.timed_out {
             result.status = Status::Timeout;
             break;
         }
-        if !outcome.passed {
-            result.status = Status::Killed;
-            result.killed_with = outcome.failure.clone();
-            result.killed_by = outcome.failed.as_ref().map(|name| {
-                group
-                    .iter()
-                    .find(|&&t| &tests[t].name == name)
-                    .map(|&t| tests[t].display.clone())
-                    .unwrap_or_else(|| name.clone())
-            });
+        if outcome.passed {
+            continue;
+        }
+        if outcome.failed.is_none() {
+            // No test failed: the process died. Run again, one test at a time and uncaptured,
+            // to see how.
+            names.push("--nocapture");
+            if mutant.near_unsafe.is_none() {
+                names.push("--test-threads=1");
+            }
+            let again = testrun::run(&built.binaries[binary], cwd, &names, &active, timeout);
+            crashed(&mut result, mutant.near_unsafe, &outcome, &again);
             break;
         }
+        result.status = Status::Killed;
+        result.killed_with = Some(match testrun::language_panic(&outcome.stdout) {
+            Some(message) => format!("panic: {message}"),
+            None => "panic".into(),
+        });
+        result.killed_by = outcome.failed.as_ref().map(|name| {
+            group
+                .iter()
+                .find(|&&t| &tests[t].name == name)
+                .map(|&t| tests[t].display.clone())
+                .unwrap_or_else(|| name.clone())
+        });
+        break;
     }
     result.took = started.elapsed();
     result
+}
+
+/// What a crash means. A safe mutant that crashes the process was caught, but by the crash, not a
+/// test's check, so no test is named. Near unsafe code a crash may be undefined behaviour, and a
+/// crash in std's own check of an unsafe precondition is std's catch: neither is in the score.
+fn crashed(result: &mut MutantResult, near_unsafe: Option<&str>, first: &Outcome, again: &Outcome) {
+    let signal = first
+        .signal
+        .or(again.signal)
+        .map_or("an abnormal exit".to_string(), testrun::signal_name);
+    let output = format!("{}\n{}", again.stdout, again.stderr);
+    if output.contains("unsafe precondition(s) violated") {
+        result.status = Status::RuntimeError;
+        result.reason = Some(format!(
+            "crash: std's debug check of an unsafe precondition stopped it ({signal}), not a test"
+        ));
+    } else if let Some(near) = near_unsafe {
+        result.status = Status::RuntimeError;
+        result.reason = Some(format!(
+            "crash: {signal} {near}, which may be undefined behaviour"
+        ));
+    } else if output.contains("panic in a function that cannot unwind") {
+        result.status = Status::Killed;
+        result.killed_with = Some(format!("crash: aborted at an FFI boundary ({signal})"));
+    } else {
+        result.status = Status::Killed;
+        result.killed_with = Some(format!("crash: {signal}"));
+    }
 }
 
 pub fn rustc_version() -> String {

@@ -22,6 +22,8 @@ pub struct Project {
     pub roots: Vec<PathBuf>,
     /// The package's library's crate name (`semver`), or its first binary's.
     pub crate_name: String,
+    /// The package's Rust edition, `2021`.
+    pub edition: String,
 }
 
 impl Project {
@@ -120,6 +122,7 @@ pub fn read(dir: &str) -> Result<Project, String> {
         package: package["name"].as_str().unwrap_or_default().to_string(),
         roots,
         crate_name,
+        edition: package["edition"].as_str().unwrap_or("2021").to_string(),
     })
 }
 

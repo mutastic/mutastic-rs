@@ -21,6 +21,16 @@ pub struct Advice {
 
 /// The advice for `mutant`, in function `name`, given the inputs its tests passed.
 pub fn advise(mutant: &Mutant, name: &str, seen: &BTreeMap<String, Vec<i128>>) -> Advice {
+    let mut advice = advise_change(mutant, name, seen);
+    if let Some(near) = mutant.near_unsafe {
+        advice.notes.push(format!(
+            "this code is near unsafe code ({near}): a change no test notices here can break what the unsafe code relies on, so check that code with Miri too"
+        ));
+    }
+    advice
+}
+
+fn advise_change(mutant: &Mutant, name: &str, seen: &BTreeMap<String, Vec<i128>>) -> Advice {
     let method = format!("`{name}()`");
     match &mutant.change {
         Change::Boundary { before, after } => boundary(&method, mutant, before, after, seen),

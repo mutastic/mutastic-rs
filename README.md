@@ -29,11 +29,27 @@ mutastic verify <id> fixtures/pricing  # passes once a test catches that mutant
 `--format` is `full` (cards, the default at a terminal), `concise`, `agent` or `jsonl` (the
 `mutastic.events/v1` stream).
 
+## Unsafe code
+
+A mutant inside `unsafe` code can cause undefined behaviour, which no test can be said to catch or
+miss, so mutastic leaves alone code inside `unsafe` blocks, `unsafe fn`s and `unsafe impl`s, and
+safe functions that hold an `unsafe` block. The summary counts them as `not mutated: unsafe (N)`;
+`--unsafe=enclosing` mutates those safe functions too, and `--unsafe=all` everything. Safe code
+near unsafe code (called from inside an `unsafe` block, or in a module that has one) is mutated
+but marked: its mutants run one test at a time, and a crash among them is reported as
+`RuntimeError`, out of the score, not as caught. A safe mutant that only crashes the process is
+caught, and says so: no test's check caught it.
+
+Overflow checks and debug assertions are always on in mutastic's build, whatever the project's
+profiles say, because they decide what an arithmetic mutant does; the build's settings are in the
+`run-started` event.
+
 ## Operators
 
 The Java edition's ids: `mutastic/boundary`, `mutastic/remove-conditional`,
 `mutastic/logical-connector`, `mutastic/math` and `mutastic/return-value` by default, and
-`mutastic/other-comparison` (a comparison reversed) with `--operators=stronger`.
+`mutastic/other-comparison` (a comparison reversed) and `mutastic/other-arithmetic` (`%` to `*`)
+with `--operators=stronger`.
 
 ## Licence
 

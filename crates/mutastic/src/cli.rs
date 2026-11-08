@@ -6,6 +6,7 @@ use std::process::ExitCode;
 
 use crate::engine::{self, Options, Status};
 use crate::report::{self, Format, Style};
+use crate::sites::UnsafeMode;
 use crate::{sites, testrun, workspace, wrapper};
 
 const USAGE: &str = "\
@@ -22,6 +23,8 @@ Options:
   --threshold=<score>   The score a run must reach to pass (default 80)
   --operators=<set>     defaults or stronger, or operator ids separated by commas
   --workers=<n>         Tests run side by side (default half the cores, at most 4)
+  --unsafe=<mode>       skip (default): leave unsafe code and functions holding an unsafe block
+                        alone; enclosing: mutate those functions too; all: unsafe code as well
 
 Exit status: 0 when the run passes, or verify's mutants are caught; 1 when it doesn't; 2 when
 mutastic couldn't run.";
@@ -56,6 +59,7 @@ struct Parsed {
     operators: Vec<&'static str>,
     workers: usize,
     fraction: f64,
+    unsafe_mode: UnsafeMode,
 }
 
 fn parse(args: &[String]) -> Result<Parsed, String> {
@@ -67,6 +71,7 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
         operators: sites::DEFAULTS.to_vec(),
         workers: testrun::default_workers(),
         fraction: 1.0,
+        unsafe_mode: UnsafeMode::Skip,
     };
     for arg in args {
         let Some(option) = arg.strip_prefix("--") else {
@@ -94,6 +99,11 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
                     .ok_or_else(|| format!("--workers: {value} isn't a positive number"))?
             }
             "operators" => parsed.operators = operators(value)?,
+            "unsafe" => {
+                parsed.unsafe_mode = UnsafeMode::parse(value).ok_or_else(|| {
+                    format!("--unsafe: {value} isn't one of skip, enclosing or all")
+                })?
+            }
             "fraction" => {
                 parsed.fraction = value
                     .parse()
@@ -122,7 +132,7 @@ fn operators(value: &str) -> Result<Vec<&'static str>, String> {
     value
         .split(',')
         .map(|name| {
-            sites::STRONGER
+            sites::ALL
                 .iter()
                 .copied()
                 .find(|known| *known == name)
@@ -189,6 +199,7 @@ fn options(parsed: &Parsed, only: Vec<String>) -> Options {
         operators: parsed.operators.clone(),
         threshold: parsed.threshold,
         workers: parsed.workers,
+        unsafe_mode: parsed.unsafe_mode,
     }
 }
 
@@ -228,10 +239,7 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, String> {
     for result in &report.results {
         let mutant = &report.found.mutants[result.mutant];
         let fate = match result.status {
-            Status::Killed => format!(
-                "is caught by {}",
-                result.killed_by.as_deref().unwrap_or("a test")
-            ),
+            Status::Killed => caught(result),
             Status::Timeout => "is caught by a timeout".to_string(),
             Status::Survived => "is still missed".to_string(),
             Status::NoCoverage => "isn't reached by any test".to_string(),
@@ -239,8 +247,13 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, String> {
                 "is skipped ({}), so it isn't run and needs no test",
                 result.reason.as_deref().unwrap_or("skipped")
             ),
+            Status::RuntimeError => format!(
+                "crashes, and no test can be said to catch it ({}): it's left out of the score; check the unsafe code it reaches with Miri",
+                result.reason.as_deref().unwrap_or("crash")
+            ),
         };
-        settled &= result.status.detected() || result.status == Status::Ignored;
+        settled &= result.status.detected()
+            || matches!(result.status, Status::Ignored | Status::RuntimeError);
         println!("mutastic: {} {fate}", mutant.id);
     }
     Ok(if settled {
@@ -250,14 +263,29 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, String> {
     })
 }
 
+/// "is caught by tests::big_orders", and how, when it wasn't by a test's own check.
+fn caught(result: &engine::MutantResult) -> String {
+    let how = result.killed_with.as_deref().unwrap_or("panic");
+    if let Some(crash) = how.strip_prefix("crash: ") {
+        return format!(
+            "is caught only because the test process crashed ({crash}): no test's check caught it"
+        );
+    }
+    let test = result.killed_by.as_deref().unwrap_or("a test");
+    match how.strip_prefix("panic: ") {
+        Some(message) => format!("is caught by {test}, through a panic: {message}"),
+        None => format!("is caught by {test}"),
+    }
+}
+
 fn mutants(parsed: &Parsed) -> Result<ExitCode, String> {
     let dir = parsed.positional.first().map_or(".", String::as_str);
     let project = workspace::read(dir)?;
-    let found = engine::find(&project, &parsed.operators);
+    let found = engine::find_with(&project, &parsed.operators, parsed.unsafe_mode);
     for mutant in &found.mutants {
         let function = &found.functions[mutant.function];
         println!(
-            "{} {}:{}:{} {} {} in {}",
+            "{} {}:{}:{} {} {} in {}{}",
             mutant.id,
             mutant.file.display(),
             mutant.line,
@@ -266,10 +294,20 @@ fn mutants(parsed: &Parsed) -> Result<ExitCode, String> {
             crate::words::plain(
                 &crate::words::advise(mutant, &function.name, &Default::default()).change
             ),
-            function.path
+            function.path,
+            mutant
+                .near_unsafe
+                .map(|near| format!(" (near unsafe: {near})"))
+                .unwrap_or_default()
         );
     }
     println!("{} mutants", found.mutants.len());
+    if found.not_mutated_unsafe > 0 {
+        println!(
+            "not mutated: unsafe ({}): --unsafe=enclosing or --unsafe=all includes them",
+            found.not_mutated_unsafe
+        );
+    }
     Ok(ExitCode::SUCCESS)
 }
 
@@ -278,7 +316,7 @@ fn mutants(parsed: &Parsed) -> Result<ExitCode, String> {
 fn build(parsed: &Parsed) -> Result<ExitCode, String> {
     let dir = parsed.positional.first().map_or(".", String::as_str);
     let project = workspace::read(dir)?;
-    let found = engine::find(&project, &parsed.operators);
+    let found = engine::find_with(&project, &parsed.operators, parsed.unsafe_mode);
     let mut sites: Vec<(std::path::PathBuf, usize, usize)> = found
         .mutants
         .iter()

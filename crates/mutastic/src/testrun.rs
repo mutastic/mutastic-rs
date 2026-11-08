@@ -31,6 +31,10 @@ pub struct Outcome {
     pub took: Duration,
     /// What the tests printed.
     pub stdout: String,
+    /// What reached stderr: with `--nocapture`, the tests' own output and panics.
+    pub stderr: String,
+    /// The signal that ended the process, when one did.
+    pub signal: Option<i32>,
 }
 
 /// Every test in the binaries that isn't `#[ignore]`d.
@@ -91,7 +95,7 @@ pub fn run(
         .env("RUST_BACKTRACE", "0")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+        .stderr(Stdio::piped());
     for (key, value) in env {
         command.env(key, value);
     }
@@ -103,16 +107,12 @@ pub fn run(
             failure: Some("couldn't start".into()),
             took: started.elapsed(),
             stdout: String::new(),
+            stderr: String::new(),
+            signal: None,
         };
     };
-    let mut stdout = child.stdout.take();
-    let reader = std::thread::spawn(move || {
-        let mut text = String::new();
-        if let Some(out) = stdout.as_mut() {
-            let _ = out.read_to_string(&mut text);
-        }
-        text
-    });
+    let reader = read_all(child.stdout.take());
+    let errors = read_all(child.stderr.take());
     let mut pause = Duration::from_micros(200);
     let status = loop {
         match child.try_wait() {
@@ -131,6 +131,7 @@ pub fn run(
     };
     let took = started.elapsed();
     let text = reader.join().unwrap_or_default();
+    let stderr = errors.join().unwrap_or_default();
     let Some(status) = status else {
         return Outcome {
             passed: false,
@@ -139,6 +140,8 @@ pub fn run(
             failure: None,
             took,
             stdout: text,
+            stderr,
+            signal: None,
         };
     };
     let failed = text.lines().find_map(|line| {
@@ -160,7 +163,61 @@ pub fn run(
         failure,
         took,
         stdout: text,
+        stderr,
+        signal: signal_of(&status),
     }
+}
+
+fn read_all(stream: Option<impl Read + Send + 'static>) -> std::thread::JoinHandle<String> {
+    std::thread::spawn(move || {
+        let mut text = String::new();
+        if let Some(mut stream) = stream {
+            let _ = stream.read_to_string(&mut text);
+        }
+        text
+    })
+}
+
+#[cfg(unix)]
+fn signal_of(status: &std::process::ExitStatus) -> Option<i32> {
+    std::os::unix::process::ExitStatusExt::signal(status)
+}
+
+#[cfg(not(unix))]
+fn signal_of(_: &std::process::ExitStatus) -> Option<i32> {
+    None
+}
+
+/// `SIGABRT` for 6: the names of the signals a crashing test dies by.
+pub fn signal_name(signal: i32) -> String {
+    let name = match signal {
+        4 => "SIGILL",
+        5 => "SIGTRAP",
+        6 => "SIGABRT",
+        8 => "SIGFPE",
+        9 => "SIGKILL",
+        11 => "SIGSEGV",
+        #[cfg(target_os = "linux")]
+        7 => "SIGBUS",
+        #[cfg(not(target_os = "linux"))]
+        10 => "SIGBUS",
+        _ => return format!("signal {signal}"),
+    };
+    name.to_string()
+}
+
+/// The message of a panic the language raises itself, `attempt to subtract with overflow`, when
+/// that's how the tests failed.
+pub fn language_panic(output: &str) -> Option<String> {
+    output
+        .lines()
+        .map(str::trim)
+        .find(|line| {
+            (line.starts_with("attempt to ")
+                && (line.contains("overflow") || line.contains("zero")))
+                || line.starts_with("index out of bounds")
+        })
+        .map(str::to_string)
 }
 
 /// Runs `work` on each item on `workers` threads, keeping the items' order in the results.

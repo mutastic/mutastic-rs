@@ -433,6 +433,7 @@ fn summary(out: &mut String, report: &Report, style: Style) {
     let timed_out = report.count(Status::Timeout);
     let not_covered = report.count(Status::NoCoverage);
     let skipped = report.count(Status::Ignored);
+    let crashed = report.count(Status::RuntimeError);
     let mut counts = vec![style.green(&format!("✓ {caught} caught"))];
     if missed > 0 {
         counts.push(style.red(&format!("✗ {missed} missed")));
@@ -443,12 +444,39 @@ fn summary(out: &mut String, report: &Report, style: Style) {
     if not_covered > 0 {
         counts.push(format!("○ {not_covered} not covered"));
     }
-    let scored = report.results.len() - skipped;
+    let scored = report.results.len() - report.unscored();
     let mut mutants = format!("{} ({scored})", counts.join(" · "));
     if skipped > 0 {
         mutants.push_str(&style.dim(&format!(" · {skipped} skipped as unviable")));
     }
+    if crashed > 0 {
+        mutants.push_str(&style.dim(&format!(
+            " · {crashed} crashed where a crash proves nothing"
+        )));
+    }
     let _ = writeln!(out, "\n{}  {mutants}", style.dim("   Mutants"));
+    if let Some(line) = not_mutated(report) {
+        let _ = writeln!(out, "{}  {}", style.dim("  Left out"), style.dim(&line));
+    }
+    let by_crash = report
+        .results
+        .iter()
+        .filter(|r| {
+            r.killed_with
+                .as_deref()
+                .is_some_and(|w| w.starts_with("crash"))
+        })
+        .count();
+    if by_crash > 0 {
+        let _ = writeln!(
+            out,
+            "{}  {}",
+            style.dim("   Crashes"),
+            style.dim(&format!(
+                "{by_crash} caught only because the test process crashed, not by a test's check"
+            ))
+        );
+    }
     let rounds = report.rounds.len();
     let _ = writeln!(
         out,
@@ -529,6 +557,16 @@ fn summary(out: &mut String, report: &Report, style: Style) {
     }
 }
 
+/// "not mutated: unsafe (3), …": the code left alone around unsafe, and how to include it.
+fn not_mutated(report: &Report) -> Option<String> {
+    let count = report.found.not_mutated_unsafe;
+    (count > 0).then(|| {
+        format!(
+            "not mutated: unsafe ({count}), in or around unsafe blocks; --unsafe=enclosing or --unsafe=all includes them"
+        )
+    })
+}
+
 fn agent(report: &Report) -> String {
     let view = View { report };
     let mut out = String::new();
@@ -560,6 +598,9 @@ fn agent(report: &Report) -> String {
         "rules: {RULE}; a fix counts when `mutastic verify <id> {dir}` passes"
     );
     let _ = writeln!(out, "decline: {DECLINE}");
+    if let Some(line) = not_mutated(report) {
+        let _ = writeln!(out, "{line}");
+    }
     let mut entries = view.entries();
     entries.sort_by_key(|entry| rank(view.mutant(entry.main)));
     for (index, entry) in entries.iter().take(10).enumerate() {
@@ -618,6 +659,15 @@ fn jsonl(report: &Report) -> String {
         "project": report.project.package,
         "rules": RULE,
         "decline": DECLINE,
+        // What decides a mutant's meaning, so runs can be compared: the build's settings, which
+        // mutastic forces for overflow checks and debug assertions, and how unsafe code was treated.
+        "profile": {
+            "name": "mutastic",
+            "optLevel": report.profile["opt_level"],
+            "overflowChecks": report.profile["overflow_checks"],
+            "debugAssertions": report.profile["debug_assertions"],
+        },
+        "unsafe": report.unsafe_mode.name(),
     })];
     for result in &report.results {
         lines.push(mutant_event(&view, result));
@@ -634,9 +684,11 @@ fn jsonl(report: &Report) -> String {
         Status::Timeout,
         Status::NoCoverage,
         Status::Ignored,
+        Status::RuntimeError,
     ] {
         finished[status.schema_name()] = json!(report.count(status));
     }
+    finished["notMutated"] = json!({ "unsafe": report.found.not_mutated_unsafe });
     finished["score"] = report.score().map_or(Value::Null, |s| json!(round1(s)));
     finished["threshold"] = if report.threshold.fract() == 0.0 {
         json!(report.threshold as i64)
@@ -719,7 +771,12 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
     });
     if let Some(reason) = &result.reason {
         event["statusReason"] = json!(reason);
-        event["skipKind"] = json!(reason.split(':').next().unwrap_or_default());
+        if result.status == Status::Ignored {
+            event["skipKind"] = json!(reason.split(':').next().unwrap_or_default());
+        }
+    }
+    if let Some(near) = mutant.near_unsafe {
+        event["nearUnsafe"] = json!(near);
     }
     event["coveredBy"] = json!(result.covered_by);
     if let Some(test) = &result.killed_by {
