@@ -21,7 +21,7 @@ Options:
   --only=<id>[,<id>…]   Run only these mutants
   --format=<format>     full (default at a terminal), concise, agent or jsonl
   --threshold=<score>   The score a run must reach to pass (default 80)
-  --operators=<set>     defaults or stronger, or operator ids separated by commas
+  --operators=<set>     defaults, stronger or extended, or operator ids separated by commas
   --workers=<n>         Tests run side by side (default half the cores, at most 4)
   --unsafe=<mode>       skip (default): leave unsafe code and functions holding an unsafe block
                         alone; enclosing: mutate those functions too; all: unsafe code as well
@@ -127,6 +127,7 @@ fn operators(value: &str) -> Result<Vec<&'static str>, String> {
     match value {
         "defaults" => return Ok(sites::DEFAULTS.to_vec()),
         "stronger" => return Ok(sites::STRONGER.to_vec()),
+        "extended" => return Ok(sites::EXTENDED.to_vec()),
         _ => {}
     }
     value

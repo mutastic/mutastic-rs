@@ -5,7 +5,8 @@
 //! A statement's guard has no parentheses, and is a statement itself:
 //! `match crate::__mutastic::at(9) { 9 => {} _ => { v.push(x); } }`. A mutant that adds code (a
 //! parameter set at the start of a function, a guard on a match arm) is written where it goes, with
-//! its own read of the switch.
+//! its own read of the switch. A function's whole body is guarded inside a block of its own:
+//! `fn f() -> u32 { match crate::__mutastic::at(4) { 4 => { 0 } _ => { { .. } } } }`.
 //! Mutants nested inside a site go only in its last arm, as the original code: one mutant is live per
 //! process, so a mutated arm can hold plain text. That keeps the rewrite as long as the source,
 //! not exponential in nesting, and means a compile error inside a mutated arm names its mutant.
@@ -35,8 +36,8 @@ struct Site {
     /// Indices into `Crate::mutants`.
     mutants: Vec<usize>,
     children: Vec<Site>,
-    /// A statement: its guard has no parentheses.
-    statement: bool,
+    /// How the guard is written: in parentheses, as a statement, or as a function's body.
+    form: Form,
 }
 
 /// Text written at one place in the original: an inputs recorder, or a mutant's added code.
@@ -138,7 +139,7 @@ fn nest(found: &Crate, file: &Path, live: &BTreeSet<usize>) -> Vec<Site> {
                 range: mutant.site.clone(),
                 mutants: vec![index],
                 children: Vec::new(),
-                statement: mutant.form == Form::Statement,
+                form: mutant.form.clone(),
             }),
         }
     }
@@ -216,7 +217,12 @@ impl Emitter<'_> {
             .map(|&index| self.found.mutants[index].ordinal)
             .min()
             .unwrap_or(0);
-        let open = if site.statement { "" } else { "(" };
+        let (open, close) = match site.form {
+            Form::Statement => ("", " } }"),
+            // A function's body must stay a block.
+            Form::Body => ("{ ", " } } }"),
+            _ => ("(", " } })"),
+        };
         self.emitted
             .text
             .push_str(&format!("{open}match crate::__mutastic::at({first}) {{ "));
@@ -234,9 +240,7 @@ impl Emitter<'_> {
         }
         self.emitted.text.push_str("_ => { ");
         self.range(site.range.start, site.range.end, &site.children);
-        self.emitted
-            .text
-            .push_str(if site.statement { " } }" } else { " } })" });
+        self.emitted.text.push_str(close);
         self.emitted
             .guards
             .push((start..self.emitted.text.len(), site.mutants.clone()));

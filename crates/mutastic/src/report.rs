@@ -751,6 +751,7 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
             mutation["original"] = json!(before);
             mutation["replacement"] = json!(after);
         }
+        Change::Body { value } => mutation["replacement"] = json!(value),
         Change::ArmRemoved { pattern } => {
             mutation["original"] = json!(pattern);
             mutation["replacement"] = json!(mutant.replacement);

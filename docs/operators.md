@@ -55,3 +55,57 @@ reason.
 | `library/unchecked-arithmetic` | `a.checked_add(b)` → `Some(a.wrapping_add(b))`; `saturating_sub` → `wrapping_sub` | stronger | `library/unchecked-arithmetic` | implemented |
 | `mutastic/bitwise` | `&` → `\|`, `^`; `\|` → `&`, `^`; `^` → `&`, `\|`; `<<` ↔ `>>`; compound forms, but `&=` and `\|=` not to `^=` | stronger | Rust only | implemented |
 | `mutastic/remove-struct-field` | `S { a, b, ..base }` → `S { a, ..base }` | stronger | Rust only | implemented |
+| `mutastic/replace-body` | a function's whole body → `{ <a value return-value would give> }`, or `{}` when it returns nothing; not `new`, `fmt`, `hash` or a getter of one field | extended | `mutastic/replace-body` | implemented |
+| `mutastic/return-value` (extended forms) | a return → `Default::default()` for a type that visibly derives or implements `Default`; and → an `Err(..)` the same function returns elsewhere, when it mentions nothing local | extended | `mutastic/return-value` | implemented |
+| `mutastic/regex-constant` | `Regex::new(r"^\d+$")` → `r"\d+$"`, `r"^\d+"`, `r"^\D+$"`: an anchor dropped, a class turned round, each still valid | extended | `mutastic/regex-constant` | implemented |
+| `mutastic/drop-vararg` | `f(&[a, b, c])` → `f(&[a, b])`, `f(vec![a, b, c])` → `f(vec![a, b])` | extended | `mutastic/drop-vararg` (stronger there) | implemented |
+| `stream/remove-other-stage` | `.inspect(f)` and `.map(f)` left out of an iterator's chain, as stream/remove-stage's stages are | extended | `stream/remove-other-stage` | implemented |
+| `optional/remove-filter` | `opt.filter(p)` → `opt`, where `opt` isn't visibly an iterator | extended | `optional/remove-filter` | implemented |
+| `mutastic/default-parameter` | `fn f(p: T)` → `let p: T = Default::default();` as the function starts (not references, `impl`, `dyn`, closures or `Option`) | extended | Rust only | implemented |
+| `mutastic/swap-break` | `break` ↔ `continue`, with no label and no value | extended | Rust only | implemented |
+| `bigdecimal/remove-step` | `x.round_dp(2)`, `round_sf`, `normalize()`, `trunc_with_scale` → `x` | extended | `bigdecimal/remove-step` (a plugin there) | implemented |
+| `mutastic/remove-throw` | `return Err(e);`, `panic!(..);`, `bail!(..);` removed: the code carries on | extended | `mutastic/remove-throw` | implemented |
+| `mutastic/flip-increment` | — | — | `mutastic/flip-increment` | deferred: Rust has no `++`, and `+=` ↔ `-=` is `mutastic/math`'s; the id stays reserved so the change has one owner |
+| `library/omit-argument` | — | — | `library/omit-argument` | deferred: needs overloading, which Rust doesn't have |
+| `predicate/swap-connector`, `predicate/remove-negate`, `predicate/remove-not` | — | — | the same ids | deferred: std has no `Predicate` combinators; `&&` and `!` inside closures are logical-connector's and other-comparison's |
+| `mutastic/drop-catch-type` | — | — | `mutastic/drop-catch-type` | deferred: Rust has no multi-catch |
+| `concurrency/weaken-ordering` | `SeqCst` → `Acquire`/`Release` → `Relaxed`, legal per method | experimental | Rust only | deferred: almost never changes what a test sees on x86-64 or Apple Silicon, and `load(Release)` panics, so it needs loom or Miri to mean anything; never scored |
+| `clone` removal | `x.clone()` → `x` | experimental | Rust only | deferred: mostly fails the borrow checker, and where it compiles it's usually equivalent; evidence about performance, not wrong output |
+| ghosts | the missing peer call inserted after a write that lacks it (`self.dirty = true`, `notify_all()`) | experimental | ghosts (experimental there too) | deferred: not built in the Java edition yet either; to share its design |
+| `proposed/rewrite` | a function's body → a proposed body, behind its switch | extended | `proposed/rewrite` | deferred: waits on the proposals format and a measured run on real model output, as in the Java edition |
+| `mutastic/narrow-cast` | `x as u32` → `x as u16 as u32` | experimental | Rust only | deferred: no tool or bug count behind it yet |
+| unsafe-specific operators | `ptr.add(i)`, `set_len(n)`, `Layout` sizes off by one | experimental | Rust only | deferred: their mutants are undefined behaviour by design, so they mean something only with a Miri pass, which needs nightly |
+
+`mutastic/return-value(extended)` in a set turns on return-value's extended forms; it isn't an
+operator of its own, and its mutants are `mutastic/return-value`'s.
+
+## Parity with the Java edition
+
+The Java edition has 43 operator ids. **37 carry over** with the same meaning, all implemented;
+**6 don't**, for want of the language feature they change. mutastic for Rust adds **6 ids of its
+own**, and implements one of the Java edition's plugin operators.
+
+- **Carried over (37):** `mutastic/boundary`, `comparison`, `other-comparison`,
+  `remove-conditional`, `logical-connector`, `math`, `arithmetic-replacement`, `other-arithmetic`,
+  `keep-operand`, `constant-value`, `remove-negation`, `return-value`, `remove-void-call`,
+  `remove-discarded-call`, `remove-assignment`, `remove-field-write`, `omit-call`,
+  `swap-arguments`, `null-parameter`, `drop-vararg`, `remove-switch-arm`, `replace-body`,
+  `remove-throw`, `regex-constant`, `string-constant`; `library/unchecked-arithmetic`,
+  `swap-string`, `swap-index-of`, `swap-math`; `stream/remove-stage`, `swap-match`,
+  `remove-other-stage`; `optional/swap-present`, `empty`, `remove-filter`, `always-default`,
+  `no-default`.
+- **Not carried over (6):** `mutastic/flip-increment` (no `++`; `+=` and `-=` are math's),
+  `library/omit-argument` (no overloading), the three `predicate/*` ids (no `Predicate`
+  combinators in std), `mutastic/drop-catch-type` (no multi-catch).
+- **Rust only (6):** `mutastic/bitwise`, `mutastic/remove-struct-field`,
+  `library/reverse-ordering`, `mutastic/unwrap-try`, `mutastic/default-parameter`,
+  `mutastic/swap-break`.
+- **From the Java edition's plugins:** `bigdecimal/remove-step`, for `rust_decimal`. The others
+  don't carry: `bigdecimal/swap-arithmetic` and `swap-scaling` come free through math and
+  swap-math, as `Decimal` uses operators; `kotlin/empty-return`'s empty values are Rust's own, and
+  return-value's; `annotations/*` can't sit behind a run-time switch, as attributes act at compile
+  time.
+
+Some ids sit in another set than in Java: the four `optional/*` ids and `remove-switch-arm` are in
+`stronger`, because `Option`, `Result` and `match` are core Rust, not a modern API; `drop-vararg`
+is in `extended`, as an array's length is part of its type, and more of its mutants are withdrawn.

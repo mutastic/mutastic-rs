@@ -207,6 +207,11 @@ impl Finder<'_> {
             self.unwrap_try(&expr, context);
         } else if let Some(expr) = ast::MatchExpr::cast(node.clone()) {
             self.switch_arms(&expr, context);
+        } else if matches!(
+            node.kind(),
+            SyntaxKind::BREAK_EXPR | SyntaxKind::CONTINUE_EXPR
+        ) {
+            self.swap_break(node, context);
         } else if let Some(guard) = ast::MatchGuard::cast(node.clone()) {
             if let Some(condition) = guard.condition() {
                 self.condition(&condition, context);
@@ -229,6 +234,7 @@ impl Finder<'_> {
             }
             return;
         }
+        self.remove_throw(statement, context);
         let Some((call, name)) = called(&expr) else {
             return;
         };
@@ -403,12 +409,14 @@ impl Finder<'_> {
         }
         self.more_method_call(call, &text, name.syntax().text_range(), context);
         self.rollback_method_call(call, &text, name.syntax().text_range(), context);
+        self.extended_method_call(call, &text, context);
     }
 
     /// `cmp::min(a, b)` and `cmp::max(a, b)`, swapped; `Some(x)` made `None`.
     fn function_call(&mut self, call: &ast::CallExpr, context: Context<'_>) {
         self.some_made_none(call, context);
         self.rollback_function_call(call, context);
+        self.extended_function_call(call, context);
         let Some(ast::Expr::PathExpr(path)) = call.expr() else {
             return;
         };
@@ -637,7 +645,7 @@ pub(super) fn counterpart<'p>(pairs: &'p [(&'p str, &'p str)], name: &str) -> Op
 
 /// Whether an expression is visibly an iterator: a chain that starts with `.iter()` or the like,
 /// or a range.
-fn visibly_iterator(expr: &ast::Expr) -> bool {
+pub(super) fn visibly_iterator(expr: &ast::Expr) -> bool {
     match expr {
         ast::Expr::ParenExpr(inner) => inner.expr().is_some_and(|inner| visibly_iterator(&inner)),
         ast::Expr::RangeExpr(_) => true,

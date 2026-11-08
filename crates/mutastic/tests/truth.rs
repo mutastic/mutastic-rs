@@ -49,6 +49,14 @@ const ROLLBACK: &[&str] = &[
     sites::REVERSE_ORDERING,
     sites::REMOVE_SWITCH_ARM,
     sites::UNWRAP_TRY,
+    sites::DEFAULT_PARAMETER,
+    sites::DROP_VARARG,
+    sites::REMOVE_OTHER_STAGE,
+    sites::REMOVE_FILTER,
+    sites::REMOVE_STEP,
+    sites::REMOVE_THROW,
+    sites::SWAP_BREAK,
+    sites::SWAP_PRESENT,
 ];
 
 fn probe(binary: &Binary, cwd: &Path, test: &str, env: &[(&str, String)]) -> Probed {
@@ -78,7 +86,7 @@ fn probe(binary: &Binary, cwd: &Path, test: &str, env: &[(&str, String)]) -> Pro
 fn every_card_claim_behaves_as_its_mutant_does() {
     std::env::set_var("MUTASTIC_EXE", env!("CARGO_BIN_EXE_mutastic"));
     let project = workspace::read(&fixture("truth")).unwrap();
-    let found = engine::find(&project, sites::STRONGER);
+    let found = engine::find(&project, sites::ALL);
     assert!(found.mutants.len() > 40, "{} mutants", found.mutants.len());
     let all: BTreeSet<usize> = (0..found.mutants.len()).collect();
     let built = compile::build(&project, &found, &all, &BTreeSet::new()).unwrap();

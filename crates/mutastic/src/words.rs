@@ -134,6 +134,22 @@ fn advise_change(mutant: &Mutant, name: &str, seen: &BTreeMap<String, Vec<i128>>
                 "add a test where the `{name}` given changes what {method} does, and assert it"
             ),
         },
+        Change::Body { value } if value.is_empty() => Advice {
+            change: format!("{method} does nothing"),
+            caret: "does nothing".into(),
+            headline: format!("tests pass even when {method} does nothing"),
+            notes: inputs_seen(seen),
+            help: format!("add a test that checks what {method} does, and assert it"),
+        },
+        Change::Body { value } => Advice {
+            change: format!("{method} only returns `{value}`"),
+            caret: format!("only returns {value}"),
+            headline: format!("tests pass even when {method} does nothing but return `{value}`"),
+            notes: inputs_seen(seen),
+            help: format!(
+                "add a test where {method} returns something other than `{value}`, and assert it"
+            ),
+        },
         Change::ArmRemoved { pattern } => Advice {
             change: format!(
                 "the arm for `{pattern}` is removed: its values go to the next arm that matches"

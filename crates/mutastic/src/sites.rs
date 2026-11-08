@@ -20,6 +20,7 @@ use ra_ap_syntax::{AstNode, Edition, SourceFile, SyntaxKind, SyntaxNode, TextRan
 
 use crate::id;
 
+mod extended;
 mod operators;
 mod rollback;
 mod stronger;
@@ -60,6 +61,19 @@ pub const SWAP_INDEX_OF: &str = "library/swap-index-of";
 pub const REVERSE_ORDERING: &str = "library/reverse-ordering";
 pub const REMOVE_SWITCH_ARM: &str = "mutastic/remove-switch-arm";
 pub const UNWRAP_TRY: &str = "mutastic/unwrap-try";
+pub const REPLACE_BODY: &str = "mutastic/replace-body";
+pub const REGEX_CONSTANT: &str = "mutastic/regex-constant";
+pub const DROP_VARARG: &str = "mutastic/drop-vararg";
+pub const REMOVE_OTHER_STAGE: &str = "stream/remove-other-stage";
+pub const REMOVE_FILTER: &str = "optional/remove-filter";
+pub const DEFAULT_PARAMETER: &str = "mutastic/default-parameter";
+pub const SWAP_BREAK: &str = "mutastic/swap-break";
+pub const REMOVE_STEP: &str = "bigdecimal/remove-step";
+pub const REMOVE_THROW: &str = "mutastic/remove-throw";
+/// Not an operator of its own: in a set, it turns on `mutastic/return-value`'s extended forms,
+/// `Default::default()` for a type that visibly has one, and an `Err` the function returns
+/// elsewhere.
+pub const RETURN_VALUE_EXTENDED: &str = "mutastic/return-value(extended)";
 
 /// The operators a run uses when none are named: the Java edition's `defaults`.
 pub const DEFAULTS: &[&str] = &[
@@ -117,8 +131,59 @@ pub const STRONGER: &[&str] = &[
     UNWRAP_TRY,
 ];
 
+/// `extended` adds operators that make more noise, or more unviable mutants, for the cost: a
+/// function's whole body replaced, a parameter given its type's default, a regular expression or
+/// an argument list changed, and the rest of the Java edition's extended set.
+pub const EXTENDED: &[&str] = &[
+    BOUNDARY,
+    REMOVE_CONDITIONAL,
+    LOGICAL_CONNECTOR,
+    MATH,
+    RETURN_VALUE,
+    REMOVE_VOID_CALL,
+    REMOVE_DISCARDED_CALL,
+    REMOVE_ASSIGNMENT,
+    SWAP_STRING,
+    SWAP_MATH,
+    SWAP_MATCH,
+    REMOVE_STAGE,
+    OTHER_COMPARISON,
+    OTHER_ARITHMETIC,
+    REMOVE_FIELD_WRITE,
+    COMPARISON,
+    REMOVE_NEGATION,
+    REMOVE_STRUCT_FIELD,
+    NULL_PARAMETER,
+    SWAP_PRESENT,
+    OPTIONAL_EMPTY,
+    ALWAYS_DEFAULT,
+    NO_DEFAULT,
+    UNCHECKED_ARITHMETIC,
+    BITWISE,
+    STRING_CONSTANT,
+    CONSTANT_VALUE,
+    ARITHMETIC_REPLACEMENT,
+    KEEP_OPERAND,
+    OMIT_CALL,
+    SWAP_ARGUMENTS,
+    SWAP_INDEX_OF,
+    REVERSE_ORDERING,
+    REMOVE_SWITCH_ARM,
+    UNWRAP_TRY,
+    REPLACE_BODY,
+    RETURN_VALUE_EXTENDED,
+    REGEX_CONSTANT,
+    DROP_VARARG,
+    REMOVE_OTHER_STAGE,
+    REMOVE_FILTER,
+    DEFAULT_PARAMETER,
+    SWAP_BREAK,
+    REMOVE_STEP,
+    REMOVE_THROW,
+];
+
 /// Every operator mutastic has, for listing every mutant (the stable-ids test).
-pub const ALL: &[&str] = STRONGER;
+pub const ALL: &[&str] = EXTENDED;
 
 /// What a mutant changes, with what the card needs to say about it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -152,6 +217,8 @@ pub enum Change {
     Parameter { name: String, value: String },
     /// A match arm that no longer matches: its values go to the next arm that does.
     ArmRemoved { pattern: String },
+    /// A function's whole body replaced by a value, or by nothing (`value` empty).
+    Body { value: String },
 }
 
 /// How the schema writes a mutant.
@@ -163,6 +230,8 @@ pub enum Form {
     Statement,
     /// Code added at the site's start, which is empty. `{n}` in it is the switch's number.
     Insert { text: String },
+    /// In place of a function's whole body, which must stay a block.
+    Body,
 }
 
 /// How much of the code in and around `unsafe` gets mutants.
@@ -266,6 +335,7 @@ impl Mutant {
             Change::Replaced { .. } if self.replacement.starts_with('{') => {
                 (self.site.clone(), format!("({})", self.replacement))
             }
+            Change::Body { value } => (self.site.clone(), format!("{{ {value} }}")),
             Change::Removed { .. }
             | Change::Replaced { .. }
             | Change::Parameter { .. }
@@ -346,9 +416,33 @@ struct Facts {
     same_type_fns: BTreeSet<String>,
     /// Functions and methods whose last two parameters have one type, by whether they're methods.
     swappable: BTreeSet<(String, bool)>,
+    /// Types that visibly have a `Default`: derived, or implemented in the crate.
+    default_types: BTreeSet<String>,
 }
 
 impl Facts {
+    /// The types with a `#[derive(Default)]` or an `impl Default for`.
+    fn defaults(&mut self, tree: &SourceFile) {
+        for node in tree.syntax().descendants() {
+            if let Some(imp) = ast::Impl::cast(node.clone()) {
+                let is_default = imp
+                    .trait_()
+                    .is_some_and(|tr| last_segment(&plain(tr.syntax())) == "Default");
+                if let (true, Some(ty)) = (is_default, imp.self_ty()) {
+                    self.default_types.insert(type_head(&plain(ty.syntax())));
+                }
+            } else if let Some(adt) = ast::Adt::cast(node) {
+                let derives = adt.attrs().any(|attr| {
+                    let text = plain(attr.syntax());
+                    text.contains("derive") && text.contains("Default")
+                });
+                if let (true, Some(name)) = (derives, adt.name()) {
+                    self.default_types.insert(name.text().to_string());
+                }
+            }
+        }
+    }
+
     /// What a function's signature says the operators can do with its calls.
     fn signature(&mut self, function: &ast::Fn) {
         let (Some(name), Some(list)) = (function.name(), function.param_list()) else {
@@ -393,6 +487,7 @@ impl Facts {
                 }
                 facts.signature(&function);
             }
+            facts.defaults(&parsed.tree);
             for node in parsed.tree.syntax().descendants() {
                 if !opens_unsafe(&node) {
                     continue;
@@ -512,6 +607,7 @@ pub fn find_with(
             mode,
             module_unsafe: BTreeMap::new(),
             returned: std::collections::HashSet::new(),
+            errors: Vec::new(),
         };
         for function in tree.syntax().descendants().filter_map(ast::Fn::cast) {
             finder.function(&function);
@@ -742,6 +838,8 @@ struct Finder<'a> {
     module_unsafe: BTreeMap<(u32, u32), bool>,
     /// The values the current function returns, by range: return-value's sites.
     returned: std::collections::HashSet<TextRange>,
+    /// `Err` values the current function returns that could be returned anywhere in it.
+    errors: Vec<String>,
 }
 
 /// What the walk knows about where it is.
@@ -821,6 +919,9 @@ impl Finder<'_> {
             self.mark_returns(body.syntax());
         }
         self.parameters(function, context);
+        self.default_parameters(function, context);
+        self.harvest_errors(body.syntax());
+        self.replace_body(function, &body, context.returns.unwrap_or("()"), context);
         self.walk(body.syntax(), context);
     }
 
@@ -1204,7 +1305,7 @@ impl Finder<'_> {
                 let text = plain(other.syntax());
                 // A formatter's `Ok(())` writes nothing: arid, as `toString` is in the Java edition.
                 let formats = self.found.functions[context.function].name == "fmt";
-                for replacement in returned_instead(returns, &text, other) {
+                for replacement in self.extended_returns(returns, &text, other) {
                     if formats && replacement.starts_with("Ok(") {
                         continue;
                     }

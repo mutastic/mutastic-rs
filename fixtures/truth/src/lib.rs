@@ -450,17 +450,118 @@ pub fn rollback(x: i32) -> String {
     )
 }
 
+#[derive(Debug, PartialEq)]
+pub enum Problem {
+    Negative,
+    TooBig,
+}
+
+pub fn checked(x: i32) -> Result<i32, Problem> {
+    if x < 0 {
+        return Err(Problem::Negative);
+    }
+    if x > 8 {
+        return Err(Problem::TooBig);
+    }
+    Ok(x * 3)
+}
+
+#[derive(Debug, Default, PartialEq)]
+pub struct Stats {
+    pub count: i32,
+}
+
+pub fn stats(x: i32) -> Stats {
+    Stats { count: x * 2 }
+}
+
+pub fn loops(x: i32) -> i32 {
+    let mut total = 0;
+    for i in 0..10 {
+        if i == x {
+            continue;
+        }
+        if i > 6 {
+            break;
+        }
+        total += i;
+    }
+    total
+}
+
+pub fn defaults(x: i32, label: String) -> String {
+    format!("{label}{x}")
+}
+
+pub fn pipelines(x: i32) -> i32 {
+    let found = Some(x).filter(|v| *v > 2).unwrap_or(-1);
+    let sum: i32 = (0..5).map(|v| v * x).sum();
+    let seen: i32 = (0..3).inspect(|v| assert!(*v < 3)).sum();
+    found + sum * 100 + seen * 10000
+}
+
+fn total_of(values: &[i32]) -> i32 {
+    values.iter().sum()
+}
+
+fn count_of(values: Vec<i32>) -> usize {
+    values.len()
+}
+
+pub fn varargs(x: i32) -> i32 {
+    total_of(&[x, 2, 3]) + count_of(vec![x, 4, 5]) as i32 * 100
+}
+
+/// A stand-in for `regex::Regex`, by its path: what matters is the text it's given.
+pub struct Regex(String);
+
+impl Regex {
+    pub fn new(pattern: &str) -> Result<Regex, String> {
+        Ok(Regex(pattern.to_string()))
+    }
+}
+
+/// A stand-in for `rust_decimal::Decimal`, by its method's name.
+#[derive(Clone, Copy)]
+pub struct Decimal(i64);
+
+impl Decimal {
+    pub fn round_dp(self, places: u32) -> Decimal {
+        Decimal(self.0 / 10i64.pow(places) * 10i64.pow(places))
+    }
+}
+
+pub fn patterns(x: i32) -> String {
+    let re = Regex::new(r"^\d+$").unwrap();
+    let price = Decimal(x as i64 * 137).round_dp(1);
+    format!("{} {}", re.0.len() + re.0.matches('d').count() * 10, price.0)
+}
+
+pub fn extended(x: i32) -> String {
+    format!(
+        "{:?} {:?} {} {} {} {} {}",
+        checked(x),
+        stats(x),
+        loops(x),
+        defaults(x, "n".into()),
+        pipelines(x),
+        varargs(x),
+        patterns(x),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn probe() {
         for x in -6..10 {
             println!(
-                "{x}: {} | {} | {} | {}",
+                "{x}: {} | {} | {} | {} | {}",
                 super::all(x),
                 super::more(x),
                 super::stronger(x),
-                super::rollback(x)
+                super::rollback(x),
+                super::extended(x)
             );
         }
     }

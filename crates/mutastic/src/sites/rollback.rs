@@ -187,7 +187,7 @@ impl Finder<'_> {
             .map(|list| list.args().collect())
             .unwrap_or_default();
         if OMITTABLE.contains(&name) || self.facts.builders.contains(name) {
-            self.omit_method(call, &receiver, name, context);
+            self.omit_method(call, &receiver, OMIT_CALL, context);
         }
         if let Some(after) = counterpart(INDEX_OF, name) {
             self.swap_name(
@@ -219,7 +219,7 @@ impl Finder<'_> {
             );
         }
         if name == "reverse" && args.is_empty() && orders(&receiver) {
-            self.omit_method(call, &receiver, name, context);
+            self.omit_method(call, &receiver, REVERSE_ORDERING, context);
         }
         if self.facts.swappable.contains(&(name.to_string(), true)) {
             self.swap_last_arguments(call.syntax(), &args, context);
@@ -227,18 +227,13 @@ impl Finder<'_> {
     }
 
     /// A method call left out, its receiver going on in its place.
-    fn omit_method(
+    pub(super) fn omit_method(
         &mut self,
         call: &ast::MethodCallExpr,
         receiver: &ast::Expr,
-        name: &str,
+        operator: &'static str,
         context: Context<'_>,
     ) {
-        let operator = if name == "reverse" {
-            REVERSE_ORDERING
-        } else {
-            OMIT_CALL
-        };
         let piece = plain_replacing(call.syntax(), &[(receiver.syntax().text_range(), "")]);
         let start = call
             .dot_token()
