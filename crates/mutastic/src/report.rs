@@ -10,6 +10,8 @@ use crate::engine::{MutantResult, Report, Status};
 use crate::sites::{self, Change, Crate, Mutant};
 use crate::words::{self, Advice};
 
+pub mod files;
+
 pub const SCHEMA: &str = "mutastic.events/v1";
 /// The events format's name for this edition, on every event.
 pub const EDITION: &str = "rust";
@@ -187,6 +189,18 @@ impl<'a> View<'a> {
         let dir = &self.report.project.given;
         match verb {
             "verify" => format!("mutastic verify {ids} {dir}"),
+            "explain" => format!("mutastic explain {ids} {dir}"),
+            "ignore" | "propose" => {
+                let propose = if verb == "propose" { " --propose" } else { "" };
+                match ids.split_once(',') {
+                    // One decision each: a card with several mutants names them all.
+                    Some(_) => format!(
+                        "mutastic ignore <id>{propose} --reason=\"<why>\" {dir} for each of {}",
+                        ids.replace(',', ", ")
+                    ),
+                    None => format!("mutastic ignore {ids}{propose} --reason=\"<why>\" {dir}"),
+                }
+            }
             _ => format!("mutastic run --only={ids} {dir}"),
         }
     }
@@ -424,36 +438,14 @@ fn human(report: &Report, style: Style, cards: bool) -> String {
     out
 }
 
-fn id_list(view: &View, entry: &Entry) -> String {
-    std::iter::once(entry.main)
-        .chain(entry.also.iter().copied())
-        .map(|r| view.id(r).to_string())
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
-    let result = entry.main;
-    let mutant = view.mutant(result);
-    let advice = view.advice(result);
-    let shared = !entry.also.is_empty();
-    let _ = writeln!(
-        out,
-        "\n {} {}{}",
-        style.label("✗ MISSED", RED),
-        style.code(&advice.headline),
-        if shared {
-            style.dim(&format!(" · {}", mutant.id))
-        } else {
-            String::new()
-        }
-    );
+/// `┌─ src/lib.rs:26`, then the changed line between the lines either side, the change marked under
+/// it; gives the gutter the rest of the card is indented by.
+fn frame(out: &mut String, view: &View, mutant: &Mutant, advice: &Advice, style: Style) -> String {
     let text = view.text(mutant);
     let lines: Vec<&str> = text.lines().collect();
     let width = (mutant.line + 1).to_string().len();
     let g = " ".repeat(width + 2);
     let bar = style.dim("│");
-    let equals = style.dim("=");
     let _ = writeln!(
         out,
         "{g}{} {}:{}",
@@ -486,6 +478,35 @@ fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
         }
     }
     let _ = writeln!(out, "{g}{bar}");
+    g
+}
+
+fn id_list(view: &View, entry: &Entry) -> String {
+    std::iter::once(entry.main)
+        .chain(entry.also.iter().copied())
+        .map(|r| view.id(r).to_string())
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
+    let result = entry.main;
+    let mutant = view.mutant(result);
+    let advice = view.advice(result);
+    let shared = !entry.also.is_empty();
+    let _ = writeln!(
+        out,
+        "\n {} {}{}",
+        style.label("✗ MISSED", RED),
+        style.code(&advice.headline),
+        if shared {
+            style.dim(&format!(" · {}", mutant.id))
+        } else {
+            String::new()
+        }
+    );
+    let g = frame(out, view, mutant, &advice, style);
+    let equals = style.dim("=");
     let (before, after) = view.changed_line(mutant);
     let _ = writeln!(out, "{g}{equals} mutant  {}{before}", style.red("- "));
     let _ = writeln!(out, "{g}          {}{after}", style.green("+ "));
@@ -539,61 +560,70 @@ fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
         style.dim("reproduce "),
         view.command("run", &ids)
     );
+    let _ = writeln!(
+        out,
+        "{g}{} {}",
+        style.dim("or ignore "),
+        view.command("ignore", &ids)
+    );
 }
 
+/// How many functions the Not covered section lists, as the Java edition caps it.
+const NOT_COVERED_SHOWN: usize = 50;
+
+/// `Not covered (no test reaches these lines)`, then each function with mutants no test reaches:
+/// `○ src/lib.rs:18-20 tier() (4 mutants)`, in the order found, as the Java edition shows them.
 fn not_covered(out: &mut String, view: &View, style: Style) {
-    let mut by_function: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    let mut by_function: Vec<(usize, Vec<usize>)> = Vec::new();
     for result in &view.report.results {
         if result.status == Status::NoCoverage {
             let mutant = view.mutant(result);
-            by_function
-                .entry(mutant.function)
-                .or_default()
-                .push(mutant.line);
+            match by_function.iter_mut().find(|(f, _)| *f == mutant.function) {
+                Some((_, lines)) => lines.push(mutant.line),
+                None => by_function.push((mutant.function, vec![mutant.line])),
+            }
         }
     }
     if by_function.is_empty() {
         return;
     }
-    // A function some test reaches elsewhere is called: only these lines of it aren't reached.
-    let called: std::collections::BTreeSet<usize> = view
-        .report
-        .results
-        .iter()
-        .filter(|result| !result.covered_by.is_empty())
-        .map(|result| view.mutant(result).function)
-        .collect();
     let _ = writeln!(
         out,
         "\n{}{}",
         style.amber(&style.bold(" Not covered ")),
-        style.dim(&"─".repeat(55))
+        style.dim("(no test reaches these lines)")
     );
-    for (function, mut lines) in by_function {
+    for (function, lines) in by_function.iter().take(NOT_COVERED_SHOWN) {
         let count = lines.len();
-        lines.sort();
-        lines.dedup();
-        let f = &view.report.found.functions[function];
-        let why = match (called.contains(&function), lines.len()) {
-            (false, _) => "no test calls it",
-            (true, 1) => "no test reaches that line",
-            (true, _) => "no test reaches those lines",
+        let (from, to) = (
+            lines.iter().min().copied().unwrap_or(0),
+            lines.iter().max().copied().unwrap_or(0),
+        );
+        let f = &view.report.found.functions[*function];
+        let place = if from == to {
+            from.to_string()
+        } else {
+            format!("{from}-{to}")
         };
         let _ = writeln!(
             out,
-            " {} {} {}() {}",
+            "   {} {}:{place} {}() {}",
             style.amber("○"),
             f.file.display(),
             f.name,
             style.dim(&format!(
-                "line{} {} ({count} mutant{}): {why}",
-                if lines.len() == 1 { "" } else { "s" },
-                lines
-                    .iter()
-                    .map(usize::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", "),
+                "({count} mutant{})",
                 if count == 1 { "" } else { "s" }
+            ))
+        );
+    }
+    if by_function.len() > NOT_COVERED_SHOWN {
+        let _ = writeln!(
+            out,
+            "{}",
+            style.dim(&format!(
+                "   … and {} more functions",
+                by_function.len() - NOT_COVERED_SHOWN
             ))
         );
     }
@@ -613,7 +643,7 @@ fn summary(out: &mut String, report: &Report, style: Style) {
             out,
             "{}",
             style.dim(&format!(
-                " Next: mutastic verify <id> {dir} · mutastic run --only=<id> {dir}"
+                " Next: mutastic verify <id> {dir} · mutastic run --only=<id> {dir} · mutastic explain <id> {dir}"
             ))
         );
     }
@@ -627,6 +657,19 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
     ];
     for (index, line) in not_mutated(report).into_iter().enumerate() {
         rows.push((if index == 0 { "Left out" } else { "" }, style.dim(&line)));
+    }
+    if let Some(scope) = &report.scope {
+        rows.push((
+            "Changed",
+            format!(
+                "{} line{} in {} file{} since {}",
+                scope.lines,
+                if scope.lines == 1 { "" } else { "s" },
+                scope.files,
+                if scope.files == 1 { "" } else { "s" },
+                scope.since
+            ),
+        ));
     }
     if let Some(worst) = worst_at(report) {
         rows.push(("Worst at", worst));
@@ -683,6 +726,9 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
             if report.workers == 1 { "" } else { "s" }
         ),
     ));
+    if !report.reports.is_empty() {
+        rows.push(("Reports", report.reports.join(&style.dim(" · "))));
+    }
     rows.push(("Score", score_row(report, style)));
     rows
 }
@@ -982,6 +1028,7 @@ fn agent_entry(view: &View, entry: &Entry) -> String {
     let _ = writeln!(out, "   fix: {}", advice.help);
     let _ = writeln!(out, "   done when: {} passes", view.command("verify", &ids));
     let _ = writeln!(out, "   reproduce: {}", view.command("run", &ids));
+    let _ = writeln!(out, "   or propose: {}", view.command("propose", &ids));
     out
 }
 
@@ -1053,16 +1100,20 @@ fn jsonl(report: &Report) -> String {
         .map_or(Value::Null, |s| json!(round1(s)));
     finished["tests"] = json!(report.tests);
     // Nothing of these is built yet, so each is empty, as the schema asks.
-    for none in [
-        "flaky",
-        "flakyEvidence",
-        "likelyFlaky",
-        "unrelatedCatches",
-        "reports",
-        "staleIgnores",
-    ] {
+    for none in ["flaky", "flakyEvidence", "likelyFlaky", "unrelatedCatches"] {
         finished[none] = json!([]);
     }
+    if let Some(scope) = &report.scope {
+        finished["scope"] = json!({
+            "since": scope.since,
+            "files": scope.files,
+            "lines": scope.lines,
+            "fileCount": scope.files,
+            "lineCount": scope.lines,
+        });
+    }
+    finished["reports"] = json!(report.reports);
+    finished["staleIgnores"] = json!(report.stale_ignores);
     finished["build"] = json!({
         "rounds": report.rounds.len(),
         "unviable": report
@@ -1179,6 +1230,8 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
     if result.status == Status::Survived {
         event["doneWhen"] = json!(format!("{} passes", view.command("verify", &mutant.id)));
         event["reproduce"] = json!(view.command("run", &mutant.id));
+        event["ignore"] = json!(view.command("ignore", &mutant.id));
+        event["propose"] = json!(view.command("propose", &mutant.id));
         let entry = Entry {
             main: result,
             also: Vec::new(),
@@ -1191,4 +1244,210 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
 /// Source text on one line, whitespace collapsed.
 fn sites_plain(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// How the last full run went for a mutant, from its `mutation.json`: its status, and the test
+/// that caught it if one did.
+pub struct LastRun {
+    pub status: String,
+    pub caught_by: Option<String>,
+}
+
+/// The last full run's result for `id`, from the `mutation.json` it left in `target/mutastic`.
+pub fn last_run(report_file: &std::path::Path, id: &str) -> Option<LastRun> {
+    let text = std::fs::read_to_string(report_file).ok()?;
+    let document: Value = serde_json::from_str(&text).ok()?;
+    document["files"]
+        .as_object()?
+        .values()
+        .flat_map(|file| file["mutants"].as_array().cloned().unwrap_or_default())
+        .find(|mutant| mutant["id"] == id)
+        .map(|mutant| LastRun {
+            status: mutant["status"].as_str().unwrap_or_default().to_string(),
+            caught_by: mutant["killedBy"][0].as_str().map(str::to_string),
+        })
+}
+
+/// `explain`: one mutant in full whatever became of it, as the Java edition explains it: a miss
+/// gets its card; anything else a card that says what happened instead, without help or a test to
+/// add; then what the change is, its operator, its id, its site and how the last full run went.
+pub fn explained(report: &Report, last: Option<LastRun>, style: Style) -> String {
+    let view = View { report };
+    let mut out = String::new();
+    let Some(result) = report.results.first() else {
+        return out;
+    };
+    if result.status == Status::Survived {
+        card(
+            &mut out,
+            &view,
+            &Entry {
+                main: result,
+                also: Vec::new(),
+            },
+            style,
+        );
+    } else {
+        outcome_card(&mut out, &view, result, style);
+    }
+    about(&mut out, &view, result, last, style);
+    out
+}
+
+fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Style) {
+    let mutant = view.mutant(result);
+    let advice = view.advice(result);
+    let (label, outcome) = match result.status {
+        Status::Killed => (
+            style.label("✓ CAUGHT", GREEN),
+            format!(
+                "caught by {}{}",
+                result.killed_by.as_deref().unwrap_or("a test"),
+                match result.killed_with.as_deref() {
+                    Some(how) if how.starts_with("crash") => {
+                        format!(", by a crash ({how})")
+                    }
+                    _ => String::new(),
+                }
+            ),
+        ),
+        Status::Timeout => (
+            style.label("✓ CAUGHT", GREEN),
+            "its tests stopped finishing in time, which counts as caught".to_string(),
+        ),
+        Status::NoCoverage => (
+            style.label("○ NOT COVERED", CYAN),
+            "no test reaches this line".to_string(),
+        ),
+        Status::RuntimeError => (
+            style.label("SKIPPED", CYAN),
+            format!(
+                "crashed where a crash proves nothing: {}",
+                result.reason.as_deref().unwrap_or_default()
+            ),
+        ),
+        Status::Ignored | Status::Survived => (
+            style.label("SKIPPED", CYAN),
+            format!("skipped: {}", result.reason.as_deref().unwrap_or_default()),
+        ),
+    };
+    let _ = writeln!(out, "\n {label} {}", style.bold(&outcome));
+    let g = frame(out, view, mutant, &advice, style);
+    let (before, after) = view.changed_line(mutant);
+    let _ = writeln!(
+        out,
+        "{g}{} mutant  {}{before}",
+        style.dim("="),
+        style.red("- ")
+    );
+    let _ = writeln!(out, "{g}          {}{after}", style.green("+ "));
+    let mut notes = advice.notes.clone();
+    if !result.covered_by.is_empty() {
+        // Whether they still pass is a miss's to say: here, only which tests reach it.
+        notes.push(format!("covered by {}", result.covered_by.join(", ")));
+    }
+    for (index, note) in notes.iter().enumerate() {
+        if index == 0 {
+            let _ = writeln!(
+                out,
+                "{g}{} {}: {}",
+                style.dim("="),
+                style.blue(&style.bold("note")),
+                style.code(note)
+            );
+        } else {
+            let _ = writeln!(out, "{g}        {}", style.dim(&style.code(note)));
+        }
+    }
+    let _ = writeln!(
+        out,
+        "\n{g}{} {}",
+        style.dim("reproduce "),
+        view.command("run", &mutant.id)
+    );
+}
+
+/// `About this mutant`: the change, the operator, the id, the site, and the last full run.
+fn about(
+    out: &mut String,
+    view: &View,
+    result: &MutantResult,
+    last: Option<LastRun>,
+    style: Style,
+) {
+    let mutant = view.mutant(result);
+    let function = &view.report.found.functions[mutant.function];
+    let title = " About this mutant ";
+    let _ = writeln!(
+        out,
+        "\n{}{}",
+        style.bold(title),
+        style.dim(&"─".repeat(66 - title.len()))
+    );
+    let text = view.text(mutant);
+    let row = |out: &mut String, label: &str, first: String, rest: Vec<String>| {
+        let _ = writeln!(
+            out,
+            "    {} {}  {first}",
+            style.dim("="),
+            style.blue(&style.bold(&format!("{label:<8}")))
+        );
+        for line in rest {
+            let _ = writeln!(out, "{}{}", " ".repeat(16), style.dim(&line));
+        }
+    };
+    row(
+        out,
+        "change",
+        style.bold(&format!(
+            "{} → {}",
+            sites_plain(&text[mutant.site.clone()]),
+            mutant.replacement
+        )),
+        vec!["the code the switch puts in place of the original when this mutant is live".into()],
+    );
+    row(
+        out,
+        "operator",
+        format!("{}: {}", mutant.operator, view.advice(result).change),
+        Vec::new(),
+    );
+    row(
+        out,
+        "id",
+        format!(
+            "{}: `m` and the first 8 hex digits of its fingerprint, {}, a SHA-256 of the crate, function, operator, site and change",
+            mutant.id, mutant.fingerprint
+        ),
+        vec!["no line number goes in, so the id stays the same when code above it moves".into()],
+    );
+    row(
+        out,
+        "site",
+        format!(
+            "`{}` in {}, line {}, column {}",
+            sites_plain(&text[mutant.site.clone()]),
+            function.path,
+            mutant.line,
+            mutant.column
+        ),
+        Vec::new(),
+    );
+    let last = match last {
+        None => "none yet: a full run records one".to_string(),
+        Some(run) => match run.status.as_str() {
+            "Killed" => format!(
+                "caught{}",
+                run.caught_by
+                    .map(|t| format!(" by {t}"))
+                    .unwrap_or_default()
+            ),
+            "Survived" => "missed: every covering test still passed".into(),
+            "Timeout" => "caught: its tests ran out of time".into(),
+            "NoCoverage" => "not covered: no test reached its line".into(),
+            "RuntimeError" => "crashed where a crash proves nothing".into(),
+            _ => "skipped".into(),
+        },
+    };
+    row(out, "last run", last, Vec::new());
 }

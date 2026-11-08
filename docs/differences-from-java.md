@@ -67,6 +67,20 @@ one of them:
 
 [Operators](operators.md) has the whole table.
 
+## Commands
+
+The commands and their output are the Java edition's: the summary, the `Not covered` list, the
+counter while mutants run, the report files, `explain`, `ignore` and `--since`. Where Rust differs:
+
+- **`explain`** shows the change as source, `total >= 100 → (total) > (100)`, where the Java edition
+  shows bytecode, and its `last run` comes from the last full run's `mutation.json`, as there's no
+  run record yet.
+- **Report files** are `mutation.json` and `mutation.html` in `target/mutastic`; there's no
+  `mutations.xml`, whose consumers key on JVM mutator names.
+- **Skipped as equivalent:** a `?` that only passes on a formatter's error, inside the `fmt` of
+  `Display` and the other formatting traits, or on a write to a `Formatter`: no test can make that
+  error happen.
+
 ## Not in the Rust edition yet
 
 These Java edition features have no Rust counterpart yet. Where you'd use one, here's what to do
@@ -75,10 +89,7 @@ instead:
 | In the Java edition | In the Rust edition, for now |
 |---|---|
 | `mutastic.yaml`, rules files and plugins | Options on the command line: [Commands](reference/cli.md) |
-| `mutastic ignore`, `@DoNotMutate` | Nothing marks a mutant as decided: leave it missed, and say why where you keep such notes |
-| `mutastic explain` | `mutastic run --only=<id>`, which shows its card |
+| `@DoNotMutate` | `mutastic ignore`, one mutant at a time: [Commands](reference/cli.md#mutastic-ignore) |
 | Suggested tests on cards | The card's `help` line |
-| `--since` and changed lines | `--only` with the ids you care about |
-| Report files (`mutation.json`, HTML) | `--format=jsonl`, the same events: [Events](reference/events.md) |
 | The gate and the coding agents' plugins | `--format=agent`, or `MUTASTIC_AGENT=1`, and `verify` as the check |
 | `--vocabulary=classic` | The standard words only |

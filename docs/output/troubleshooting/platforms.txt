@@ -2,9 +2,10 @@
   Left out  not built here: `cfg(feature = "simd")` (2), `cfg(windows)` (15)
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  9 (18 without coverage selection)
-  Start at  17:01:10
-  Duration  964ms (setup 931ms, coverage 4ms, mutants 12ms)
+  Start at  18:26:13
+  Duration  199ms (setup 161ms, coverage 4ms, mutants 17ms)
      Tests  2 on rustc 1.94.0 · 4 workers
+   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
      Score  100.0%  threshold 80
 
  [PASS] Every mutant was caught.

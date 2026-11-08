@@ -7,10 +7,11 @@
   Worst at  Pricing::discount() 1 ✗
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  13 (33 without coverage selection)
-  Start at  16:24:19
-  Duration  928ms (setup 882ms, coverage 5ms, mutants 20ms)
+  Start at  18:25:20
+  Duration  1.1s (setup 1.1s, coverage 4ms, mutants 16ms)
      Tests  3 on rustc 1.94.0 · 4 workers
+   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
      Score  90.9%  threshold 80
 
  [PASS] 1 missed, above the threshold.
- Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing
+ Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing

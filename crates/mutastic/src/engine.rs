@@ -90,6 +90,12 @@ pub struct Report {
     pub profile: serde_json::Value,
     /// When the run started, `15:04:05` on the local clock, when the clock could be read.
     pub started_at: Option<String>,
+    /// The report files written, as the summary shows them: `target/mutastic/mutation.json`.
+    pub reports: Vec<String>,
+    /// The ignores whose line has changed since: they no longer hold, and their mutants ran.
+    pub stale_ignores: Vec<String>,
+    /// The change the run was scoped to, with `--since`.
+    pub scope: Option<Scope>,
 }
 
 impl Report {
@@ -128,6 +134,16 @@ pub struct Options {
     pub threshold: f64,
     pub workers: usize,
     pub unsafe_mode: UnsafeMode,
+    /// `--since`: only the mutants on these lines run.
+    pub since: Option<crate::since::ChangedLines>,
+}
+
+/// The change a run was scoped to: what it's since, and the crate's lines and files it touched.
+#[derive(Clone, Debug)]
+pub struct Scope {
+    pub since: String,
+    pub lines: usize,
+    pub files: usize,
 }
 
 /// What the coverage pass found for one test.
@@ -170,6 +186,8 @@ pub enum Progress<'a> {
         took: Duration,
         mutants: usize,
     },
+    /// One mutant has its result.
+    MutantFinished { status: Status },
     /// Every mutant of one source file has its result, in the order found.
     FileFinished {
         found: &'a Crate,
@@ -186,18 +204,40 @@ pub fn run(
     let started_at = clock();
     // An id names its mutant whatever was chosen when it was shown, so `--only` and `verify`
     // look among them all.
-    let found = if options.only.is_empty() {
+    let mut found = if options.only.is_empty() {
         find_with(project, &options.operators, options.unsafe_mode)
     } else {
         find_all(project)
     };
+    let stale_ignores = apply_ignores(project, &mut found)?;
     let selected: BTreeSet<usize> = found
         .mutants
         .iter()
         .enumerate()
         .filter(|(_, m)| options.only.is_empty() || options.only.contains(&m.id))
+        .filter(|(_, m)| {
+            options
+                .since
+                .as_ref()
+                .is_none_or(|changed| changed.touches(&project.workspace.join(&m.file), m.line))
+        })
         .map(|(index, _)| index)
         .collect();
+    let scope = options.since.as_ref().map(|changed| {
+        let ours: Vec<usize> = found
+            .files
+            .iter()
+            .filter_map(|file| {
+                let path = std::fs::canonicalize(project.workspace.join(&file.path)).ok()?;
+                changed.lines.get(&path).map(|lines| lines.len())
+            })
+            .collect();
+        Scope {
+            since: changed.since.clone(),
+            lines: ours.iter().sum(),
+            files: ours.len(),
+        }
+    });
     if !options.only.is_empty() {
         for id in &options.only {
             if !found.mutants.iter().any(|m| &m.id == id) {
@@ -266,7 +306,42 @@ pub fn run(
         unsafe_mode: options.unsafe_mode,
         profile: built.profile,
         started_at,
+        reports: Vec::new(),
+        stale_ignores,
+        scope,
     })
+}
+
+/// Skips each mutant the project decided not to test, in `.mutastic/ignores.yaml`, while its line
+/// is as it was when decided; gives the ids of those whose line has changed, which run again. A
+/// mutant a filter already skips keeps the filter's reason.
+fn apply_ignores(project: &Project, found: &mut Crate) -> Result<Vec<String>, String> {
+    let mut stale = Vec::new();
+    for ignore in crate::ignores::read(std::path::Path::new(&project.given))? {
+        let Some(index) = found.mutants.iter().position(|m| m.id == ignore.id) else {
+            continue;
+        };
+        let line = source_line(found, index);
+        let mutant = &mut found.mutants[index];
+        if !ignore.holds_for(&line) {
+            stale.push(ignore.id);
+        } else if mutant.skipped.is_none() {
+            mutant.skipped = Some(ignore.skip_reason());
+        }
+    }
+    Ok(stale)
+}
+
+/// The source line a mutant is on, as written.
+pub fn source_line(found: &Crate, index: usize) -> String {
+    let mutant = &found.mutants[index];
+    found
+        .files
+        .iter()
+        .find(|file| file.path == mutant.file)
+        .and_then(|file| file.text.lines().nth(mutant.line - 1))
+        .unwrap_or_default()
+        .to_string()
 }
 
 /// Each source file's mutants still running, and the results of those done, so a file's line can
@@ -300,6 +375,9 @@ impl Files {
         };
         done.push(result.clone());
         *left -= 1;
+        progress(Progress::MutantFinished {
+            status: result.status,
+        });
         if *left == 0 {
             done.sort_by_key(|r| r.mutant);
             progress(Progress::FileFinished {
@@ -427,11 +505,11 @@ fn result(
 ) -> MutantResult {
     let mutant = &found.mutants[index];
     let function = &found.functions[mutant.function];
-    if let Some(reason) = mutant.skipped {
+    if let Some(reason) = &mutant.skipped {
         return MutantResult {
             mutant: index,
             status: Status::Ignored,
-            reason: Some(reason.to_string()),
+            reason: Some(reason.clone()),
             covered_by: Vec::new(),
             killed_by: None,
             killed_with: None,

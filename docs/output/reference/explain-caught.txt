@@ -1,0 +1,24 @@
+
+ [✓ CAUGHT] caught by pricing::big_orders_get_ten_percent_off
+    ┌─ src/lib.rs:27
+    │
+ 26 │         if total >= 100 {
+ 27 │             return total / 10;
+    │                          ^ changed to *
+ 28 │         }
+    │
+    = mutant  - return total / 10;
+              + return total * 10;
+    = note: inputs seen: total = 250
+            covered by pricing::big_orders_get_ten_percent_off
+
+    reproduce  mutastic run --only=m95f96847 fixtures/pricing
+
+ About this mutant ───────────────────────────────────────────────
+    = change    total / 10 → (total) * (10)
+                the code the switch puts in place of the original when this mutant is live
+    = operator  mutastic/math: `/` becomes `*`
+    = id        m95f96847: `m` and the first 8 hex digits of its fingerprint, 95f96847248b0509, a SHA-256 of the crate, function, operator, site and change
+                no line number goes in, so the id stays the same when code above it moves
+    = site      `total / 10` in Pricing::discount, line 27, column 26
+    = last run  caught by pricing::big_orders_get_ten_percent_off

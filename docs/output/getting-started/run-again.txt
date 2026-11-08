@@ -3,9 +3,10 @@
    Mutants  ✓ 11 caught (11)
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  15 (44 without coverage selection)
-  Start at  16:24:18
-  Duration  976ms (setup 940ms, coverage 5ms, mutants 15ms)
+  Start at  18:25:19
+  Duration  1.0s (setup 1.0s, coverage 4ms, mutants 16ms)
      Tests  4 on rustc 1.94.0 · 4 workers
+   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
      Score  100.0%  threshold 80
 
  [PASS] Every mutant was caught.

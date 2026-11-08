@@ -435,6 +435,18 @@ fn reference(work: &Path, shown: &mut BTreeMap<String, String>) {
         ran(work, &["mutants", "fixtures/pricing"]).stdout,
     );
     shown.insert("reference/help".into(), ran(work, &["--help"]).stdout);
+    // After the full runs above, so the last run is known.
+    for (name, id) in [("missed", "mb2f8ae57"), ("caught", "m95f96847")] {
+        let explained = ran(work, &["explain", id, "fixtures/pricing"]);
+        assert_eq!(explained.code, 0, "{}", explained.stdout);
+        let last = if name == "missed" {
+            "last run  missed: every covering test still passed"
+        } else {
+            "last run  caught by pricing::big_orders_get_ten_percent_off"
+        };
+        assert!(explained.stdout.contains(last), "{}", explained.stdout);
+        shown.insert(format!("reference/explain-{name}"), explained.stdout);
+    }
 }
 
 /// The unsafety fixture: what's left alone, what's marked, and what a crash means.

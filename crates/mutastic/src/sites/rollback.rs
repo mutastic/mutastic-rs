@@ -349,7 +349,7 @@ impl Finder<'_> {
         );
         if self.found.mutants.len() > before {
             if let Some(mutant) = self.found.mutants.last_mut() {
-                mutant.skipped = formatter_error(expr);
+                mutant.skipped = formatter_error(expr).map(str::to_string);
             }
         }
     }

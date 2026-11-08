@@ -313,7 +313,7 @@ pub struct Mutant {
     pub claimed: Option<(Range<usize>, String)>,
     /// Why it isn't run, by its kind (`equivalent: …`): it's made, so it keeps its id, but it's
     /// out of the score and needs no test.
-    pub skipped: Option<&'static str>,
+    pub skipped: Option<String>,
 }
 
 impl Mutant {
@@ -2083,6 +2083,7 @@ mod tests {
                 (
                     found.functions[m.function].path.clone(),
                     m.skipped
+                        .as_deref()
                         .map_or("run", |reason| reason.split(':').next().unwrap())
                         .to_string(),
                 )

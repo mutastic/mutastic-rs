@@ -53,19 +53,21 @@ against the tests that reach it. One mutant gets past them:
 
     done when  mutastic verify mb2f8ae57 fixtures/pricing passes
     reproduce  mutastic run --only=mb2f8ae57 fixtures/pricing
+    or ignore  mutastic ignore mb2f8ae57 --reason="<why>" fixtures/pricing
 
      Files  0 clean | 1 with misses (1)
    Mutants  ✓ 10 caught · ✗ 1 missed (11)
   Worst at  Pricing::discount() 1 ✗
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  13 (33 without coverage selection)
-  Start at  16:24:16
-  Duration  1.2s (setup 1.1s, coverage 4ms, mutants 18ms)
+  Start at  18:25:16
+  Duration  2.1s (setup 1.9s, coverage 37ms, mutants 62ms)
      Tests  3 on rustc 1.94.0 · 4 workers
+   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
      Score  90.9%  threshold 80
 
  [PASS] 1 missed, above the threshold.
- Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing
+ Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
 ```
 
 On your own crate, run `cargo mutastic run` inside it, or `mutastic run path/to/crate`.
@@ -131,9 +133,10 @@ mutastic run fixtures/pricing
    Mutants  ✓ 11 caught (11)
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  15 (44 without coverage selection)
-  Start at  16:24:18
-  Duration  976ms (setup 940ms, coverage 5ms, mutants 15ms)
+  Start at  18:25:19
+  Duration  1.0s (setup 1.0s, coverage 4ms, mutants 16ms)
      Tests  4 on rustc 1.94.0 · 4 workers
+   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
      Score  100.0%  threshold 80
 
  [PASS] Every mutant was caught.

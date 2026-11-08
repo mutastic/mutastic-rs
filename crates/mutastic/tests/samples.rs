@@ -193,7 +193,7 @@ fn unsafe_code_is_fenced_off_and_crashes_are_told_apart() {
     // checked() is called, by run::checks, so only its line that aborts is out of reach.
     let (_, full) = mutastic(&["run", &dir, "--format=full"]);
     assert!(
-        full.contains("checked() line 25 (1 mutant): no test reaches that line"),
+        full.contains("○ src/raw.rs:25 checked() (1 mutant)"),
         "{full}"
     );
 
@@ -229,7 +229,9 @@ fn run_with(dir: &str, format: &str, colour: bool) -> (String, String) {
 /// progress lines to the verdict; piped, without `FORCE_COLOR`, it's plain.
 #[test]
 fn the_full_view_is_coloured_as_the_java_editions() {
-    let dir = fixture("pricing");
+    // A copy of its own: runs of one package side by side share its build in target/mutastic.
+    let copy = copy_of("pricing", "colour");
+    let dir = copy.display().to_string();
     let (out, err) = run_with(&dir, "--format=full", true);
     let shows = |text: &str, what: &str, styled: &str| {
         assert!(text.contains(styled), "{what}: no {styled:?} in\n{text:?}");
@@ -359,6 +361,7 @@ fn the_full_view_is_coloured_as_the_java_editions() {
         "Worst at, plain",
         "  Worst at  Pricing::discount() 1 ✗\n",
     );
+    std::fs::remove_dir_all(&copy).ok();
 }
 
 /// The agent's list is ranked as the Java edition ranks it: a condition or a removal before
@@ -376,4 +379,274 @@ fn missed_mutants_are_ranked_as_the_java_edition_ranks_them() {
         ["src/lib.rs:15", "src/lib.rs:11", "src/lib.rs:6"],
         "is_small's condition (3 tests), is_big's (1 test), then doubled's arithmetic (3 tests):\n{stdout}"
     );
+}
+
+/// At a terminal, the counter is one line redrawn in place as each mutant finishes, as the Java
+/// edition's: cleared before a file's line, drawn again after it, and cleared before the result.
+#[test]
+fn the_counter_is_redrawn_in_place() {
+    // A copy of its own: runs of one package side by side share its build in target/mutastic.
+    let copy = copy_of("pricing", "counter");
+    let dir = copy.display().to_string();
+    let (_, err) = run_with(&dir, "--progress=bar", false);
+    let clear = "\r\x1b[2K";
+    let counter = regex::Regex::new(
+        r"\[11/11\] ✓ 10 caught · ✗ 1 missed · ○ 0 not covered · ⏱ 0 timed out  \d+:\d\d",
+    )
+    .unwrap();
+    assert!(counter.is_match(&err), "the last count: {err:?}");
+    assert!(err.contains(&format!("{clear}[1/11] ✓ ")), "{err:?}");
+    assert!(
+        err.contains(&format!("{clear} ❯ [pricing] src/lib.rs")),
+        "a file's line clears the counter: {err:?}"
+    );
+    assert!(err.ends_with(clear), "cleared before the result: {err:?}");
+    let (_, plain) = run_with(&dir, "--progress=none", false);
+    assert!(
+        !plain.contains(clear) && !plain.contains("[1/11]"),
+        "{plain:?}"
+    );
+    std::fs::remove_dir_all(&copy).ok();
+}
+
+/// A full run writes `mutation.json`, in the mutation-testing report schema as the Java edition
+/// writes it, and `mutation.html`, that report in the viewer, and says where in its summary and
+/// its events.
+#[test]
+fn a_full_run_writes_the_report_files() {
+    let copy = copy_of("pricing", "reports");
+    let dir = copy.display().to_string();
+    let out = std::env::temp_dir().join(format!("mutastic-report-files-{}", std::process::id()));
+    let (json, html) = (out.join("m.json"), out.join("m.html"));
+    let (code, stdout) = mutastic(&[
+        "run",
+        &dir,
+        "--format=full",
+        &format!("--report=json:{}", json.display()),
+        &format!("--report=html:{}", html.display()),
+    ]);
+    assert_eq!(code, 0, "{stdout}");
+    assert!(
+        stdout.contains(&format!(
+            "  Reports  {} · {}\n",
+            json.display(),
+            html.display()
+        )),
+        "{stdout}"
+    );
+    let report: Value = serde_json::from_str(&std::fs::read_to_string(&json).unwrap()).unwrap();
+    let schema: Value = serde_json::from_str(include_str!(
+        "schema/report/mutation-testing-report-schema.json"
+    ))
+    .unwrap();
+    let validator = jsonschema::validator_for(&schema).unwrap();
+    let errors: Vec<String> = validator
+        .iter_errors(&report)
+        .map(|e| e.to_string())
+        .collect();
+    assert!(errors.is_empty(), "{errors:?}");
+    assert_eq!(report["schemaVersion"], "2");
+    assert_eq!(
+        report["thresholds"],
+        serde_json::json!({ "high": 80, "low": 60 })
+    );
+    let mutants = report["files"]["src/lib.rs"]["mutants"].as_array().unwrap();
+    assert_eq!(mutants.len(), 11);
+    let missed = mutants.iter().find(|m| m["id"] == "mb2f8ae57").unwrap();
+    assert_eq!(missed["status"], "Survived");
+    assert_eq!(missed["mutatorName"], "boundary");
+    assert_eq!(missed["replacement"], ">");
+    assert_eq!(
+        missed["location"],
+        serde_json::json!({ "start": { "line": 26, "column": 18 }, "end": { "line": 26, "column": 20 } })
+    );
+    assert_eq!(
+        missed["statusReason"],
+        "no test checks discount() at total == 100"
+    );
+    let page = std::fs::read_to_string(&html).unwrap();
+    assert!(page.contains("<mutation-test-report-app titlePostfix=\"mutastic\">"));
+    assert!(page.contains(".report = {\"$schema\""));
+    std::fs::remove_dir_all(&out).ok();
+
+    let (_, jsonl) = mutastic(&["run", &dir, "--format=jsonl", "--report=json:x.json"]);
+    let finished = events(&jsonl).pop().unwrap();
+    assert_eq!(finished["reports"], serde_json::json!(["x.json"]));
+    let (_, only) = mutastic(&["run", &dir, "--format=jsonl", "--only=mb2f8ae57"]);
+    assert_eq!(
+        events(&only).pop().unwrap()["reports"],
+        serde_json::json!([])
+    );
+    std::fs::remove_dir_all(&copy).ok();
+}
+
+/// A copy of a fixture in a directory of its own, to change.
+fn copy_of(name: &str, label: &str) -> std::path::PathBuf {
+    let to = std::env::temp_dir().join(format!("mutastic-{label}-{}", std::process::id()));
+    std::fs::remove_dir_all(&to).ok();
+    let from = Path::new(&fixture(name)).to_path_buf();
+    let mut stack = vec![std::path::PathBuf::new()];
+    while let Some(relative) = stack.pop() {
+        std::fs::create_dir_all(to.join(&relative)).unwrap();
+        for entry in std::fs::read_dir(from.join(&relative)).unwrap() {
+            let entry = entry.unwrap();
+            let path = relative.join(entry.file_name());
+            if entry.file_name() == "target" {
+                continue;
+            }
+            if entry.file_type().unwrap().is_dir() {
+                stack.push(path);
+            } else {
+                std::fs::copy(from.join(&path), to.join(&path)).unwrap();
+            }
+        }
+    }
+    to
+}
+
+fn mutastic_in(dir: &Path, args: &[&str]) -> (i32, String) {
+    let output = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+        .args(args)
+        .current_dir(dir)
+        .env_remove("MUTASTIC_FORMAT")
+        .env_remove("MUTASTIC_AGENT")
+        .env("NO_COLOR", "1")
+        .output()
+        .unwrap();
+    (
+        output.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&output.stdout).into_owned()
+            + &String::from_utf8_lossy(&output.stderr),
+    )
+}
+
+/// `ignore` records a decision, which skips the mutant while its line is as it was, says how to
+/// undo each step, and goes stale when the line changes; a proposal waits for a person.
+#[test]
+fn an_ignore_holds_while_its_line_does() {
+    let dir = copy_of("pricing", "ignore");
+    let (code, out) = mutastic_in(
+        &dir,
+        &[
+            "ignore",
+            "mb2f8ae57",
+            "--reason=totals are tens",
+            "--as=unreachable",
+        ],
+    );
+    assert_eq!(code, 0, "{out}");
+    assert_eq!(
+        out,
+        "mutastic: mb2f8ae57 is ignored: totals are tens\n  recorded in .mutastic/ignores.yaml: commit it, as a decision to review\n  to undo: mutastic ignore --remove mb2f8ae57 .\n"
+    );
+    let file = std::fs::read_to_string(dir.join(".mutastic/ignores.yaml")).unwrap();
+    assert!(
+        file.contains(
+            "    code: 'if total >= 100 {'\n    reason: 'totals are tens'\n    kind: unreachable\n"
+        ),
+        "{file}"
+    );
+    let (code, jsonl) = mutastic_in(&dir, &["run", "--format=jsonl", "--report=none"]);
+    assert_eq!(code, 0, "{jsonl}");
+    let first = events(&jsonl);
+    let ignored = first.iter().find(|e| e["id"] == "mb2f8ae57").unwrap();
+    assert_eq!(ignored["status"], "Ignored");
+    assert_eq!(
+        ignored["statusReason"],
+        "user: unreachable: totals are tens (ignored)"
+    );
+    assert_eq!(ignored["skipKind"], "user");
+
+    // The line changes: the decision no longer holds, and the mutant runs again.
+    let lib = dir.join("src/lib.rs");
+    let text = std::fs::read_to_string(&lib).unwrap();
+    std::fs::write(
+        &lib,
+        text.replace("if total >= 100 {", "if total >= 100  {"),
+    )
+    .unwrap();
+    let (_, jsonl) = mutastic_in(&dir, &["run", "--format=jsonl", "--report=none"]);
+    let again = events(&jsonl);
+    assert_eq!(
+        again.last().unwrap()["staleIgnores"],
+        serde_json::json!(["mb2f8ae57"])
+    );
+    let (_, out) = mutastic_in(&dir, &["ignore", "--prune"]);
+    assert!(
+        out.starts_with("mutastic: removed 1 ignore that no longer hold: mb2f8ae57\n"),
+        "{out}"
+    );
+
+    let (_, out) = mutastic_in(
+        &dir,
+        &["ignore", "mb2f8ae57", "--propose", "--reason=only tens"],
+    );
+    assert!(
+        out.contains("  to accept: mutastic ignore --accept mb2f8ae57 .\n"),
+        "{out}"
+    );
+    let (_, out) = mutastic_in(&dir, &["ignore", "--accept", "mb2f8ae57"]);
+    assert!(
+        out.starts_with("mutastic: mb2f8ae57 is ignored, as proposed: only tens\n"),
+        "{out}"
+    );
+    assert!(!dir.join(".mutastic/proposals.yaml").exists());
+    let (_, out) = mutastic_in(&dir, &["ignore", "--remove", "mb2f8ae57"]);
+    assert!(
+        out.contains("  to undo: mutastic ignore mb2f8ae57 --reason=\"only tens\" .\n"),
+        "{out}"
+    );
+    let (code, out) = mutastic_in(&dir, &["ignore", "mb2f8ae57"]);
+    assert_eq!(code, 2, "a reason is needed: {out}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// `--since` runs only the mutants on the lines changed since a commit, and says how much changed.
+#[test]
+fn since_runs_the_changed_lines_mutants() {
+    let dir = copy_of("pricing", "since");
+    let git = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(&dir)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap()
+            .status;
+        assert!(status.success(), "git {args:?}");
+    };
+    git(&["init", "-q"]);
+    std::fs::write(dir.join(".gitignore"), "target\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "start"]);
+    let lib = dir.join("src/lib.rs");
+    let text = std::fs::read_to_string(&lib).unwrap();
+    std::fs::write(
+        &lib,
+        text.replace("if total >= 100 {", "if total >= 100 {  "),
+    )
+    .unwrap();
+    let (_, out) = mutastic_in(
+        &dir,
+        &["run", "--since=HEAD", "--format=full", "--report=none"],
+    );
+    assert!(
+        out.contains("  Changed  1 line in 1 file since HEAD\n"),
+        "{out}"
+    );
+    let (_, jsonl) = mutastic_in(
+        &dir,
+        &["run", "--since=HEAD", "--format=jsonl", "--report=none"],
+    );
+    let scoped = events(&jsonl);
+    let finished = scoped.last().unwrap();
+    assert_eq!(finished["scope"]["lineCount"], 1);
+    assert!(scoped
+        .iter()
+        .filter(|e| e["reason"] == "mutant-finished")
+        .all(|e| e["location"]["line"] == 26));
+    std::fs::remove_dir_all(&dir).ok();
 }

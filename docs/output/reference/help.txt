@@ -3,6 +3,12 @@ mutastic: find the tests that run your code but don't check it
 Usage:
   mutastic run [dir] [options]       Mutate the package in dir (default .) and run its tests
   mutastic verify <id>[,<id>…] [dir] Pass when a test catches each mutant named
+  mutastic explain <id> [dir]        Everything known of one mutant, with its tests run
+  mutastic ignore <id> [dir] --reason=<why>
+                                     Record a decision not to test one mutant, in
+                                     .mutastic/ignores.yaml; --as=<kind> says what sort; --propose
+                                     proposes it for a person to accept (--accept <id>);
+                                     --remove <id> takes one back; --prune those whose line changed
   mutastic mutants [dir]             List the mutants, without running anything
 
 Options:
@@ -13,6 +19,13 @@ Options:
   --workers=<n>         Tests run side by side (default half the cores, at most 4)
   --unsafe=<mode>       skip (default): leave unsafe code and functions holding an unsafe block
                         alone; enclosing: mutate those functions too; all: unsafe code as well
+  --since[=<ref>]       Run only the mutants on lines changed since the merge-base of HEAD and
+                        <ref> (default: the default branch), uncommitted and new files included
+  --report=<kind>[:<path>]  Write a report file: json (mutation.json) or html (mutation.html), in
+                        target/mutastic unless a path is given; repeat it for more, or none.
+                        A full run writes both by default
+  --progress=<mode>     auto (default): a line redrawn in place at a terminal, none for agent
+                        and jsonl; bar, counter (a line every so often) or none
 
 Exit status: 0 when the run passes, or verify's mutants are caught; 1 when it doesn't; 2 when
 mutastic couldn't run.

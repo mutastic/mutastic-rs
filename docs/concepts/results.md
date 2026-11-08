@@ -119,6 +119,7 @@ This is the unsafety fixture, which has one of each:
 
    done when  mutastic verify mdb89abdf,m476f7baf fixtures/unsafety passes
    reproduce  mutastic run --only=mdb89abdf,m476f7baf fixtures/unsafety
+   or ignore  mutastic ignore <id> --reason="<why>" fixtures/unsafety for each of mdb89abdf, m476f7baf
 
  ❯ src/raw.rs  5 missed in 2 functions
 
@@ -144,6 +145,7 @@ This is the unsafety fixture, which has one of each:
 
    done when  mutastic verify m97f387f6,m2fcb19d0,mbff60c78 fixtures/unsafety passes
    reproduce  mutastic run --only=m97f387f6,m2fcb19d0,mbff60c78 fixtures/unsafety
+   or ignore  mutastic ignore <id> --reason="<why>" fixtures/unsafety for each of m97f387f6, m2fcb19d0, mbff60c78
 
  [✗ MISSED] no test checks checked() at x == 0 · m68f8c8e3
     ┌─ src/raw.rs:24
@@ -165,10 +167,11 @@ This is the unsafety fixture, which has one of each:
 
     done when  mutastic verify m68f8c8e3,mbb05698b fixtures/unsafety passes
     reproduce  mutastic run --only=m68f8c8e3,mbb05698b fixtures/unsafety
+    or ignore  mutastic ignore <id> --reason="<why>" fixtures/unsafety for each of m68f8c8e3, mbb05698b
 
- Not covered ───────────────────────────────────────────────────────
- ○ src/raw.rs checked() line 25 (1 mutant): no test reaches that line
- ○ src/plain.rs guarded() line 6 (1 mutant): no test reaches that line
+ Not covered (no test reaches these lines)
+   ○ src/raw.rs:25 checked() (1 mutant)
+   ○ src/plain.rs:6 guarded() (1 mutant)
 
      Files  0 clean | 2 with misses (2)
    Mutants  ✓ 5 caught · ✗ 7 missed · ○ 2 not covered (14) · 3 crashed where a crash proves nothing
@@ -177,13 +180,14 @@ This is the unsafety fixture, which has one of each:
    Crashes  1 caught only because the test process crashed, not by a test's check
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  15 (90 without coverage selection)
-  Start at  16:24:21
-  Duration  1.1s (setup 1.0s, coverage 9ms, mutants 94ms)
+  Start at  18:25:25
+  Duration  1.6s (setup 1.4s, coverage 8ms, mutants 147ms)
      Tests  6 on rustc 1.94.0 · 4 workers
+   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
      Score  35.7%  threshold 80  · 41.7% where tests reach
 
  [FAIL] Score below 80: 7 missed, 2 not covered.
- Next: mutastic verify <id> fixtures/unsafety · mutastic run --only=<id> fixtures/unsafety
+ Next: mutastic verify <id> fixtures/unsafety · mutastic run --only=<id> fixtures/unsafety · mutastic explain <id> fixtures/unsafety
 ```
 
 ## The score

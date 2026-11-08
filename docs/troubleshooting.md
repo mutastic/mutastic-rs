@@ -80,13 +80,14 @@ pub fn digits(mut n: u64) -> u64 {
   Worst at  digits() 6 ✗
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  25 (25 without coverage selection)
-  Start at  16:24:36
-  Duration  20.6s (setup 571ms, coverage 4ms, mutants 20.0s)
+  Start at  18:25:53
+  Duration  20.2s (setup 161ms, coverage 4ms, mutants 20.0s)
      Tests  1 on rustc 1.94.0 · 4 workers
+   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
      Score  76.0%  threshold 80
 
  [FAIL] Score below 80: 6 missed, 0 not covered.
- Next: mutastic verify <id> fixtures/loops · mutastic run --only=<id> fixtures/loops
+ Next: mutastic verify <id> fixtures/loops · mutastic run --only=<id> fixtures/loops · mutastic explain <id> fixtures/loops
 ```
 
 Nothing needs fixing: those mutants are caught. If the time matters more than the extra mutants,
@@ -191,9 +192,10 @@ pub fn is_absolute(path: &str) -> bool {
   Left out  not built here: `cfg(feature = "simd")` (2), `cfg(windows)` (15)
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  9 (18 without coverage selection)
-  Start at  17:01:10
-  Duration  964ms (setup 931ms, coverage 4ms, mutants 12ms)
+  Start at  18:26:13
+  Duration  199ms (setup 161ms, coverage 4ms, mutants 17ms)
      Tests  2 on rustc 1.94.0 · 4 workers
+   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
      Score  100.0%  threshold 80
 
  [PASS] Every mutant was caught.
