@@ -120,6 +120,11 @@ pub fn find(project: &Project, operators: &[&str]) -> Crate {
     )
 }
 
+/// Every mutant, under every operator mutastic has.
+pub fn find_all(project: &Project) -> Crate {
+    find(project, sites::ALL)
+}
+
 pub fn run(
     project: &Project,
     options: &Options,

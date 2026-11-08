@@ -39,6 +39,9 @@ pub const STRONGER: &[&str] = &[
     OTHER_COMPARISON,
 ];
 
+/// Every operator mutastic has, for listing every mutant (the stable-ids test).
+pub const ALL: &[&str] = STRONGER;
+
 /// What a mutant changes, with what the card needs to say about it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Change {
