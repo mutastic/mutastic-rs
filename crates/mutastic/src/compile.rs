@@ -175,7 +175,11 @@ pub fn profile_args() -> Vec<String> {
 }
 
 pub fn environment(command: &mut Command, project: &Project) {
-    let wrapper = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("mutastic"));
+    // The wrapper is this binary; a library caller (a test) names the binary with MUTASTIC_EXE.
+    let wrapper = std::env::var_os("MUTASTIC_EXE")
+        .map(PathBuf::from)
+        .or_else(|| std::env::current_exe().ok())
+        .unwrap_or_else(|| PathBuf::from("mutastic"));
     command
         .env("CARGO_TARGET_DIR", project.build_dir())
         .env("RUSTC_WORKSPACE_WRAPPER", wrapper)

@@ -19,8 +19,26 @@ fn fixture(name: &str) -> String {
         .to_string()
 }
 
-/// The lines the probe prints, `-3: 2 0 …`, or `timed out`.
-fn probe(binary: &Binary, cwd: &Path, test: &str, env: &[(&str, String)]) -> Vec<String> {
+/// What the probe printed, `-3: 2 0 …`, and whether it finished: a mutant can make a loop run
+/// until it overflows, or forever, and how far it gets before then depends on the build's speed.
+#[derive(Debug, PartialEq)]
+struct Probed {
+    lines: Vec<String>,
+    finished: bool,
+}
+
+impl Probed {
+    /// The same behaviour: both finish with the same lines, or neither does and the lines both
+    /// printed agree.
+    fn agrees(&self, other: &Probed) -> bool {
+        if self.finished && other.finished {
+            return self.lines == other.lines;
+        }
+        self.finished == other.finished && self.lines.iter().zip(&other.lines).all(|(a, b)| a == b)
+    }
+}
+
+fn probe(binary: &Binary, cwd: &Path, test: &str, env: &[(&str, String)]) -> Probed {
     let outcome = testrun::run(
         binary,
         cwd,
@@ -28,10 +46,7 @@ fn probe(binary: &Binary, cwd: &Path, test: &str, env: &[(&str, String)]) -> Vec
         env,
         Duration::from_secs(3),
     );
-    if outcome.timed_out {
-        return vec!["timed out".into()];
-    }
-    outcome
+    let lines = outcome
         .stdout
         .lines()
         .filter(|line| {
@@ -39,11 +54,16 @@ fn probe(binary: &Binary, cwd: &Path, test: &str, env: &[(&str, String)]) -> Vec
                 .is_some_and(|(x, _)| x.parse::<i32>().is_ok())
         })
         .map(str::to_string)
-        .collect()
+        .collect();
+    Probed {
+        lines,
+        finished: outcome.passed,
+    }
 }
 
 #[test]
 fn every_card_claim_behaves_as_its_mutant_does() {
+    std::env::set_var("MUTASTIC_EXE", env!("CARGO_BIN_EXE_mutastic"));
     let project = workspace::read(&fixture("truth")).unwrap();
     let found = engine::find(&project, sites::STRONGER);
     assert!(found.mutants.len() > 40, "{} mutants", found.mutants.len());
@@ -118,14 +138,17 @@ fn every_card_claim_behaves_as_its_mutant_does() {
         (ordinal, mutant, claim)
     });
     let original = &compared[0].1;
-    assert_eq!(original.len(), 16, "the probe ran: {original:?}");
+    assert!(
+        original.finished && original.lines.len() == 16,
+        "the probe ran: {original:?}"
+    );
     let mut wrong = Vec::new();
     let mut changed = 0;
     for (ordinal, mutant, claim) in &compared {
         if mutant != original {
             changed += 1;
         }
-        if mutant != claim {
+        if !mutant.agrees(claim) {
             let m = &found.mutants[*ordinal as usize - 1];
             wrong.push(format!(
                 "{} {} at line {}: the card says `{}`, but the mutant differs\n  mutant: {:?}\n  claim:  {:?}",
@@ -133,8 +156,8 @@ fn every_card_claim_behaves_as_its_mutant_does() {
                 m.operator,
                 m.line,
                 m.claim().1,
-                mutant.first(),
-                claim.first()
+                mutant.lines.first(),
+                claim.lines.first()
             ));
         }
     }
