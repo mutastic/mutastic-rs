@@ -20,6 +20,8 @@ use ra_ap_syntax::{AstNode, Edition, SourceFile, SyntaxKind, SyntaxNode, TextRan
 
 use crate::id;
 
+mod operators;
+
 /// The operators, by the ids the Java edition uses.
 pub const BOUNDARY: &str = "mutastic/boundary";
 pub const REMOVE_CONDITIONAL: &str = "mutastic/remove-conditional";
@@ -28,24 +30,49 @@ pub const MATH: &str = "mutastic/math";
 pub const OTHER_COMPARISON: &str = "mutastic/other-comparison";
 pub const OTHER_ARITHMETIC: &str = "mutastic/other-arithmetic";
 pub const RETURN_VALUE: &str = "mutastic/return-value";
+pub const REMOVE_VOID_CALL: &str = "mutastic/remove-void-call";
+pub const REMOVE_DISCARDED_CALL: &str = "mutastic/remove-discarded-call";
+pub const REMOVE_ASSIGNMENT: &str = "mutastic/remove-assignment";
+pub const REMOVE_FIELD_WRITE: &str = "mutastic/remove-field-write";
+pub const SWAP_STRING: &str = "library/swap-string";
+pub const SWAP_MATH: &str = "library/swap-math";
+pub const SWAP_MATCH: &str = "stream/swap-match";
+pub const REMOVE_STAGE: &str = "stream/remove-stage";
 
-/// The operators a run uses when none are named: the Java edition's `defaults`, as far as built.
+/// The operators a run uses when none are named: the Java edition's `defaults`.
 pub const DEFAULTS: &[&str] = &[
     BOUNDARY,
     REMOVE_CONDITIONAL,
     LOGICAL_CONNECTOR,
     MATH,
     RETURN_VALUE,
+    REMOVE_VOID_CALL,
+    REMOVE_DISCARDED_CALL,
+    REMOVE_ASSIGNMENT,
+    SWAP_STRING,
+    SWAP_MATH,
+    SWAP_MATCH,
+    REMOVE_STAGE,
 ];
-/// `stronger` adds the condition reversed (`==` to `!=`, `<` to `>=`), and `%` to `*`.
+/// `stronger` adds changes a test that catches the defaults' mostly catches too, and changes
+/// that are more often noise: the condition reversed (`==` to `!=`, `<` to `>=`), `%` to `*`,
+/// and a write to a field removed.
 pub const STRONGER: &[&str] = &[
     BOUNDARY,
     REMOVE_CONDITIONAL,
     LOGICAL_CONNECTOR,
     MATH,
     RETURN_VALUE,
+    REMOVE_VOID_CALL,
+    REMOVE_DISCARDED_CALL,
+    REMOVE_ASSIGNMENT,
+    SWAP_STRING,
+    SWAP_MATH,
+    SWAP_MATCH,
+    REMOVE_STAGE,
     OTHER_COMPARISON,
     OTHER_ARITHMETIC,
+    REMOVE_FIELD_WRITE,
 ];
 
 /// Every operator mutastic has, for listing every mutant (the stable-ids test).
@@ -66,6 +93,23 @@ pub enum Change {
     Math { before: String, after: String },
     /// A returned value to another.
     Returns { value: String },
+    /// A name or operator to its counterpart: `starts_with` to `ends_with`, `any` to `all`.
+    Swapped { before: String, after: String },
+    /// A statement removed: `v.push(x);`.
+    Removed { statement: String },
+    /// An expression to another: `xs.iter().filter(p).count()` to `xs.iter().count()`.
+    Replaced { before: String, after: String },
+}
+
+/// How the schema writes a mutant.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Form {
+    /// In place of an expression, inside parentheses.
+    Expression,
+    /// In place of a statement, or a block-like expression standing as one: no parentheses.
+    Statement,
+    /// Code added at the site's start, which is empty. `{n}` in it is the switch's number.
+    Insert { text: String },
 }
 
 /// How much of the code in and around `unsafe` gets mutants.
@@ -140,19 +184,33 @@ pub struct Mutant {
     /// Why this mutant is near unsafe code, when it is: it runs isolated, and a crash isn't
     /// counted as caught.
     pub near_unsafe: Option<&'static str>,
+    pub form: Form,
+    /// The edit the card claims, when it isn't the change's own (an arm deleted, for an arm the
+    /// schema guards).
+    pub claimed: Option<(Range<usize>, String)>,
 }
 
 impl Mutant {
     /// The change the card claims, as an edit to the original text: the bytes to replace and
     /// what with. A truth test writes this into the source and checks the mutant behaves the same.
     pub fn claim(&self) -> (Range<usize>, String) {
+        if let Some(claimed) = &self.claimed {
+            return claimed.clone();
+        }
         match &self.change {
             Change::Boundary { after, .. }
             | Change::Reversed { after, .. }
             | Change::Connector { after, .. }
+            | Change::Swapped { after, .. }
             | Change::Math { after, .. } => (self.caret.clone(), after.clone()),
-            Change::Always { truth, .. } => (self.site.clone(), truth.to_string()),
+            Change::Always { truth, .. } if self.replacement == truth.to_string() => {
+                (self.site.clone(), truth.to_string())
+            }
+            Change::Always { .. } => (self.site.clone(), self.replacement.clone()),
             Change::Returns { value } => (self.site.clone(), value.clone()),
+            Change::Removed { .. } | Change::Replaced { .. } => {
+                (self.site.clone(), self.replacement.clone())
+            }
         }
     }
 }
@@ -221,12 +279,23 @@ struct Facts {
     unsafe_callees: BTreeSet<String>,
     /// Types that are `unsafe impl Send` or `Sync`.
     unsafe_send_sync: BTreeSet<String>,
+    /// Names of the crate's functions and methods that return nothing.
+    unit_fns: BTreeSet<String>,
 }
 
 impl Facts {
     fn of(files: &[Parsed]) -> Facts {
         let mut facts = Facts::default();
         for parsed in files {
+            for function in parsed.tree.syntax().descendants().filter_map(ast::Fn::cast) {
+                let returns_nothing = function.ret_type().is_none_or(|ret| {
+                    ret.ty()
+                        .is_some_and(|ty| matches!(plain(ty.syntax()).as_str(), "()"))
+                });
+                if let (true, Some(name)) = (returns_nothing, function.name()) {
+                    facts.unit_fns.insert(name.text().to_string());
+                }
+            }
             for node in parsed.tree.syntax().descendants() {
                 if !opens_unsafe(&node) {
                     continue;
@@ -728,6 +797,7 @@ impl Finder<'_> {
         if let Some(expr) = ast::BinExpr::cast(node.clone()) {
             self.binary(&expr, context);
         }
+        self.visit(node, context);
         if let Some(expr) = ast::IfExpr::cast(node.clone()) {
             if let Some(condition) = expr.condition() {
                 self.condition(&condition, context);
@@ -780,7 +850,12 @@ impl Finder<'_> {
                     }
                 }
             }
-            ast::Expr::LetExpr(_) | ast::Expr::Literal(_) | ast::Expr::BlockExpr(_) => {}
+            ast::Expr::LetExpr(binding) => {
+                if let (Some(pat), Some(value)) = (binding.pat(), binding.expr()) {
+                    self.never_some(&pat, &value, context);
+                }
+            }
+            ast::Expr::Literal(_) | ast::Expr::BlockExpr(_) => {}
             other => {
                 let text = plain(other.syntax());
                 for truth in [true, false] {
@@ -1022,7 +1097,12 @@ impl Finder<'_> {
             | ast::Expr::ContinueExpr(_) => {}
             other => {
                 let text = plain(other.syntax());
+                // A formatter's `Ok(())` writes nothing: arid, as `toString` is in the Java edition.
+                let formats = self.found.functions[context.function].name == "fmt";
                 for replacement in returned_instead(returns, &text, other) {
+                    if formats && replacement.starts_with("Ok(") {
+                        continue;
+                    }
                     self.add(
                         RETURN_VALUE,
                         other.syntax(),
@@ -1048,6 +1128,34 @@ impl Finder<'_> {
         operands: Vec<String>,
         context: Context<'_>,
     ) {
+        self.make(
+            Make {
+                operator,
+                node,
+                site: node.text_range(),
+                caret,
+                replacement,
+                change,
+                operands,
+                form: form_of(node),
+                claimed: None,
+            },
+            context,
+        );
+    }
+
+    fn make(&mut self, make: Make<'_>, context: Context<'_>) {
+        let Make {
+            operator,
+            node,
+            site: range,
+            caret,
+            replacement,
+            change,
+            operands,
+            form,
+            claimed,
+        } = make;
         if !self.operators.contains(&operator) {
             return;
         }
@@ -1057,7 +1165,6 @@ impl Finder<'_> {
         if !literal_fits(&replacement, ty) {
             return;
         }
-        let range = node.text_range();
         let function = &self.found.functions[context.function];
         let original = plain(node);
         let key = format!("{}\0{operator}\0{original}\0{replacement}", function.path);
@@ -1105,6 +1212,8 @@ impl Finder<'_> {
             column,
             function: context.function,
             near_unsafe,
+            form,
+            claimed,
         });
     }
 
@@ -1121,6 +1230,78 @@ impl Finder<'_> {
             function
         }
     }
+}
+
+/// A mutant, before its id and place are worked out.
+struct Make<'n> {
+    operator: &'static str,
+    /// What the mutant changes, for its id: its text before.
+    node: &'n SyntaxNode,
+    /// What the schema replaces: usually `node`'s range; empty for code added.
+    site: TextRange,
+    caret: TextRange,
+    replacement: String,
+    change: Change,
+    operands: Vec<String>,
+    form: Form,
+    claimed: Option<(Range<usize>, String)>,
+}
+
+/// A statement, or a block-like expression standing as one, is replaced by a statement: a guard in
+/// parentheses would end the statement early.
+fn form_of(node: &SyntaxNode) -> Form {
+    let standing = node
+        .parent()
+        .is_some_and(|parent| parent.kind() == SyntaxKind::EXPR_STMT);
+    let block_like = matches!(
+        node.kind(),
+        SyntaxKind::FOR_EXPR
+            | SyntaxKind::WHILE_EXPR
+            | SyntaxKind::LOOP_EXPR
+            | SyntaxKind::IF_EXPR
+            | SyntaxKind::MATCH_EXPR
+            | SyntaxKind::BLOCK_EXPR
+    );
+    if node.kind() == SyntaxKind::EXPR_STMT
+        || node.kind() == SyntaxKind::LET_STMT
+        || (standing && block_like)
+    {
+        Form::Statement
+    } else {
+        Form::Expression
+    }
+}
+
+/// `node`'s text as `plain` gives it, with the tokens in each range replaced: `xs.iter().count()`
+/// from `xs.iter().filter(p).count()` with `.filter(p)` replaced by nothing.
+pub fn plain_replacing(node: &SyntaxNode, edits: &[(TextRange, &str)]) -> String {
+    let mut out = String::new();
+    let mut written = BTreeSet::new();
+    for token in node
+        .descendants_with_tokens()
+        .filter_map(|element| element.into_token())
+    {
+        let range = token.text_range();
+        if let Some((index, (_, with))) = edits
+            .iter()
+            .enumerate()
+            .find(|(_, (edit, _))| edit.contains_range(range))
+        {
+            if written.insert(index) {
+                out.push_str(with);
+            }
+            continue;
+        }
+        match token.kind() {
+            SyntaxKind::WHITESPACE | SyntaxKind::COMMENT => {
+                if !out.ends_with(' ') {
+                    out.push(' ');
+                }
+            }
+            _ => out.push_str(token.text()),
+        }
+    }
+    out.trim().to_string()
 }
 
 /// `#[naked]` functions hold only assembly: nothing of mutastic's can go in one.
@@ -1243,8 +1424,97 @@ fn returned_instead(returns: &str, text: &str, value: &ast::Expr) -> Vec<String>
         _ if base.starts_with("Vec<") && !matches!(text, "Vec::new()" | "vec![]") => {
             vec!["Vec::new()".into()]
         }
-        _ => Vec::new(),
+        _ => wider_instead(base, text),
     }
+}
+
+/// Return values for more of std's types: empty collections and paths, an empty slice, a wrapped
+/// value, and `Ok` of the value its inner type would get.
+fn wider_instead(ty: &str, text: &str) -> Vec<String> {
+    let (head, args) = generic_parts(ty);
+    let name = last_segment(&head);
+    let values: Vec<String> = match name {
+        "HashMap" | "BTreeMap" | "HashSet" | "BTreeSet" | "VecDeque" | "BinaryHeap" | "PathBuf"
+        | "OsString" => vec![format!("{head}::new()")],
+        "Box" | "Rc" | "Arc" if args.len() == 1 => inner_values(&args[0], "")
+            .into_iter()
+            .map(|value| format!("{head}::new({value})"))
+            .collect(),
+        "Result" if args.len() <= 2 => {
+            let inner = args.first().map_or("()", String::as_str);
+            let given = text
+                .strip_prefix("Ok(")
+                .and_then(|rest| rest.strip_suffix(')'))
+                .unwrap_or("");
+            if inner == "()" {
+                vec!["Ok(())".into()]
+            } else {
+                inner_values(inner, given)
+                    .into_iter()
+                    .map(|value| format!("Ok({value})"))
+                    .collect()
+            }
+        }
+        "Cow" if args.iter().any(|arg| arg == "str") => vec!["Cow::Borrowed(\"\")".into()],
+        _ if is_slice_ref(ty) => vec!["&[]".into()],
+        _ => Vec::new(),
+    };
+    values
+        .into_iter()
+        .filter(|value| value != text && format!("{head}::default()") != text)
+        .collect()
+}
+
+/// The values a return of type `ty` gets, for a type inside another.
+fn inner_values(ty: &str, text: &str) -> Vec<String> {
+    let digits = text.trim_end_matches(|c: char| c.is_ascii_alphanumeric() && !c.is_ascii_digit());
+    let is_zero = !digits.is_empty() && digits.chars().all(|c| matches!(c, '0' | '.' | '_'));
+    let base = ty.trim();
+    if WHOLE_NUMBERS.contains(&base) {
+        return vec![if is_zero { "1".into() } else { "0".into() }];
+    }
+    match base {
+        "f32" | "f64" => vec![if is_zero { "1.0".into() } else { "0.0".into() }],
+        "bool" => match text {
+            "true" => vec!["false".into()],
+            "false" => vec!["true".into()],
+            _ => vec!["true".into(), "false".into()],
+        },
+        "String" if text != "String::new()" => vec!["String::new()".into()],
+        _ if base.starts_with("Option<") && text != "None" => vec!["None".into()],
+        _ if base.starts_with("Vec<") && text != "Vec::new()" => vec!["Vec::new()".into()],
+        _ => wider_instead(base, text),
+    }
+}
+
+/// `&[T]`, `&'a [T]` or `&mut [T]`, but not an array.
+fn is_slice_ref(ty: &str) -> bool {
+    let Some(rest) = ty.strip_prefix('&') else {
+        return false;
+    };
+    let rest = rest.trim_start();
+    let rest = match rest.strip_prefix('\'') {
+        Some(lifetime) => lifetime.split_once(' ').map_or("", |(_, ty)| ty),
+        None => rest,
+    };
+    let rest = rest.trim_start().trim_start_matches("mut ").trim();
+    rest.starts_with('[') && rest.ends_with(']') && !rest.contains(';')
+}
+
+/// `HashMap<K, V>` as `("HashMap", ["K", "V"])`; lifetimes are left out of the arguments.
+fn generic_parts(ty: &str) -> (String, Vec<String>) {
+    let ty = ty.trim();
+    let Some(open) = ty.find('<') else {
+        return (ty.to_string(), Vec::new());
+    };
+    let head = ty[..open].trim().to_string();
+    let inner = ty[open + 1..].strip_suffix('>').unwrap_or(&ty[open + 1..]);
+    let args = top_level_split(inner)
+        .into_iter()
+        .map(|arg| arg.trim().to_string())
+        .filter(|arg| !arg.starts_with('\'') && !arg.is_empty())
+        .collect();
+    (head, args)
 }
 
 /// `pricing::Pricing::discount`: the module, any `impl` or `trait`, and the function's name.
@@ -1345,7 +1615,7 @@ mod tests {
     fn test_code_constants_and_macros_are_left_alone() {
         let found = changes(
             "const fn c(a: u32) -> u32 { a + 1 }\n\
-             pub fn f(a: u32) { let x = [0u8; 2 + 1]; assert!(a + 1 > a); g::<{ 1 + 1 }>(); }\n\
+             pub fn f(a: u32) { let x = [0u8; 2 + 1]; assert!(a + 1 > a); let _y = g::<{ 1 + 1 }>(); }\n\
              #[cfg(test)] mod tests { fn t() { let _ = 1 + 2; } }\n\
              #[test] fn t() { let _ = 1 + 2; }",
         );

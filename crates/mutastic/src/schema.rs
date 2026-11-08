@@ -2,6 +2,10 @@
 //! switch, so one build holds them all and an environment variable picks the live one.
 //!
 //! A site's guard reads `(match crate::__mutastic::at(7) { 7 => { (a) <= (b) } _ => { a < b } })`.
+//! A statement's guard has no parentheses, and is a statement itself:
+//! `match crate::__mutastic::at(9) { 9 => {} _ => { v.push(x); } }`. A mutant that adds code (a
+//! parameter set at the start of a function, a guard on a match arm) is written where it goes, with
+//! its own read of the switch.
 //! Mutants nested inside a site go only in its last arm, as the original code: one mutant is live per
 //! process, so a mutated arm can hold plain text. That keeps the rewrite as long as the source,
 //! not exponential in nesting, and means a compile error inside a mutated arm names its mutant.
@@ -12,7 +16,7 @@ use std::collections::BTreeSet;
 use std::ops::Range;
 use std::path::Path;
 
-use crate::sites::{Crate, Function, Mutant};
+use crate::sites::{Crate, Form, Function, Mutant};
 
 /// Where things ended up in a rewritten file, for blaming compile errors.
 #[derive(Debug, Default)]
@@ -31,6 +35,17 @@ struct Site {
     /// Indices into `Crate::mutants`.
     mutants: Vec<usize>,
     children: Vec<Site>,
+    /// A statement: its guard has no parentheses.
+    statement: bool,
+}
+
+/// Text written at one place in the original: an inputs recorder, or a mutant's added code.
+#[derive(Clone)]
+struct Insert {
+    offset: usize,
+    text: String,
+    /// The mutant whose code it is.
+    mutant: Option<usize>,
 }
 
 /// The rewritten text of one file, with only the `live` mutants (indices) written in, and an
@@ -43,15 +58,31 @@ pub fn emit(
     recorders: &BTreeSet<usize>,
 ) -> Emitted {
     let sites = nest(found, file, live);
-    let mut inserts: Vec<(usize, String)> = found
+    let mut inserts: Vec<Insert> = found
         .functions
         .iter()
         .enumerate()
         .filter(|(index, function)| function.file == file && recorders.contains(index))
         .filter(|(_, function)| !function.numbers.is_empty())
-        .map(|(_, function)| (function.body_open, recorder(function)))
+        .map(|(_, function)| Insert {
+            offset: function.body_open,
+            text: recorder(function),
+            mutant: None,
+        })
         .collect();
-    inserts.sort();
+    for (index, mutant) in found.mutants.iter().enumerate() {
+        if let Form::Insert { text } = &mutant.form {
+            if mutant.file == file && live.contains(&index) {
+                inserts.push(Insert {
+                    offset: mutant.site.start,
+                    text: text.replace("{n}", &mutant.ordinal.to_string()),
+                    mutant: Some(index),
+                });
+            }
+        }
+    }
+    // The recorder first, so it sees the values the function was called with.
+    inserts.sort_by_key(|insert| (insert.offset, insert.mutant.is_some(), insert.mutant));
     let mut out = Emitter {
         text,
         found,
@@ -98,12 +129,16 @@ fn nest(found: &Crate, file: &Path, live: &BTreeSet<usize>) -> Vec<Site> {
         if mutant.file != file || !live.contains(&index) {
             continue;
         }
+        if matches!(mutant.form, Form::Insert { .. }) {
+            continue;
+        }
         match flat.iter_mut().find(|site| site.range == mutant.site) {
             Some(site) => site.mutants.push(index),
             None => flat.push(Site {
                 range: mutant.site.clone(),
                 mutants: vec![index],
                 children: Vec::new(),
+                statement: mutant.form == Form::Statement,
             }),
         }
     }
@@ -127,7 +162,7 @@ fn insert(siblings: &mut Vec<Site>, site: Site) {
 struct Emitter<'a> {
     text: &'a str,
     found: &'a Crate,
-    inserts: Vec<(usize, String)>,
+    inserts: Vec<Insert>,
     next_insert: usize,
     emitted: Emitted,
     /// (original offset, output offset) at the start of each verbatim copy.
@@ -137,14 +172,20 @@ struct Emitter<'a> {
 impl Emitter<'_> {
     fn verbatim(&mut self, from: usize, to: usize) {
         let mut at = from;
-        while let Some((offset, insert)) = self.inserts.get(self.next_insert).cloned() {
-            if offset < at || offset > to {
+        while let Some(insert) = self.inserts.get(self.next_insert).cloned() {
+            if insert.offset < at || insert.offset > to {
                 break;
             }
-            self.copy(at, offset);
-            self.emitted.text.push_str(&insert);
+            self.copy(at, insert.offset);
+            let start = self.emitted.text.len();
+            self.emitted.text.push_str(&insert.text);
+            if let Some(mutant) = insert.mutant {
+                let range = start..self.emitted.text.len();
+                self.emitted.arms.push((range.clone(), mutant));
+                self.emitted.guards.push((range, vec![mutant]));
+            }
             self.next_insert += 1;
-            at = offset;
+            at = insert.offset;
         }
         self.copy(at, to);
     }
@@ -175,9 +216,10 @@ impl Emitter<'_> {
             .map(|&index| self.found.mutants[index].ordinal)
             .min()
             .unwrap_or(0);
+        let open = if site.statement { "" } else { "(" };
         self.emitted
             .text
-            .push_str(&format!("(match crate::__mutastic::at({first}) {{ "));
+            .push_str(&format!("{open}match crate::__mutastic::at({first}) {{ "));
         for &index in &site.mutants {
             let mutant: &Mutant = &self.found.mutants[index];
             self.emitted
@@ -192,7 +234,9 @@ impl Emitter<'_> {
         }
         self.emitted.text.push_str("_ => { ");
         self.range(site.range.start, site.range.end, &site.children);
-        self.emitted.text.push_str(" } })");
+        self.emitted
+            .text
+            .push_str(if site.statement { " } }" } else { " } })" });
         self.emitted
             .guards
             .push((start..self.emitted.text.len(), site.mutants.clone()));

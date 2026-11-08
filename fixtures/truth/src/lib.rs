@@ -131,12 +131,137 @@ pub fn all(x: i32) -> String {
     )
 }
 
+pub fn removes_calls(x: i32) -> Vec<i32> {
+    let mut v = Vec::new();
+    v.push(x);
+    record(&mut v, x * 2);
+    let mut m = std::collections::BTreeMap::new();
+    m.insert(x, 1);
+    let _ = m.insert(x + 1, 2);
+    v.push(m.len() as i32);
+    v
+}
+
+fn record(v: &mut Vec<i32>, value: i32) {
+    if value > 4 {
+        v.push(value);
+    }
+}
+
+pub fn assigns(x: i32) -> i32 {
+    let mut total = 1;
+    total = total + x;
+    let last;
+    last = total * 2;
+    total + last
+}
+
+pub fn strings(x: i32) -> String {
+    let s = format!("ab{x}ba");
+    let mut out = String::new();
+    if s.starts_with("ab1") {
+        out.push('s');
+    }
+    out.push_str(&s.to_uppercase());
+    out.push_str(s.trim_start_matches('a'));
+    if let Some(rest) = s.strip_prefix("ab") {
+        out.push_str(rest);
+    }
+    out
+}
+
+pub fn maths(x: i32) -> i32 {
+    let a = x.min(3);
+    let b = std::cmp::max(x, -2);
+    let c = (x as f64 / 2.0).floor() as i32;
+    a * 100 + b * 10 + c
+}
+
+pub fn matches_any(x: i32) -> bool {
+    [1, 2, x].iter().any(|v| *v > 2)
+}
+
+pub fn stages(x: i32) -> usize {
+    (0..10)
+        .filter(|v| v % 3 == 0)
+        .skip(1)
+        .take(x.clamp(0, 5) as usize)
+        .count()
+}
+
+pub fn stage_in_for(x: i32) -> i32 {
+    let mut total = 0;
+    for v in [3, 1, 2].iter().rev().take(2) {
+        total = total * 10 + v;
+    }
+    total + x
+}
+
+pub fn range_ends(x: i32) -> i32 {
+    let mut total = 0;
+    for i in 0..x.clamp(0, 4) {
+        total += i;
+    }
+    let digits = [1, 2, 3, 4, 5];
+    let part = &digits[..x.clamp(0, 4) as usize];
+    if (1..=3).contains(&x) {
+        total += 100;
+    }
+    total * 1000 + part.iter().sum::<i32>()
+}
+
+pub fn guards(x: i32) -> u8 {
+    match x {
+        v if is_even(v) => 1,
+        _ => 0,
+    }
+}
+
+fn is_even(v: i32) -> bool {
+    v % 2 == 0
+}
+
+pub fn some_or_not(x: i32) -> i32 {
+    let Some(y) = positive(x) else {
+        return -1;
+    };
+    if let Some(z) = positive(y - 2) {
+        z
+    } else {
+        y * 10
+    }
+}
+
+pub fn wider_returns(x: i32) -> Result<u8, String> {
+    if x > 7 {
+        return Err("big".into());
+    }
+    Ok(x.unsigned_abs() as u8 + 1)
+}
+
+pub fn more(x: i32) -> String {
+    format!(
+        "{:?} {} {} {} {} {} {} {} {} {} {:?}",
+        removes_calls(x),
+        assigns(x),
+        strings(x),
+        maths(x),
+        matches_any(x),
+        stages(x),
+        stage_in_for(x),
+        range_ends(x),
+        guards(x),
+        some_or_not(x),
+        wider_returns(x),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn probe() {
         for x in -6..10 {
-            println!("{x}: {}", super::all(x));
+            println!("{x}: {} | {}", super::all(x), super::more(x));
         }
     }
 }

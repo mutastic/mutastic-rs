@@ -741,6 +741,14 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
             mutation["replacement"] = json!(after);
         }
         Change::Returns { value } => mutation["replacement"] = json!(value),
+        Change::Swapped { before, after } | Change::Replaced { before, after } => {
+            mutation["original"] = json!(before);
+            mutation["replacement"] = json!(after);
+        }
+        Change::Removed { statement } => {
+            mutation["original"] = json!(statement);
+            mutation["replacement"] = json!(mutant.replacement);
+        }
         Change::Always { truth, .. } => mutation["replacement"] = json!(truth.to_string()),
     }
     mutation["description"] = json!(advice.change);

@@ -46,10 +46,9 @@ profiles say, because they decide what an arithmetic mutant does; the build's se
 
 ## Operators
 
-The Java edition's ids: `mutastic/boundary`, `mutastic/remove-conditional`,
-`mutastic/logical-connector`, `mutastic/math` and `mutastic/return-value` by default, and
-`mutastic/other-comparison` (a comparison reversed) and `mutastic/other-arithmetic` (`%` to `*`)
-with `--operators=stronger`.
+The Java edition's ids, with the same meaning, and a few of Rust's own: [docs/operators.md](docs/operators.md)
+lists every one, its set and its Java equivalent. `--operators=defaults` (the default), `stronger`,
+or ids separated by commas.
 
 ## Licence
 

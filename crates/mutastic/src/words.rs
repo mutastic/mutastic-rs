@@ -84,6 +84,40 @@ fn advise_change(mutant: &Mutant, name: &str, seen: &BTreeMap<String, Vec<i128>>
             }
         }
         Change::Returns { value } => returns(&method, value, seen),
+        Change::Swapped { before, after } => Advice {
+            change: format!("`{before}` becomes `{after}`"),
+            caret: format!("changed to {after}"),
+            headline: format!("tests pass even when `{before}` becomes `{after}` in {method}"),
+            notes: inputs_seen(seen),
+            help: format!(
+                "use inputs where `{before}` and `{after}` give different results, and assert what {method} does"
+            ),
+        },
+        Change::Removed { statement } => Advice {
+            change: format!("`{statement}` is removed"),
+            caret: "removed".into(),
+            headline: format!("no test checks what `{statement}` does in {method}"),
+            notes: inputs_seen(seen),
+            help: format!("assert what `{statement}` changes, in a test of {method}"),
+        },
+        Change::Replaced { before, after } if after.is_empty() => Advice {
+            change: format!("`{before}` is left out"),
+            caret: "left out".into(),
+            headline: format!("tests pass even without `{before}` in {method}"),
+            notes: inputs_seen(seen),
+            help: format!(
+                "use inputs that `{before}` makes a difference to, and assert what {method} does"
+            ),
+        },
+        Change::Replaced { before, after } => Advice {
+            change: format!("`{before}` becomes `{after}`"),
+            caret: format!("changed to {after}"),
+            headline: format!("tests pass even when `{before}` becomes `{after}` in {method}"),
+            notes: inputs_seen(seen),
+            help: format!(
+                "use inputs where `{before}` and `{after}` differ, and assert what {method} does"
+            ),
+        },
     }
 }
 
@@ -94,6 +128,9 @@ fn boundary(
     after: &str,
     seen: &BTreeMap<String, Vec<i128>>,
 ) -> Advice {
+    if before.starts_with("..") {
+        return range_end(method, mutant, before, after, seen);
+    }
     let comparison = Comparison::of(&mutant.operands);
     let headline = match &comparison {
         Some(found) => format!(
@@ -127,6 +164,26 @@ fn boundary(
         headline,
         notes,
         help,
+    }
+}
+
+/// `lo..hi` to `lo..=hi`, or back: whether the range's end is in it.
+fn range_end(
+    method: &str,
+    mutant: &Mutant,
+    before: &str,
+    after: &str,
+    seen: &BTreeMap<String, Vec<i128>>,
+) -> Advice {
+    let end = mutant.operands.get(1).cloned().unwrap_or_default();
+    Advice {
+        change: format!("`{before}` becomes `{after}`"),
+        caret: format!("changed to {after}"),
+        headline: format!("no test checks {method} where the range's end, `{end}`, matters"),
+        notes: inputs_seen(seen),
+        help: format!(
+            "add a test that reaches the range's end, `{end}`, and assert what {method} does there"
+        ),
     }
 }
 
