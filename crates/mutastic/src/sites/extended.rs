@@ -19,6 +19,37 @@ const DECIMAL_STEPS: &[&str] = &[
     "normalize",
     "trunc_with_scale",
 ];
+/// std's types that have a `Default`, by name.
+const STD_DEFAULTS: &[&str] = &[
+    "i8",
+    "i16",
+    "i32",
+    "i64",
+    "i128",
+    "isize",
+    "u8",
+    "u16",
+    "u32",
+    "u64",
+    "u128",
+    "usize",
+    "f32",
+    "f64",
+    "bool",
+    "char",
+    "String",
+    "Vec",
+    "VecDeque",
+    "HashMap",
+    "HashSet",
+    "BTreeMap",
+    "BTreeSet",
+    "BinaryHeap",
+    "PathBuf",
+    "OsString",
+    "Duration",
+];
+
 /// Constructors of a regular expression from its text.
 const REGEX_CONSTRUCTORS: &[&str] = &["Regex::new", "RegexBuilder::new", "Regex::try_from"];
 
@@ -137,13 +168,11 @@ impl Finder<'_> {
                 continue;
             };
             let ty = plain(ty.syntax());
-            // A reference, a trait, a closure have no default; an `Option` is null-parameter's.
-            if ty.starts_with('&')
-                || ty.starts_with("impl ")
-                || ty.starts_with("dyn ")
-                || ty.starts_with("Option<")
-                || ty.contains("Fn(")
-            {
+            // Only a type that visibly has a default: std's, or one the crate derives or
+            // implements it for. An `Option` is null-parameter's.
+            let (head, _) = generic_parts(&ty);
+            let head = last_segment(&head);
+            if !(STD_DEFAULTS.contains(&head) || self.facts.default_types.contains(head)) {
                 continue;
             }
             let Some(name) = pat.name().map(|name| name.text().to_string()) else {
@@ -233,7 +262,9 @@ impl Finder<'_> {
                 }),
             _ => false,
         };
-        if !raises {
+        // Removing the last statement of a block whose value is used (an `if` with an `else`, a
+        // match arm) turns a block that never ends into one of type `()`, which can't compile.
+        if !raises || ends_valued_block(statement) {
             return;
         }
         self.make(
@@ -269,7 +300,12 @@ impl Finder<'_> {
             return;
         };
         let argc = call.arg_list().map_or(0, |list| list.args().count());
-        if name == "filter" && argc == 1 && !super::operators::visibly_iterator(&receiver) {
+        if name == "filter"
+            && argc == 1
+            && !super::operators::visibly_iterator(&receiver)
+            && !used_as_iterator(call.syntax())
+            && !takes_pairs(call)
+        {
             self.omit_method(call, &receiver, REMOVE_FILTER, context);
         }
         if DECIMAL_STEPS.contains(&name) {
@@ -397,6 +433,87 @@ impl Finder<'_> {
             );
         }
     }
+}
+
+/// Whether a statement is the last thing in a block whose value something uses.
+fn ends_valued_block(statement: &ast::ExprStmt) -> bool {
+    let Some(list) = statement.syntax().parent().and_then(ast::StmtList::cast) else {
+        return false;
+    };
+    let last = list.tail_expr().is_none()
+        && list.statements().last().map(|s| s.syntax().clone()) == Some(statement.syntax().clone());
+    if !last {
+        return false;
+    }
+    let Some(block) = list.syntax().parent() else {
+        return false;
+    };
+    match block.parent() {
+        Some(parent) => match ast::IfExpr::cast(parent.clone()) {
+            Some(branch) => branch.else_branch().is_some(),
+            None => !matches!(parent.kind(), SyntaxKind::EXPR_STMT | SyntaxKind::STMT_LIST),
+        },
+        None => false,
+    }
+}
+
+/// Methods both an `Option` and an iterator have: a `filter` followed by one could be either.
+const OPTION_OR_ITERATOR: &[&str] = &[
+    "map", "filter", "flatten", "take", "zip", "inspect", "copied", "cloned", "find",
+];
+/// Methods only an `Option` (or `Result`) has.
+const OPTION_ONLY: &[&str] = &[
+    "unwrap",
+    "unwrap_or",
+    "unwrap_or_else",
+    "unwrap_or_default",
+    "is_some",
+    "is_none",
+    "expect",
+    "ok_or",
+    "ok_or_else",
+    "and_then",
+    "or",
+    "or_else",
+    "map_or",
+    "map_or_else",
+    "is_some_and",
+    "as_ref",
+    "as_mut",
+    "xor",
+    "get_or_insert",
+    "iter",
+];
+
+/// Whether a call's closure takes a tuple (`|(key, value)|`): an iterator over pairs, nearly always.
+fn takes_pairs(call: &ast::MethodCallExpr) -> bool {
+    call.arg_list()
+        .and_then(|list| list.args().next())
+        .and_then(|arg| match arg {
+            ast::Expr::ClosureExpr(closure) => closure.param_list(),
+            _ => None,
+        })
+        .and_then(|params| params.params().next())
+        .and_then(|param| param.pat())
+        .is_some_and(|pat| matches!(pat, ast::Pat::TuplePat(_)))
+}
+
+/// Whether a `filter` call's result is used as an iterator: looped over, or consumed or adapted by
+/// a method `Option` doesn't have.
+fn used_as_iterator(call: &SyntaxNode) -> bool {
+    let Some(parent) = call.parent() else {
+        return false;
+    };
+    if let Some(each) = ast::ForExpr::cast(parent.clone()) {
+        return each.iterable().map(|it| it.syntax().clone()) == Some(call.clone());
+    }
+    ast::MethodCallExpr::cast(parent)
+        .filter(|outer| outer.receiver().map(|r| r.syntax().clone()) == Some(call.clone()))
+        .and_then(|outer| outer.name_ref())
+        .is_some_and(|name| {
+            let name = name.text();
+            !OPTION_OR_ITERATOR.contains(&name.as_str()) && !OPTION_ONLY.contains(&name.as_str())
+        })
 }
 
 /// The range of an argument's last array element, with the comma before it: `, c` in `&[a, b, c]`

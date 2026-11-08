@@ -60,11 +60,11 @@ reason.
 | `mutastic/regex-constant` | `Regex::new(r"^\d+$")` → `r"\d+$"`, `r"^\d+"`, `r"^\D+$"`: an anchor dropped, a class turned round, each still valid | extended | `mutastic/regex-constant` | implemented |
 | `mutastic/drop-vararg` | `f(&[a, b, c])` → `f(&[a, b])`, `f(vec![a, b, c])` → `f(vec![a, b])` | extended | `mutastic/drop-vararg` (stronger there) | implemented |
 | `stream/remove-other-stage` | `.inspect(f)` and `.map(f)` left out of an iterator's chain, as stream/remove-stage's stages are | extended | `stream/remove-other-stage` | implemented |
-| `optional/remove-filter` | `opt.filter(p)` → `opt`, where `opt` isn't visibly an iterator | extended | `optional/remove-filter` | implemented |
-| `mutastic/default-parameter` | `fn f(p: T)` → `let p: T = Default::default();` as the function starts (not references, `impl`, `dyn`, closures or `Option`) | extended | Rust only | implemented |
+| `optional/remove-filter` | `opt.filter(p)` → `opt`, where `opt` isn't visibly an iterator, nor used as one (looped over, a closure over pairs) | extended | `optional/remove-filter` | implemented |
+| `mutastic/default-parameter` | `fn f(p: T)` → `let p: T = Default::default();` as the function starts, for a type that visibly has a default (std's numbers, `bool`, `char`, `String`, collections, or one the crate derives or implements it for); an `Option` is null-parameter's | extended | Rust only | implemented |
 | `mutastic/swap-break` | `break` ↔ `continue`, with no label and no value | extended | Rust only | implemented |
 | `bigdecimal/remove-step` | `x.round_dp(2)`, `round_sf`, `normalize()`, `trunc_with_scale` → `x` | extended | `bigdecimal/remove-step` (a plugin there) | implemented |
-| `mutastic/remove-throw` | `return Err(e);`, `panic!(..);`, `bail!(..);` removed: the code carries on | extended | `mutastic/remove-throw` | implemented |
+| `mutastic/remove-throw` | `return Err(e);`, `panic!(..);`, `bail!(..);` removed: the code carries on; not the last statement of a block whose value is used | extended | `mutastic/remove-throw` | implemented |
 | `mutastic/flip-increment` | — | — | `mutastic/flip-increment` | deferred: Rust has no `++`, and `+=` ↔ `-=` is `mutastic/math`'s; the id stays reserved so the change has one owner |
 | `library/omit-argument` | — | — | `library/omit-argument` | deferred: needs overloading, which Rust doesn't have |
 | `predicate/swap-connector`, `predicate/remove-negate`, `predicate/remove-not` | — | — | the same ids | deferred: std has no `Predicate` combinators; `&&` and `!` inside closures are logical-connector's and other-comparison's |
