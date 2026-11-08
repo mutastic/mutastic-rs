@@ -334,6 +334,10 @@ impl Finder<'_> {
         if some.path().map(|path| plain(path.syntax())).as_deref() != Some("Some") {
             return;
         }
+        // `&opt` has no `filter`, and no `None` of its type can be written that outlives it.
+        if matches!(value, ast::Expr::RefExpr(_)) {
+            return;
+        }
         let range = value.syntax().text_range();
         // Still worked out, and typed as it was: a bare `None` can leave its type unknown.
         let never = format!("{}.filter(|_| false)", receiver_text(value));
@@ -469,6 +473,11 @@ impl Finder<'_> {
         let caret = call
             .name_ref()
             .map_or(removed, |name| name.syntax().text_range());
+        // The card's claim deletes the stage from its `.` on, so it reads on the stage's own line.
+        let dot = call
+            .dot_token()
+            .map_or(removed.start(), |dot| dot.text_range().start());
+        let deleted = usize::from(dot)..usize::from(call.syntax().text_range().end());
         self.make(
             Make {
                 operator,
@@ -482,7 +491,7 @@ impl Finder<'_> {
                 },
                 operands: Vec::new(),
                 form: form_of(&site),
-                claimed: None,
+                claimed: Some((deleted, String::new())),
             },
             context,
         );

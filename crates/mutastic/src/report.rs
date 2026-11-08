@@ -146,7 +146,11 @@ impl<'a> View<'a> {
         let start = range.start.max(line_start) - line_start;
         let end = range.end.min(line_end).max(range.start.max(line_start)) - line_start;
         let changed = format!("{}{with}{}", &line[..start], &line[end..]);
-        (line.trim().to_string(), changed.trim().to_string())
+        let changed = match changed.trim() {
+            "" => "(nothing: the line is gone)".to_string(),
+            kept => kept.to_string(),
+        };
+        (line.trim().to_string(), changed)
     }
 
     fn command(&self, verb: &str, ids: &str) -> String {

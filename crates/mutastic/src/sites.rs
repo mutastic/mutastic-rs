@@ -1742,6 +1742,20 @@ mod tests {
     }
 
     #[test]
+    fn a_borrowed_option_is_never_made_none() {
+        let found = changes(
+            "pub fn f(o: &Option<u8>, p: Option<u8>) -> u8 { if let Some(x) = &o { return *x; } \
+             if let Some(y) = p { y } else { 0 } }",
+        );
+        let never: Vec<_> = found
+            .iter()
+            .filter(|m| m.2.ends_with("filter(|_| false)"))
+            .collect();
+        assert_eq!(never.len(), 1, "{never:?}");
+        assert_eq!(never[0].0, "p");
+    }
+
+    #[test]
     fn a_copy_of_code_never_adds_a_line() {
         let found = changes("pub fn f(a: u32, b: u32) -> bool {\n    a // left\n    < b\n}");
         let boundary = found.iter().find(|m| m.1 == BOUNDARY).unwrap();
