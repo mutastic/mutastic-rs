@@ -38,6 +38,19 @@ impl Probed {
     }
 }
 
+/// Operators whose mutants can fail to compile, for the build to withdraw.
+const ROLLBACK: &[&str] = &[
+    sites::ARITHMETIC_REPLACEMENT,
+    sites::OTHER_ARITHMETIC,
+    sites::KEEP_OPERAND,
+    sites::OMIT_CALL,
+    sites::SWAP_ARGUMENTS,
+    sites::SWAP_INDEX_OF,
+    sites::REVERSE_ORDERING,
+    sites::REMOVE_SWITCH_ARM,
+    sites::UNWRAP_TRY,
+];
+
 fn probe(binary: &Binary, cwd: &Path, test: &str, env: &[(&str, String)]) -> Probed {
     let outcome = testrun::run(
         binary,
@@ -69,11 +82,24 @@ fn every_card_claim_behaves_as_its_mutant_does() {
     assert!(found.mutants.len() > 40, "{} mutants", found.mutants.len());
     let all: BTreeSet<usize> = (0..found.mutants.len()).collect();
     let built = compile::build(&project, &found, &all, &BTreeSet::new()).unwrap();
+    // Only the operators that lean on the build may make a mutant that doesn't compile.
+    let wrongly_unviable: Vec<String> = built
+        .unviable
+        .iter()
+        .filter(|(&index, _)| !ROLLBACK.contains(&found.mutants[index].operator))
+        .map(|(&index, error)| format!("{} {error}", found.mutants[index].operator))
+        .collect();
     assert!(
-        built.unviable.is_empty(),
-        "every mutant here compiles: {:?}",
-        built.unviable
+        wrongly_unviable.is_empty(),
+        "every mutant of these operators compiles: {wrongly_unviable:?}"
     );
+    let viable: Vec<&sites::Mutant> = found
+        .mutants
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !built.unviable.contains_key(index))
+        .map(|(_, mutant)| mutant)
+        .collect();
     let schema = built.binaries.iter().find(|b| b.kind == "lib").unwrap();
 
     // The claims, each in a module of its own, in one crate.
@@ -82,7 +108,7 @@ fn every_card_claim_behaves_as_its_mutant_does() {
     // there and panics when run; here too.
     let allow = "#[allow(warnings, unconditional_panic, arithmetic_overflow)]";
     let mut claims = format!("{allow}\nmod v0 {{\n{}\n}}\n", file.text);
-    for mutant in &found.mutants {
+    for mutant in &viable {
         let (range, with) = mutant.claim();
         let mut text = file.text.clone();
         text.replace_range(range, &with);
@@ -123,7 +149,7 @@ fn every_card_claim_behaves_as_its_mutant_does() {
 
     let cwd = project.copy_dir().join(&project.package_dir);
     let ordinals: Vec<u32> = std::iter::once(0)
-        .chain(found.mutants.iter().map(|m| m.ordinal))
+        .chain(viable.iter().map(|m| m.ordinal))
         .collect();
     let compared = testrun::parallel(&ordinals, 4, |&ordinal| {
         let mutant = probe(

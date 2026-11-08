@@ -34,7 +34,15 @@ reason.
 | `stream/remove-stage` | `.filter(p)`, `.skip(n)`, `.take(n)`, `.skip_while(p)`, `.take_while(p)`, `.step_by(n)`, `.rev()` left out of a chain that visibly starts as an iterator, up to its consumer or the `for` it feeds | defaults | `stream/remove-stage` | implemented |
 | `mutastic/comparison` | `<` → `!=`, `<=` → `==`, `>` → `!=`, `>=` → `==`; `==` → `<=`, `>=` and `!=` → `<`, `>` beside a number, a character, a length or a cast | stronger | `mutastic/comparison` | implemented |
 | `mutastic/other-comparison` | a comparison → each of the others boundary and comparison don't make (`<` → `>`, `>=`, `==`); `if c` → `if !c`; `matches!(..)` → `!matches!(..)` | stronger | `mutastic/other-comparison` | implemented |
-| `mutastic/other-arithmetic` | `%` → `*` | stronger | `mutastic/other-arithmetic` | implemented |
+| `mutastic/arithmetic-replacement` | `a + b` → `a * b`, `+=` → `*=` (not `+= 1`) | stronger | `mutastic/arithmetic-replacement` | implemented |
+| `mutastic/other-arithmetic` | each of `+ - * / %` → the others math and arithmetic-replacement don't make: `+` → `/`, `%`; `-` → `*`, `/`, `%`; `*` and `/` → `+`, `-`, `%`; `%` → `+`, `-`, `*`, `/`; and compound forms | stronger | `mutastic/other-arithmetic` | implemented |
+| `mutastic/keep-operand` | `price + fee` → `price`, and → `fee` (the other still worked out when it could do something; never the constant beside a value) | stronger | `mutastic/keep-operand` | implemented |
+| `mutastic/omit-call` | `s.trim()` → `s`, `x.abs()` → `x` (and `to_lowercase`, `round`, …), a builder's `(self) -> Self` step left out, `escape(text)` → `text` for a crate function returning its one argument's type | stronger | `mutastic/omit-call` | implemented |
+| `mutastic/swap-arguments` | `transfer(a, from, to)` → `transfer(a, to, from)`, for a crate function or method whose last two parameters have one type | stronger | `mutastic/swap-arguments` | implemented |
+| `library/swap-index-of` | `find` ↔ `rfind`, `position` ↔ `rposition`, `split_once` ↔ `rsplit_once`, `match_indices` ↔ `rmatch_indices` | stronger | `library/swap-index-of` | implemented |
+| `library/reverse-ordering` | `a.cmp(&b)` → `b.cmp(&a)` (and `partial_cmp`); `.reverse()` on an ordering left out | stronger | Rust only | implemented |
+| `mutastic/remove-switch-arm` | `P => e` stops matching (a guard the switch decides), so its values go to the next arm that matches; only before a later unguarded catch-all | stronger | `mutastic/remove-switch-arm` (extended there) | implemented |
+| `mutastic/unwrap-try` | `f()?` → `f().unwrap()` | stronger | Rust only | implemented |
 | `mutastic/remove-field-write` | `self.status = s;`, `*p = v;`, `v[i] = x;` → `let _ = s;` | stronger | `mutastic/remove-field-write` | implemented |
 | `mutastic/remove-negation` | `-x` → `x` | stronger | `mutastic/remove-negation` | implemented |
 | `mutastic/constant-value` | a whole number → the ones next to it, `0`, `1`, and `-1` where it's visibly signed; never past its type's range, never a size, capacity, wait, or a counter's first `0` or `1` | stronger | `mutastic/constant-value` | implemented |

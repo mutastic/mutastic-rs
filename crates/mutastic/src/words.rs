@@ -84,6 +84,15 @@ fn advise_change(mutant: &Mutant, name: &str, seen: &BTreeMap<String, Vec<i128>>
             }
         }
         Change::Returns { value } => returns(&method, value, seen),
+        Change::Swapped { before, .. } if before == "?" => Advice {
+            change: "`?` becomes `.unwrap()`".into(),
+            caret: "changed to .unwrap()".into(),
+            headline: format!("no test makes this `?` return its error from {method}"),
+            notes: inputs_seen(seen),
+            help: format!(
+                "add a test where the expression before `?` fails, and assert that {method} returns the error"
+            ),
+        },
         Change::Swapped { before, after } => Advice {
             change: format!("`{before}` becomes `{after}`"),
             caret: format!("changed to {after}"),
@@ -123,6 +132,17 @@ fn advise_change(mutant: &Mutant, name: &str, seen: &BTreeMap<String, Vec<i128>>
             notes: inputs_seen(seen),
             help: format!(
                 "add a test where the `{name}` given changes what {method} does, and assert it"
+            ),
+        },
+        Change::ArmRemoved { pattern } => Advice {
+            change: format!(
+                "the arm for `{pattern}` is removed: its values go to the next arm that matches"
+            ),
+            caret: "arm removed".into(),
+            headline: format!("tests pass even when {method} has no arm for `{pattern}`"),
+            notes: inputs_seen(seen),
+            help: format!(
+                "add a test where {method} takes the `{pattern}` arm, and assert what it does there"
             ),
         },
         Change::Replaced { before, after } if after.is_empty() => Advice {

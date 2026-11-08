@@ -21,6 +21,7 @@ use ra_ap_syntax::{AstNode, Edition, SourceFile, SyntaxKind, SyntaxNode, TextRan
 use crate::id;
 
 mod operators;
+mod rollback;
 mod stronger;
 
 /// The operators, by the ids the Java edition uses.
@@ -51,6 +52,14 @@ pub const UNCHECKED_ARITHMETIC: &str = "library/unchecked-arithmetic";
 pub const BITWISE: &str = "mutastic/bitwise";
 pub const STRING_CONSTANT: &str = "mutastic/string-constant";
 pub const CONSTANT_VALUE: &str = "mutastic/constant-value";
+pub const ARITHMETIC_REPLACEMENT: &str = "mutastic/arithmetic-replacement";
+pub const KEEP_OPERAND: &str = "mutastic/keep-operand";
+pub const OMIT_CALL: &str = "mutastic/omit-call";
+pub const SWAP_ARGUMENTS: &str = "mutastic/swap-arguments";
+pub const SWAP_INDEX_OF: &str = "library/swap-index-of";
+pub const REVERSE_ORDERING: &str = "library/reverse-ordering";
+pub const REMOVE_SWITCH_ARM: &str = "mutastic/remove-switch-arm";
+pub const UNWRAP_TRY: &str = "mutastic/unwrap-try";
 
 /// The operators a run uses when none are named: the Java edition's `defaults`.
 pub const DEFAULTS: &[&str] = &[
@@ -98,6 +107,14 @@ pub const STRONGER: &[&str] = &[
     BITWISE,
     STRING_CONSTANT,
     CONSTANT_VALUE,
+    ARITHMETIC_REPLACEMENT,
+    KEEP_OPERAND,
+    OMIT_CALL,
+    SWAP_ARGUMENTS,
+    SWAP_INDEX_OF,
+    REVERSE_ORDERING,
+    REMOVE_SWITCH_ARM,
+    UNWRAP_TRY,
 ];
 
 /// Every operator mutastic has, for listing every mutant (the stable-ids test).
@@ -133,6 +150,8 @@ pub enum Change {
     },
     /// A parameter given another value as the function starts.
     Parameter { name: String, value: String },
+    /// A match arm that no longer matches: its values go to the next arm that does.
+    ArmRemoved { pattern: String },
 }
 
 /// How the schema writes a mutant.
@@ -243,9 +262,14 @@ impl Mutant {
             }
             Change::Always { .. } => (self.site.clone(), self.replacement.clone()),
             Change::Returns { value } => (self.site.clone(), value.clone()),
-            Change::Removed { .. } | Change::Replaced { .. } | Change::Parameter { .. } => {
-                (self.site.clone(), self.replacement.clone())
+            // A block written where an expression starts would be read as a statement.
+            Change::Replaced { .. } if self.replacement.starts_with('{') => {
+                (self.site.clone(), format!("({})", self.replacement))
             }
+            Change::Removed { .. }
+            | Change::Replaced { .. }
+            | Change::Parameter { .. }
+            | Change::ArmRemoved { .. } => (self.site.clone(), self.replacement.clone()),
         }
     }
 }
@@ -316,9 +340,46 @@ struct Facts {
     unsafe_send_sync: BTreeSet<String>,
     /// Names of the crate's functions and methods that return nothing.
     unit_fns: BTreeSet<String>,
+    /// Methods that take `self` and give `Self`: builders, whose call can be left out.
+    builders: BTreeSet<String>,
+    /// Functions of one parameter whose type is the type they return.
+    same_type_fns: BTreeSet<String>,
+    /// Functions and methods whose last two parameters have one type, by whether they're methods.
+    swappable: BTreeSet<(String, bool)>,
 }
 
 impl Facts {
+    /// What a function's signature says the operators can do with its calls.
+    fn signature(&mut self, function: &ast::Fn) {
+        let (Some(name), Some(list)) = (function.name(), function.param_list()) else {
+            return;
+        };
+        let name = name.text().to_string();
+        let returns = function
+            .ret_type()
+            .and_then(|ret| ret.ty())
+            .map(|ty| plain(ty.syntax()));
+        let method = list.self_param().is_some();
+        let types: Vec<String> = list
+            .params()
+            .filter_map(|param| param.ty().map(|ty| plain(ty.syntax())))
+            .collect();
+        let by_value_self = list
+            .self_param()
+            .is_some_and(|me| me.amp_token().is_none() && me.ty().is_none());
+        if by_value_self && returns.as_deref() == Some("Self") {
+            self.builders.insert(name.clone());
+        }
+        if !method && types.len() == 1 && returns.as_ref() == types.first() {
+            self.same_type_fns.insert(name.clone());
+        }
+        if let [.., before, last] = types.as_slice() {
+            if before == last && !before.contains("impl ") {
+                self.swappable.insert((name, method));
+            }
+        }
+    }
+
     fn of(files: &[Parsed]) -> Facts {
         let mut facts = Facts::default();
         for parsed in files {
@@ -330,6 +391,7 @@ impl Facts {
                 if let (true, Some(name)) = (returns_nothing, function.name()) {
                     facts.unit_fns.insert(name.text().to_string());
                 }
+                facts.signature(&function);
             }
             for node in parsed.tree.syntax().descendants() {
                 if !opens_unsafe(&node) {

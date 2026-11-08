@@ -243,7 +243,7 @@ fn blame(stdout: &str, emitted: &BTreeMap<PathBuf, Emitted>, project: &Project) 
         if spans.is_empty() {
             continue;
         }
-        let (blamed, by_function) = blame_one(&spans, emitted, project);
+        let (blamed, by_function) = blame_one(&spans, emitted, project, code);
         if blamed.is_empty() {
             found.unattributed.push(text);
         } else {
@@ -261,10 +261,17 @@ fn blame(stdout: &str, emitted: &BTreeMap<PathBuf, Emitted>, project: &Project) 
     found
 }
 
+/// Errors whose cause is a span other than the primary one: a use after a move is reported at the
+/// use, but the mutant that moved the value is at the "moved here" label.
+const CAUSED_ELSEWHERE: &[&str] = &[
+    "E0382", "E0499", "E0502", "E0503", "E0505", "E0506", "E0597", "E0716",
+];
+
 fn blame_one(
     spans: &[Value],
     emitted: &BTreeMap<PathBuf, Emitted>,
     project: &Project,
+    code: &str,
 ) -> (BTreeSet<usize>, bool) {
     let located: Vec<(&Emitted, usize, usize, bool)> = spans
         .iter()
@@ -289,7 +296,17 @@ fn blame_one(
         arm.start < end.max(start + 1) && start < arm.end
     };
     // An arm the error lies in, primary spans first, then any.
-    for spans in [&primary, &located.iter().collect::<Vec<_>>()] {
+    let secondary: Vec<_> = located
+        .iter()
+        .filter(|(_, _, _, primary)| !*primary)
+        .collect();
+    let all: Vec<_> = located.iter().collect();
+    let order = if CAUSED_ELSEWHERE.contains(&code) {
+        [&secondary, &all]
+    } else {
+        [&primary, &all]
+    };
+    for spans in order {
         let exact: BTreeSet<usize> = spans
             .iter()
             .flat_map(|(out, start, end, _)| {

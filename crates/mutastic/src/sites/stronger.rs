@@ -90,6 +90,7 @@ impl Finder<'_> {
         };
         let before = token.text().to_string();
         let operands = vec![plain(lhs.syntax()), plain(rhs.syntax())];
+        self.arithmetic(expr, &token, &before, &operands, context);
         match op {
             BinaryOp::CmpOp(_) => self.comparisons(expr, &token, &before, operands, context),
             BinaryOp::ArithOp(_) => {
@@ -237,7 +238,7 @@ impl Finder<'_> {
     }
 
     /// An expression replaced by another, the card claiming exactly the replacement.
-    fn replaced(
+    pub(super) fn replaced(
         &mut self,
         operator: &'static str,
         node: &SyntaxNode,
@@ -713,7 +714,7 @@ fn orderable(text: &str) -> bool {
 }
 
 /// A path, a field, a literal: an expression whose value can be dropped unworked.
-fn is_pure(expr: &ast::Expr) -> bool {
+pub(super) fn is_pure(expr: &ast::Expr) -> bool {
     match expr {
         ast::Expr::PathExpr(_) | ast::Expr::Literal(_) => true,
         ast::Expr::FieldExpr(field) => field.expr().is_some_and(|inner| is_pure(&inner)),

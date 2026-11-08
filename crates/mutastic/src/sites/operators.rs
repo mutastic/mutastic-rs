@@ -203,6 +203,10 @@ impl Finder<'_> {
             self.literal(&literal, context);
         } else if let Some(call) = ast::MacroExpr::cast(node.clone()) {
             self.macro_call(&call, context);
+        } else if let Some(expr) = ast::TryExpr::cast(node.clone()) {
+            self.unwrap_try(&expr, context);
+        } else if let Some(expr) = ast::MatchExpr::cast(node.clone()) {
+            self.switch_arms(&expr, context);
         } else if let Some(guard) = ast::MatchGuard::cast(node.clone()) {
             if let Some(condition) = guard.condition() {
                 self.condition(&condition, context);
@@ -391,11 +395,13 @@ impl Finder<'_> {
             self.stage(call, &text, REMOVE_STAGE, context);
         }
         self.more_method_call(call, &text, name.syntax().text_range(), context);
+        self.rollback_method_call(call, &text, name.syntax().text_range(), context);
     }
 
     /// `cmp::min(a, b)` and `cmp::max(a, b)`, swapped; `Some(x)` made `None`.
     fn function_call(&mut self, call: &ast::CallExpr, context: Context<'_>) {
         self.some_made_none(call, context);
+        self.rollback_function_call(call, context);
         let Some(ast::Expr::PathExpr(path)) = call.expr() else {
             return;
         };

@@ -352,16 +352,115 @@ pub fn stronger(x: i32) -> String {
     )
 }
 
+pub fn arithmetic(x: i32) -> i32 {
+    let a = x + 3;
+    let b = 20 - x;
+    let mut c = 7;
+    c += x;
+    c -= 1;
+    a * 100 + b * 10 + c
+}
+
+#[derive(Default)]
+pub struct Builder {
+    v: i32,
+}
+
+impl Builder {
+    pub fn scale(self, by: i32) -> Self {
+        Builder {
+            v: (self.v + 1) * by,
+        }
+    }
+
+    pub fn offset(mut self, by: i32) -> Self {
+        self.v += by;
+        self
+    }
+
+    pub fn value(&self) -> i32 {
+        self.v
+    }
+}
+
+fn shout(text: String) -> String {
+    text.to_uppercase()
+}
+
+pub fn omissions(x: i32) -> String {
+    let owned = format!("  {x} ");
+    let s: &str = &owned;
+    let t = s.trim();
+    let n = (x - 3).abs();
+    let b = Builder::default().scale(x).offset(1);
+    let loud = shout(format!("v{x}"));
+    format!("{t}|{n}|{}|{loud}", b.value())
+}
+
+fn between(x: i32, lo: i32, hi: i32) -> bool {
+    lo <= x && x < hi
+}
+
+pub fn swaps(x: i32) -> bool {
+    between(x, 0, 5)
+}
+
+pub fn searches(x: i32) -> String {
+    let s = format!("a{x}b{x}c");
+    let first = s.find(&x.to_string()).map_or(-1, |i| i as i32);
+    let split = s.split_once('b').map(|(a, _)| a.len()).unwrap_or(0);
+    format!("{first} {split}")
+}
+
+pub fn ordering(x: i32) -> Vec<i32> {
+    let mut v = vec![3, x, 1];
+    v.sort_by(|a, b| a.cmp(b));
+    let mut w = vec![x, 2, 5];
+    w.sort_by(|a, b| a.cmp(&b).reverse());
+    v.extend(w);
+    v
+}
+
+pub fn arms(x: i32) -> u8 {
+    match x {
+        0 => 10,
+        1 | 2 => 20,
+        n if n > 5 => 30,
+        _ => 40,
+    }
+}
+
+pub fn tries(x: i32) -> Option<i32> {
+    let y = positive(x)?;
+    let z = positive(y - 1)?;
+    Some(z * 2)
+}
+
+pub fn rollback(x: i32) -> String {
+    format!(
+        "{} {} {} {} {} {:?} {} {:?}",
+        arithmetic(x),
+        omissions(x),
+        swaps(x),
+        searches(x),
+        arms(x),
+        tries(x),
+        searches(x + 1),
+        ordering(x),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn probe() {
         for x in -6..10 {
             println!(
-                "{x}: {} | {} | {}",
+                "{x}: {} | {} | {} | {}",
                 super::all(x),
                 super::more(x),
-                super::stronger(x)
+                super::stronger(x),
+                super::rollback(x)
             );
         }
     }
