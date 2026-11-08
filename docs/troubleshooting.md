@@ -170,12 +170,46 @@ pub fn test_helper(x: u32) -> u32 {
 ## Code behind other `cfg`s
 
 mutastic builds what Cargo builds by default, on your machine: the default features, for the
-platform you're on. It finds mutants from the source, though, so code under a `cfg` that's off, such
-as `#[cfg(windows)]` on macOS, or a feature that isn't on by default, gets mutants that are never
-built. No test can reach them, so they show as not covered, and count against the score.
+platform you're on. Code under a `cfg` that's off, such as `#[cfg(windows)]` on macOS, or a feature
+that isn't on by default, isn't in that build, so no test could reach a mutant there. mutastic
+doesn't make those mutants: the summary counts them by the `cfg` that's off, and they're out of the
+score. This crate has a function for each platform and one behind a feature that isn't on by
+default:
 
-For now, read those as what they are: code this build doesn't have. The score where tests reach
-leaves them out. Run mutastic on the platform where that code builds to judge its tests.
+<!-- from: fixtures/platforms/src/lib.rs -->
+```rust
+/// Whether a path starts at a drive, on Windows.
+#[cfg(windows)]
+pub fn is_absolute(path: &str) -> bool {
+    path.len() > 2 && path.as_bytes()[1] == b':'
+}
+```
+
+<!-- output: troubleshooting/platforms -->
+```text
+   Mutants  ✓ 9 caught (9)
+  Left out  not built here: `cfg(feature = "simd")` (2), `cfg(windows)` (15)
+     Build  one build of every mutant, 2 rounds (check and build)
+ Test runs  9 (18 without coverage selection)
+  Start at  17:01:10
+  Duration  964ms (setup 931ms, coverage 4ms, mutants 12ms)
+     Tests  2 on rustc 1.94.0 · 4 workers
+     Score  100.0%  threshold 80
+
+ [PASS] Every mutant was caught.
+```
+
+What's off is decided as the build decides it: the platform's settings come from `rustc --print cfg`
+for the target Cargo builds for (`CARGO_BUILD_TARGET`, and the flags in `RUSTFLAGS`), the features
+from your `Cargo.toml` (the default ones, and what they turn on), and `debug_assertions` is on,
+because mutastic's build turns it on. A `cfg` mutastic can't judge, such as one a build script or
+`RUSTFLAGS` sets (`docsrs`, `tokio_unstable`), counts as built, so its code is still mutated: code
+left out by mistake would hide a gap, where code kept by mistake only shows as not covered. A
+`.cargo/config.toml` that sets the target or the flags isn't read: set them in the environment
+instead.
+
+To judge the tests of code for another platform, run mutastic on that platform. For a feature,
+make it a default one while you run, or run on a package that turns it on.
 
 ## A test fails before any mutant
 

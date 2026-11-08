@@ -24,6 +24,8 @@ pub struct Project {
     pub crate_name: String,
     /// The package's Rust edition, `2021`.
     pub edition: String,
+    /// The features a plain build turns on: the default ones and what they enable.
+    pub features: std::collections::BTreeSet<String>,
 }
 
 impl Project {
@@ -123,6 +125,7 @@ pub fn read(dir: &str) -> Result<Project, String> {
         roots,
         crate_name,
         edition: package["edition"].as_str().unwrap_or("2021").to_string(),
+        features: crate::cfg::default_features(&package["features"]),
     })
 }
 

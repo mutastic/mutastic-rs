@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 use ra_ap_syntax::ast::{self, ArithOp, BinaryOp, CmpOp, HasAttrs, HasName, LogicOp, Ordering};
 use ra_ap_syntax::{AstNode, Edition, SourceFile, SyntaxKind, SyntaxNode, TextRange};
 
+use crate::cfg::Cfg;
 use crate::id;
 
 mod extended;
@@ -380,6 +381,9 @@ pub struct Crate {
     pub mutants: Vec<Mutant>,
     /// Mutants not made because they'd be in or around unsafe code.
     pub not_mutated_unsafe: usize,
+    /// Mutants not made because this build doesn't have their code, by the `cfg` that's off
+    /// (`cfg(windows)`).
+    pub not_built: BTreeMap<String, usize>,
 }
 
 const WHOLE_NUMBERS: &[&str] = &[
@@ -389,7 +393,14 @@ const WHOLE_NUMBERS: &[&str] = &[
 /// Finds every mutant in the files reachable from `roots`, which are relative to `workspace`,
 /// leaving unsafe code alone.
 pub fn find(workspace: &Path, crate_name: &str, roots: &[PathBuf], operators: &[&str]) -> Crate {
-    find_with(workspace, crate_name, roots, operators, UnsafeMode::Skip)
+    find_with(
+        workspace,
+        crate_name,
+        roots,
+        operators,
+        UnsafeMode::Skip,
+        &Cfg::unknown(),
+    )
 }
 
 /// A source file, parsed.
@@ -399,6 +410,8 @@ struct Parsed {
     text: String,
     tree: SourceFile,
     damaged: Vec<TextRange>,
+    /// The `cfg` that leaves the whole file out of this build, on its `mod` declaration.
+    off: Option<String>,
 }
 
 /// What the whole crate says about its unsafe code.
@@ -548,22 +561,23 @@ fn type_head(ty: &str) -> String {
 }
 
 /// Finds every mutant in the files reachable from `roots`, with unsafe code treated as `mode`
-/// says.
+/// says, and code under a `cfg` that `cfg` says is off counted but not mutated.
 pub fn find_with(
     workspace: &Path,
     crate_name: &str,
     roots: &[PathBuf],
     operators: &[&str],
     mode: UnsafeMode,
+    cfg: &Cfg,
 ) -> Crate {
     let mut found = Crate::default();
     let mut parsed = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
-    let mut queue: Vec<(PathBuf, String, bool)> = roots
+    let mut queue: Vec<Queued> = roots
         .iter()
-        .map(|root| (root.clone(), String::new(), true))
+        .map(|root| (root.clone(), String::new(), true, None))
         .collect();
-    while let Some((file, module, is_root)) = queue.pop() {
+    while let Some((file, module, is_root, off)) = queue.pop() {
         if !seen.insert(file.clone()) {
             continue;
         }
@@ -572,8 +586,10 @@ pub fn find_with(
         };
         let parse = SourceFile::parse(&text, Edition::CURRENT);
         let tree = parse.tree();
-        for (child, child_module) in child_modules(workspace, &file, &module, is_root, &tree) {
-            queue.push((child, child_module, false));
+        for (child, child_module, declared_off) in
+            child_modules(workspace, &file, &module, is_root, &tree, cfg)
+        {
+            queue.push((child, child_module, false, off.clone().or(declared_off)));
         }
         let damaged = damaged_items(&tree, parse.errors().iter().map(|error| error.range()));
         parsed.push(Parsed {
@@ -582,6 +598,7 @@ pub fn find_with(
             text,
             tree,
             damaged,
+            off,
         });
     }
     let facts = Facts::of(&parsed);
@@ -591,6 +608,7 @@ pub fn find_with(
         text,
         tree,
         damaged,
+        off,
     } in parsed
     {
         let mut finder = Finder {
@@ -605,6 +623,8 @@ pub fn find_with(
             nth: BTreeMap::new(),
             facts: &facts,
             mode,
+            cfg,
+            file_off: off,
             module_unsafe: BTreeMap::new(),
             returned: std::collections::HashSet::new(),
             errors: Vec::new(),
@@ -632,14 +652,20 @@ pub fn find_with(
     found
 }
 
-/// The files of `mod name;` declarations in `tree`, with their module paths.
+/// A file still to read: its path, module path, whether it's a crate root, and the `cfg` that
+/// leaves it out of this build.
+type Queued = (PathBuf, String, bool, Option<String>);
+
+/// The files of `mod name;` declarations in `tree`, with their module paths and the `cfg` that
+/// leaves each out of this build, if one does.
 fn child_modules(
     workspace: &Path,
     file: &Path,
     module: &str,
     is_root: bool,
     tree: &SourceFile,
-) -> Vec<(PathBuf, String)> {
+    cfg: &Cfg,
+) -> Vec<(PathBuf, String, Option<String>)> {
     let dir = match file.parent() {
         Some(parent) if is_root || file.file_name().is_some_and(|name| name == "mod.rs") => {
             parent.to_path_buf()
@@ -684,7 +710,7 @@ fn child_modules(
             .collect();
         parts.extend(inline.into_iter().rev());
         parts.push(name);
-        children.push((path, parts.join("::")));
+        children.push((path, parts.join("::"), cfg.off_at(declared.syntax())));
     }
     children
 }
@@ -834,6 +860,9 @@ struct Finder<'a> {
     nth: BTreeMap<String, u32>,
     facts: &'a Facts,
     mode: UnsafeMode,
+    cfg: &'a Cfg,
+    /// The `cfg` that leaves this whole file out of the build, from its `mod` declaration.
+    file_off: Option<String>,
     /// Whether each module (by its range in this file) has unsafe code.
     module_unsafe: BTreeMap<(u32, u32), bool>,
     /// The values the current function returns, by range: return-value's sites.
@@ -1384,6 +1413,10 @@ impl Finder<'_> {
             &replacement,
         ]);
         *nth += 1;
+        if let Some(off) = self.file_off.clone().or_else(|| self.cfg.off_at(node)) {
+            *self.found.not_built.entry(off).or_default() += 1;
+            return;
+        }
         let near_unsafe = match self.tier_at(node, context.tier) {
             Tier::Safe => None,
             Tier::Module => Some("in a module with unsafe code"),
@@ -1928,6 +1961,7 @@ mod tests {
                 &[PathBuf::from("src/lib.rs")],
                 &[MATH],
                 mode,
+                &Cfg::unknown(),
             )
         };
         let (enclosing, everything) = (all(UnsafeMode::Enclosing), all(UnsafeMode::All));
@@ -1952,6 +1986,64 @@ mod tests {
         assert!(
             ids(&skipped).is_subset(&ids(&everything)),
             "ids don't depend on the mode"
+        );
+    }
+
+    #[test]
+    fn code_this_build_doesnt_have_is_counted_not_mutated() {
+        let dir = std::env::temp_dir().join(format!("mutastic-cfg-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(
+            dir.join("src/lib.rs"),
+            "#[cfg(windows)]\nmod win;\n\
+             #[cfg(unix)] pub fn a(x: u8) -> u8 { x + 1 }\n\
+             #[cfg(windows)] pub fn b(x: u8) -> u8 { x + 1 }\n\
+             #[cfg(docsrs)] pub fn c(x: u8) -> u8 { x + 1 }\n\
+             pub fn d(x: u8) -> u8 { #[cfg(feature = \"simd\")] let x = x + 1; x + 1 }\n\
+             #[cfg(feature = \"std\")] mod on { pub fn e(x: u8) -> u8 { x + 1 } }\n",
+        )
+        .unwrap();
+        std::fs::write(dir.join("src/win.rs"), "pub fn f(x: u8) -> u8 { x - 1 }").unwrap();
+        let with = |cfg: &Cfg| {
+            find_with(
+                &dir,
+                "sample",
+                &[PathBuf::from("src/lib.rs")],
+                &[MATH],
+                UnsafeMode::Skip,
+                cfg,
+            )
+        };
+        let unix = Cfg::new("unix\ntarget_os=\"linux\"\n", ["std".to_string()].into());
+        let (here, everything) = (with(&unix), with(&Cfg::unknown()));
+        std::fs::remove_dir_all(&dir).ok();
+        let paths = |found: &Crate| -> Vec<String> {
+            found
+                .mutants
+                .iter()
+                .map(|m| found.functions[m.function].path.clone())
+                .collect()
+        };
+        assert_eq!(paths(&here), ["a", "c", "d", "on::e"], "docsrs isn't known");
+        assert_eq!(
+            here.not_built.clone().into_iter().collect::<Vec<_>>(),
+            [
+                ("cfg(feature = \"simd\")".to_string(), 1),
+                ("cfg(windows)".to_string(), 2),
+            ],
+            "b(), d()'s first `+`, and win.rs's f()"
+        );
+        assert_eq!(everything.mutants.len(), 7);
+        let ids = |found: &Crate| {
+            found
+                .mutants
+                .iter()
+                .map(|m| m.id.clone())
+                .collect::<BTreeSet<_>>()
+        };
+        assert!(
+            ids(&here).is_subset(&ids(&everything)),
+            "ids don't depend on what's built"
         );
     }
 

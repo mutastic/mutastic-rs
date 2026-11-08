@@ -625,8 +625,8 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
         ("Files", files_row(report, style)),
         ("Mutants", mutants_row(report, style)),
     ];
-    if let Some(line) = not_mutated(report) {
-        rows.push(("Left out", style.dim(&line)));
+    for (index, line) in not_mutated(report).into_iter().enumerate() {
+        rows.push((if index == 0 { "Left out" } else { "" }, style.dim(&line)));
     }
     if let Some(worst) = worst_at(report) {
         rows.push(("Worst at", worst));
@@ -852,14 +852,26 @@ fn verdict(report: &Report, style: Style) -> String {
     }
 }
 
-/// "not mutated: unsafe (3), …": the code left alone around unsafe, and how to include it.
-fn not_mutated(report: &Report) -> Option<String> {
+/// "not mutated: unsafe (3), …": the code left alone around unsafe, and how to include it; then
+/// "not built here: `cfg(windows)` (2)", the code this build doesn't have.
+fn not_mutated(report: &Report) -> Vec<String> {
+    let mut lines = Vec::new();
     let count = report.found.not_mutated_unsafe;
-    (count > 0).then(|| {
-        format!(
+    if count > 0 {
+        lines.push(format!(
             "not mutated: unsafe ({count}), in or around unsafe blocks; --unsafe=enclosing or --unsafe=all includes them"
-        )
-    })
+        ));
+    }
+    if !report.found.not_built.is_empty() {
+        let by_cfg: Vec<String> = report
+            .found
+            .not_built
+            .iter()
+            .map(|(cfg, count)| format!("`{cfg}` ({count})"))
+            .collect();
+        lines.push(format!("not built here: {}", by_cfg.join(", ")));
+    }
+    lines
 }
 
 fn agent(report: &Report) -> String {
@@ -893,7 +905,7 @@ fn agent(report: &Report) -> String {
         "rules: {RULE}; a fix counts when `mutastic verify <id> {dir}` passes"
     );
     let _ = writeln!(out, "decline: {DECLINE}");
-    if let Some(line) = not_mutated(report) {
+    for line in not_mutated(report) {
         let _ = writeln!(out, "{line}");
     }
     let entries = ranked(&view, view.entries());
@@ -996,7 +1008,10 @@ fn jsonl(report: &Report) -> String {
     ] {
         finished[status.event_name()] = json!(report.count(status));
     }
-    finished["notMutated"] = json!({ "unsafe": report.found.not_mutated_unsafe });
+    finished["notMutated"] = json!({
+        "unsafe": report.found.not_mutated_unsafe,
+        "cfg": report.found.not_built.values().sum::<usize>(),
+    });
     finished["score"] = report.score().map_or(Value::Null, |s| json!(round1(s)));
     finished["threshold"] = if report.threshold.fract() == 0.0 {
         json!(report.threshold as i64)

@@ -375,6 +375,9 @@ fn mutants(parsed: &Parsed) -> Result<ExitCode, String> {
             found.not_mutated_unsafe
         );
     }
+    for (cfg, count) in &found.not_built {
+        println!("not built here: `{cfg}` ({count})");
+    }
     Ok(ExitCode::SUCCESS)
 }
 

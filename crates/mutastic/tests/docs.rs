@@ -83,7 +83,14 @@ const CARDS: &[(&str, &str, &str)] = &[
 const LISTED: &[&str] = &["mutastic/regex-constant", "bigdecimal/remove-step"];
 
 /// Fixtures the docs may quote: each is built by a run here, so what's quoted compiles.
-const BUILT: &[&str] = &["pricing", "operators", "unsafety", "loops", "truth"];
+const BUILT: &[&str] = &[
+    "pricing",
+    "operators",
+    "unsafety",
+    "loops",
+    "truth",
+    "platforms",
+];
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -498,7 +505,7 @@ fn operators(work: &Path, shown: &mut BTreeMap<String, String>) {
 }
 
 /// What the troubleshooting page shows: a mutant withdrawn because it doesn't compile, loop
-/// counters that never end, and a workspace's root.
+/// counters that never end, code this build doesn't have, and a workspace's root.
 fn troubleshooting(work: &Path, shown: &mut BTreeMap<String, String>) {
     let jsonl = ran(
         work,
@@ -526,6 +533,19 @@ fn troubleshooting(work: &Path, shown: &mut BTreeMap<String, String>) {
     );
     assert!(loops.stdout.contains("timed out"), "{}", loops.stdout);
     shown.insert("troubleshooting/loops".into(), summary(&loops.stdout));
+    // Code for another platform, and behind a feature that's off, is counted, not mutated.
+    let platforms = ran(work, &["run", "fixtures/platforms"]);
+    assert!(
+        platforms
+            .stdout
+            .contains("not built here: `cfg(feature = \"simd\")` (2), `cfg(windows)`"),
+        "{}",
+        platforms.stdout
+    );
+    shown.insert(
+        "troubleshooting/platforms".into(),
+        summary(&platforms.stdout),
+    );
     let root = mutastic(work, &["run", "fixtures/workspace"]);
     assert_eq!(root.code, 2, "{}", root.stderr);
     shown.insert("troubleshooting/workspace".into(), root.stderr);

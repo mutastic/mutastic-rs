@@ -213,6 +213,7 @@ no test needs to catch, so it's left out of the score. See
 
 Code mutastic doesn't make mutants for at all, such as test code and code inside `unsafe`, isn't in
 the count. The summary names what was left out around unsafe code (`not mutated: unsafe`, with how
+many), and code under a `cfg` this build doesn't have (``not built here: `cfg(windows)` ``, with how
 many), so you know what the score doesn't cover.
 
 ## Exit status

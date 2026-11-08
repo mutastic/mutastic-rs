@@ -150,6 +150,7 @@ pub fn find_with(project: &Project, operators: &[&str], mode: UnsafeMode) -> Cra
         &project.roots,
         operators,
         mode,
+        &crate::cfg::Cfg::here(project.features.clone()),
     )
 }
 
