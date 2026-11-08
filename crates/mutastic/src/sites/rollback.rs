@@ -369,7 +369,9 @@ impl Finder<'_> {
             let Some(pat) = arm.pat() else {
                 continue;
             };
-            if arm.guard().is_some() || catches_all(arm) {
+            // A guard on an arm that binds can change how its bindings borrow: only arms that bind
+            // nothing get one.
+            if arm.guard().is_some() || catches_all(arm) || binds(&pat) {
                 continue;
             }
             let mut end = arm.syntax().text_range().end();
@@ -452,6 +454,18 @@ fn catches_all(arm: &ast::MatchArm) -> bool {
         }
         _ => false,
     }
+}
+
+/// Whether a pattern binds a name: a lowercase identifier, not a constant or a unit variant.
+fn binds(pat: &ast::Pat) -> bool {
+    pat.syntax()
+        .descendants()
+        .filter_map(ast::IdentPat::cast)
+        .filter_map(|ident| ident.name())
+        .any(|name| {
+            name.text()
+                .starts_with(|c: char| c.is_lowercase() || c == '_')
+        })
 }
 
 /// Whether an expression is visibly an `Ordering`: a `cmp`, `partial_cmp` or `then` call.

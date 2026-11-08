@@ -1882,6 +1882,43 @@ mod tests {
     }
 
     #[test]
+    fn what_rollback_withdrew_on_toml_edit_is_never_made() {
+        let source = "pub struct S { span: Option<u8>, n: u8 }\n\
+             impl S { pub fn f(&mut self, v: Option<u8>) -> u8 {\n\
+             self.span = None;\n\
+             #[cfg(feature = \"debug\")] trace(1);\n\
+             match v { Some(x) => x, None => 0, _ => 1 } } }";
+        let dir = std::env::temp_dir().join(format!("mutastic-toml-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(dir.join("src/lib.rs"), source).unwrap();
+        let found = find(
+            &dir,
+            "s",
+            &[PathBuf::from("src/lib.rs")],
+            &[
+                REMOVE_FIELD_WRITE,
+                REMOVE_VOID_CALL,
+                REMOVE_DISCARDED_CALL,
+                REMOVE_SWITCH_ARM,
+            ],
+        );
+        std::fs::remove_dir_all(&dir).ok();
+        let made: Vec<(&str, &str)> = found
+            .mutants
+            .iter()
+            .map(|m| (m.operator, m.replacement.as_str()))
+            .collect();
+        assert_eq!(
+            made,
+            vec![
+                (REMOVE_FIELD_WRITE, ""),
+                (REMOVE_SWITCH_ARM, "None if false")
+            ],
+            "no `let _ = None;`, nothing under an attribute, no guard on an arm that binds"
+        );
+    }
+
+    #[test]
     fn a_copy_of_code_never_adds_a_line() {
         let found = changes("pub fn f(a: u32, b: u32) -> bool {\n    a // left\n    < b\n}");
         let boundary = found.iter().find(|m| m.1 == BOUNDARY).unwrap();

@@ -558,7 +558,7 @@ impl Finder<'_> {
         let [value] = args.as_slice() else {
             return;
         };
-        let after = if is_pure(value) {
+        let after = if is_pure(value) || super::operators::untyped(value) {
             "None".to_string()
         } else {
             format!("{{ let _ = {}; None }}", plain(value.syntax()))

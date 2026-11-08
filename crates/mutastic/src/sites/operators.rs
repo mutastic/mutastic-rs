@@ -216,7 +216,8 @@ impl Finder<'_> {
 
     /// A statement removed: a call whose result isn't used, or an assignment.
     fn statement(&mut self, statement: &ast::ExprStmt, context: Context<'_>) {
-        if statement.semicolon_token().is_none() {
+        // A statement under an attribute (`#[cfg(feature = "debug")]`) may not be there at all.
+        if statement.semicolon_token().is_none() || plain(statement.syntax()).starts_with("#[") {
             return;
         }
         let Some(expr) = statement.expr() else {
@@ -267,7 +268,13 @@ impl Finder<'_> {
             }
             _ => return,
         };
-        let replacement = format!("let _ = {};", plain(value.syntax()));
+        // A value whose type only its place gives (`None`, `Vec::new()`) can't stand alone, and
+        // has nothing to work out.
+        let replacement = if untyped(&value) {
+            String::new()
+        } else {
+            format!("let _ = {};", plain(value.syntax()))
+        };
         self.removal(
             operator,
             statement.syntax(),
@@ -591,6 +598,16 @@ pub(super) fn receiver_text(expr: &ast::Expr) -> String {
         | ast::Expr::Literal(_) => text,
         _ => format!("({text})"),
     }
+}
+
+/// `None`, `Default::default()`, `Vec::new()`: an expression whose type comes only from where it
+/// is.
+pub(super) fn untyped(expr: &ast::Expr) -> bool {
+    let text = plain(expr.syntax());
+    text == "None"
+        || text.ends_with("::new()")
+        || text.ends_with("::default()")
+        || text.ends_with("Default::default()")
 }
 
 /// The call a statement makes, through `?` and `.await`, with the name it calls.
