@@ -15,7 +15,14 @@ use std::path::Path;
 
 use mutastic::{engine, sites, workspace};
 
-const FIXTURES: &[&str] = &["pricing", "suggestions", "truth", "unsafety"];
+const FIXTURES: &[&str] = &[
+    "loops",
+    "operators",
+    "pricing",
+    "suggestions",
+    "truth",
+    "unsafety",
+];
 
 fn kept_path() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/ids/ids.tsv")
