@@ -323,10 +323,15 @@ fn the_full_view_is_coloured_as_the_java_editions() {
         "Worst at",
         " \x1b[2m Worst at\x1b[0m  Pricing::discount() 1 ✗\n",
     );
-    shows(
-        &out,
-        "Test runs, and without coverage selection dim",
-        " \x1b[2mTest runs\x1b[0m  13\x1b[2m (33 without coverage selection)\x1b[0m\n",
+    // How many tests ran follows timing: a mutant tries the fastest binary's tests first, and
+    // stops at the first that fails.
+    let runs = regex::Regex::new(
+        r" \x1b\[2mTest runs\x1b\[0m  \d+\x1b\[2m \(33 without coverage selection\)\x1b\[0m\n",
+    )
+    .unwrap();
+    assert!(
+        runs.is_match(&out),
+        "Test runs, and without coverage selection dim: {out:?}"
     );
     shows(&out, "Start at", " \x1b[2m Start at\x1b[0m  ");
     shows(&out, "Duration's parts are dim", "\x1b[2m(setup ");
