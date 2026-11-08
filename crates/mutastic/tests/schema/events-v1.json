@@ -69,7 +69,12 @@
         },
         "rules": {
           "type": "string",
-          "description": "The rule a fix follows, for an agent: change tests only."
+          "deprecated": true,
+          "description": "The rule a fix follows, for an agent: change tests only. Deprecated: removed in 1.0. Read `rule`, which has the same value."
+        },
+        "rule": {
+          "type": "string",
+          "description": "The rule a fix follows, for an agent: change tests only. Written from 0.6.0."
         },
         "decline": {
           "type": "string",
@@ -169,7 +174,12 @@
         },
         "killedBy": {
           "$ref": "#/$defs/test",
-          "description": "The test that caught it. Only when one did."
+          "deprecated": true,
+          "description": "The test that caught it. Only when one did. Deprecated: removed in 1.0. Read `caughtBy`, which has the same value."
+        },
+        "caughtBy": {
+          "$ref": "#/$defs/test",
+          "description": "The test that caught it, in the word `changedSinceLastRun` uses. Only when one did. Written from 0.6.0."
         },
         "killedWith": {
           "type": "string",
@@ -374,11 +384,16 @@
           "description": "The Java feature release the tests ran on: `17`."
         },
         "mutants": { "$ref": "#/$defs/count", "description": "How many mutants there were, skipped ones too." },
-        "Killed": { "$ref": "#/$defs/count", "description": "How many were caught." },
-        "Survived": { "$ref": "#/$defs/count", "description": "How many were missed." },
-        "Timeout": { "$ref": "#/$defs/count", "description": "How many timed out, which counts as caught." },
-        "NoCoverage": { "$ref": "#/$defs/count", "description": "How many no test reaches." },
-        "Ignored": { "$ref": "#/$defs/count", "description": "How many were skipped." },
+        "Killed": { "$ref": "#/$defs/count", "deprecated": true, "description": "How many were caught. Deprecated: removed in 1.0. Read `killed`, which has the same value." },
+        "Survived": { "$ref": "#/$defs/count", "deprecated": true, "description": "How many were missed. Deprecated: removed in 1.0. Read `survived`, which has the same value." },
+        "Timeout": { "$ref": "#/$defs/count", "deprecated": true, "description": "How many timed out, which counts as caught. Deprecated: removed in 1.0. Read `timeout`, which has the same value." },
+        "NoCoverage": { "$ref": "#/$defs/count", "deprecated": true, "description": "How many no test reaches. Deprecated: removed in 1.0. Read `noCoverage`, which has the same value." },
+        "Ignored": { "$ref": "#/$defs/count", "deprecated": true, "description": "How many were skipped. Deprecated: removed in 1.0. Read `ignored`, which has the same value." },
+        "killed": { "$ref": "#/$defs/count", "description": "How many were caught. Written from 0.6.0." },
+        "survived": { "$ref": "#/$defs/count", "description": "How many were missed. Written from 0.6.0." },
+        "timeout": { "$ref": "#/$defs/count", "description": "How many timed out, which counts as caught. Written from 0.6.0." },
+        "noCoverage": { "$ref": "#/$defs/count", "description": "How many no test reaches. Written from 0.6.0." },
+        "ignored": { "$ref": "#/$defs/count", "description": "How many were skipped. Written from 0.6.0." },
         "score": {
           "$ref": "#/$defs/score",
           "description": "The share of mutants caught, skipped ones left out, as a percentage to one decimal place; null when there was nothing to score."
@@ -514,8 +529,16 @@
               "type": "string",
               "description": "What the change is measured from, as given: `main`."
             },
-            "files": { "$ref": "#/$defs/count", "description": "How many source files it touched." },
-            "lines": { "$ref": "#/$defs/count", "description": "How many lines it touched." }
+            "files": {
+              "$ref": "#/$defs/count",
+              "deprecated": true,
+              "description": "How many source files it touched. Deprecated: removed in 1.0. Read `fileCount`, which has the same value."
+            },
+            "lines": { "$ref": "#/$defs/count", "description": "How many lines it touched." },
+            "fileCount": {
+              "$ref": "#/$defs/count",
+              "description": "How many source files it touched. Written from 0.6.0."
+            }
           }
         },
         "staleIgnores": {

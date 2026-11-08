@@ -662,6 +662,7 @@ fn jsonl(report: &Report) -> String {
         "reason": "run-started",
         "project": report.project.package,
         "rules": RULE,
+        "rule": RULE,
         "decline": DECLINE,
         // What decides a mutant's meaning, so runs can be compared: the build's settings, which
         // mutastic forces for overflow checks and debug assertions, and how unsafe code was treated.
@@ -691,6 +692,17 @@ fn jsonl(report: &Report) -> String {
         Status::RuntimeError,
     ] {
         finished[status.schema_name()] = json!(report.count(status));
+    }
+    // The schema's names from 0.6.0, beside the old ones until 1.0.
+    for status in [
+        Status::Killed,
+        Status::Survived,
+        Status::Timeout,
+        Status::NoCoverage,
+        Status::Ignored,
+        Status::RuntimeError,
+    ] {
+        finished[status.event_name()] = json!(report.count(status));
     }
     finished["notMutated"] = json!({ "unsafe": report.found.not_mutated_unsafe });
     finished["score"] = report.score().map_or(Value::Null, |s| json!(round1(s)));
@@ -804,6 +816,7 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
     event["coveredBy"] = json!(result.covered_by);
     if let Some(test) = &result.killed_by {
         event["killedBy"] = json!(test);
+        event["caughtBy"] = json!(test);
     }
     if let Some(failure) = &result.killed_with {
         event["killedWith"] = json!(failure);

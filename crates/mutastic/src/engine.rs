@@ -35,6 +35,19 @@ impl Status {
         }
     }
 
+    /// The events format's name for a count of this status in `run-finished`, from 0.6.0:
+    /// `killed`, `noCoverage`.
+    pub fn event_name(self) -> &'static str {
+        match self {
+            Status::Killed => "killed",
+            Status::Survived => "survived",
+            Status::Timeout => "timeout",
+            Status::NoCoverage => "noCoverage",
+            Status::Ignored => "ignored",
+            Status::RuntimeError => "runtimeError",
+        }
+    }
+
     pub fn detected(self) -> bool {
         matches!(self, Status::Killed | Status::Timeout)
     }

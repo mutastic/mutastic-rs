@@ -5,6 +5,9 @@ use std::process::Command;
 
 use serde_json::Value;
 
+mod common;
+use common::schema;
+
 fn fixture(name: &str) -> String {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../fixtures")
@@ -28,24 +31,6 @@ fn mutastic(args: &[&str]) -> (i32, String) {
         String::from_utf8_lossy(&output.stderr)
     );
     (output.status.code().unwrap_or(-1), stdout)
-}
-
-/// `mutastic.events/v1`, pinned from the Java repository (`docs/public/schemas/events/v1.json` at
-/// 9fb7433). Two differences, each until the Rust edition or the schema catches up: `run-finished`
-/// requires `jdk`, the Java release the tests ran on, which a Rust run doesn't have (it reports
-/// `rustc`); and a missed mutant requires `ignore` and `propose`, commands the Rust edition
-/// doesn't have yet, and output never offers a command that doesn't exist.
-fn schema() -> jsonschema::Validator {
-    let mut schema: Value = serde_json::from_str(include_str!("schema/events-v1.json")).unwrap();
-    let required = schema["$defs"]["runFinished"]["required"]
-        .as_array_mut()
-        .unwrap();
-    required.retain(|field| field != "jdk");
-    let missed = schema["$defs"]["mutantFinished"]["allOf"][0]["then"]["required"]
-        .as_array_mut()
-        .unwrap();
-    missed.retain(|field| field != "ignore" && field != "propose");
-    jsonschema::validator_for(&schema).unwrap()
 }
 
 fn events(stdout: &str) -> Vec<Value> {
@@ -92,6 +77,11 @@ fn pricing_misses_only_the_edge_of_the_discount() {
     assert_eq!(finished["reason"], "run-finished");
     assert_eq!(finished["score"], 90.9);
     assert_eq!(finished["Killed"], 10);
+    assert_eq!(
+        finished["killed"], 10,
+        "the name from 0.6.0, beside the old"
+    );
+    assert_eq!(events[0]["rule"], events[0]["rules"]);
 
     // The card, and the command it offers.
     let id = missed["id"].as_str().unwrap();
@@ -145,6 +135,10 @@ fn unsafe_code_is_fenced_off_and_crashes_are_told_apart() {
     let dir = fixture("unsafety");
     let (_, stdout) = mutastic(&["run", &dir, "--format=jsonl"]);
     let events = events(&stdout);
+    for event in &events {
+        let errors: Vec<String> = schema().iter_errors(event).map(|e| e.to_string()).collect();
+        assert!(errors.is_empty(), "{event}\n{}", errors.join("\n"));
+    }
     let started = &events[0];
     assert_eq!(started["profile"]["overflowChecks"], true, "{started}");
     assert_eq!(started["profile"]["debugAssertions"], true, "{started}");
@@ -179,6 +173,7 @@ fn unsafe_code_is_fenced_off_and_crashes_are_told_apart() {
         "no test caught it: {guarded}"
     );
     let total = fate("total", "-");
+    assert_eq!(total["caughtBy"], total["killedBy"]);
     assert_eq!(
         total["killedWith"], "panic: attempt to subtract with overflow",
         "{total}"
