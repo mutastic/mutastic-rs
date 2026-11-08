@@ -401,6 +401,14 @@ fn not_covered(out: &mut String, view: &View, style: Style) {
     if by_function.is_empty() {
         return;
     }
+    // A function some test reaches elsewhere is called: only these lines of it aren't reached.
+    let called: std::collections::BTreeSet<usize> = view
+        .report
+        .results
+        .iter()
+        .filter(|result| !result.covered_by.is_empty())
+        .map(|result| view.mutant(result).function)
+        .collect();
     let _ = writeln!(
         out,
         "\n {} {}",
@@ -412,6 +420,11 @@ fn not_covered(out: &mut String, view: &View, style: Style) {
         lines.sort();
         lines.dedup();
         let f = &view.report.found.functions[function];
+        let why = match (called.contains(&function), lines.len()) {
+            (false, _) => "no test calls it",
+            (true, 1) => "no test reaches that line",
+            (true, _) => "no test reaches those lines",
+        };
         let _ = writeln!(
             out,
             " {} {} {}() {}",
@@ -419,7 +432,7 @@ fn not_covered(out: &mut String, view: &View, style: Style) {
             f.file.display(),
             f.name,
             style.dim(&format!(
-                "line{} {} ({count} mutant{}): no test calls it",
+                "line{} {} ({count} mutant{}): {why}",
                 if lines.len() == 1 { "" } else { "s" },
                 lines
                     .iter()

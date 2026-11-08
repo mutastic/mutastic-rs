@@ -182,6 +182,13 @@ fn unsafe_code_is_fenced_off_and_crashes_are_told_apart() {
         .iter()
         .all(|e| e["location"]["method"] != "halve" && e["location"]["method"] != "helper"));
 
+    // checked() is called, by run::checks, so only its line that aborts is out of reach.
+    let (_, full) = mutastic(&["run", &dir, "--format=full"]);
+    assert!(
+        full.contains("checked() line 25 (1 mutant): no test reaches that line"),
+        "{full}"
+    );
+
     let id = guarded["id"].as_str().unwrap();
     let (code, stdout) = mutastic(&["verify", id, &dir]);
     assert_eq!(code, 0);
