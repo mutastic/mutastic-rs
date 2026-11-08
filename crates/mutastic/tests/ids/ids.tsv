@@ -140,6 +140,7 @@ m105344ae	pricing	Pricing::discount	mutastic/other-arithmetic	total / 10 → (to
 m1088e754	suggestions	rates::late_fee	mutastic/return-value	0 → 1
 m109e6d2d	operators	conditions::can_ship	mutastic/replace-body	{ paid && in_stock } → true
 m11155503	truth	between	mutastic/replace-body	{ lo <= x && x < hi } → true
+m1124b2ce	operators	returns::<Pieces as std::fmt::Display>::fmt	mutastic/string-constant	" pcs" → ""
 m11477297	truth	returns_option	mutastic/default-parameter	 → let x: i32 = Default::default();
 m11deae32	truth	wider_returns	mutastic/math	x.unsigned_abs() as u8 + 1 → (x.unsigned_abs() as u8) - (1)
 m11f9a9fc	truth	varargs	mutastic/drop-vararg	count_of(vec![x, 4, 5]) → count_of(vec![x, 4])
@@ -1091,6 +1092,7 @@ m7dd39a01	truth	not_condition	mutastic/other-comparison	x % 2 == 0 → (x % 2) <
 m7dde77eb	truth	loops	mutastic/other-comparison	i > 6 → (i) == (6)
 m7df7842a	truth	constants	mutastic/constant-value	2 → 3
 m7e495a85	operators	library::header	mutastic/replace-body	{ columns.join(", ") } → String::new()
+m7e54e30e	operators	returns::<Pieces as std::fmt::Display>::fmt	mutastic/unwrap-try	write!(f, "{}", self.0)? → (write!(f, "{}", self.0)).unwrap()
 m7e889ac2	operators	arguments::is_percent	mutastic/constant-value	100 → 101
 m7ec29a70	suggestions	rates::late_fee	mutastic/math	5 + (days_late - 7) * 2 → (5) - ((days_late - 7) * 2)
 m7ec339c8	truth	varargs	mutastic/constant-value	2 → 0
@@ -1107,6 +1109,7 @@ m7fc90176	truth	in_while	mutastic/constant-value	3 → 2
 m7fe95652	truth	optional	mutastic/constant-value	10 → 0
 m801c2eec	truth	in_else_if	mutastic/remove-conditional	x < 0 → true
 m80251aa4	suggestions	rates::late_fee	mutastic/other-arithmetic	5 + (days_late - 7) * 2 → (5) / ((days_late - 7) * 2)
+m80489fb3	operators	returns::<Pieces as std::fmt::Display>::fmt	mutastic/return-value	f.write_str(" pcs") → Err("no quantity given".into())
 m805932a5	truth	is_even	mutastic/return-value	v % 2 == 0 → true
 m806e397c	truth	total_of	mutastic/replace-body	{ values.iter().sum() } → 0
 m80e8a955	truth	between	mutastic/return-value	lo <= x && x < hi → true

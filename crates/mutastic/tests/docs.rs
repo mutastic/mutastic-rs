@@ -487,6 +487,27 @@ fn operators(work: &Path, shown: &mut BTreeMap<String, String>) {
         let name = operator.rsplit('/').next().unwrap();
         shown.insert(format!("operators/{family}/{name}"), found);
     }
+    // A `?` on a formatter's write is skipped as equivalent, and only that one.
+    let jsonl = ran(
+        work,
+        &[
+            "run",
+            "fixtures/operators",
+            "--format=jsonl",
+            "--operators=mutastic/unwrap-try",
+        ],
+    );
+    let skipped: Vec<Value> = events(&jsonl.stdout)
+        .into_iter()
+        .filter(|e| e["status"] == "Ignored")
+        .collect();
+    assert_eq!(skipped.len(), 1, "{}", jsonl.stdout);
+    assert_eq!(skipped[0]["location"]["method"], "fmt");
+    assert_eq!(skipped[0]["skipKind"], "equivalent");
+    shown.insert(
+        "operators/returns/unwrap-try-skipped".into(),
+        pretty(&skipped[0]),
+    );
     for operator in LISTED {
         let name = operator.rsplit('/').next().unwrap();
         shown.insert(

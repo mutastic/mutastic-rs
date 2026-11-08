@@ -329,6 +329,7 @@ impl Finder<'_> {
             return;
         };
         let range = question.text_range();
+        let before = self.found.mutants.len();
         self.make(
             Make {
                 operator: UNWRAP_TRY,
@@ -346,6 +347,11 @@ impl Finder<'_> {
             },
             context,
         );
+        if self.found.mutants.len() > before {
+            if let Some(mutant) = self.found.mutants.last_mut() {
+                mutant.skipped = formatter_error(expr);
+            }
+        }
     }
 
     /// An arm that stops matching, with a guard the switch decides: its values go on to the next
@@ -474,4 +480,70 @@ fn orders(expr: &ast::Expr) -> bool {
         }),
         _ => false,
     }
+}
+
+/// The traits whose `fmt` writes to a `Formatter`.
+const FMT_TRAITS: &[&str] = &[
+    "Display", "Debug", "LowerHex", "UpperHex", "Octal", "Binary", "LowerExp", "UpperExp",
+    "Pointer",
+];
+
+/// Why a `?` passes on only a formatter's error, which a test can't make happen: a `fmt::Error`
+/// comes from the writer under the `Formatter`, and the writers tests format into (a `String`,
+/// `format!`, `to_string()`) never fail. So `?` and `.unwrap()` there behave alike in practice.
+/// Inside a formatting trait's `fmt`, every `?` passes on a `fmt::Error`; elsewhere, a `?` whose
+/// expression writes to a `Formatter` the function takes (`f.write_str(..)?`, `write!(f, ..)?`,
+/// `helper(f, ..)?`) does.
+fn formatter_error(expr: &ast::TryExpr) -> Option<&'static str> {
+    let function = expr.syntax().ancestors().find_map(ast::Fn::cast)?;
+    if is_fmt_method(&function) {
+        return Some(
+            "equivalent: inside `fmt`, a `?` passes on a formatter's error, which no test can cause",
+        );
+    }
+    let formatters = formatter_parameters(&function);
+    let inner = expr.expr()?;
+    let writes = inner
+        .syntax()
+        .descendants_with_tokens()
+        .filter_map(|element| element.into_token())
+        .any(|token| token.kind() == SyntaxKind::IDENT && formatters.contains(token.text()));
+    writes.then_some(
+        "equivalent: it passes on a formatter's error, which only its writer can cause and no test can",
+    )
+}
+
+/// `fn fmt` in an `impl Display for ..` or another formatting trait.
+fn is_fmt_method(function: &ast::Fn) -> bool {
+    if function.name().is_none_or(|name| name.text() != "fmt") {
+        return false;
+    }
+    let Some(imp) = function.syntax().ancestors().find_map(ast::Impl::cast) else {
+        return false;
+    };
+    imp.trait_()
+        .is_some_and(|tr| FMT_TRAITS.contains(&last_segment(&plain(tr.syntax()))))
+}
+
+/// The names of `function`'s parameters that are a `Formatter`: `f: &mut fmt::Formatter<'_>`.
+fn formatter_parameters(function: &ast::Fn) -> BTreeSet<String> {
+    let Some(list) = function.param_list() else {
+        return BTreeSet::new();
+    };
+    list.params()
+        .filter_map(|param| {
+            let ty = plain(param.ty()?.syntax());
+            let ty = ty
+                .trim_start_matches('&')
+                .trim_start()
+                .trim_start_matches("mut ");
+            if last_segment(ty) != "Formatter" {
+                return None;
+            }
+            let ast::Pat::IdentPat(pat) = param.pat()? else {
+                return None;
+            };
+            Some(pat.name()?.text().to_string())
+        })
+        .collect()
 }

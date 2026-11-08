@@ -1,0 +1,27 @@
+{
+  "schema": "mutastic.events/v1",
+  "edition": "rust",
+  "reason": "mutant-finished",
+  "id": "m7e54e30e",
+  "fingerprint": "7e54e30e49188313",
+  "status": "Ignored",
+  "operator": "mutastic/unwrap-try",
+  "location": {
+    "file": "src/returns.rs",
+    "line": 30,
+    "column": 32,
+    "class": "returns::<Pieces as std::fmt::Display>",
+    "method": "fmt"
+  },
+  "mutation": {
+    "original": "?",
+    "replacement": ".unwrap()",
+    "description": "`?` becomes `.unwrap()`",
+    "bytecode": "write!(f, \"{}\", self.0)? -> (write!(f, \"{}\", self.0)).unwrap()"
+  },
+  "statusReason": "equivalent: inside `fmt`, a `?` passes on a formatter's error, which no test can cause",
+  "skipKind": "equivalent",
+  "coveredBy": [],
+  "testsRun": 0,
+  "durationMs": 0
+}

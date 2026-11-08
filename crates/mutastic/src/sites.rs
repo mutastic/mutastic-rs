@@ -311,6 +311,9 @@ pub struct Mutant {
     /// The edit the card claims, when it isn't the change's own (an arm deleted, for an arm the
     /// schema guards).
     pub claimed: Option<(Range<usize>, String)>,
+    /// Why it isn't run, by its kind (`equivalent: …`): it's made, so it keeps its id, but it's
+    /// out of the score and needs no test.
+    pub skipped: Option<&'static str>,
 }
 
 impl Mutant {
@@ -1453,6 +1456,7 @@ impl Finder<'_> {
             near_unsafe,
             form,
             claimed,
+            skipped: None,
         });
     }
 
@@ -2045,6 +2049,60 @@ mod tests {
             ids(&here).is_subset(&ids(&everything)),
             "ids don't depend on what's built"
         );
+    }
+
+    #[test]
+    fn a_question_mark_that_passes_on_only_a_formatters_error_is_skipped() {
+        let source = "use std::fmt;\n\
+             pub struct P(u8);\n\
+             impl fmt::Display for P { fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {\n\
+             write!(f, \"{}\", self.0)?; let n: u8 = \"1\".parse().map_err(|_| fmt::Error)?; \
+             f.write_str(\"x\") } }\n\
+             impl fmt::LowerHex for P { fn fmt(&self, out: &mut fmt::Formatter) -> fmt::Result {\n\
+             out.write_str(\"0x\")?; Ok(()) } }\n\
+             fn item(f: &mut std::fmt::Formatter<'_>, n: u8) -> fmt::Result { f.write_str(\" \")?; \
+             write!(f, \"{n}\")?; Ok(()) }\n\
+             fn pad(formatter: &mut Formatter, n: u8) -> fmt::Result { item(formatter, n)?; Ok(()) }\n\
+             pub fn parse(text: &str) -> Result<u8, std::num::ParseIntError> { let n = text.parse()?; Ok(n) }\n\
+             pub fn log(out: &mut impl std::io::Write) -> std::io::Result<()> { write!(out, \"x\")?; Ok(()) }\n\
+             impl P { pub fn fmt(&self, s: &str) -> Result<u8, std::num::ParseIntError> { s.parse() .map(|n: u8| n)?; Ok(1) } }\n";
+        let dir = std::env::temp_dir().join(format!("mutastic-fmt-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(dir.join("src/lib.rs"), source).unwrap();
+        let found = find(
+            &dir,
+            "sample",
+            &[PathBuf::from("src/lib.rs")],
+            &[UNWRAP_TRY],
+        );
+        std::fs::remove_dir_all(&dir).ok();
+        let skipped: Vec<(String, String)> = found
+            .mutants
+            .iter()
+            .map(|m| {
+                (
+                    found.functions[m.function].path.clone(),
+                    m.skipped
+                        .map_or("run", |reason| reason.split(':').next().unwrap())
+                        .to_string(),
+                )
+            })
+            .collect();
+        let expected: Vec<(String, String)> = [
+            ("<P as fmt::Display>::fmt", "equivalent"),
+            ("<P as fmt::Display>::fmt", "equivalent"),
+            ("<P as fmt::LowerHex>::fmt", "equivalent"),
+            ("item", "equivalent"),
+            ("item", "equivalent"),
+            ("pad", "equivalent"),
+            ("parse", "run"),
+            ("log", "run"),
+            ("P::fmt", "run"),
+        ]
+        .iter()
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+        .collect();
+        assert_eq!(skipped, expected);
     }
 
     #[test]

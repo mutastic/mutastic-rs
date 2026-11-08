@@ -118,6 +118,54 @@ fn spaces_are_ignored() {
     reproduce  mutastic run --only=m18c28709 fixtures/operators
 ```
 
+A `?` that only passes on a formatter's error is skipped as equivalent: inside the `fmt` of
+`Display`, `Debug` or another formatting trait, and anywhere a `?` is on a write to a `Formatter`
+the function takes (`write!(f, ..)?`, `f.write_str(..)?`, `helper(f, ..)?`). That error comes from
+the writer under the formatter, and what tests format into, a `String`, never fails, so no test can
+take that path. The mutant keeps its id, with its reason in the events (`"skipKind": "equivalent"`),
+and stays out of the score:
+
+<!-- from: fixtures/operators/src/returns.rs -->
+```rust
+impl std::fmt::Display for Pieces {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)?;
+        f.write_str(" pcs")
+    }
+}
+```
+
+<!-- output: operators/returns/unwrap-try-skipped -->
+```text
+{
+  "schema": "mutastic.events/v1",
+  "edition": "rust",
+  "reason": "mutant-finished",
+  "id": "m7e54e30e",
+  "fingerprint": "7e54e30e49188313",
+  "status": "Ignored",
+  "operator": "mutastic/unwrap-try",
+  "location": {
+    "file": "src/returns.rs",
+    "line": 30,
+    "column": 32,
+    "class": "returns::<Pieces as std::fmt::Display>",
+    "method": "fmt"
+  },
+  "mutation": {
+    "original": "?",
+    "replacement": ".unwrap()",
+    "description": "`?` becomes `.unwrap()`",
+    "bytecode": "write!(f, \"{}\", self.0)? -> (write!(f, \"{}\", self.0)).unwrap()"
+  },
+  "statusReason": "equivalent: inside `fmt`, a `?` passes on a formatter's error, which no test can cause",
+  "skipKind": "equivalent",
+  "coveredBy": [],
+  "testsRun": 0,
+  "durationMs": 0
+}
+```
+
 ## Replace body
 
 `mutastic/replace-body`, in the `extended` set. A function's whole body becomes one value

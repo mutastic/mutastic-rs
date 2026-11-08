@@ -22,6 +22,16 @@ pub fn quantity(text: &str) -> Result<u32, String> {
     text.parse().map_err(|_| format!("{text} isn't a number"))
 }
 
+/// A count of pieces, as a receipt shows it.
+pub struct Pieces(pub u32);
+
+impl std::fmt::Display for Pieces {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)?;
+        f.write_str(" pcs")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -44,5 +54,10 @@ mod tests {
     #[test]
     fn an_empty_quantity_is_an_error() {
         assert!(quantity("").is_err());
+    }
+
+    #[test]
+    fn pieces_show_their_unit() {
+        assert_eq!(Pieces(3).to_string(), "3 pcs");
     }
 }

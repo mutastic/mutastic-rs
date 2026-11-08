@@ -215,7 +215,13 @@ pub fn run(
     progress(Progress::Building {
         mutants: selected.len(),
     });
-    let built = compile::build(project, &found, &selected, &recorders)?;
+    // A skipped mutant isn't built or run: it's there for its id and its reason.
+    let live: BTreeSet<usize> = selected
+        .iter()
+        .copied()
+        .filter(|&m| found.mutants[m].skipped.is_none())
+        .collect();
+    let built = compile::build(project, &found, &live, &recorders)?;
     let cwd = project.copy_dir().join(&project.package_dir);
     let tests = testrun::list(&built.binaries, &cwd)?;
     let setup = started.elapsed();
@@ -233,7 +239,7 @@ pub fn run(
 
     let mutants_started = Instant::now();
     let order: Vec<usize> = selected.iter().copied().collect();
-    let first = first_at_site(&found, &selected, &built);
+    let first = first_at_site(&found, &live, &built);
     let files = Files::new(&found, &order);
     let results = testrun::parallel(&order, options.workers, |&mutant| {
         let result = result(&found, mutant, first[mutant], &built, &tests, &reach, &cwd);
@@ -421,6 +427,19 @@ fn result(
 ) -> MutantResult {
     let mutant = &found.mutants[index];
     let function = &found.functions[mutant.function];
+    if let Some(reason) = mutant.skipped {
+        return MutantResult {
+            mutant: index,
+            status: Status::Ignored,
+            reason: Some(reason.to_string()),
+            covered_by: Vec::new(),
+            killed_by: None,
+            killed_with: None,
+            tests_run: 0,
+            took: Duration::ZERO,
+            inputs: BTreeMap::new(),
+        };
+    }
     let covering: Vec<usize> = (0..tests.len())
         .filter(|&t| reach[t].hits.contains(&site))
         .collect();

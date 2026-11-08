@@ -8,7 +8,7 @@ Each mutant and your code are arms of one `match`, so they must have one type. W
 compile, the build withdraws it, builds again, and the mutant is skipped as unviable, with the
 compiler's error as its reason. It's left out of the score, and you don't need a test for it.
 
-The summary counts them (`skipped as unviable`). To see which, and why, use `--format=jsonl`:
+The summary counts them (`1 skipped (1 unviable)`). To see which, and why, use `--format=jsonl`:
 each has `"status": "Ignored"`, `"skipKind": "unviable"` and the compiler's error code and message.
 This is `.to_lowercase()` left out of `input.trim().to_lowercase()`, which would make a `&str` where
 the function returns a `String`:

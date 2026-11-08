@@ -734,7 +734,7 @@ fn mutants_row(report: &Report, style: Style) -> String {
         style.dim(&format!(" ({scored})"))
     );
     if skipped > 0 {
-        row.push_str(&style.dim(&format!(" · {skipped} skipped as unviable")));
+        row.push_str(&style.dim(&format!(" · {}", skipped_by_kind(report))));
     }
     if crashed > 0 {
         row.push_str(&style.dim(&format!(
@@ -742,6 +742,35 @@ fn mutants_row(report: &Report, style: Style) -> String {
         )));
     }
     row
+}
+
+/// `2 skipped (1 equivalent, 1 unviable)`: the kind is each reason's first word, as in the Java
+/// edition.
+fn skipped_by_kind(report: &Report) -> String {
+    let mut by_kind: BTreeMap<&str, usize> = BTreeMap::new();
+    for result in &report.results {
+        if result.status == Status::Ignored {
+            *by_kind.entry(skip_kind(result)).or_default() += 1;
+        }
+    }
+    let kinds: Vec<String> = by_kind
+        .iter()
+        .map(|(kind, count)| format!("{count} {kind}"))
+        .collect();
+    format!(
+        "{} skipped ({})",
+        report.count(Status::Ignored),
+        kinds.join(", ")
+    )
+}
+
+/// `unviable` for `unviable: doesn't compile (…)`.
+fn skip_kind(result: &MutantResult) -> &str {
+    result
+        .reason
+        .as_deref()
+        .and_then(|reason| reason.split_once(':'))
+        .map_or("other", |(kind, _)| kind)
 }
 
 /// The three functions with the most missed mutants: where to start.
@@ -1036,7 +1065,11 @@ fn jsonl(report: &Report) -> String {
     }
     finished["build"] = json!({
         "rounds": report.rounds.len(),
-        "unviable": report.count(Status::Ignored),
+        "unviable": report
+            .results
+            .iter()
+            .filter(|r| r.status == Status::Ignored && skip_kind(r) == "unviable")
+            .count(),
     });
     finished["durationMs"] = json!(report.took.as_millis() as u64);
     lines.push(finished);
@@ -1116,7 +1149,7 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
     if let Some(reason) = &result.reason {
         event["statusReason"] = json!(reason);
         if result.status == Status::Ignored {
-            event["skipKind"] = json!(reason.split(':').next().unwrap_or_default());
+            event["skipKind"] = json!(skip_kind(result));
         }
     }
     if let Some(near) = mutant.near_unsafe {
