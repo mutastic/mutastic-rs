@@ -1,8 +1,8 @@
 //! The mutant schema: every mutant written into one copy of the source, each behind its own
 //! switch, so one build holds them all and an environment variable picks the live one.
 //!
-//! A site's guard reads `(if crate::__mutastic::on(7) { (a) <= (b) } else { a < b })`. Mutants
-//! nested inside a site go only in its `else` arm, as the original code: one mutant is live per
+//! A site's guard reads `(match crate::__mutastic::at(7) { 7 => { (a) <= (b) } _ => { a < b } })`.
+//! Mutants nested inside a site go only in its last arm, as the original code: one mutant is live per
 //! process, so a mutated arm can hold plain text. That keeps the rewrite as long as the source,
 //! not exponential in nesting, and means a compile error inside a mutated arm names its mutant.
 //! Copies never add a line (whitespace in them is collapsed), and the runtime goes at the end of
@@ -164,24 +164,35 @@ impl Emitter<'_> {
         self.verbatim(at, to);
     }
 
+    /// `(match crate::__mutastic::at(7) { 7 => { (a) <= (b) } 8 => { true } _ => { a < b } })`:
+    /// one read of the switch per site, however many mutants it holds. The number given to `at`
+    /// is the site's first mutant, which the coverage pass records when the site is reached.
     fn site(&mut self, site: &Site) {
         let start = self.emitted.text.len();
-        self.emitted.text.push('(');
+        let first = site
+            .mutants
+            .iter()
+            .map(|&index| self.found.mutants[index].ordinal)
+            .min()
+            .unwrap_or(0);
+        self.emitted
+            .text
+            .push_str(&format!("(match crate::__mutastic::at({first}) {{ "));
         for &index in &site.mutants {
             let mutant: &Mutant = &self.found.mutants[index];
             self.emitted
                 .text
-                .push_str(&format!("if crate::__mutastic::on({}) {{ ", mutant.ordinal));
+                .push_str(&format!("{} => {{ ", mutant.ordinal));
             let arm = self.emitted.text.len();
             self.emitted.text.push_str(&mutant.replacement);
             self.emitted
                 .arms
                 .push((arm..self.emitted.text.len(), index));
-            self.emitted.text.push_str(" } else ");
+            self.emitted.text.push_str(" } ");
         }
-        self.emitted.text.push_str("{ ");
+        self.emitted.text.push_str("_ => { ");
         self.range(site.range.start, site.range.end, &site.children);
-        self.emitted.text.push_str(" })");
+        self.emitted.text.push_str(" } })");
         self.emitted
             .guards
             .push((start..self.emitted.text.len(), site.mutants.clone()));
@@ -217,18 +228,20 @@ pub(crate) mod __mutastic {{
     static OUT: std::sync::OnceLock<std::sync::Mutex<Option<std::fs::File>>> = std::sync::OnceLock::new();
     static SEEN: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<std::string::String>>> = std::sync::OnceLock::new();
 
-    /// Whether mutant `id` is the live one.
-    #[inline]
-    pub(crate) fn on(id: u32) -> bool {{
+    /// The live mutant's number, 0 for none; in the coverage pass, records that the site whose
+    /// first mutant is `site` was reached, and gives 0. Inlined even in a debug build, since it
+    /// runs at every site the tests reach.
+    #[inline(always)]
+    pub(crate) fn at(site: u32) -> u32 {{
         let mut active = ACTIVE.load(Relaxed);
         if active == UNREAD {{
             active = read();
         }}
         if active == COVERING {{
-            hit(id);
-            return false;
+            hit(site);
+            return 0;
         }}
-        active == id
+        active
     }}
 
     #[cold]
@@ -280,7 +293,7 @@ pub(crate) mod __mutastic {{
         line.push('\n');
         let seen = SEEN.get_or_init(Default::default);
         if let Ok(mut seen) = seen.lock() {{
-            if seen.len() < 256 && seen.insert(line.clone()) {{
+            if seen.len() < 4096 && seen.insert(line.clone()) {{
                 write(&line);
             }}
         }}
@@ -325,9 +338,9 @@ mod tests {
         );
         assert_eq!(
             emitted.text,
-            "pub fn f(a: u32, b: u32) {\n    if (if crate::__mutastic::on(1) { (a + 1) <= (b) } \
-             else if crate::__mutastic::on(2) { true } else if crate::__mutastic::on(3) { false } \
-             else { (if crate::__mutastic::on(4) { (a) - (1) } else { a + 1 }) < b }) { g() }\n}\n"
+            "pub fn f(a: u32, b: u32) {\n    if (match crate::__mutastic::at(1) { 1 => { (a + 1) <= (b) } \
+             2 => { true } 3 => { false } \
+             _ => { (match crate::__mutastic::at(4) { 4 => { (a) - (1) } _ => { a + 1 } }) < b } }) { g() }\n}\n"
         );
         assert_eq!(emitted.text.lines().count(), source.lines().count());
         let (arm, mutant) = &emitted.arms[0];

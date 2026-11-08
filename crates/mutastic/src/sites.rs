@@ -749,8 +749,9 @@ impl Finder<'_> {
         ]);
         *nth += 1;
         let start = usize::from(range.start());
-        let line = line_of(&self.lines, start);
         let caret_start = usize::from(caret.start());
+        // The line the change is on: an operator on its own line is shown there.
+        let line = line_of(&self.lines, caret_start);
         let column = self.text[self.lines[line - 1]..caret_start].chars().count() + 1;
         let ordinal = self.found.mutants.len() as u32 + 1;
         self.found.mutants.push(Mutant {

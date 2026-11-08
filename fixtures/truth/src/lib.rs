@@ -53,6 +53,12 @@ fn positive(x: i32) -> Option<i32> {
     }
 }
 
+#[rustfmt::skip]
+pub fn split_line(x: i32) -> bool {
+    x * 2
+        >= 4
+}
+
 pub fn connector(x: i32) -> bool {
     x > 1 && x != 4 || x == -3
 }
@@ -105,7 +111,7 @@ pub fn returns_vec(x: i32) -> Vec<i32> {
 
 pub fn all(x: i32) -> String {
     format!(
-        "{} {} {} {} {} {:?} {} {} {} {} {} {} {:?} {:?} {:?}",
+        "{} {} {} {} {} {:?} {} {} {} {} {} {} {:?} {:?} {:?} {}",
         in_if(x),
         in_else_if(x),
         in_while(x.clamp(-5, 5)),
@@ -121,6 +127,7 @@ pub fn all(x: i32) -> String {
         returns_option(x),
         returns_string(x),
         returns_vec(x),
+        split_line(x),
     )
 }
 

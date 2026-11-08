@@ -137,12 +137,12 @@ impl<'a> View<'a> {
     fn changed_line(&self, mutant: &Mutant) -> (String, String) {
         let text = self.text(mutant);
         let starts = sites::line_starts(text);
-        let line_start = starts[mutant.line - 1];
+        let (range, with) = mutant.claim();
+        let line_start = starts[sites::line_of(&starts, range.start) - 1];
         let line_end = text[line_start..]
             .find('\n')
             .map_or(text.len(), |end| line_start + end);
         let line = &text[line_start..line_end];
-        let (range, with) = mutant.claim();
         let start = range.start.max(line_start) - line_start;
         let end = range.end.min(line_end).max(range.start.max(line_start)) - line_start;
         let changed = format!("{}{with}{}", &line[..start], &line[end..]);

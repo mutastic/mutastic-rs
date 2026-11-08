@@ -123,3 +123,16 @@ fn pricing_misses_only_the_edge_of_the_discount() {
     assert_eq!(code, 1);
     assert_eq!(stdout, format!("mutastic: {id} is still missed\n"));
 }
+
+/// Every shape the truth fixture holds comes out as a card, an operator on a line of its own
+/// shown on that line.
+#[test]
+fn every_shape_gets_a_card() {
+    let dir = fixture("truth");
+    let (_, cards) = mutastic(&["run", &dir, "--format=full"]);
+    assert!(cards.contains("✗ [MISSED]"), "{cards}");
+    assert!(
+        cards.contains("    = mutant  - >= 4\n              + > 4\n"),
+        "{cards}"
+    );
+}

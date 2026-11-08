@@ -162,8 +162,9 @@ pub fn run(
     progress("running mutants");
     let mutants_started = Instant::now();
     let order: Vec<usize> = selected.iter().copied().collect();
+    let first = first_at_site(&found, &selected, &built);
     let results = testrun::parallel(&order, options.workers, |&mutant| {
-        result(&found, mutant, &built, &tests, &reach, &cwd)
+        result(&found, mutant, first[mutant], &built, &tests, &reach, &cwd)
     });
     let test_runs = tests.len() + results.iter().map(|r| r.tests_run).sum::<usize>();
     Ok(Report {
@@ -253,9 +254,35 @@ fn read_reach(text: &str) -> Reach {
     reach
 }
 
+/// For each mutant, the first live mutant at its site: what the coverage pass records.
+fn first_at_site(found: &Crate, selected: &BTreeSet<usize>, built: &compile::Built) -> Vec<u32> {
+    let mut first: BTreeMap<(&std::path::Path, usize, usize), u32> = BTreeMap::new();
+    for &index in selected {
+        if built.unviable.contains_key(&index) {
+            continue;
+        }
+        let mutant = &found.mutants[index];
+        let key = (mutant.file.as_path(), mutant.site.start, mutant.site.end);
+        let entry = first.entry(key).or_insert(mutant.ordinal);
+        *entry = (*entry).min(mutant.ordinal);
+    }
+    found
+        .mutants
+        .iter()
+        .map(|m| {
+            first
+                .get(&(m.file.as_path(), m.site.start, m.site.end))
+                .copied()
+                .unwrap_or(m.ordinal)
+        })
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
 fn result(
     found: &Crate,
     index: usize,
+    site: u32,
     built: &compile::Built,
     tests: &[Test],
     reach: &[Reach],
@@ -264,7 +291,7 @@ fn result(
     let mutant = &found.mutants[index];
     let function = &found.functions[mutant.function];
     let covering: Vec<usize> = (0..tests.len())
-        .filter(|&t| reach[t].hits.contains(&mutant.ordinal))
+        .filter(|&t| reach[t].hits.contains(&site))
         .collect();
     let mut inputs: BTreeMap<String, BTreeSet<i128>> = BTreeMap::new();
     for &t in &covering {
