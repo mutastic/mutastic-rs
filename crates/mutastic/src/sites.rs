@@ -153,7 +153,7 @@ pub fn find(workspace: &Path, crate_name: &str, roots: &[PathBuf], operators: &[
         };
         let parse = SourceFile::parse(&text, Edition::CURRENT);
         let tree = parse.tree();
-        for (child, child_module) in child_modules(&file, &module, is_root, &tree) {
+        for (child, child_module) in child_modules(workspace, &file, &module, is_root, &tree) {
             queue.push((child, child_module, false));
         }
         let damaged = damaged_items(&tree, parse.errors().iter().map(|error| error.range()));
@@ -193,6 +193,7 @@ pub fn find(workspace: &Path, crate_name: &str, roots: &[PathBuf], operators: &[
 
 /// The files of `mod name;` declarations in `tree`, with their module paths.
 fn child_modules(
+    workspace: &Path,
     file: &Path,
     module: &str,
     is_root: bool,
@@ -228,10 +229,11 @@ fn child_modules(
             .map(|path| base.join(path))
             .unwrap_or_else(|| {
                 let flat = base.join(format!("{name}.rs"));
-                if flat.exists() || !base.join(&name).join("mod.rs").exists() {
+                let nested = base.join(&name).join("mod.rs");
+                if workspace.join(&flat).exists() || !workspace.join(&nested).exists() {
                     flat
                 } else {
-                    base.join(&name).join("mod.rs")
+                    nested
                 }
             });
         let mut parts: Vec<String> = module
@@ -941,6 +943,25 @@ mod tests {
         let ids = |c: &Crate| c.mutants.iter().map(|m| m.id.clone()).collect::<Vec<_>>();
         assert_eq!(ids(&one), ids(&two));
         assert_eq!(two.mutants[0].line, 5);
+    }
+
+    #[test]
+    fn modules_are_found_in_their_own_directories() {
+        let dir = std::env::temp_dir().join(format!("mutastic-modules-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src/a")).unwrap();
+        std::fs::write(dir.join("src/lib.rs"), "mod a;\nmod b;").unwrap();
+        std::fs::write(
+            dir.join("src/a/mod.rs"),
+            "mod c;\npub fn f(x: u8) -> u8 { x + 1 }",
+        )
+        .unwrap();
+        std::fs::write(dir.join("src/a/c.rs"), "pub fn g(x: u8) -> u8 { x + 1 }").unwrap();
+        std::fs::write(dir.join("src/b.rs"), "pub fn h(x: u8) -> u8 { x + 1 }").unwrap();
+        let found = find(&dir, "s", &[PathBuf::from("src/lib.rs")], &[MATH]);
+        std::fs::remove_dir_all(&dir).ok();
+        let paths: Vec<_> = found.functions.iter().map(|f| f.path.clone()).collect();
+        assert_eq!(paths.len(), 3, "{paths:?}");
+        assert!(paths.contains(&"a::c::g".to_string()), "{paths:?}");
     }
 
     #[test]

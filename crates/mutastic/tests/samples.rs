@@ -30,6 +30,24 @@ fn mutastic(args: &[&str]) -> (i32, String) {
     (output.status.code().unwrap_or(-1), stdout)
 }
 
+/// `mutastic.events/v1`, pinned from the Java repository (`docs/public/schemas/events/v1.json` at
+/// 9fb7433). Two differences, each until the Rust edition or the schema catches up: `run-finished`
+/// requires `jdk`, the Java release the tests ran on, which a Rust run doesn't have (it reports
+/// `rustc`); and a missed mutant requires `ignore` and `propose`, commands the Rust edition
+/// doesn't have yet, and output never offers a command that doesn't exist.
+fn schema() -> jsonschema::Validator {
+    let mut schema: Value = serde_json::from_str(include_str!("schema/events-v1.json")).unwrap();
+    let required = schema["$defs"]["runFinished"]["required"]
+        .as_array_mut()
+        .unwrap();
+    required.retain(|field| field != "jdk");
+    let missed = schema["$defs"]["mutantFinished"]["allOf"][0]["then"]["required"]
+        .as_array_mut()
+        .unwrap();
+    missed.retain(|field| field != "ignore" && field != "propose");
+    jsonschema::validator_for(&schema).unwrap()
+}
+
 fn events(stdout: &str) -> Vec<Value> {
     stdout
         .lines()
@@ -66,6 +84,10 @@ fn pricing_misses_only_the_edge_of_the_discount() {
             "tests::small_orders_pay_full_price"
         ])
     );
+    for event in &events {
+        let errors: Vec<String> = schema().iter_errors(event).map(|e| e.to_string()).collect();
+        assert!(errors.is_empty(), "{event}\n{}", errors.join("\n"));
+    }
     let finished = events.last().unwrap();
     assert_eq!(finished["reason"], "run-finished");
     assert_eq!(finished["score"], 90.9);

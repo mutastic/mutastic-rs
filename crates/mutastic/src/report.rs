@@ -638,13 +638,27 @@ fn jsonl(report: &Report) -> String {
         finished[status.schema_name()] = json!(report.count(status));
     }
     finished["score"] = report.score().map_or(Value::Null, |s| json!(round1(s)));
-    finished["threshold"] = json!(report.threshold);
+    finished["threshold"] = if report.threshold.fract() == 0.0 {
+        json!(report.threshold as i64)
+    } else {
+        json!(report.threshold)
+    };
     finished["passed"] = json!(report.passed());
     finished["coveredScore"] = report
         .covered_score()
         .map_or(Value::Null, |s| json!(round1(s)));
     finished["tests"] = json!(report.tests);
-    finished["flaky"] = json!([]);
+    // Nothing of these is built yet, so each is empty, as the schema asks.
+    for none in [
+        "flaky",
+        "flakyEvidence",
+        "likelyFlaky",
+        "unrelatedCatches",
+        "reports",
+        "staleIgnores",
+    ] {
+        finished[none] = json!([]);
+    }
     finished["build"] = json!({
         "rounds": report.rounds.len(),
         "unviable": report.count(Status::Ignored),
@@ -678,6 +692,13 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
         Change::Always { truth, .. } => mutation["replacement"] = json!(truth.to_string()),
     }
     mutation["description"] = json!(advice.change);
+    // The schema's `bytecode` is the change as the engine makes it; in Rust that's the source.
+    let text = view.text(mutant);
+    mutation["bytecode"] = json!(format!(
+        "{} -> {}",
+        sites_plain(&text[mutant.site.clone()]),
+        mutant.replacement
+    ));
     let mut event = json!({
         "schema": SCHEMA,
         "reason": "mutant-finished",
@@ -689,8 +710,10 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
             "file": view.file(mutant),
             "line": mutant.line,
             "column": mutant.column,
-            "module": function.module,
-            "function": function.path,
+            // The schema's names: the item that holds the function (`pricing::Pricing`), and
+            // the function.
+            "class": function.path.rsplit_once("::").map_or(view.report.project.crate_name.as_str(), |(holder, _)| holder),
+            "method": function.name,
         },
         "mutation": mutation,
     });
@@ -727,4 +750,9 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
         event["rendered"] = json!(agent_entry(view, &entry));
     }
     event
+}
+
+/// Source text on one line, whitespace collapsed.
+fn sites_plain(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }

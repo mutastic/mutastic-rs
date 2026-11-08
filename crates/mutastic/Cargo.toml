@@ -26,3 +26,6 @@ sha2 = "0.10"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+jsonschema = { version = "0.30", default-features = false }

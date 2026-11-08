@@ -1,0 +1,533 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://docs.mutastic.io/schemas/events/v1.json",
+  "title": "mutastic events, v1",
+  "description": "One event of `mutastic run --format=jsonl`: each line of its output is one JSON object, keyed on its `reason`. A run writes `run-started` first, then `mutant-finished` for each mutant, `mutant-revised` for each mutant run again once a test turned out to fail on its own, then `run-finished`. Within v1, events only gain fields, event reasons and enum values: read what you know, and ignore a field or an event you don't. See https://docs.mutastic.io/reference/schemas/.",
+  "type": "object",
+  "required": ["schema", "reason"],
+  "properties": {
+    "schema": { "$ref": "#/$defs/schema" },
+    "reason": {
+      "type": "string",
+      "description": "What the event is: `run-started`, `mutant-finished`, `mutant-revised` or `run-finished`. Ignore an event whose reason you don't know: a later v1 may add one."
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "reason": { "const": "run-started" } }, "required": ["reason"] },
+      "then": { "$ref": "#/$defs/runStarted" }
+    },
+    {
+      "if": { "properties": { "reason": { "const": "mutant-finished" } }, "required": ["reason"] },
+      "then": { "$ref": "#/$defs/mutantFinished" }
+    },
+    {
+      "if": { "properties": { "reason": { "const": "mutant-revised" } }, "required": ["reason"] },
+      "then": { "$ref": "#/$defs/mutantFinished" }
+    },
+    {
+      "if": { "properties": { "reason": { "const": "run-finished" } }, "required": ["reason"] },
+      "then": { "$ref": "#/$defs/runFinished" }
+    }
+  ],
+  "$defs": {
+    "schema": {
+      "const": "mutastic.events/v1",
+      "description": "The format and its major version. A change that would break a reader comes as v2, with a schema of its own."
+    },
+    "status": {
+      "enum": ["Killed", "Survived", "Timeout", "NoCoverage", "Ignored"],
+      "description": "What happened to a mutant, in the mutation-testing report schema's words: `Killed` (caught: a test failed), `Survived` (missed: every test that reaches it passed), `Timeout` (the tests didn't finish, which counts as caught), `NoCoverage` (no test reaches its line) or `Ignored` (skipped, and left out of the score)."
+    },
+    "score": {
+      "type": ["number", "null"],
+      "description": "A percentage to one decimal place, or null when there was nothing to score."
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "test": {
+      "type": "string",
+      "description": "A test, as its class and method: `com.example.PricingTest#bigOrdersGetTenPercentOff`."
+    },
+    "mutantId": {
+      "type": "string",
+      "pattern": "^m[0-9a-f]{8}$",
+      "description": "A mutant's id, as people type it: `m855c8e3c`."
+    },
+    "runStarted": {
+      "type": "object",
+      "description": "The first event: the run has started.",
+      "required": ["schema", "reason", "project", "rules", "decline"],
+      "properties": {
+        "schema": { "$ref": "#/$defs/schema" },
+        "reason": { "const": "run-started" },
+        "project": {
+          "type": "string",
+          "description": "The project's name."
+        },
+        "rules": {
+          "type": "string",
+          "description": "The rule a fix follows, for an agent: change tests only."
+        },
+        "decline": {
+          "type": "string",
+          "description": "When not to write a test, for an agent: a mutant whose case can't happen is proposed for a person to ignore instead."
+        }
+      }
+    },
+    "mutantFinished": {
+      "type": "object",
+      "description": "One mutant's result, written as it finishes (`mutant-finished`). With `--tests-from`, every mutant's comes at the end, once all the tests have run. A mutant a test reached that turned out to fail on its own, with no mutant in, runs again without that test once every mutant has its first result, and comes again as `mutant-revised`, with the same fields: that result replaces the first.",
+      "required": [
+        "schema",
+        "reason",
+        "id",
+        "fingerprint",
+        "status",
+        "operator",
+        "location",
+        "mutation",
+        "coveredBy",
+        "testsRun",
+        "durationMs"
+      ],
+      "properties": {
+        "schema": { "$ref": "#/$defs/schema" },
+        "reason": { "enum": ["mutant-finished", "mutant-revised"] },
+        "id": { "$ref": "#/$defs/mutantId" },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$",
+          "description": "The mutant's fingerprint, from its class, method, site and change: the id is `m` and its first eight digits."
+        },
+        "status": { "$ref": "#/$defs/status" },
+        "operator": {
+          "type": "string",
+          "description": "The operator that made it: `mutastic/boundary`, `stream/remove-stage`."
+        },
+        "location": {
+          "type": "object",
+          "description": "Where the mutant is.",
+          "required": ["file", "line", "class", "method"],
+          "properties": {
+            "file": {
+              "type": "string",
+              "description": "The source file, relative to the project: `src/main/java/com/example/pricing/Pricing.java`. Where no source directory has it, the path the class's source would have."
+            },
+            "line": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "The line, from 1."
+            },
+            "class": {
+              "type": "string",
+              "description": "The class, by its binary name: `com.example.pricing.Pricing`, `com.example.Outer$Inner`."
+            },
+            "method": {
+              "type": "string",
+              "description": "The method, by name and JVM descriptor: `discount(I)I`."
+            }
+          }
+        },
+        "mutation": {
+          "type": "object",
+          "description": "What the mutant changes.",
+          "required": ["description", "bytecode"],
+          "properties": {
+            "original": {
+              "type": "string",
+              "description": "The source the change is to, where it's known: `>=`."
+            },
+            "replacement": {
+              "type": "string",
+              "description": "What that source becomes, where the change has one: `>`."
+            },
+            "description": {
+              "type": "string",
+              "description": "The change in words: \"`>=` becomes `>`\"."
+            },
+            "bytecode": {
+              "type": "string",
+              "description": "The change to the instruction: `IF_ICMPLT -> IF_ICMPLE`."
+            }
+          }
+        },
+        "statusReason": {
+          "type": "string",
+          "description": "Why it was skipped, kind first: `arid: trivial getter of name`. Only for a skipped mutant."
+        },
+        "skipKind": {
+          "enum": ["generated", "equivalent", "unviable", "arid", "user"],
+          "description": "The kind of reason it was skipped, the first word of `statusReason`: code the compiler wrote, a change that can't be told apart, one that can't run, code not worth a test, or the project's own decision. Only with `statusReason`."
+        },
+        "coveredBy": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/test" },
+          "description": "The tests that reach the mutant's line, fastest first. Empty when none does, or when it was skipped."
+        },
+        "killedBy": {
+          "$ref": "#/$defs/test",
+          "description": "The test that caught it. Only when one did."
+        },
+        "killedWith": {
+          "type": "string",
+          "description": "What that test failed with: the exception's class, `org.opentest4j.AssertionFailedError`."
+        },
+        "failureOrigin": {
+          "enum": ["assertion", "test", "code", "unknown"],
+          "description": "Where the failure came from: `assertion` (a check failed), `test` (the test's own code threw), `code` (the code under test threw) or `unknown`."
+        },
+        "unconfirmedCatchBy": {
+          "$ref": "#/$defs/test",
+          "description": "A test whose catch didn't repeat when run again (`--confirm-catches`): likely flaky, and its catch doesn't count."
+        },
+        "falseCatchBy": {
+          "$ref": "#/$defs/test",
+          "description": "A test that failed against the mutant and then failed on its own with no mutant in, so its catch wasn't the mutant's: the mutant ran again without it, and this result is what the other covering tests made of it. Only when the test that caught it turned out that way: in `mutant-revised`, or with `--tests-from` in the `mutant-finished` that comes at the end."
+        },
+        "inputs": {
+          "type": "object",
+          "description": "The whole numbers the covering tests passed to the mutant's method, by parameter name: `{\"total\": [50, 250]}`. Only when there were any.",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "integer" }
+          }
+        },
+        "suggestedTest": {
+          "type": "object",
+          "description": "A test that would catch it, found by running a call with and without the mutant. Only when one was found.",
+          "required": ["testClass", "name", "code", "call", "today", "withMutant"],
+          "properties": {
+            "testClass": {
+              "type": "string",
+              "description": "The test class to add it to, by simple name: `PricingTest`."
+            },
+            "name": {
+              "type": "string",
+              "description": "The test method's name: `discountWithTotal100`."
+            },
+            "code": {
+              "type": "string",
+              "description": "The test, as source, lines joined by `\\n`."
+            },
+            "call": {
+              "type": "string",
+              "description": "The call the test makes, in the mutated class's language: `new Pricing().discount(100)`."
+            },
+            "today": {
+              "type": "string",
+              "description": "What the call gives today, as source: `10`, `true`, `\"text\"`, or `throws java.lang.IllegalStateException`. What the code does, not necessarily what it should."
+            },
+            "withMutant": {
+              "type": "string",
+              "description": "What it gives with the mutant in, the same way, or `doesn't return`."
+            }
+          }
+        },
+        "testsRun": {
+          "$ref": "#/$defs/count",
+          "description": "How many covering tests ran before the result was known."
+        },
+        "durationMs": {
+          "$ref": "#/$defs/count",
+          "description": "How long the mutant took, in milliseconds."
+        },
+        "doneWhen": {
+          "type": "string",
+          "description": "The command that proves a fix: `mutastic verify m855c8e3c samples/pricing passes`. Only for a missed mutant."
+        },
+        "reproduce": {
+          "type": "string",
+          "description": "The command that runs it again on its own. Only for a missed mutant."
+        },
+        "ignore": {
+          "type": "string",
+          "description": "The command that ignores it, with a reason. Only for a missed mutant."
+        },
+        "propose": {
+          "type": "string",
+          "description": "The command that proposes ignoring it, for a person to accept: what an agent runs instead of `ignore`. Only for a missed mutant."
+        },
+        "rendered": {
+          "type": "string",
+          "description": "The mutant's entry as `--format=agent` writes it. Only for a missed mutant. Its words are for reading, and change between releases."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "Survived" } }, "required": ["status"] },
+          "then": { "required": ["doneWhen", "reproduce", "ignore", "propose", "rendered"] }
+        }
+      ]
+    },
+    "flakyEvidence": {
+      "type": "object",
+      "description": "What one flaky test failed with, and what it reaches that changes from run to run.",
+      "required": ["test", "failure", "reaches", "reachesInTest", "outside"],
+      "properties": {
+        "test": { "$ref": "#/$defs/test" },
+        "failure": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "The exception it failed with and its causes, outermost first, by class name. Empty when the worker didn't say."
+        },
+        "reaches": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Calls in the code it ran that give a different answer each run: `new Random()`, `Instant.now`."
+        },
+        "reachesInTest": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "The same, in the test's own class."
+        },
+        "failsAlone": {
+          "const": true,
+          "description": "It passed among the other tests and failed on its own, with no mutant in. Only there when it did."
+        },
+        "outside": {
+          "type": "boolean",
+          "description": "Whether it failed with something from outside the code: the network, a database, a channel or a file."
+        }
+      }
+    },
+    "flip": {
+      "type": "object",
+      "description": "A mutant caught in one run and not the other.",
+      "required": ["id", "before", "after"],
+      "properties": {
+        "id": { "$ref": "#/$defs/mutantId" },
+        "before": { "$ref": "#/$defs/status" },
+        "after": { "$ref": "#/$defs/status" },
+        "caughtBy": {
+          "$ref": "#/$defs/test",
+          "description": "The test that caught it, in whichever run it was caught. Not there for a timeout."
+        }
+      }
+    },
+    "likelyFlaky": {
+      "type": "object",
+      "description": "A test that's likely flaky, the mutants whose results it changed, and what named it.",
+      "required": ["test", "mutants", "reasons"],
+      "properties": {
+        "test": { "$ref": "#/$defs/test" },
+        "mutants": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/mutantId" }
+        },
+        "reasons": {
+          "type": "array",
+          "items": { "enum": ["changed-since-last-run", "catch-not-repeated"] },
+          "description": "`changed-since-last-run`: with the same code and mutastic, a mutant it caught changed result. `catch-not-repeated`: its catch didn't repeat under `--confirm-catches`."
+        }
+      }
+    },
+    "unrelatedCatch": {
+      "type": "object",
+      "description": "A test that caught mutants in several unrelated methods, each time with the same exception thrown in its own code: it may be flaky, or just call a lot of code.",
+      "required": ["test", "failure", "mutants"],
+      "properties": {
+        "test": { "$ref": "#/$defs/test" },
+        "failure": {
+          "type": "string",
+          "description": "The exception it threw each time, by class name."
+        },
+        "mutants": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/mutantId" }
+        }
+      }
+    },
+    "runFinished": {
+      "type": "object",
+      "description": "The last event: the totals, the score and verdict, and how the run compares with the last one.",
+      "required": [
+        "schema",
+        "reason",
+        "jdk",
+        "mutants",
+        "Killed",
+        "Survived",
+        "Timeout",
+        "NoCoverage",
+        "Ignored",
+        "score",
+        "threshold",
+        "passed",
+        "coveredScore",
+        "tests",
+        "flaky",
+        "flakyEvidence",
+        "likelyFlaky",
+        "unrelatedCatches",
+        "reports",
+        "staleIgnores",
+        "durationMs"
+      ],
+      "properties": {
+        "schema": { "$ref": "#/$defs/schema" },
+        "reason": { "const": "run-finished" },
+        "jdk": {
+          "type": "integer",
+          "description": "The Java feature release the tests ran on: `17`."
+        },
+        "mutants": { "$ref": "#/$defs/count", "description": "How many mutants there were, skipped ones too." },
+        "Killed": { "$ref": "#/$defs/count", "description": "How many were caught." },
+        "Survived": { "$ref": "#/$defs/count", "description": "How many were missed." },
+        "Timeout": { "$ref": "#/$defs/count", "description": "How many timed out, which counts as caught." },
+        "NoCoverage": { "$ref": "#/$defs/count", "description": "How many no test reaches." },
+        "Ignored": { "$ref": "#/$defs/count", "description": "How many were skipped." },
+        "score": {
+          "$ref": "#/$defs/score",
+          "description": "The share of mutants caught, skipped ones left out, as a percentage to one decimal place; null when there was nothing to score."
+        },
+        "threshold": {
+          "type": "integer",
+          "description": "The score the run had to reach to pass."
+        },
+        "passed": {
+          "type": "boolean",
+          "description": "Whether the score reached the threshold. For a run of one mutant (`--only`), whether that mutant was caught."
+        },
+        "only": {
+          "type": ["string", "null"],
+          "description": "For a run of one mutant, its id; null when it wasn't found. Only for such a run."
+        },
+        "coveredScore": {
+          "$ref": "#/$defs/score",
+          "description": "The score of the code some test reaches: how well the tests check what they run."
+        },
+        "tests": { "$ref": "#/$defs/count", "description": "How many tests the project has." },
+        "flaky": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/test" },
+          "description": "Tests that failed when first run and passed when run again: left out of every mutant's run."
+        },
+        "flakyEvidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/flakyEvidence" },
+          "description": "For each flaky test the run found out about, why it may be flaky."
+        },
+        "previousScore": {
+          "$ref": "#/$defs/score",
+          "description": "The last run's score. Only when there was a last run, under the same operators."
+        },
+        "sameCodeAsLastRun": {
+          "type": "boolean",
+          "description": "Whether the code and tests are byte for byte what the last run had. Only with `previousScore`."
+        },
+        "sameMutasticAsLastRun": {
+          "type": "boolean",
+          "description": "Whether the same mutastic ran last time. Only with `previousScore`."
+        },
+        "changedSinceLastRun": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/flip" },
+          "description": "Mutants caught in one run and not the other. Only with `previousScore`."
+        },
+        "likelyFlaky": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/likelyFlaky" },
+          "description": "Tests that are likely flaky, and why."
+        },
+        "unrelatedCatches": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/unrelatedCatch" },
+          "description": "Tests that fail the same way whatever the change."
+        },
+        "reports": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "The report files the run wrote, relative to where it ran: `build/mutastic/mutation.json`."
+        },
+        "aridAudit": {
+          "type": "object",
+          "description": "What became of the mutants the arid filters skip, when they ran anyway (`MUTASTIC_ARID=audit`). Only in such a run.",
+          "required": ["ran", "caught", "caughtByAssertion", "missed", "notCovered", "checkedIn"],
+          "properties": {
+            "ran": { "$ref": "#/$defs/count", "description": "How many arid mutants ran." },
+            "caught": { "$ref": "#/$defs/count", "description": "How many of those were caught." },
+            "caughtByAssertion": {
+              "$ref": "#/$defs/count",
+              "description": "How many of those a test's own assertion caught: a check on what the code returns."
+            },
+            "missed": { "$ref": "#/$defs/count" },
+            "notCovered": { "$ref": "#/$defs/count" },
+            "checkedIn": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "The methods of the catches by an assertion, `Board.toString()`, in the order found."
+            }
+          }
+        },
+        "ghosts": {
+          "type": "array",
+          "description": "Experimental, with `--experimental=ghosts`: each ghost, the call most writes like this one make inserted where this one doesn't, and what its tests did. Never in the score or the counts. Only in such a run, and only when a ghost was found.",
+          "items": {
+            "type": "object",
+            "required": ["id", "experimental", "status", "file", "line", "class", "method", "field", "inserted", "rule", "writes", "peers", "coveredBy", "rendered"],
+            "properties": {
+              "id": { "type": "string" },
+              "experimental": { "const": true },
+              "status": {
+                "enum": ["appeared", "passedUnseen", "notCovered"],
+                "description": "`appeared`: a test failed with the call in, and expects the silence; `passedUnseen`: every test that reaches the write passed; `notCovered`: no test reaches it."
+              },
+              "file": { "type": "string" },
+              "line": { "type": "integer" },
+              "class": { "type": "string" },
+              "method": { "type": "string" },
+              "field": { "type": "string", "description": "The field the write is to." },
+              "inserted": { "type": "string", "description": "The call inserted: `firePropertyChange(\"balance\")`." },
+              "rule": {
+                "enum": ["sameField", "siblingFields"],
+                "description": "`sameField`: other writes to the field fire; `siblingFields`: the class's other fields fire on every write."
+              },
+              "writes": { "$ref": "#/$defs/count", "description": "How many writes the rule counted, this one among them." },
+              "peers": {
+                "type": "array",
+                "description": "The writes that fire: where, and the property name they give (empty when a method of the class fires for them).",
+                "items": {
+                  "type": "object",
+                  "required": ["method", "line", "property"],
+                  "properties": {
+                    "method": { "type": "string" },
+                    "line": { "type": "integer" },
+                    "property": { "type": "string" }
+                  }
+                }
+              },
+              "coveredBy": { "type": "array", "items": { "type": "string" } },
+              "caughtBy": { "type": "string", "description": "The test that failed with the call in, for `appeared`." },
+              "rendered": { "type": "string", "description": "The ghost as the agent format shows it." }
+            }
+          }
+        },
+        "scope": {
+          "type": "object",
+          "description": "The change the run was scoped to (`--since`). Only for such a run.",
+          "required": ["since", "files", "lines"],
+          "properties": {
+            "since": {
+              "type": "string",
+              "description": "What the change is measured from, as given: `main`."
+            },
+            "files": { "$ref": "#/$defs/count", "description": "How many source files it touched." },
+            "lines": { "$ref": "#/$defs/count", "description": "How many lines it touched." }
+          }
+        },
+        "staleIgnores": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "The ids of ignored mutants whose line has changed since, as `.mutastic/ignores.yaml` has them: the ignore no longer holds, and they ran."
+        },
+        "durationMs": {
+          "$ref": "#/$defs/count",
+          "description": "How long the run took, in milliseconds."
+        }
+      }
+    }
+  }
+}
