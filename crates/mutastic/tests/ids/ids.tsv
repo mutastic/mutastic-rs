@@ -789,7 +789,6 @@ m59882c27	operators	library::sorted	mutastic/default-parameter	 → let mut name
 m59907195	truth	wider_returns	mutastic/comparison	x > 7 → (x) != (7)
 m59dbdefb	truth	range_ends	mutastic/arithmetic-replacement	total * 1000 + part.iter().sum::<i32>() → (total * 1000) * (part.iter().sum::<i32>())
 m59e37eb4	truth	not_condition	mutastic/other-arithmetic	x / 2 → (x) - (2)
-m59f82a00	loops	digits	mutastic/default-parameter	 → let mut n: u32 = Default::default();
 m5a3f6b1a	operators	arguments::between	mutastic/other-comparison	low <= value → (low) > (value)
 m5a40045e	truth	range_ends	mutastic/constant-value	5 → 1
 m5a402448	truth	arithmetic	mutastic/default-parameter	 → let x: i32 = Default::default();
@@ -1166,6 +1165,7 @@ m8699cd5b	truth	omissions	mutastic/replace-body	{ let owned = format!(" {x} "); 
 m869b2c39	truth	bits	mutastic/constant-value	1 → 0
 m86bffee6	truth	record	mutastic/other-comparison	value > 4 → (value) < (4)
 m86d300b0	operators	arguments::username	library/swap-string	input.trim().to_lowercase() → input.trim().to_uppercase()
+m8703897f	loops	digits	mutastic/default-parameter	 → let mut n: u64 = Default::default();
 m871428f9	truth	varargs	mutastic/default-parameter	 → let x: i32 = Default::default();
 m87462638	truth	fields	mutastic/constant-value	10 → 11
 m877a34c6	truth	compound	mutastic/constant-value	10 → 1

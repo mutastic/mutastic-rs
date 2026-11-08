@@ -63,7 +63,7 @@ digits, run with `--operators=stronger`:
 
 <!-- from: fixtures/loops/src/lib.rs -->
 ```rust
-pub fn digits(mut n: u32) -> u32 {
+pub fn digits(mut n: u64) -> u64 {
     let mut count = 1;
     while n >= 10 {
         n /= 10;
