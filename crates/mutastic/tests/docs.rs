@@ -175,10 +175,13 @@ fn ran(work: &Path, args: &[&str]) -> Ran {
     ran
 }
 
-/// What changes from run to run or machine to machine: timings, the compiler's version and the
-/// number of workers, which follows the cores.
+/// What changes from run to run or machine to machine: timings, the compiler's version, the
+/// number of workers, which follows the cores, and how many tests ran, which follows timing too: a
+/// mutant tries the binary whose tests were fastest first, and stops at the first that fails.
 fn steady(text: &str) -> String {
     let rules = [
+        (r#""testsRun": ?\d+"#, r#""testsRun":…"#),
+        (r"Test runs  \d+", "Test runs  …"),
         (r"\b\d+(\.\d+)?(ms|s)\b", "…"),
         (r#"Ms": ?\d+"#, r#"Ms":…"#),
         (r#""rustc": ?"[^"]*""#, r#""rustc":…"#),
