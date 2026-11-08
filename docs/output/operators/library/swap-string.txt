@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when starts_with becomes ends_with in is_comment()
+ [✗ MISSED] tests pass even when starts_with becomes ends_with in is_comment()
    ┌─ src/library.rs:4
    │
  3 │ pub fn is_comment(line: &str) -> bool {

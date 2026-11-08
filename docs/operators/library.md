@@ -40,7 +40,7 @@ fn plain_lines_are_not_comments() {
 
 <!-- output: operators/library/swap-string -->
 ```text
-  ✗ [MISSED]  tests pass even when starts_with becomes ends_with in is_comment()
+ [✗ MISSED] tests pass even when starts_with becomes ends_with in is_comment()
    ┌─ src/library.rs:4
    │
  3 │ pub fn is_comment(line: &str) -> bool {
@@ -82,7 +82,7 @@ At exactly the cap, `min` and `max` agree:
 
 <!-- output: operators/library/swap-math -->
 ```text
-  ✗ [MISSED]  tests pass even when min becomes max in capped_discount()
+ [✗ MISSED] tests pass even when min becomes max in capped_discount()
     ┌─ src/library.rs:9
     │
   8 │ pub fn capped_discount(percent: u32) -> u32 {
@@ -126,7 +126,7 @@ apart:
 
 <!-- output: operators/library/swap-index-of -->
 ```text
-  ✗ [MISSED]  tests pass even when find becomes rfind in extension()
+ [✗ MISSED] tests pass even when find becomes rfind in extension()
     ┌─ src/library.rs:13
     │
  12 │ pub fn extension(file: &str) -> Option<&str> {
@@ -168,7 +168,7 @@ fn sorting_keeps_every_name() {
 
 <!-- output: operators/library/reverse-ordering -->
 ```text
-  ✗ [MISSED]  tests pass even when a.cmp(b) becomes b.cmp(a) in sorted()
+ [✗ MISSED] tests pass even when a.cmp(b) becomes b.cmp(a) in sorted()
     ┌─ src/library.rs:17
     │
  16 │ pub fn sorted(mut names: Vec<String>) -> Vec<String> {
@@ -211,7 +211,7 @@ With one column there's nothing to separate:
 
 <!-- output: operators/library/string-constant -->
 ```text
-  ✗ [MISSED]  tests pass even when ", " becomes "" in header()
+ [✗ MISSED] tests pass even when ", " becomes "" in header()
     ┌─ src/library.rs:22
     │
  21 │ pub fn header(columns: &[&str]) -> String {

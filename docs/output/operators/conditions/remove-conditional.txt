@@ -1,4 +1,4 @@
-  ✗ [MISSED]  no test needs member to be false in greeting()
+ [✗ MISSED] no test needs member to be false in greeting()
     ┌─ src/conditions.rs:14
     │
  13 │ pub fn greeting(member: bool) -> &'static str {

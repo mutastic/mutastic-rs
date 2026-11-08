@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even without .filter(|(_, paid)| *paid) in paid_total()
+ [✗ MISSED] tests pass even without .filter(|(_, paid)| *paid) in paid_total()
     ┌─ src/iterators.rs:12
     │
  11 │         .iter()

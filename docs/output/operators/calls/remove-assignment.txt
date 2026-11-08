@@ -1,4 +1,4 @@
-  ✗ [MISSED]  no test checks what total = total + tip; does in with_tip()
+ [✗ MISSED] no test checks what total = total + tip; does in with_tip()
     ┌─ src/calls.rs:31
     │
  30 │     let mut total = bill;

@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when - becomes + in after_refund() · m4e284c1b
+ [✗ MISSED] tests pass even when - becomes + in after_refund() · m4e284c1b
     ┌─ src/arithmetic.rs:16
     │
  15 │ pub fn after_refund(paid: u32, refund: u32) -> u32 {

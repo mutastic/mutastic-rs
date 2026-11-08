@@ -88,6 +88,8 @@ pub struct Report {
     /// The settings the user's crate was built with, from Cargo: `opt_level`, `debug_assertions`,
     /// `overflow_checks`.
     pub profile: serde_json::Value,
+    /// When the run started, `15:04:05` on the local clock, when the clock could be read.
+    pub started_at: Option<String>,
 }
 
 impl Report {
@@ -156,12 +158,31 @@ pub fn find_all(project: &Project) -> Crate {
     find_with(project, sites::ALL, UnsafeMode::All)
 }
 
+/// What a run tells the person watching, as it goes.
+pub enum Progress<'a> {
+    /// The one build of every mutant is starting.
+    Building { mutants: usize },
+    /// The tests ran once each, recording what they reach; the mutants run next.
+    Covered {
+        tests: usize,
+        rustc: &'a str,
+        took: Duration,
+        mutants: usize,
+    },
+    /// Every mutant of one source file has its result, in the order found.
+    FileFinished {
+        found: &'a Crate,
+        results: &'a [MutantResult],
+    },
+}
+
 pub fn run(
     project: &Project,
     options: &Options,
-    progress: &mut dyn FnMut(&str),
+    progress: &(dyn Fn(Progress) + Sync),
 ) -> Result<Report, String> {
     let started = Instant::now();
+    let started_at = clock();
     // An id names its mutant whatever was chosen when it was shown, so `--only` and `verify`
     // look among them all.
     let found = if options.only.is_empty() {
@@ -190,25 +211,37 @@ pub fn run(
         .iter()
         .map(|&m| found.mutants[m].function)
         .collect();
-    progress(&format!("building {} mutants in one build", selected.len()));
+    progress(Progress::Building {
+        mutants: selected.len(),
+    });
     let built = compile::build(project, &found, &selected, &recorders)?;
     let cwd = project.copy_dir().join(&project.package_dir);
     let tests = testrun::list(&built.binaries, &cwd)?;
     let setup = started.elapsed();
 
-    progress(&format!("recording what {} tests reach", tests.len()));
     let coverage_started = Instant::now();
     let reach = coverage(project, &built.binaries, &tests, options.workers)?;
     let coverage_took = coverage_started.elapsed();
+    let rustc = rustc_version();
+    progress(Progress::Covered {
+        tests: tests.len(),
+        rustc: &rustc,
+        took: coverage_took,
+        mutants: selected.len(),
+    });
 
-    progress("running mutants");
     let mutants_started = Instant::now();
     let order: Vec<usize> = selected.iter().copied().collect();
     let first = first_at_site(&found, &selected, &built);
+    let files = Files::new(&found, &order);
     let results = testrun::parallel(&order, options.workers, |&mutant| {
-        result(&found, mutant, first[mutant], &built, &tests, &reach, &cwd)
+        let result = result(&found, mutant, first[mutant], &built, &tests, &reach, &cwd);
+        files.finished(&found, &result, progress);
+        result
     });
-    let test_runs = tests.len() + results.iter().map(|r| r.tests_run).sum::<usize>();
+    // The tests run against mutants; the coverage pass's runs aren't counted, as in the Java
+    // edition, so the count compares with running every test on every mutant.
+    let test_runs = results.iter().map(|r| r.tests_run).sum::<usize>();
     Ok(Report {
         project: project.clone(),
         found,
@@ -217,7 +250,7 @@ pub fn run(
         test_runs,
         rounds: built.rounds,
         workers: options.workers,
-        rustc: rustc_version(),
+        rustc,
         threshold: options.threshold,
         setup,
         coverage: coverage_took,
@@ -225,7 +258,60 @@ pub fn run(
         took: started.elapsed(),
         unsafe_mode: options.unsafe_mode,
         profile: built.profile,
+        started_at,
     })
+}
+
+/// Each source file's mutants still running, and the results of those done, so a file's line can
+/// be shown the moment its last mutant finishes.
+struct Files {
+    state: std::sync::Mutex<BTreeMap<PathBuf, (usize, Vec<MutantResult>)>>,
+}
+
+impl Files {
+    fn new(found: &Crate, order: &[usize]) -> Files {
+        let mut state: BTreeMap<PathBuf, (usize, Vec<MutantResult>)> = BTreeMap::new();
+        for &index in order {
+            state
+                .entry(found.mutants[index].file.clone())
+                .or_default()
+                .0 += 1;
+        }
+        Files {
+            state: std::sync::Mutex::new(state),
+        }
+    }
+
+    /// Records `result`, and tells `progress` when it was its file's last. The lock is held while
+    /// it's told, so two files' lines never interleave.
+    fn finished(&self, found: &Crate, result: &MutantResult, progress: &(dyn Fn(Progress) + Sync)) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        let Some((left, done)) = state.get_mut(&found.mutants[result.mutant].file) else {
+            return;
+        };
+        done.push(result.clone());
+        *left -= 1;
+        if *left == 0 {
+            done.sort_by_key(|r| r.mutant);
+            progress(Progress::FileFinished {
+                found,
+                results: done,
+            });
+        }
+    }
+}
+
+/// The local time of day, `15:04:05`, from `date`: reading the local clock otherwise takes either
+/// unsafe code, which this crate forbids, or a dependency for one line of the summary.
+fn clock() -> Option<String> {
+    let output = std::process::Command::new("date")
+        .arg("+%H:%M:%S")
+        .output()
+        .ok()?;
+    let time = String::from_utf8(output.stdout).ok()?.trim().to_string();
+    (output.status.success() && time.len() == 8).then_some(time)
 }
 
 /// Runs each test alone, with the switches recording which sites it reaches and the whole

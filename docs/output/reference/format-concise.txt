@@ -2,12 +2,15 @@
  Missed ────────────────────────────────────────────────────────────
  ✗ src/lib.rs:26 no test checks discount() at total == 100 mb2f8ae57
 
+     Files  0 clean | 1 with misses (1)
    Mutants  ✓ 10 caught · ✗ 1 missed (11)
+  Worst at  Pricing::discount() 1 ✗
      Build  one build of every mutant, 2 rounds (check and build)
- Test runs  16
-  Duration  783ms (setup 747ms, coverage 4ms, mutants 31ms)
+ Test runs  13 (33 without coverage selection)
+  Start at  16:24:19
+  Duration  928ms (setup 882ms, coverage 5ms, mutants 20ms)
      Tests  3 on rustc 1.94.0 · 4 workers
      Score  90.9%  threshold 80
 
-  [PASS]  1 missed, above the threshold.
+ [PASS] 1 missed, above the threshold.
  Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing

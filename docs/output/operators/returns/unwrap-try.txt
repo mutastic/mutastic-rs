@@ -1,4 +1,4 @@
-  ✗ [MISSED]  no test makes this ? return its error from parse_quantity()
+ [✗ MISSED] no test makes this ? return its error from parse_quantity()
     ┌─ src/returns.rs:14
     │
  13 │ pub fn parse_quantity(text: &str) -> Result<u32, std::num::ParseIntError> {

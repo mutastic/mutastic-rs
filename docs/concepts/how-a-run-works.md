@@ -6,9 +6,11 @@ once, with every mutant in it, and picks which one is live when the tests run. W
 
 <!-- output: concepts/run-progress -->
 ```text
-mutastic: building 11 mutants in one build
-mutastic: recording what 3 tests reach
-mutastic: running mutants
+mutastic 0.0.1 · reading the Cargo package…
+building  11 mutants in one build…
+coverage  3 tests on rustc 1.94.0 in 4ms · 11 mutants
+ ❯ [pricing] src/lib.rs (11 mutants | 1 missed) 60ms
+   × discount() :26 >= becomes >
 ```
 
 ## One copy, one build

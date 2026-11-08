@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when points.checked_add(more) becomes Some(points.wrapping_add(more)) in add_points()
+ [✗ MISSED] tests pass even when points.checked_add(more) becomes Some(points.wrapping_add(more)) in add_points()
     ┌─ src/arithmetic.rs:34
     │
  33 │ pub fn add_points(points: u32, more: u32) -> Option<u32> {

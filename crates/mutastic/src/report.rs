@@ -7,7 +7,7 @@ use std::fmt::Write as _;
 use serde_json::{json, Value};
 
 use crate::engine::{MutantResult, Report, Status};
-use crate::sites::{self, Change, Mutant};
+use crate::sites::{self, Change, Crate, Mutant};
 use crate::words::{self, Advice};
 
 pub const SCHEMA: &str = "mutastic.events/v1";
@@ -36,11 +36,17 @@ impl Format {
     }
 }
 
-/// ANSI colour, only where it's wanted.
+/// ANSI colour, only where it's wanted: the Java edition's colours, code for code. Every colour has
+/// a glyph or a word beside it, so the output reads the same without it.
 #[derive(Clone, Copy, Debug)]
 pub struct Style {
     pub color: bool,
 }
+
+/// Label backgrounds.
+const RED: &str = "41";
+const GREEN: &str = "42";
+const CYAN: &str = "46";
 
 impl Style {
     fn paint(self, code: &str, text: &str) -> String {
@@ -51,10 +57,16 @@ impl Style {
         }
     }
     fn red(self, text: &str) -> String {
-        self.paint("31", text)
+        self.paint("1;31", text)
     }
     fn green(self, text: &str) -> String {
         self.paint("32", text)
+    }
+    fn amber(self, text: &str) -> String {
+        self.paint("33", text)
+    }
+    fn blue(self, text: &str) -> String {
+        self.paint("1;34", text)
     }
     fn dim(self, text: &str) -> String {
         self.paint("2", text)
@@ -62,12 +74,26 @@ impl Style {
     fn bold(self, text: &str) -> String {
         self.paint("1", text)
     }
+    /// A label, `MISSED` on red: black bold text on a block of colour, `[MISSED]` without colour.
     fn label(self, text: &str, background: &str) -> String {
         if self.color {
-            format!("\x1b[1;97;{background}m {text} \x1b[0m")
+            format!("\x1b[{background};30;1m {text} \x1b[0m")
         } else {
             format!("[{text}]")
         }
+    }
+    /// Backticks mark code in the words; at a terminal code is bold instead.
+    fn code(self, text: &str) -> String {
+        text.split('`')
+            .enumerate()
+            .map(|(index, part)| {
+                if index % 2 == 1 {
+                    self.bold(part)
+                } else {
+                    part.to_string()
+                }
+            })
+            .collect()
     }
 }
 
@@ -125,7 +151,9 @@ impl<'a> View<'a> {
         by_line
             .into_values()
             .map(|mut results| {
-                results.sort_by_key(|r| (rank(self.mutant(r)), r.mutant));
+                // The lead, whose card it is: a boundary, whose edge is the most exact thing to
+                // test, then the order found, as the Java edition's `Finding` leads.
+                results.sort_by_key(|r| (self.mutant(r).operator != sites::BOUNDARY, r.mutant));
                 let main = results.remove(0);
                 Entry {
                     main,
@@ -164,16 +192,45 @@ impl<'a> View<'a> {
     }
 }
 
-/// Conditions and removals before arithmetic, as the Java edition ranks them.
-fn rank(mutant: &Mutant) -> u8 {
+/// 2 for a condition or a removal, 1 for anything else, as the Java edition's `Finding.prior`: a
+/// condition or a removal that goes unnoticed changes what the code decides or does, while
+/// arithmetic and the rest are more often noise. Rust's own operators go with their Java family:
+/// remove-struct-field with the removals; bitwise with arithmetic; reverse-ordering with the
+/// library swaps; unwrap-try with remove-throw; default-parameter with null-parameter; swap-break
+/// with remove-switch-arm.
+fn prior(mutant: &Mutant) -> u8 {
     match mutant.operator {
-        sites::BOUNDARY => 0,
-        sites::REMOVE_CONDITIONAL => 1,
-        sites::OTHER_COMPARISON => 2,
-        sites::LOGICAL_CONNECTOR => 3,
-        sites::RETURN_VALUE => 4,
-        _ => 5,
+        sites::BOUNDARY
+        | sites::COMPARISON
+        | sites::OTHER_COMPARISON
+        | sites::REMOVE_CONDITIONAL
+        | sites::LOGICAL_CONNECTOR
+        | sites::RETURN_VALUE
+        | sites::REMOVE_VOID_CALL
+        | sites::REMOVE_DISCARDED_CALL
+        | sites::REMOVE_ASSIGNMENT
+        | sites::REMOVE_FIELD_WRITE
+        | sites::REMOVE_STRUCT_FIELD => 2,
+        _ => 1,
     }
+}
+
+/// `entries`, those most worth a test first, as the Java edition's `Finding.ranked`: by the best
+/// prior among an entry's mutants, then the one more tests reach (many tests run it and none checks
+/// it), and in their order otherwise.
+fn ranked<'a>(view: &View<'a>, mut entries: Vec<Entry<'a>>) -> Vec<Entry<'a>> {
+    entries.sort_by_key(|entry| {
+        let best = std::iter::once(entry.main)
+            .chain(entry.also.iter().copied())
+            .map(|r| prior(view.mutant(r)))
+            .max()
+            .unwrap_or(1);
+        (
+            std::cmp::Reverse(best),
+            std::cmp::Reverse(entry.main.covered_by.len()),
+        )
+    });
+    entries
 }
 
 fn covered_by(result: &MutantResult) -> String {
@@ -195,11 +252,15 @@ fn percent(score: Option<f64>) -> String {
     score.map_or("none".into(), |s| format!("{s:.1}%"))
 }
 
-fn duration(took: std::time::Duration) -> String {
-    if took.as_secs_f64() >= 1.0 {
-        format!("{:.1}s", took.as_secs_f64())
+/// `340ms`, `2.1s`, `1m39s`, as the Java edition writes them.
+pub fn duration(took: std::time::Duration) -> String {
+    let millis = took.as_millis();
+    if millis < 1000 {
+        format!("{millis}ms")
+    } else if millis < 60_000 {
+        format!("{:.1}s", millis as f64 / 1000.0)
     } else {
-        format!("{}ms", took.as_millis())
+        format!("{}m{:02}s", millis / 60_000, (millis / 1000) % 60)
     }
 }
 
@@ -213,6 +274,96 @@ pub fn render(report: &Report, format: Format, style: Style) -> String {
     }
 }
 
+/// `discount()`: a function as the cards name it.
+fn method(found: &Crate, mutant: &Mutant) -> String {
+    format!("{}()", found.functions[mutant.function].name)
+}
+
+/// One file's line, as its last mutant finishes: `✓` and its count when nothing was missed, `❯`
+/// with each miss under it and each line no test reaches otherwise.
+pub fn file_finished(
+    project: &str,
+    found: &Crate,
+    results: &[MutantResult],
+    style: Style,
+) -> String {
+    let Some(first) = results.first() else {
+        return String::new();
+    };
+    let missed: Vec<&MutantResult> = results
+        .iter()
+        .filter(|r| r.status == Status::Survived)
+        .collect();
+    let uncovered: Vec<&MutantResult> = results
+        .iter()
+        .filter(|r| r.status == Status::NoCoverage)
+        .collect();
+    let mut counts = vec![style.dim(&format!(
+        "{} mutant{}",
+        results.len(),
+        if results.len() == 1 { "" } else { "s" }
+    ))];
+    if !missed.is_empty() {
+        counts.push(style.red(&format!("{} missed", missed.len())));
+    }
+    if !uncovered.is_empty() {
+        counts.push(style.amber(&format!("{} not covered", uncovered.len())));
+    }
+    let took: std::time::Duration = results.iter().map(|r| r.took).sum();
+    let mut out = format!(
+        " {} {} {} {}{}{} {}\n",
+        if missed.is_empty() && uncovered.is_empty() {
+            style.green("✓")
+        } else {
+            style.red("❯")
+        },
+        style.label(project, CYAN),
+        found.mutants[first.mutant].file.display(),
+        style.dim("("),
+        counts.join(&style.dim(" | ")),
+        style.dim(")"),
+        style.dim(&duration(took))
+    );
+    for result in missed {
+        let mutant = &found.mutants[result.mutant];
+        let name = &found.functions[mutant.function].name;
+        let _ = writeln!(
+            out,
+            "   {} {} {} {}",
+            style.red("×"),
+            method(found, mutant),
+            style.dim(&format!(":{}", mutant.line)),
+            style.code(&words::advise(mutant, name, &result.inputs).change)
+        );
+    }
+    let mut by_line: Vec<((String, usize), usize)> = Vec::new();
+    for result in uncovered {
+        let mutant = &found.mutants[result.mutant];
+        let place = (method(found, mutant), mutant.line);
+        match by_line.iter_mut().find(|(seen, _)| *seen == place) {
+            Some((_, count)) => *count += 1,
+            None => by_line.push((place, 1)),
+        }
+    }
+    for ((name, line), count) in by_line {
+        let _ = writeln!(
+            out,
+            "   {} {name} {} {}",
+            style.amber("○"),
+            style.dim(&format!(":{line}")),
+            style.dim(&format!(
+                "no test reaches this line{}",
+                if count > 1 {
+                    format!(" ({count} mutants)")
+                } else {
+                    String::new()
+                }
+            ))
+        );
+    }
+    out
+}
+
 fn human(report: &Report, style: Style, cards: bool) -> String {
     let view = View { report };
     let mut out = String::new();
@@ -220,8 +371,8 @@ fn human(report: &Report, style: Style, cards: bool) -> String {
     if !entries.is_empty() {
         let _ = writeln!(
             out,
-            "\n {} {}",
-            style.bold("Missed"),
+            "\n{}{}",
+            style.red(&style.bold(" Missed ")),
             style.dim(&"─".repeat(60))
         );
         if cards {
@@ -241,7 +392,7 @@ fn human(report: &Report, style: Style, cards: bool) -> String {
                 let _ = writeln!(
                     out,
                     "\n {} {}  {}",
-                    style.dim("❯"),
+                    style.blue("❯"),
                     style.bold(&file),
                     style.dim(&format!(
                         "{missed} missed in {} function{}",
@@ -262,7 +413,7 @@ fn human(report: &Report, style: Style, cards: bool) -> String {
                     style.red("✗"),
                     view.file(mutant),
                     mutant.line,
-                    words::plain(&view.advice(entry.main).headline),
+                    style.code(&view.advice(entry.main).headline),
                     style.dim(&id_list(&view, entry))
                 );
             }
@@ -286,13 +437,11 @@ fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
     let mutant = view.mutant(result);
     let advice = view.advice(result);
     let shared = !entry.also.is_empty();
-    let headline = words::plain(&advice.headline);
     let _ = writeln!(
         out,
-        "\n  {} {}  {}{}",
-        style.red("✗"),
-        style.label("MISSED", "41"),
-        style.bold(&headline),
+        "\n {} {}{}",
+        style.label("✗ MISSED", RED),
+        style.code(&advice.headline),
         if shared {
             style.dim(&format!(" · {}", mutant.id))
         } else {
@@ -304,6 +453,7 @@ fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
     let width = (mutant.line + 1).to_string().len();
     let g = " ".repeat(width + 2);
     let bar = style.dim("│");
+    let equals = style.dim("=");
     let _ = writeln!(
         out,
         "{g}{} {}:{}",
@@ -329,62 +479,64 @@ fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
                 .max(1);
             let _ = writeln!(
                 out,
-                "{g}{bar} {}{} {}",
+                "{g}{bar} {}{}",
                 " ".repeat(mutant.column - 1),
-                style.red(&"^".repeat(caret_width)),
-                style.red(&advice.caret)
+                style.red(&format!("{} {}", "^".repeat(caret_width), advice.caret))
             );
         }
     }
     let _ = writeln!(out, "{g}{bar}");
     let (before, after) = view.changed_line(mutant);
-    let _ = writeln!(
-        out,
-        "{g}{}  {}",
-        style.dim("= mutant"),
-        style.red(&format!("- {before}"))
-    );
-    let _ = writeln!(out, "{g}          {}", style.green(&format!("+ {after}")));
+    let _ = writeln!(out, "{g}{equals} mutant  {}{before}", style.red("- "));
+    let _ = writeln!(out, "{g}          {}{after}", style.green("+ "));
     for other in &entry.also {
         let other_mutant = view.mutant(other);
         let _ = writeln!(
             out,
-            "{g}{}    {} {} {}",
-            style.dim("= also"),
+            "{g}{equals} also    {} {} {}",
             style.red("✗"),
-            words::plain(&view.advice(other).headline),
+            style.code(&view.advice(other).headline),
             style.dim(&format!("· {}", other_mutant.id))
         );
         let _ = writeln!(
             out,
-            "{g}          {}",
-            style.green(&format!("+ {}", view.changed_line(other_mutant).1))
+            "{g}          {}{}",
+            style.green("+ "),
+            view.changed_line(other_mutant).1
         );
     }
-    let mut notes: Vec<String> = advice.notes.iter().map(|n| words::plain(n)).collect();
+    let mut notes: Vec<String> = advice.notes.clone();
     notes.push(covered_by(result));
     for (index, note) in notes.iter().enumerate() {
-        let label = if index == 0 { "= note:" } else { "       " };
-        let _ = writeln!(out, "{g}{} {note}", style.dim(label));
+        if index == 0 {
+            let _ = writeln!(
+                out,
+                "{g}{equals} {}: {}",
+                style.blue(&style.bold("note")),
+                style.code(note)
+            );
+        } else {
+            let _ = writeln!(out, "{g}        {}", style.dim(&style.code(note)));
+        }
     }
     let _ = writeln!(
         out,
-        "{g}{} {}",
-        style.dim("= help:"),
-        words::plain(&advice.help)
+        "{g}{equals} {}: {}",
+        style.green(&style.bold("help")),
+        style.code(&advice.help)
     );
     let ids = id_list(view, entry);
     let _ = writeln!(
         out,
-        "\n{g}{}  {} {}",
-        style.dim("done when"),
+        "\n{g}{} {} {}",
+        style.dim("done when "),
         view.command("verify", &ids),
         style.dim("passes")
     );
     let _ = writeln!(
         out,
-        "{g}{}  {}",
-        style.dim("reproduce"),
+        "{g}{} {}",
+        style.dim("reproduce "),
         view.command("run", &ids)
     );
 }
@@ -413,8 +565,8 @@ fn not_covered(out: &mut String, view: &View, style: Style) {
         .collect();
     let _ = writeln!(
         out,
-        "\n {} {}",
-        style.bold("Not covered"),
+        "\n{}{}",
+        style.amber(&style.bold(" Not covered ")),
         style.dim(&"─".repeat(55))
     );
     for (function, mut lines) in by_function {
@@ -430,7 +582,7 @@ fn not_covered(out: &mut String, view: &View, style: Style) {
         let _ = writeln!(
             out,
             " {} {} {}() {}",
-            style.dim("○"),
+            style.amber("○"),
             f.file.display(),
             f.name,
             style.dim(&format!(
@@ -448,35 +600,36 @@ fn not_covered(out: &mut String, view: &View, style: Style) {
 }
 
 fn summary(out: &mut String, report: &Report, style: Style) {
-    let caught = report.count(Status::Killed);
-    let missed = report.count(Status::Survived);
-    let timed_out = report.count(Status::Timeout);
-    let not_covered = report.count(Status::NoCoverage);
-    let skipped = report.count(Status::Ignored);
-    let crashed = report.count(Status::RuntimeError);
-    let mut counts = vec![style.green(&format!("✓ {caught} caught"))];
-    if missed > 0 {
-        counts.push(style.red(&format!("✗ {missed} missed")));
+    let rows = rows(report, style);
+    let width = rows.iter().map(|(label, _)| label.len()).max().unwrap_or(0);
+    out.push('\n');
+    for (label, value) in rows {
+        let _ = writeln!(out, " {}  {value}", style.dim(&format!("{label:>width$}")));
     }
-    if timed_out > 0 {
-        counts.push(format!("⏱ {timed_out} timed out"));
+    let _ = writeln!(out, "\n {}", verdict(report, style));
+    if report.count(Status::Survived) > 0 {
+        let dir = &report.project.given;
+        let _ = writeln!(
+            out,
+            "{}",
+            style.dim(&format!(
+                " Next: mutastic verify <id> {dir} · mutastic run --only=<id> {dir}"
+            ))
+        );
     }
-    if not_covered > 0 {
-        counts.push(format!("○ {not_covered} not covered"));
-    }
-    let scored = report.results.len() - report.unscored();
-    let mut mutants = format!("{} ({scored})", counts.join(" · "));
-    if skipped > 0 {
-        mutants.push_str(&style.dim(&format!(" · {skipped} skipped as unviable")));
-    }
-    if crashed > 0 {
-        mutants.push_str(&style.dim(&format!(
-            " · {crashed} crashed where a crash proves nothing"
-        )));
-    }
-    let _ = writeln!(out, "\n{}  {mutants}", style.dim("   Mutants"));
+}
+
+/// The summary's rows, label and value, in the order shown.
+fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
+    let mut rows = vec![
+        ("Files", files_row(report, style)),
+        ("Mutants", mutants_row(report, style)),
+    ];
     if let Some(line) = not_mutated(report) {
-        let _ = writeln!(out, "{}  {}", style.dim("  Left out"), style.dim(&line));
+        rows.push(("Left out", style.dim(&line)));
+    }
+    if let Some(worst) = worst_at(report) {
+        rows.push(("Worst at", worst));
     }
     let by_crash = report
         .results
@@ -488,42 +641,167 @@ fn summary(out: &mut String, report: &Report, style: Style) {
         })
         .count();
     if by_crash > 0 {
-        let _ = writeln!(
-            out,
-            "{}  {}",
-            style.dim("   Crashes"),
+        rows.push((
+            "Crashes",
             style.dim(&format!(
                 "{by_crash} caught only because the test process crashed, not by a test's check"
-            ))
-        );
+            )),
+        ));
     }
     let rounds = report.rounds.len();
-    let _ = writeln!(
-        out,
-        "{}  one build of every mutant, {rounds} round{} (check and build)",
-        style.dim("     Build"),
-        if rounds == 1 { "" } else { "s" }
+    rows.push((
+        "Build",
+        format!(
+            "one build of every mutant, {rounds} round{} (check and build)",
+            if rounds == 1 { "" } else { "s" }
+        ),
+    ));
+    rows.push(("Test runs", test_runs_row(report, style)));
+    if let Some(started) = &report.started_at {
+        rows.push(("Start at", started.clone()));
+    }
+    rows.push((
+        "Duration",
+        format!(
+            "{} {}",
+            duration(report.took),
+            style.dim(&format!(
+                "(setup {}, coverage {}, mutants {})",
+                duration(report.setup),
+                duration(report.coverage),
+                duration(report.mutants)
+            ))
+        ),
+    ));
+    rows.push((
+        "Tests",
+        format!(
+            "{} on rustc {} · {} worker{}",
+            report.tests,
+            report.rustc,
+            report.workers,
+            if report.workers == 1 { "" } else { "s" }
+        ),
+    ));
+    rows.push(("Score", score_row(report, style)));
+    rows
+}
+
+/// `0 clean | 1 with misses (1)`: the source files with mutants, by whether any was missed or not
+/// covered.
+fn files_row(report: &Report, style: Style) -> String {
+    let mut by_file: BTreeMap<&std::path::Path, bool> = BTreeMap::new();
+    for result in &report.results {
+        let with_misses = matches!(result.status, Status::Survived | Status::NoCoverage);
+        *by_file
+            .entry(report.found.mutants[result.mutant].file.as_path())
+            .or_default() |= with_misses;
+    }
+    let with_misses = by_file.values().filter(|&&misses| misses).count();
+    let mut parts =
+        vec![style.green(&style.bold(&format!("{} clean", by_file.len() - with_misses)))];
+    if with_misses > 0 {
+        parts.push(style.red(&style.bold(&format!("{with_misses} with misses"))));
+    }
+    format!(
+        "{}{}",
+        parts.join(&style.dim(" | ")),
+        style.dim(&format!(" ({})", by_file.len()))
+    )
+}
+
+fn mutants_row(report: &Report, style: Style) -> String {
+    let caught = report.count(Status::Killed);
+    let missed = report.count(Status::Survived);
+    let timed_out = report.count(Status::Timeout);
+    let not_covered = report.count(Status::NoCoverage);
+    let skipped = report.count(Status::Ignored);
+    let crashed = report.count(Status::RuntimeError);
+    let mut counts = vec![style.green(&format!("✓ {}", style.bold(&format!("{caught} caught"))))];
+    if missed > 0 {
+        counts.push(style.red(&format!("✗ {}", style.bold(&format!("{missed} missed")))));
+    }
+    if timed_out > 0 {
+        counts.push(style.amber(&format!("⏱ {timed_out} timed out")));
+    }
+    if not_covered > 0 {
+        counts.push(style.amber(&format!("○ {not_covered} not covered")));
+    }
+    let scored = report.results.len() - report.unscored();
+    let mut row = format!(
+        "{}{}",
+        counts.join(&style.dim(" · ")),
+        style.dim(&format!(" ({scored})"))
     );
-    let _ = writeln!(out, "{}  {}", style.dim(" Test runs"), report.test_runs);
-    let _ = writeln!(
-        out,
-        "{}  {} (setup {}, coverage {}, mutants {})",
-        style.dim("  Duration"),
-        duration(report.took),
-        duration(report.setup),
-        duration(report.coverage),
-        duration(report.mutants)
-    );
-    let _ = writeln!(
-        out,
-        "{}  {} on rustc {} · {} worker{}",
-        style.dim("     Tests"),
-        report.tests,
-        report.rustc,
-        report.workers,
-        if report.workers == 1 { "" } else { "s" }
-    );
-    let covered = if not_covered > 0 {
+    if skipped > 0 {
+        row.push_str(&style.dim(&format!(" · {skipped} skipped as unviable")));
+    }
+    if crashed > 0 {
+        row.push_str(&style.dim(&format!(
+            " · {crashed} crashed where a crash proves nothing"
+        )));
+    }
+    row
+}
+
+/// The three functions with the most missed mutants: where to start.
+fn worst_at(report: &Report) -> Option<String> {
+    let mut by_function: Vec<(usize, usize)> = Vec::new();
+    for result in &report.results {
+        if result.status == Status::Survived {
+            let function = report.found.mutants[result.mutant].function;
+            match by_function.iter_mut().find(|(f, _)| *f == function) {
+                Some((_, count)) => *count += 1,
+                None => by_function.push((function, 1)),
+            }
+        }
+    }
+    // Stable: functions with as many misses stay in the order found.
+    by_function.sort_by_key(|&(_, count)| std::cmp::Reverse(count));
+    let crate_prefix = format!("{}::", report.project.crate_name);
+    let worst: Vec<String> = by_function
+        .iter()
+        .take(3)
+        .map(|&(function, count)| {
+            let path = &report.found.functions[function].path;
+            format!(
+                "{}() {count} ✗",
+                path.strip_prefix(&crate_prefix).unwrap_or(path)
+            )
+        })
+        .collect();
+    (!worst.is_empty()).then(|| worst.join(" · "))
+}
+
+/// The tests run against mutants, and how many there would have been running every test on every
+/// mutant.
+fn test_runs_row(report: &Report, style: Style) -> String {
+    let ran = report
+        .results
+        .iter()
+        .filter(|r| !matches!(r.status, Status::Ignored | Status::NoCoverage))
+        .count();
+    format!(
+        "{}{}",
+        report.test_runs,
+        style.dim(&format!(
+            " ({} without coverage selection)",
+            ran * report.tests
+        ))
+    )
+}
+
+fn score_row(report: &Report, style: Style) -> String {
+    let threshold = report.threshold;
+    let Some(score) = report.score() else {
+        return format!(
+            "{}{}",
+            style.bold("none"),
+            style.dim(&format!(" (no mutants to score)  threshold {threshold}"))
+        );
+    };
+    let score = percent(Some(score));
+    let covered = if report.count(Status::NoCoverage) > 0 && report.covered_score().is_some() {
         style.dim(&format!(
             "  · {} where tests reach",
             percent(report.covered_score())
@@ -531,23 +809,30 @@ fn summary(out: &mut String, report: &Report, style: Style) {
     } else {
         String::new()
     };
-    let _ = writeln!(
-        out,
-        "{}  {}{covered}  {}",
-        style.dim("     Score"),
-        style.bold(&percent(report.score())),
-        style.dim(&format!("threshold {}", report.threshold))
-    );
-    let verdict = if report.score().is_none() {
+    format!(
+        "{}{}{covered}",
+        if report.passed() {
+            style.green(&style.bold(&score))
+        } else {
+            style.red(&style.bold(&score))
+        },
+        style.dim(&format!("  threshold {threshold}"))
+    )
+}
+
+/// The last line: PASS or FAIL, and why.
+fn verdict(report: &Report, style: Style) -> String {
+    let missed = report.count(Status::Survived);
+    if report.score().is_none() {
         format!(
-            "{}  {}",
-            style.label("PASS", "42"),
+            "{} {}",
+            style.label("PASS", GREEN),
             style.dim("Nothing to measure: no mutants to score.")
         )
     } else if report.passed() {
         format!(
-            "{}  {}",
-            style.label("PASS", "42"),
+            "{} {}",
+            style.label("PASS", GREEN),
             style.green(&if missed == 0 {
                 "Every mutant was caught.".to_string()
             } else {
@@ -556,24 +841,14 @@ fn summary(out: &mut String, report: &Report, style: Style) {
         )
     } else {
         format!(
-            "{}  {}",
-            style.label("FAIL", "41"),
+            "{} {}",
+            style.label("FAIL", RED),
             style.red(&format!(
-                "Score below {}: {missed} missed, {not_covered} not covered.",
-                report.threshold
+                "Score below {}: {missed} missed, {} not covered.",
+                report.threshold,
+                report.count(Status::NoCoverage)
             ))
         )
-    };
-    let _ = writeln!(out, "\n  {verdict}");
-    if missed > 0 {
-        let dir = &report.project.given;
-        let _ = writeln!(
-            out,
-            "{}",
-            style.dim(&format!(
-                " Next: mutastic verify <id> {dir} · mutastic run --only=<id> {dir}"
-            ))
-        );
     }
 }
 
@@ -621,8 +896,7 @@ fn agent(report: &Report) -> String {
     if let Some(line) = not_mutated(report) {
         let _ = writeln!(out, "{line}");
     }
-    let mut entries = view.entries();
-    entries.sort_by_key(|entry| rank(view.mutant(entry.main)));
+    let entries = ranked(&view, view.entries());
     for (index, entry) in entries.iter().take(10).enumerate() {
         let _ = write!(out, "\n{}. {}", index + 1, agent_entry(&view, entry));
     }

@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when delivery_days() has no arm for 2
+ [✗ MISSED] tests pass even when delivery_days() has no arm for 2
    ┌─ src/control.rs:6
    │
  5 │         1 => 1,

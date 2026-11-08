@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when is_valid_code() does nothing but return true
+ [✗ MISSED] tests pass even when is_valid_code() does nothing but return true
     ┌─ src/returns.rs:9
     │
   8 │ /// Six digits.

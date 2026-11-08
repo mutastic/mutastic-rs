@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when configured.unwrap_or(8080) becomes 8080 in port() · m9e594423
+ [✗ MISSED] tests pass even when configured.unwrap_or(8080) becomes 8080 in port() · m9e594423
     ┌─ src/options.rs:17
     │
  16 │ pub fn port(configured: Option<u16>) -> u16 {

@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when excited is Default::default() from the start of greet()
+ [✗ MISSED] tests pass even when excited is Default::default() from the start of greet()
     ┌─ src/arguments.rs:27
     │
  26 │ 

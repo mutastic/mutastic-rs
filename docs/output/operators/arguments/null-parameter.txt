@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when coupon is None from the start of price_with()
+ [✗ MISSED] tests pass even when coupon is None from the start of price_with()
     ┌─ src/arguments.rs:23
     │
  22 │ 

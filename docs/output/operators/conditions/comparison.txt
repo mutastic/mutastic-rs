@@ -1,4 +1,4 @@
-  ✗ [MISSED]  no test checks needs_restock() with stock > low
+ [✗ MISSED] no test checks needs_restock() with stock > low
     ┌─ src/conditions.rs:10
     │
   9 │ pub fn needs_restock(stock: u32, low: u32) -> bool {

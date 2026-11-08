@@ -46,7 +46,7 @@ fn one_of_each() {
 
 <!-- output: operators/arithmetic/math -->
 ```text
-  ✗ [MISSED]  tests pass even when * becomes / in line_total() · m7c2deaec
+ [✗ MISSED] tests pass even when * becomes / in line_total() · m7c2deaec
    ┌─ src/arithmetic.rs:4
    │
  3 │ pub fn line_total(price: u32, quantity: u32) -> u32 {
@@ -88,7 +88,7 @@ fn a_fee_is_added() {
 
 <!-- output: operators/arithmetic/arithmetic-replacement -->
 ```text
-  ✗ [MISSED]  tests pass even when + becomes * in with_fee()
+ [✗ MISSED] tests pass even when + becomes * in with_fee()
    ┌─ src/arithmetic.rs:8
    │
  7 │ pub fn with_fee(price: u32, fee: u32) -> u32 {
@@ -131,7 +131,7 @@ fn a_bill_is_shared() {
 
 <!-- output: operators/arithmetic/other-arithmetic -->
 ```text
-  ✗ [MISSED]  tests pass even when / becomes - in per_person() · mea866977
+ [✗ MISSED] tests pass even when / becomes - in per_person() · mea866977
     ┌─ src/arithmetic.rs:12
     │
  11 │ pub fn per_person(bill: u32, people: u32) -> u32 {
@@ -177,7 +177,7 @@ is math's, with keep operand's under it:
 
 <!-- output: operators/arithmetic/keep-operand -->
 ```text
-  ✗ [MISSED]  tests pass even when - becomes + in after_refund() · m4e284c1b
+ [✗ MISSED] tests pass even when - becomes + in after_refund() · m4e284c1b
     ┌─ src/arithmetic.rs:16
     │
  15 │ pub fn after_refund(paid: u32, refund: u32) -> u32 {
@@ -218,7 +218,7 @@ fn an_empty_balance_reversed() {
 
 <!-- output: operators/arithmetic/remove-negation -->
 ```text
-  ✗ [MISSED]  tests pass even when -balance becomes balance in reversed()
+ [✗ MISSED] tests pass even when -balance becomes balance in reversed()
     ┌─ src/arithmetic.rs:20
     │
  19 │ pub fn reversed(balance: i32) -> i32 {
@@ -263,7 +263,7 @@ the test: the operator's, the constant's, and keep operand's, on one card:
 
 <!-- output: operators/arithmetic/constant-value -->
 ```text
-  ✗ [MISSED]  tests pass even when * becomes / in postage() · m0f04c581
+ [✗ MISSED] tests pass even when * becomes / in postage() · m0f04c581
     ┌─ src/arithmetic.rs:25
     │
  24 │ pub fn postage(kilos: u32) -> u32 {
@@ -316,7 +316,7 @@ fn a_flag_that_is_set() {
 
 <!-- output: operators/arithmetic/bitwise -->
 ```text
-  ✗ [MISSED]  tests pass even when & becomes | in has_flag() · ma32c7819
+ [✗ MISSED] tests pass even when & becomes | in has_flag() · ma32c7819
     ┌─ src/arithmetic.rs:29
     │
  28 │ pub fn has_flag(flags: u8, flag: u8) -> bool {
@@ -360,7 +360,7 @@ fn points_add_up() {
 
 <!-- output: operators/arithmetic/unchecked-arithmetic -->
 ```text
-  ✗ [MISSED]  tests pass even when points.checked_add(more) becomes Some(points.wrapping_add(more)) in add_points()
+ [✗ MISSED] tests pass even when points.checked_add(more) becomes Some(points.wrapping_add(more)) in add_points()
     ┌─ src/arithmetic.rs:34
     │
  33 │ pub fn add_points(points: u32, more: u32) -> Option<u32> {

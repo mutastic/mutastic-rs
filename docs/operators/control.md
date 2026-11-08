@@ -45,7 +45,7 @@ fn every_zone_within_a_week() {
 
 <!-- output: operators/control/remove-switch-arm -->
 ```text
-  ✗ [MISSED]  tests pass even when delivery_days() has no arm for 2
+ [✗ MISSED] tests pass even when delivery_days() has no arm for 2
    ┌─ src/control.rs:6
    │
  5 │         1 => 1,
@@ -96,7 +96,7 @@ difference:
 
 <!-- output: operators/control/swap-break -->
 ```text
-  ✗ [MISSED]  tests pass even when break becomes continue in first_negative()
+ [✗ MISSED] tests pass even when break becomes continue in first_negative()
     ┌─ src/control.rs:16
     │
  15 │             found = Some(index);

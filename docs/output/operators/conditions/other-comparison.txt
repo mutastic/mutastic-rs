@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when matches!(day, 6 | 7) becomes !matches!(day, 6 | 7) in is_weekend()
+ [✗ MISSED] tests pass even when matches!(day, 6 | 7) becomes !matches!(day, 6 | 7) in is_weekend()
     ┌─ src/conditions.rs:27
     │
  26 │ pub fn is_weekend(day: u8) -> bool {

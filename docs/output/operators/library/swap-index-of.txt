@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when find becomes rfind in extension()
+ [✗ MISSED] tests pass even when find becomes rfind in extension()
     ┌─ src/library.rs:13
     │
  12 │ pub fn extension(file: &str) -> Option<&str> {

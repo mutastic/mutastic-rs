@@ -1,4 +1,4 @@
-  ✗ [MISSED]  no test checks can_ship() with one of paid and in_stock true and the other false
+ [✗ MISSED] no test checks can_ship() with one of paid and in_stock true and the other false
     ┌─ src/conditions.rs:22
     │
  21 │ pub fn can_ship(paid: bool, in_stock: bool) -> bool {

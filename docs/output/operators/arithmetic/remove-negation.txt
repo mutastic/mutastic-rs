@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when -balance becomes balance in reversed()
+ [✗ MISSED] tests pass even when -balance becomes balance in reversed()
     ┌─ src/arithmetic.rs:20
     │
  19 │ pub fn reversed(balance: i32) -> i32 {

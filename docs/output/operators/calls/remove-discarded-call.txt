@@ -1,4 +1,4 @@
-  ✗ [MISSED]  no test checks what seen.insert(name.to_string(), 1); does in first_visit()
+ [✗ MISSED] no test checks what seen.insert(name.to_string(), 1); does in first_visit()
     ┌─ src/calls.rs:25
     │
  24 │     let first = !seen.contains_key(name);

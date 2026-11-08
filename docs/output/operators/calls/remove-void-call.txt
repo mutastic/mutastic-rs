@@ -1,4 +1,4 @@
-  ✗ [MISSED]  no test checks what self.history.push(format!("added {item}")); does in add()
+ [✗ MISSED] no test checks what self.history.push(format!("added {item}")); does in add()
     ┌─ src/calls.rs:14
     │
  13 │         self.items.push(item.to_string());

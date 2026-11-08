@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even without muted: true in muted()
+ [✗ MISSED] tests pass even without muted: true in muted()
     ┌─ src/calls.rs:56
     │
  55 │     Settings {

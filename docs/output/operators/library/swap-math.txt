@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when min becomes max in capped_discount()
+ [✗ MISSED] tests pass even when min becomes max in capped_discount()
     ┌─ src/library.rs:9
     │
   8 │ pub fn capped_discount(percent: u32) -> u32 {

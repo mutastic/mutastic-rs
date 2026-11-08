@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when * becomes / in line_total() · m7c2deaec
+ [✗ MISSED] tests pass even when * becomes / in line_total() · m7c2deaec
    ┌─ src/arithmetic.rs:4
    │
  3 │ pub fn line_total(price: u32, quantity: u32) -> u32 {

@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when * becomes / in postage() · m0f04c581
+ [✗ MISSED] tests pass even when * becomes / in postage() · m0f04c581
     ┌─ src/arithmetic.rs:25
     │
  24 │ pub fn postage(kilos: u32) -> u32 {

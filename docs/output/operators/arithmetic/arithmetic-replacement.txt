@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when + becomes * in with_fee()
+ [✗ MISSED] tests pass even when + becomes * in with_fee()
    ┌─ src/arithmetic.rs:8
    │
  7 │ pub fn with_fee(price: u32, fee: u32) -> u32 {

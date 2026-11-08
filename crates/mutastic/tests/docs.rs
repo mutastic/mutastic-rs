@@ -175,13 +175,16 @@ fn ran(work: &Path, args: &[&str]) -> Ran {
     ran
 }
 
-/// What changes from run to run or machine to machine: timings, the compiler's version, the
-/// number of workers, which follows the cores, and how many tests ran, which follows timing too: a
-/// mutant tries the binary whose tests were fastest first, and stops at the first that fails.
+/// What changes from run to run or machine to machine: timings, when the run started, the
+/// compiler's version, the number of workers, which follows the cores, and how many tests ran,
+/// which follows timing too: a mutant tries the binary whose tests were fastest first, and stops at
+/// the first that fails.
 fn steady(text: &str) -> String {
     let rules = [
         (r#""testsRun": ?\d+"#, r#""testsRun":…"#),
         (r"Test runs  \d+", "Test runs  …"),
+        (r"Start at  \d\d:\d\d:\d\d", "Start at  …"),
+        (r"\b\d+m\d\ds\b", "…"),
         (r"\b\d+(\.\d+)?(ms|s)\b", "…"),
         (r#"Ms": ?\d+"#, r#"Ms":…"#),
         (
@@ -207,7 +210,7 @@ fn card(output: &str, ids: &BTreeSet<String>) -> Option<String> {
     let mut start = None;
     for (index, line) in lines.iter().enumerate() {
         let trimmed = line.trim_start();
-        if trimmed.starts_with("✗ [MISSED]") {
+        if trimmed.starts_with("[✗ MISSED]") {
             start = Some(index);
         }
         if let (Some(first), Some(rest)) = (start, trimmed.strip_prefix("done when")) {

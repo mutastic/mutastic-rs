@@ -199,12 +199,61 @@ fn format(parsed: &Parsed) -> Format {
         })
 }
 
-fn style() -> Style {
+/// Colour for a stream that's a terminal, or when `FORCE_COLOR` asks; never with `NO_COLOR` or a
+/// dumb terminal, unless forced.
+fn style(terminal: bool) -> Style {
     let forced = std::env::var_os("FORCE_COLOR").is_some();
     let plain = std::env::var_os("NO_COLOR").is_some()
         || std::env::var("TERM").is_ok_and(|term| term == "dumb");
     Style {
-        color: forced || (!plain && std::io::stdout().is_terminal()),
+        color: forced || (!plain && terminal),
+    }
+}
+
+/// What the run is doing, on stderr so stdout stays the result: what it's reading, the build, the
+/// coverage pass, and with `files` each source file's line as its last mutant finishes. Nothing
+/// when `quiet`, for agents and tools, who only want the result.
+fn progress(package: &str, quiet: bool, files: bool) -> impl Fn(engine::Progress) + Sync + '_ {
+    let style = style(std::io::stderr().is_terminal());
+    move |step| {
+        if quiet {
+            return;
+        }
+        match step {
+            engine::Progress::Building { mutants } => {
+                eprintln!("building  {mutants} mutants in one build…")
+            }
+            engine::Progress::Covered {
+                tests,
+                rustc,
+                took,
+                mutants,
+            } => eprintln!(
+                "coverage  {} on rustc {rustc} in {} · {}",
+                count(tests, "test"),
+                report::duration(took),
+                count(mutants, "mutant")
+            ),
+            engine::Progress::FileFinished { found, results } if files => {
+                eprint!("{}", report::file_finished(package, found, results, style))
+            }
+            engine::Progress::FileFinished { .. } => {}
+        }
+    }
+}
+
+/// `1 test`, `3 tests`.
+fn count(number: usize, noun: &str) -> String {
+    format!("{number} {noun}{}", if number == 1 { "" } else { "s" })
+}
+
+/// The first line, before anything slow.
+fn started(quiet: bool) {
+    if !quiet {
+        eprintln!(
+            "mutastic {} · reading the Cargo package…",
+            env!("CARGO_PKG_VERSION")
+        );
     }
 }
 
@@ -220,19 +269,19 @@ fn options(parsed: &Parsed, only: Vec<String>) -> Options {
 
 fn run(parsed: &Parsed) -> Result<ExitCode, String> {
     let dir = parsed.positional.first().map_or(".", String::as_str);
-    let project = workspace::read(dir)?;
     let format = format(parsed);
-    let quiet = format == Format::Jsonl;
+    let quiet = matches!(format, Format::Agent | Format::Jsonl);
+    started(quiet);
+    let project = workspace::read(dir)?;
     let report = engine::run(
         &project,
         &options(parsed, parsed.only.clone()),
-        &mut |step| {
-            if !quiet {
-                eprintln!("mutastic: {step}");
-            }
-        },
+        &progress(&project.package, quiet, true),
     )?;
-    print!("{}", report::render(&report, format, style()));
+    print!(
+        "{}",
+        report::render(&report, format, style(std::io::stdout().is_terminal()))
+    );
     Ok(if report.passed() {
         ExitCode::SUCCESS
     } else {
@@ -245,11 +294,14 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, String> {
         return Err("verify needs a mutant's id: mutastic verify <id> [dir]".into());
     };
     let dir = parsed.positional.get(1).map_or(".", String::as_str);
+    started(false);
     let project = workspace::read(dir)?;
     let only: Vec<String> = ids(named).collect();
-    let report = engine::run(&project, &options(parsed, only), &mut |step| {
-        eprintln!("mutastic: {step}");
-    })?;
+    let report = engine::run(
+        &project,
+        &options(parsed, only),
+        &progress(&project.package, false, false),
+    )?;
     let mut settled = true;
     for result in &report.results {
         let mutant = &report.found.mutants[result.mutant];

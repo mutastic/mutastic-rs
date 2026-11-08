@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when values.iter().copied().max().unwrap_or(0) becomes values.iter().copied().max().unwrap() in largest()
+ [✗ MISSED] tests pass even when values.iter().copied().max().unwrap_or(0) becomes values.iter().copied().max().unwrap() in largest()
     ┌─ src/arguments.rs:16
     │
  15 │ pub fn largest(values: &[u32]) -> u32 {

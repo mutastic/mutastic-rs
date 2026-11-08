@@ -1,4 +1,4 @@
-  ✗ [MISSED]  no test checks what loyalty_points() returns here
+ [✗ MISSED] no test checks what loyalty_points() returns here
    ┌─ src/returns.rs:5
    │
  4 │ pub fn loyalty_points(spent: u32) -> u32 {

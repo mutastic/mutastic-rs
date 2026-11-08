@@ -36,7 +36,7 @@ against the tests that reach it. One mutant gets past them:
 
  ❯ src/lib.rs  1 missed in 1 function
 
-  ✗ [MISSED]  no test checks discount() at total == 100
+ [✗ MISSED] no test checks discount() at total == 100
     ┌─ src/lib.rs:26
     │
  25 │     pub fn discount(&self, total: u32) -> u32 {
@@ -54,14 +54,17 @@ against the tests that reach it. One mutant gets past them:
     done when  mutastic verify mb2f8ae57 fixtures/pricing passes
     reproduce  mutastic run --only=mb2f8ae57 fixtures/pricing
 
+     Files  0 clean | 1 with misses (1)
    Mutants  ✓ 10 caught · ✗ 1 missed (11)
+  Worst at  Pricing::discount() 1 ✗
      Build  one build of every mutant, 2 rounds (check and build)
- Test runs  16
-  Duration  91ms (setup 56ms, coverage 4ms, mutants 30ms)
+ Test runs  13 (33 without coverage selection)
+  Start at  16:24:16
+  Duration  1.2s (setup 1.1s, coverage 4ms, mutants 18ms)
      Tests  3 on rustc 1.94.0 · 4 workers
      Score  90.9%  threshold 80
 
-  [PASS]  1 missed, above the threshold.
+ [PASS] 1 missed, above the threshold.
  Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing
 ```
 
@@ -124,14 +127,16 @@ mutastic run fixtures/pricing
 <!-- output: getting-started/run-again -->
 ```text
 
+     Files  1 clean (1)
    Mutants  ✓ 11 caught (11)
      Build  one build of every mutant, 2 rounds (check and build)
- Test runs  19
-  Duration  785ms (setup 741ms, coverage 8ms, mutants 35ms)
+ Test runs  15 (44 without coverage selection)
+  Start at  16:24:18
+  Duration  976ms (setup 940ms, coverage 5ms, mutants 15ms)
      Tests  4 on rustc 1.94.0 · 4 workers
      Score  100.0%  threshold 80
 
-  [PASS]  Every mutant was caught.
+ [PASS] Every mutant was caught.
 ```
 
 Every mutant is caught.

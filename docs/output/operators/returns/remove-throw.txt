@@ -1,4 +1,4 @@
-  ✗ [MISSED]  no test checks what return Err("no quantity given".into()); does in quantity()
+ [✗ MISSED] no test checks what return Err("no quantity given".into()); does in quantity()
     ┌─ src/returns.rs:20
     │
  19 │     if text.is_empty() {

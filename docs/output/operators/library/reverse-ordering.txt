@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when a.cmp(b) becomes b.cmp(a) in sorted()
+ [✗ MISSED] tests pass even when a.cmp(b) becomes b.cmp(a) in sorted()
     ┌─ src/library.rs:17
     │
  16 │ pub fn sorted(mut names: Vec<String>) -> Vec<String> {

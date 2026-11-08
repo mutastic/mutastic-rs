@@ -1,4 +1,4 @@
-  ✗ [MISSED]  no test checks what self.paid = true; does in pay()
+ [✗ MISSED] no test checks what self.paid = true; does in pay()
     ┌─ src/calls.rs:43
     │
  42 │     pub fn pay(&mut self) -> u32 {

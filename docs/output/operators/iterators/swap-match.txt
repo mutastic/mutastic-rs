@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when any becomes all in any_overdue()
+ [✗ MISSED] tests pass even when any becomes all in any_overdue()
    ┌─ src/iterators.rs:5
    │
  4 │ pub fn any_overdue(days_late: &[u32]) -> bool {

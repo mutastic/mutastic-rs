@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when ", " becomes "" in header()
+ [✗ MISSED] tests pass even when ", " becomes "" in header()
     ┌─ src/library.rs:22
     │
  21 │ pub fn header(columns: &[&str]) -> String {

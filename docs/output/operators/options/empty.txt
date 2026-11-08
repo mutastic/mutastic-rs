@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when Some(chosen) becomes None in page_size()
+ [✗ MISSED] tests pass even when Some(chosen) becomes None in page_size()
     ┌─ src/options.rs:12
     │
  11 │ pub fn page_size(chosen: u32) -> u32 {

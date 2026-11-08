@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even without .trim() in username()
+ [✗ MISSED] tests pass even without .trim() in username()
    ┌─ src/arguments.rs:4
    │
  3 │ pub fn username(input: &str) -> String {

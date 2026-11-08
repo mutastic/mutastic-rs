@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when 0, 100 becomes 100, 0 in is_percent()
+ [✗ MISSED] tests pass even when 0, 100 becomes 100, 0 in is_percent()
     ┌─ src/arguments.rs:12
     │
  11 │ pub fn is_percent(value: i32) -> bool {

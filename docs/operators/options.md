@@ -45,7 +45,7 @@ which way the check went:
 
 <!-- output: operators/options/swap-present -->
 ```text
-  ✗ [MISSED]  tests pass even when is_none becomes is_some in display_name()
+ [✗ MISSED] tests pass even when is_none becomes is_some in display_name()
    ┌─ src/options.rs:4
    │
  3 │ pub fn display_name(name: &str, nickname: Option<&str>) -> String {
@@ -88,7 +88,7 @@ The test chose the size that's also the default:
 
 <!-- output: operators/options/empty -->
 ```text
-  ✗ [MISSED]  tests pass even when Some(chosen) becomes None in page_size()
+ [✗ MISSED] tests pass even when Some(chosen) becomes None in page_size()
     ┌─ src/options.rs:12
     │
  11 │ pub fn page_size(chosen: u32) -> u32 {
@@ -129,7 +129,7 @@ fn the_configured_port() {
 
 <!-- output: operators/options/always-default -->
 ```text
-  ✗ [MISSED]  tests pass even when configured.unwrap_or(8080) becomes 8080 in port() · m9e594423
+ [✗ MISSED] tests pass even when configured.unwrap_or(8080) becomes 8080 in port() · m9e594423
     ┌─ src/options.rs:17
     │
  16 │ pub fn port(configured: Option<u16>) -> u16 {
@@ -166,7 +166,7 @@ No test calls `largest` with no values, so nothing needs the 0:
 
 <!-- output: operators/options/no-default -->
 ```text
-  ✗ [MISSED]  tests pass even when values.iter().copied().max().unwrap_or(0) becomes values.iter().copied().max().unwrap() in largest()
+ [✗ MISSED] tests pass even when values.iter().copied().max().unwrap_or(0) becomes values.iter().copied().max().unwrap() in largest()
     ┌─ src/arguments.rs:16
     │
  15 │ pub fn largest(values: &[u32]) -> u32 {
@@ -205,7 +205,7 @@ fn an_ordinary_age() {
 
 <!-- output: operators/options/remove-filter -->
 ```text
-  ✗ [MISSED]  tests pass even without .filter(|years| *years < 150) in plausible_age()
+ [✗ MISSED] tests pass even without .filter(|years| *years < 150) in plausible_age()
     ┌─ src/options.rs:21
     │
  20 │ pub fn plausible_age(age: Option<u32>) -> Option<u32> {

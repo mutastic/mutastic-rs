@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even without .filter(|years| *years < 150) in plausible_age()
+ [✗ MISSED] tests pass even without .filter(|years| *years < 150) in plausible_age()
     ┌─ src/options.rs:21
     │
  20 │ pub fn plausible_age(age: Option<u32>) -> Option<u32> {

@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even without .inspect(|value| log.push(**value)) in logged_total()
+ [✗ MISSED] tests pass even without .inspect(|value| log.push(**value)) in logged_total()
     ┌─ src/iterators.rs:19
     │
  18 │ pub fn logged_total(values: &[u32], log: &mut Vec<u32>) -> u32 {

@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when is_none becomes is_some in display_name()
+ [✗ MISSED] tests pass even when is_none becomes is_some in display_name()
    ┌─ src/options.rs:4
    │
  3 │ pub fn display_name(name: &str, nickname: Option<&str>) -> String {

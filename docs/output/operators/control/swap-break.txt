@@ -1,4 +1,4 @@
-  ✗ [MISSED]  tests pass even when break becomes continue in first_negative()
+ [✗ MISSED] tests pass even when break becomes continue in first_negative()
     ┌─ src/control.rs:16
     │
  15 │             found = Some(index);

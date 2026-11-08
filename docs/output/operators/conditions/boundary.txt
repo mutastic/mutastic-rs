@@ -1,4 +1,4 @@
-  ✗ [MISSED]  no test checks free_delivery() at total == 50
+ [✗ MISSED] no test checks free_delivery() at total == 50
    ┌─ src/conditions.rs:5
    │
  4 │ pub fn free_delivery(total: u32) -> bool {
