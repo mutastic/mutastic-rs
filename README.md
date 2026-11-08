@@ -3,8 +3,8 @@
 *Find out whether your tests, or your agent's, actually check anything.*
 
 > **Early days.** This is the Rust edition of [mutastic](https://mutastic.io), and it is not ready
-> to use yet: it runs on single Cargo packages, with a handful of operators, and its output and ids
-> may still change. Nothing is published to crates.io. The Java edition is at
+> to use yet: it runs on single Cargo packages, and its output and ids may still change. Its operators
+> match the Java edition's. Nothing is published to crates.io. The Java edition is at
 > [mutastic/mutastic](https://github.com/mutastic/mutastic).
 
 mutastic makes small changes to your code, such as `>=` to `>`, and runs your tests against each
