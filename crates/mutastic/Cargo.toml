@@ -1,0 +1,28 @@
+[package]
+name = "mutastic"
+description = "Mutation testing for Rust: find the tests that run your code but don't check it"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+publish = false
+
+[[bin]]
+name = "mutastic"
+path = "src/bin/mutastic.rs"
+
+[[bin]]
+name = "cargo-mutastic"
+path = "src/bin/cargo-mutastic.rs"
+
+[dependencies]
+# rust-analyzer's parser: error-tolerant and lossless. Pinned, and moved forward on purpose,
+# because it ships about weekly as 0.0.x.
+ra_ap_syntax = "=0.0.331"
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
+
+[lints]
+workspace = true
