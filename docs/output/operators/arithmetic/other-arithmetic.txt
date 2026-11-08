@@ -1,0 +1,18 @@
+  ✗ [MISSED]  tests pass even when / becomes - in per_person() · mea866977
+    ┌─ src/arithmetic.rs:12
+    │
+ 11 │ pub fn per_person(bill: u32, people: u32) -> u32 {
+ 12 │     bill / people
+    │          ^ changed to -
+ 13 │ }
+    │
+    = mutant  - bill / people
+              + bill - people
+    = also    ✗ tests pass even when bill / people becomes people in per_person() · m82fdb48b
+              + people
+    = note: inputs seen: bill = 4; people = 2
+            covered by arithmetic::tests::a_bill_is_shared (its 1 covering test still passes)
+    = help: use inputs where bill / people and bill - people differ, and assert the result
+
+    done when  mutastic verify mea866977,m82fdb48b fixtures/operators passes
+    reproduce  mutastic run --only=mea866977,m82fdb48b fixtures/operators

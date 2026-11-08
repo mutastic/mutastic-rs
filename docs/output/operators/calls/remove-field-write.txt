@@ -1,0 +1,15 @@
+  ✗ [MISSED]  no test checks what self.paid = true; does in pay()
+    ┌─ src/calls.rs:43
+    │
+ 42 │     pub fn pay(&mut self) -> u32 {
+ 43 │         self.paid = true;
+    │         ^^^^^^^^^ removed
+ 44 │         self.total
+    │
+    = mutant  - self.paid = true;
+              + let _ = true;
+    = note: covered by calls::tests::paying_gives_the_total (its 1 covering test still passes)
+    = help: assert what self.paid = true; changes, in a test of pay()
+
+    done when  mutastic verify m17121fd7 fixtures/operators passes
+    reproduce  mutastic run --only=m17121fd7 fixtures/operators

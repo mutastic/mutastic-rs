@@ -23,32 +23,27 @@ toolchain; your source, `Cargo.toml` and `RUSTFLAGS` are never touched.
 ```sh
 cargo install --path crates/mutastic
 mutastic run fixtures/pricing          # or: cargo mutastic run, inside a package
-mutastic verify <id> fixtures/pricing  # passes once a test catches that mutant
+mutastic verify mb2f8ae57 fixtures/pricing  # passes once a test catches that mutant
 ```
 
-`--format` is `full` (cards, the default at a terminal), `concise`, `agent` or `jsonl` (the
-`mutastic.events/v1` stream).
+[Getting started](docs/getting-started.md) walks through it: the card, the test, and the proof.
 
-## Unsafe code
+## Docs
 
-A mutant inside `unsafe` code can cause undefined behaviour, which no test can be said to catch or
-miss, so mutastic leaves alone code inside `unsafe` blocks, `unsafe fn`s and `unsafe impl`s, and
-safe functions that hold an `unsafe` block. The summary counts them as `not mutated: unsafe (N)`;
-`--unsafe=enclosing` mutates those safe functions too, and `--unsafe=all` everything. Safe code
-near unsafe code (called from inside an `unsafe` block, or in a module that has one) is mutated
-but marked: its mutants run one test at a time, and a crash among them is reported as
-`RuntimeError`, out of the score, not as caught. A safe mutant that only crashes the process is
-caught, and says so: no test's check caught it.
+[docs/](docs/README.md) has the rest, written to move into the Rust section of
+[docs.mutastic.io](https://docs.mutastic.io):
 
-Overflow checks and debug assertions are always on in mutastic's build, whatever the project's
-profiles say, because they decide what an arithmetic mutant does; the build's settings are in the
-`run-started` event.
+- [How a run works](docs/concepts/how-a-run-works.md), [results](docs/concepts/results.md),
+  [unsafe code](docs/concepts/unsafe.md), [profiles](docs/concepts/profiles.md) and
+  [mutant ids](docs/concepts/ids.md);
+- [operators](docs/operators.md), with a page and a real card for each family;
+- [commands](docs/reference/cli.md), [events](docs/reference/events.md) and
+  [configuration](docs/reference/configuration.md);
+- [troubleshooting](docs/troubleshooting.md) and the
+  [differences from the Java edition](docs/differences-from-java.md).
 
-## Operators
-
-The Java edition's ids, with the same meaning, and a few of Rust's own: [docs/operators.md](docs/operators.md)
-lists every one, its set and its Java equivalent. `--operators=defaults` (the default), `stronger`,
-or ids separated by commas.
+Every output those pages show comes from a run on the repository's fixtures, and `cargo test` fails
+when it no longer matches what mutastic prints.
 
 ## Licence
 

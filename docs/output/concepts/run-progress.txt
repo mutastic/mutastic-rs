@@ -1,0 +1,3 @@
+mutastic: building 11 mutants in one build
+mutastic: recording what 3 tests reach
+mutastic: running mutants

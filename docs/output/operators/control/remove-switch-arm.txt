@@ -1,0 +1,16 @@
+  ✗ [MISSED]  tests pass even when delivery_days() has no arm for 2
+   ┌─ src/control.rs:6
+   │
+ 5 │         1 => 1,
+ 6 │         2 => 3,
+   │         ^ arm removed
+ 7 │         _ => 7,
+   │
+   = mutant  - 2 => 3,
+             + (nothing: the line is gone)
+   = note: inputs seen: zone = 1, 2, 3
+           covered by control::tests::every_zone_within_a_week (its 1 covering test still passes)
+   = help: add a test where delivery_days() takes the 2 arm, and assert what it does there
+
+   done when  mutastic verify mc9468457 fixtures/operators passes
+   reproduce  mutastic run --only=mc9468457 fixtures/operators

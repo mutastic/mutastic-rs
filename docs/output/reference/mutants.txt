@@ -1,0 +1,12 @@
+mc9e13290 src/lib.rs:29:9 mutastic/return-value returns 1 instead in Pricing::discount
+mb2f8ae57 src/lib.rs:26:18 mutastic/boundary >= becomes > in Pricing::discount
+md56e8c39 src/lib.rs:26:12 mutastic/remove-conditional total >= 100 is always true in Pricing::discount
+m1636f6d5 src/lib.rs:26:12 mutastic/remove-conditional total >= 100 is always false in Pricing::discount
+m6d05659f src/lib.rs:27:20 mutastic/return-value returns 0 instead in Pricing::discount
+m95f96847 src/lib.rs:27:26 mutastic/math / becomes * in Pricing::discount
+m383e0002 src/lib.rs:37:9 mutastic/return-value returns 1 instead in Pricing::shipping
+m7d92063c src/lib.rs:34:18 mutastic/boundary < becomes <= in Pricing::shipping
+m3be6b420 src/lib.rs:34:12 mutastic/remove-conditional total < self.free_shipping_from is always true in Pricing::shipping
+m89be540d src/lib.rs:34:12 mutastic/remove-conditional total < self.free_shipping_from is always false in Pricing::shipping
+mbddcd9c4 src/lib.rs:35:20 mutastic/return-value returns 0 instead in Pricing::shipping
+11 mutants

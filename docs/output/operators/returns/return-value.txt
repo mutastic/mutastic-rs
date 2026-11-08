@@ -1,0 +1,17 @@
+  ✗ [MISSED]  no test checks what loyalty_points() returns here
+   ┌─ src/returns.rs:5
+   │
+ 4 │ pub fn loyalty_points(spent: u32) -> u32 {
+ 5 │     spent / 10
+   │     ^^^^^^^^^^ now returns 0
+ 6 │ }
+   │
+   = mutant  - spent / 10
+             + 0
+   = note: tests reach this return, but none fails when it returns 0
+           inputs seen: spent = 5
+           covered by returns::tests::small_spends_earn_nothing (its 1 covering test still passes)
+   = help: assert the value loyalty_points() returns on this path, with inputs where it isn't 0
+
+   done when  mutastic verify m5dafbb78 fixtures/operators passes
+   reproduce  mutastic run --only=m5dafbb78 fixtures/operators

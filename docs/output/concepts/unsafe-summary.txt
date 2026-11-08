@@ -1,0 +1,11 @@
+   Mutants  ✓ 5 caught · ✗ 7 missed · ○ 2 not covered (14) · 3 crashed where a crash proves nothing
+  Left out  not mutated: unsafe (4), in or around unsafe blocks; --unsafe=enclosing or --unsafe=all includes them
+   Crashes  1 caught only because the test process crashed, not by a test's check
+     Build  one build of every mutant, 2 rounds (check and build)
+ Test runs  21
+  Duration  1.1s (setup 948ms, coverage 18ms, mutants 116ms)
+     Tests  6 on rustc 1.94.0 · 4 workers
+     Score  35.7%  · 41.7% where tests reach  threshold 80
+
+  [FAIL]  Score below 80: 7 missed, 2 not covered.
+ Next: mutastic verify <id> fixtures/unsafety · mutastic run --only=<id> fixtures/unsafety

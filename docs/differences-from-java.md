@@ -1,0 +1,84 @@
+# Differences from the Java edition
+
+The two editions share their operators' ids, their cards' words, the event stream and the way they
+score. This page is only where you'd do something different in Rust. For the rest, the
+[Java edition's docs](https://docs.mutastic.io) hold.
+
+## Installing and running
+
+- **Install from source,** with `cargo install --path crates/mutastic`: nothing is on crates.io yet.
+  See [Getting started](getting-started.md#1-install-it).
+- **No build plugin.** There's no Maven or Gradle plugin to add: run `mutastic run` in a package, or
+  `cargo mutastic run`.
+- **Your own toolchain.** mutastic builds with the `cargo` and `rustc` you have, stable or not, and
+  needs no JDK.
+
+## One package at a time
+
+The Java edition runs a whole multi-module build, and `--tests-from` brings in other modules'
+tests. The Rust edition runs one Cargo package, with that package's own tests: point it at a
+workspace member's directory, and a test in another member doesn't count for it, even if it calls
+the code. See [Troubleshooting](troubleshooting.md#a-workspace).
+
+## Tests
+
+- **What runs:** unit tests in `#[cfg(test)]` modules, integration tests in `tests/`, and a binary's
+  tests, through libtest. Doc tests don't run, so code only a doc test calls is not covered. A test
+  marked `#[ignore]` is left out, as JUnit's `@Disabled` is.
+- **Test names** are libtest's, `tests::small_orders_pay_full_price` for a unit test, and the
+  target's name first for an integration test, `pricing::big_orders_get_ten_percent_off` for one in
+  `tests/pricing.rs`, where the Java edition writes `PricingTest#smallOrdersPayFullPrice`.
+- **A test that fails with no mutant in stops the run** in both, but the Rust edition has no flaky
+  test handling yet: fix the test or mark it `#[ignore]`.
+
+## Cards
+
+The Rust edition's cards have the gap, the change, the inputs seen, the covering tests and the
+commands, as the Java edition's do, but no suggested test yet. Write the test the `help` line
+describes yourself: [Getting started](getting-started.md#4-write-the-test) shows one.
+
+## What's different in the results
+
+- **Unviable mutants.** Java changes bytecode, so every mutant loads. Rust changes source, and a
+  few operators make changes the compiler then rejects. Those are skipped as `unviable:`, with the
+  compiler's error, and left out of the score. See
+  [How a run works](concepts/how-a-run-works.md#a-mutant-that-doesnt-compile-is-rolled-back).
+- **Crashes.** A test process can die in Rust without a test failing. In safe code that counts as
+  caught, with no test named; near unsafe code, it's a `RuntimeError`, out of the score. Java has
+  neither. See [Results](concepts/results.md#caught-only-because-the-test-process-crashed).
+- **Unsafe code** is left alone by default, and code near it is marked and run one test at a
+  time. See [Unsafe code](concepts/unsafe.md).
+- **Overflow checks and debug assertions** are always on in mutastic's build, whatever your
+  profiles say. See [Profiles](concepts/profiles.md).
+
+## Operators
+
+The ids mean the same change in both editions, but a few sit in other sets, and some don't exist in
+one of them:
+
+- **In `stronger` here, `extended` in Java:** the four `optional/*` ids and
+  `mutastic/remove-switch-arm`, because `Option`, `Result` and `match` are core Rust.
+- **In `extended` here, `stronger` in Java:** `mutastic/drop-vararg`, as an array's length is part of
+  its type.
+- **Not in Rust:** `mutastic/flip-increment` (no `++`), `library/omit-argument` (no overloading),
+  the three `predicate/*` ids, and `mutastic/drop-catch-type` (no multi-catch).
+- **Only in Rust:** `mutastic/bitwise`, `mutastic/remove-struct-field`, `library/reverse-ordering`,
+  `mutastic/unwrap-try`, `mutastic/default-parameter` and `mutastic/swap-break`.
+
+[Operators](operators.md) has the whole table.
+
+## Not in the Rust edition yet
+
+These Java edition features have no Rust counterpart yet. Where you'd use one, here's what to do
+instead:
+
+| In the Java edition | In the Rust edition, for now |
+|---|---|
+| `mutastic.yaml`, rules files and plugins | Options on the command line: [Commands](reference/cli.md) |
+| `mutastic ignore`, `@DoNotMutate` | Nothing marks a mutant as decided: leave it missed, and say why where you keep such notes |
+| `mutastic explain` | `mutastic run --only=<id>`, which shows its card |
+| Suggested tests on cards | The card's `help` line |
+| `--since` and changed lines | `--only` with the ids you care about |
+| Report files (`mutation.json`, HTML) | `--format=jsonl`, the same events: [Events](reference/events.md) |
+| The gate and the coding agents' plugins | `--format=agent`, or `MUTASTIC_AGENT=1`, and `verify` as the check |
+| `--vocabulary=classic` | The standard words only |

@@ -1,0 +1,18 @@
+  ✗ [MISSED]  tests pass even when - becomes + in after_refund() · m4e284c1b
+    ┌─ src/arithmetic.rs:16
+    │
+ 15 │ pub fn after_refund(paid: u32, refund: u32) -> u32 {
+ 16 │     paid - refund
+    │          ^ changed to +
+ 17 │ }
+    │
+    = mutant  - paid - refund
+              + paid + refund
+    = also    ✗ tests pass even when paid - refund becomes paid in after_refund() · mb46190a0
+              + paid
+    = note: inputs seen: paid = 10; refund = 0
+            covered by arithmetic::tests::nothing_refunded (its 1 covering test still passes)
+    = help: use inputs where paid - refund and paid + refund differ, and assert the result
+
+    done when  mutastic verify m4e284c1b,mb46190a0 fixtures/operators passes
+    reproduce  mutastic run --only=m4e284c1b,mb46190a0 fixtures/operators

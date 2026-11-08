@@ -1,0 +1,15 @@
+  ✗ [MISSED]  tests pass even when break becomes continue in first_negative()
+    ┌─ src/control.rs:16
+    │
+ 15 │             found = Some(index);
+ 16 │             break;
+    │             ^^^^^ changed to continue
+ 17 │         }
+    │
+    = mutant  - break;
+              + continue;
+    = note: covered by control::tests::finds_a_negative (its 1 covering test still passes)
+    = help: use inputs where break and continue give different results, and assert what first_negative() does
+
+    done when  mutastic verify mde47e51e fixtures/operators passes
+    reproduce  mutastic run --only=mde47e51e fixtures/operators

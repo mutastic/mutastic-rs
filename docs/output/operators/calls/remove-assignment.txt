@@ -1,0 +1,16 @@
+  ✗ [MISSED]  no test checks what total = total + tip; does in with_tip()
+    ┌─ src/calls.rs:31
+    │
+ 30 │     let mut total = bill;
+ 31 │     total = total + tip;
+    │     ^^^^^ removed
+ 32 │     total
+    │
+    = mutant  - total = total + tip;
+              + let _ = total + tip;
+    = note: inputs seen: bill = 10; tip = 0
+            covered by calls::tests::no_tip (its 1 covering test still passes)
+    = help: assert what total = total + tip; changes, in a test of with_tip()
+
+    done when  mutastic verify mb171c131 fixtures/operators passes
+    reproduce  mutastic run --only=mb171c131 fixtures/operators

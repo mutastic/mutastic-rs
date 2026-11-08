@@ -1,0 +1,32 @@
+
+ Missed ────────────────────────────────────────────────────────────
+
+ ❯ src/lib.rs  1 missed in 1 function
+
+  ✗ [MISSED]  no test checks discount() at total == 100
+    ┌─ src/lib.rs:26
+    │
+ 25 │     pub fn discount(&self, total: u32) -> u32 {
+ 26 │         if total >= 100 {
+    │                  ^^ changed to >
+ 27 │             return total / 10;
+    │
+    = mutant  - if total >= 100 {
+              + if total > 100 {
+    = note: every test calls discount() away from the boundary
+            inputs seen: 50, 250 (none is 100)
+            covered by pricing::big_orders_get_ten_percent_off, tests::small_orders_pay_full_price (all 2 covering tests still pass)
+    = help: test discount() with total = 100 and assert the result
+
+    done when  mutastic verify mb2f8ae57 fixtures/pricing passes
+    reproduce  mutastic run --only=mb2f8ae57 fixtures/pricing
+
+   Mutants  ✓ 10 caught · ✗ 1 missed (11)
+     Build  one build of every mutant, 2 rounds (check and build)
+ Test runs  16
+  Duration  91ms (setup 56ms, coverage 4ms, mutants 30ms)
+     Tests  3 on rustc 1.94.0 · 4 workers
+     Score  90.9%  threshold 80
+
+  [PASS]  1 missed, above the threshold.
+ Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing

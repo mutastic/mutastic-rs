@@ -7,7 +7,24 @@ that names `mutastic/boundary` means one thing in both editions, and adds a few 
 A run uses `defaults` unless `--operators` says otherwise: `--operators=stronger` adds the
 `stronger` set to the defaults, `--operators=extended` adds both, and a list of ids separated by
 commas picks exactly those. Code inside `unsafe`, and safe functions holding an `unsafe` block, get
-no mutants unless `--unsafe=enclosing` or `--unsafe=all` asks (see the README).
+no mutants unless `--unsafe=enclosing` or `--unsafe=all` asks (see [Unsafe code](concepts/unsafe.md)).
+
+## By family
+
+Each family has a page with an example of each operator, from a real run on
+`fixtures/operators`, and the card it gives:
+
+| Family | Operators |
+|---|---|
+| [Conditions](operators/conditions.md) | boundary, remove-conditional, logical-connector, comparison, other-comparison |
+| [Arithmetic](operators/arithmetic.md) | math, arithmetic-replacement, other-arithmetic, keep-operand, remove-negation, constant-value, bitwise, library/unchecked-arithmetic |
+| [Returns and errors](operators/returns.md) | return-value, unwrap-try, replace-body, remove-throw |
+| [Calls and writes](operators/calls.md) | remove-void-call, remove-discarded-call, remove-assignment, remove-field-write, remove-struct-field |
+| [Arguments](operators/arguments.md) | omit-call, swap-arguments, null-parameter, drop-vararg, default-parameter |
+| [std's methods and strings](operators/library.md) | library/swap-string, swap-math, swap-index-of, reverse-ordering; string-constant, regex-constant, bigdecimal/remove-step |
+| [Iterators](operators/iterators.md) | stream/swap-match, remove-stage, remove-other-stage |
+| [`Option` and `Result`](operators/options.md) | optional/swap-present, empty, always-default, no-default, remove-filter |
+| [`match` and loops](operators/control.md) | remove-switch-arm, swap-break |
 
 Every mutant here compiles whenever the code it changes did, or is withdrawn by the build: a site's
 mutants and its original code are arms of one `match`, so a change that gives the expression another

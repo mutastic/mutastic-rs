@@ -1,0 +1,15 @@
+  ✗ [MISSED]  no test needs member to be false in greeting()
+    ┌─ src/conditions.rs:14
+    │
+ 13 │ pub fn greeting(member: bool) -> &'static str {
+ 14 │     if member {
+    │        ^^^^^^ now always true
+ 15 │         "welcome back"
+    │
+    = mutant  - if member {
+              + if true {
+    = note: covered by conditions::tests::members_are_welcomed_back (its 1 covering test still passes)
+    = help: add a test where member is false, and assert what greeting() does then
+
+    done when  mutastic verify m62a2d487 fixtures/operators passes
+    reproduce  mutastic run --only=m62a2d487 fixtures/operators

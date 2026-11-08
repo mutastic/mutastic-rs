@@ -1,0 +1,15 @@
+  ✗ [MISSED]  tests pass even without .filter(|years| *years < 150) in plausible_age()
+    ┌─ src/options.rs:21
+    │
+ 20 │ pub fn plausible_age(age: Option<u32>) -> Option<u32> {
+ 21 │     age.filter(|years| *years < 150)
+    │         ^^^^^^ left out
+ 22 │ }
+    │
+    = mutant  - age.filter(|years| *years < 150)
+              + age
+    = note: covered by options::tests::an_ordinary_age (its 1 covering test still passes)
+    = help: use inputs that .filter(|years| *years < 150) makes a difference to, and assert what plausible_age() does
+
+    done when  mutastic verify m5a861387 fixtures/operators passes
+    reproduce  mutastic run --only=m5a861387 fixtures/operators

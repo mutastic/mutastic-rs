@@ -115,6 +115,20 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
     Ok(parsed)
 }
 
+/// Whether `args` (without the program's name) is a command mutastic takes, with options it knows,
+/// without running it: for checking the commands the docs show.
+pub fn check(args: &[String]) -> Result<(), String> {
+    let Some(command) = args.first() else {
+        return Err("no command".into());
+    };
+    match command.as_str() {
+        "run" | "verify" | "mutants" | "help" | "--help" | "-h" | "--version" | "-V" => {
+            parse(&args[1..]).map(|_| ())
+        }
+        other => Err(format!("unknown command {other}")),
+    }
+}
+
 fn ids(value: &str) -> impl Iterator<Item = String> + '_ {
     value
         .split(',')

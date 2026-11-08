@@ -1,0 +1,15 @@
+  ✗ [MISSED]  tests pass even without .inspect(|value| log.push(**value)) in logged_total()
+    ┌─ src/iterators.rs:19
+    │
+ 18 │ pub fn logged_total(values: &[u32], log: &mut Vec<u32>) -> u32 {
+ 19 │     values.iter().inspect(|value| log.push(**value)).sum()
+    │                   ^^^^^^^ left out
+ 20 │ }
+    │
+    = mutant  - values.iter().inspect(|value| log.push(**value)).sum()
+              + values.iter().sum()
+    = note: covered by iterators::tests::totals_add_up (its 1 covering test still passes)
+    = help: use inputs that .inspect(|value| log.push(**value)) makes a difference to, and assert what logged_total() does
+
+    done when  mutastic verify m23f62e2d fixtures/operators passes
+    reproduce  mutastic run --only=m23f62e2d fixtures/operators

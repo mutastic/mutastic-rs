@@ -1,0 +1,15 @@
+  ✗ [MISSED]  tests pass even when ", " becomes "" in header()
+    ┌─ src/library.rs:22
+    │
+ 21 │ pub fn header(columns: &[&str]) -> String {
+ 22 │     columns.join(", ")
+    │                  ^^^^ changed to ""
+ 23 │ }
+    │
+    = mutant  - columns.join(", ")
+              + columns.join("")
+    = note: covered by library::tests::one_column (its 1 covering test still passes)
+    = help: use inputs where ", " and "" differ, and assert what header() does
+
+    done when  mutastic verify m55b8a89c fixtures/operators passes
+    reproduce  mutastic run --only=m55b8a89c fixtures/operators

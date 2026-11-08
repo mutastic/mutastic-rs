@@ -1,0 +1,16 @@
+  ✗ [MISSED]  tests pass even without c in best_of_three()
+    ┌─ src/arguments.rs:20
+    │
+ 19 │ pub fn best_of_three(a: u32, b: u32, c: u32) -> u32 {
+ 20 │     largest(&[a, b, c])
+    │                   ^^^ left out
+ 21 │ }
+    │
+    = mutant  - largest(&[a, b, c])
+              + largest(&[a, b])
+    = note: inputs seen: a = 9; b = 2; c = 1
+            covered by arguments::tests::the_best_comes_first (its 1 covering test still passes)
+    = help: use inputs that c makes a difference to, and assert what best_of_three() does
+
+    done when  mutastic verify m6bcfe468 fixtures/operators passes
+    reproduce  mutastic run --only=m6bcfe468 fixtures/operators

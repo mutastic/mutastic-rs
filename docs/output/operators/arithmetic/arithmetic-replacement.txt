@@ -1,0 +1,16 @@
+  ✗ [MISSED]  tests pass even when + becomes * in with_fee()
+   ┌─ src/arithmetic.rs:8
+   │
+ 7 │ pub fn with_fee(price: u32, fee: u32) -> u32 {
+ 8 │     price + fee
+   │           ^ changed to *
+ 9 │ }
+   │
+   = mutant  - price + fee
+             + price * fee
+   = note: inputs seen: fee = 2; price = 2
+           covered by arithmetic::tests::a_fee_is_added (its 1 covering test still passes)
+   = help: use inputs where price + fee and price * fee differ, and assert the result
+
+   done when  mutastic verify m2159bc78 fixtures/operators passes
+   reproduce  mutastic run --only=m2159bc78 fixtures/operators

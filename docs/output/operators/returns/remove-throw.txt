@@ -1,0 +1,15 @@
+  ✗ [MISSED]  no test checks what return Err("no quantity given".into()); does in quantity()
+    ┌─ src/returns.rs:20
+    │
+ 19 │     if text.is_empty() {
+ 20 │         return Err("no quantity given".into());
+    │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ removed
+ 21 │     }
+    │
+    = mutant  - return Err("no quantity given".into());
+              + (nothing: the line is gone)
+    = note: covered by returns::tests::an_empty_quantity_is_an_error (its 1 covering test still passes)
+    = help: assert what return Err("no quantity given".into()); changes, in a test of quantity()
+
+    done when  mutastic verify ma1f287d8 fixtures/operators passes
+    reproduce  mutastic run --only=ma1f287d8 fixtures/operators

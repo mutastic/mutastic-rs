@@ -1,0 +1,26 @@
+{
+  "schema": "mutastic.events/v1",
+  "reason": "mutant-finished",
+  "id": "m4db96a57",
+  "fingerprint": "4db96a5721e0ee95",
+  "status": "Ignored",
+  "operator": "mutastic/omit-call",
+  "location": {
+    "file": "src/arguments.rs",
+    "line": 4,
+    "column": 18,
+    "class": "arguments",
+    "method": "username"
+  },
+  "mutation": {
+    "original": ".to_lowercase()",
+    "replacement": "",
+    "description": "`.to_lowercase()` is left out",
+    "bytecode": "input.trim().to_lowercase() -> input.trim()"
+  },
+  "statusReason": "unviable: doesn't compile (E0308: mismatched types)",
+  "skipKind": "unviable",
+  "coveredBy": [],
+  "testsRun": 0,
+  "durationMs": 0
+}

@@ -1,0 +1,15 @@
+  ✗ [MISSED]  tests pass even without muted: true in muted()
+    ┌─ src/calls.rs:56
+    │
+ 55 │     Settings {
+ 56 │         muted: true,
+    │         ^^^^^^^^^^^ left out
+ 57 │         ..settings.clone()
+    │
+    = mutant  - muted: true,
+              + (nothing: the line is gone)
+    = note: covered by calls::tests::muting_keeps_the_volume (its 1 covering test still passes)
+    = help: use inputs that muted: true makes a difference to, and assert what muted() does
+
+    done when  mutastic verify m0af1aacd fixtures/operators passes
+    reproduce  mutastic run --only=m0af1aacd fixtures/operators

@@ -1,0 +1,31 @@
+{
+  "schema": "mutastic.events/v1",
+  "reason": "mutant-finished",
+  "id": "m418fd2e4",
+  "fingerprint": "418fd2e4aad78dcd",
+  "status": "Killed",
+  "operator": "mutastic/remove-conditional",
+  "location": {
+    "file": "src/plain.rs",
+    "line": 5,
+    "column": 8,
+    "class": "plain",
+    "method": "guarded"
+  },
+  "mutation": {
+    "replacement": "true",
+    "description": "`x < 0` is always true",
+    "bytecode": "x < 0 -> true"
+  },
+  "coveredBy": [
+    "run::guards"
+  ],
+  "killedWith": "crash: SIGABRT",
+  "inputs": {
+    "x": [
+      3
+    ]
+  },
+  "testsRun": 1,
+  "durationMs": 69
+}

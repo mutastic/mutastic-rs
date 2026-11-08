@@ -1,0 +1,32 @@
+{
+  "schema": "mutastic.events/v1",
+  "reason": "mutant-finished",
+  "id": "m9ff28261",
+  "fingerprint": "9ff2826156a229af",
+  "status": "RuntimeError",
+  "operator": "mutastic/remove-conditional",
+  "location": {
+    "file": "src/raw.rs",
+    "line": 24,
+    "column": 8,
+    "class": "raw",
+    "method": "checked"
+  },
+  "mutation": {
+    "replacement": "true",
+    "description": "`x < 0` is always true",
+    "bytecode": "x < 0 -> true"
+  },
+  "statusReason": "crash: SIGABRT in a module with unsafe code, which may be undefined behaviour",
+  "nearUnsafe": "in a module with unsafe code",
+  "coveredBy": [
+    "run::checks"
+  ],
+  "inputs": {
+    "x": [
+      3
+    ]
+  },
+  "testsRun": 1,
+  "durationMs": 70
+}

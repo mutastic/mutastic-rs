@@ -1,0 +1,86 @@
+
+ Missed ────────────────────────────────────────────────────────────
+
+ ❯ src/plain.rs  2 missed in 1 function
+
+  ✗ [MISSED]  no test checks guarded() at x == 0 · mdb89abdf
+   ┌─ src/plain.rs:5
+   │
+ 4 │ pub fn guarded(x: i32) -> i32 {
+ 5 │     if x < 0 {
+   │          ^ changed to <=
+ 6 │         std::process::abort();
+   │
+   = mutant  - if x < 0 {
+             + if x <= 0 {
+   = also    ✗ no test needs x < 0 to be true in guarded() · m476f7baf
+             + if false {
+   = note: every test calls guarded() away from the boundary
+           inputs seen: 3 (none is 0)
+           covered by run::guards (its 1 covering test still passes)
+   = help: test guarded() with x = 0 and assert the result
+
+   done when  mutastic verify mdb89abdf,m476f7baf fixtures/unsafety passes
+   reproduce  mutastic run --only=mdb89abdf,m476f7baf fixtures/unsafety
+
+ ❯ src/raw.rs  5 missed in 2 functions
+
+  ✗ [MISSED]  no test checks positive() at x == 0 · m97f387f6
+   ┌─ src/raw.rs:5
+   │
+ 4 │ pub fn positive(x: i32) -> bool {
+ 5 │     x > 0
+   │       ^ changed to >=
+ 6 │ }
+   │
+   = mutant  - x > 0
+             + x >= 0
+   = also    ✗ no test needs x > 0 to be false in positive() · mbff60c78
+             + true
+   = also    ✗ no test checks positive() returning false here · m2fcb19d0
+             + true
+   = note: every test calls positive() away from the boundary
+           inputs seen: 4 (none is 0)
+           this code is near unsafe code (called from unsafe code): a change no test notices here can break what the unsafe code relies on, so check that code with Miri too
+           covered by run::halves (its 1 covering test still passes)
+   = help: test positive() with x = 0 and assert the result
+
+   done when  mutastic verify m97f387f6,mbff60c78,m2fcb19d0 fixtures/unsafety passes
+   reproduce  mutastic run --only=m97f387f6,mbff60c78,m2fcb19d0 fixtures/unsafety
+
+  ✗ [MISSED]  no test checks checked() at x == 0 · m68f8c8e3
+    ┌─ src/raw.rs:24
+    │
+ 23 │ pub fn checked(x: i32) -> i32 {
+ 24 │     if x < 0 {
+    │          ^ changed to <=
+ 25 │         std::process::abort();
+    │
+    = mutant  - if x < 0 {
+              + if x <= 0 {
+    = also    ✗ no test needs x < 0 to be true in checked() · mbb05698b
+              + if false {
+    = note: every test calls checked() away from the boundary
+            inputs seen: 3 (none is 0)
+            this code is near unsafe code (in a module with unsafe code): a change no test notices here can break what the unsafe code relies on, so check that code with Miri too
+            covered by run::checks (its 1 covering test still passes)
+    = help: test checked() with x = 0 and assert the result
+
+    done when  mutastic verify m68f8c8e3,mbb05698b fixtures/unsafety passes
+    reproduce  mutastic run --only=m68f8c8e3,mbb05698b fixtures/unsafety
+
+ Not covered ───────────────────────────────────────────────────────
+ ○ src/raw.rs checked() line 25 (1 mutant): no test reaches that line
+ ○ src/plain.rs guarded() line 6 (1 mutant): no test reaches that line
+
+   Mutants  ✓ 5 caught · ✗ 7 missed · ○ 2 not covered (14) · 3 crashed where a crash proves nothing
+  Left out  not mutated: unsafe (4), in or around unsafe blocks; --unsafe=enclosing or --unsafe=all includes them
+   Crashes  1 caught only because the test process crashed, not by a test's check
+     Build  one build of every mutant, 2 rounds (check and build)
+ Test runs  21
+  Duration  955ms (setup 830ms, coverage 8ms, mutants 116ms)
+     Tests  6 on rustc 1.94.0 · 4 workers
+     Score  35.7%  · 41.7% where tests reach  threshold 80
+
+  [FAIL]  Score below 80: 7 missed, 2 not covered.
+ Next: mutastic verify <id> fixtures/unsafety · mutastic run --only=<id> fixtures/unsafety

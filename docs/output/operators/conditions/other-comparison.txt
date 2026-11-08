@@ -1,0 +1,16 @@
+  ✗ [MISSED]  tests pass even when matches!(day, 6 | 7) becomes !matches!(day, 6 | 7) in is_weekend()
+    ┌─ src/conditions.rs:27
+    │
+ 26 │ pub fn is_weekend(day: u8) -> bool {
+ 27 │     matches!(day, 6 | 7)
+    │     ^^^^^^^^^^^^^^^^^^^^ changed to !matches!(day, 6 | 7)
+ 28 │ }
+    │
+    = mutant  - matches!(day, 6 | 7)
+              + !matches!(day, 6 | 7)
+    = note: inputs seen: day = 6
+            covered by conditions::tests::weekend_days_are_known (its 1 covering test still passes)
+    = help: use inputs where matches!(day, 6 | 7) and !matches!(day, 6 | 7) differ, and assert what is_weekend() does
+
+    done when  mutastic verify m4f55c224 fixtures/operators passes
+    reproduce  mutastic run --only=m4f55c224 fixtures/operators

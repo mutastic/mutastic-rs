@@ -1,0 +1,15 @@
+  ✗ [MISSED]  tests pass even when any becomes all in any_overdue()
+   ┌─ src/iterators.rs:5
+   │
+ 4 │ pub fn any_overdue(days_late: &[u32]) -> bool {
+ 5 │     days_late.iter().any(|days| *days > 30)
+   │                      ^^^ changed to all
+ 6 │ }
+   │
+   = mutant  - days_late.iter().any(|days| *days > 30)
+             + days_late.iter().all(|days| *days > 30)
+   = note: covered by iterators::tests::one_late_invoice (its 1 covering test still passes)
+   = help: use inputs where any and all give different results, and assert what any_overdue() does
+
+   done when  mutastic verify m2f11fb5d fixtures/operators passes
+   reproduce  mutastic run --only=m2f11fb5d fixtures/operators

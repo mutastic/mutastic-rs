@@ -1,0 +1,15 @@
+  ✗ [MISSED]  tests pass even when is_none becomes is_some in display_name()
+   ┌─ src/options.rs:4
+   │
+ 3 │ pub fn display_name(name: &str, nickname: Option<&str>) -> String {
+ 4 │     if nickname.is_none() {
+   │                 ^^^^^^^ changed to is_some
+ 5 │         return name.to_string();
+   │
+   = mutant  - if nickname.is_none() {
+             + if nickname.is_some() {
+   = note: covered by options::tests::no_nickname (its 1 covering test still passes)
+   = help: use inputs where is_none and is_some give different results, and assert what display_name() does
+
+   done when  mutastic verify maedc1a33 fixtures/operators passes
+   reproduce  mutastic run --only=maedc1a33 fixtures/operators

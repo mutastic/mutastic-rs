@@ -1,0 +1,32 @@
+{
+  "schema": "mutastic.events/v1",
+  "reason": "mutant-finished",
+  "id": "m71ecfa0f",
+  "fingerprint": "71ecfa0fc15036f8",
+  "status": "RuntimeError",
+  "operator": "mutastic/return-value",
+  "location": {
+    "file": "src/raw.rs",
+    "line": 5,
+    "column": 5,
+    "class": "raw",
+    "method": "positive"
+  },
+  "mutation": {
+    "replacement": "false",
+    "description": "returns `false` instead",
+    "bytecode": "x > 0 -> false"
+  },
+  "statusReason": "crash: std's debug check of an unsafe precondition stopped it (SIGABRT), not a test",
+  "nearUnsafe": "called from unsafe code",
+  "coveredBy": [
+    "run::halves"
+  ],
+  "inputs": {
+    "x": [
+      4
+    ]
+  },
+  "testsRun": 1,
+  "durationMs": 46
+}

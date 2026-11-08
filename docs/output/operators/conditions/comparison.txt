@@ -1,0 +1,16 @@
+  ✗ [MISSED]  no test checks needs_restock() with stock > low
+    ┌─ src/conditions.rs:10
+    │
+  9 │ pub fn needs_restock(stock: u32, low: u32) -> bool {
+ 10 │     stock < low
+    │           ^ changed to !=
+ 11 │ }
+    │
+    = mutant  - stock < low
+              + stock != low
+    = note: inputs seen: low = 5; stock = 2, 5
+            covered by conditions::tests::restock_when_low (its 1 covering test still passes)
+    = help: add a test where stock > low, and assert what needs_restock() does then
+
+    done when  mutastic verify m0afcf739 fixtures/operators passes
+    reproduce  mutastic run --only=m0afcf739 fixtures/operators

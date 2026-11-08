@@ -1,0 +1,15 @@
+  ✗ [MISSED]  no test checks can_ship() with one of paid and in_stock true and the other false
+    ┌─ src/conditions.rs:22
+    │
+ 21 │ pub fn can_ship(paid: bool, in_stock: bool) -> bool {
+ 22 │     paid && in_stock
+    │          ^^ changed to ||
+ 23 │ }
+    │
+    = mutant  - paid && in_stock
+              + paid || in_stock
+    = note: covered by conditions::tests::ships_when_paid_and_in_stock (its 1 covering test still passes)
+    = help: add a test where one of paid and in_stock is true and the other false, and assert what can_ship() does then
+
+    done when  mutastic verify m069e3be4 fixtures/operators passes
+    reproduce  mutastic run --only=m069e3be4 fixtures/operators

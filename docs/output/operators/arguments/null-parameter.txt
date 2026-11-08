@@ -1,0 +1,16 @@
+  ✗ [MISSED]  tests pass even when coupon is None from the start of price_with()
+    ┌─ src/arguments.rs:23
+    │
+ 22 │ 
+ 23 │ pub fn price_with(base: u32, coupon: Option<u32>) -> u32 {
+    │                              ^^^^^^ now None
+ 24 │     base - coupon.unwrap_or(0)
+    │
+    = mutant  - pub fn price_with(base: u32, coupon: Option<u32>) -> u32 {
+              + pub fn price_with(base: u32, coupon: Option<u32>) -> u32 { let coupon: Option<u32> = None;
+    = note: inputs seen: base = 10
+            covered by arguments::tests::full_price_without_a_coupon (its 1 covering test still passes)
+    = help: add a test where the coupon given changes what price_with() does, and assert it
+
+    done when  mutastic verify m51d65a09 fixtures/operators passes
+    reproduce  mutastic run --only=m51d65a09 fixtures/operators

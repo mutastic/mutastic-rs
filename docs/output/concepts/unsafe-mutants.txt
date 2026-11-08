@@ -1,0 +1,19 @@
+m2fcb19d0 src/raw.rs:5:5 mutastic/return-value returns true instead in raw::positive (near unsafe: called from unsafe code)
+m71ecfa0f src/raw.rs:5:5 mutastic/return-value returns false instead in raw::positive (near unsafe: called from unsafe code)
+m97f387f6 src/raw.rs:5:7 mutastic/boundary > becomes >= in raw::positive (near unsafe: called from unsafe code)
+mbff60c78 src/raw.rs:5:5 mutastic/remove-conditional x > 0 is always true in raw::positive (near unsafe: called from unsafe code)
+mcea3b45a src/raw.rs:5:5 mutastic/remove-conditional x > 0 is always false in raw::positive (near unsafe: called from unsafe code)
+mf3e66daa src/raw.rs:27:5 mutastic/return-value returns 0 instead in raw::checked (near unsafe: in a module with unsafe code)
+m68f8c8e3 src/raw.rs:24:10 mutastic/boundary < becomes <= in raw::checked (near unsafe: in a module with unsafe code)
+m9ff28261 src/raw.rs:24:8 mutastic/remove-conditional x < 0 is always true in raw::checked (near unsafe: in a module with unsafe code)
+mbb05698b src/raw.rs:24:8 mutastic/remove-conditional x < 0 is always false in raw::checked (near unsafe: in a module with unsafe code)
+m8d677769 src/raw.rs:25:9 mutastic/remove-discarded-call std::process::abort(); is removed in raw::checked (near unsafe: in a module with unsafe code)
+mad5f43d6 src/plain.rs:8:5 mutastic/return-value returns 0 instead in plain::guarded
+mdb89abdf src/plain.rs:5:10 mutastic/boundary < becomes <= in plain::guarded
+m418fd2e4 src/plain.rs:5:8 mutastic/remove-conditional x < 0 is always true in plain::guarded
+m476f7baf src/plain.rs:5:8 mutastic/remove-conditional x < 0 is always false in plain::guarded
+m3ec82c9d src/plain.rs:6:9 mutastic/remove-discarded-call std::process::abort(); is removed in plain::guarded
+m92b6cfd0 src/plain.rs:13:5 mutastic/return-value returns 0 instead in plain::total
+m24a65ba1 src/plain.rs:13:7 mutastic/math + becomes - in plain::total
+17 mutants
+not mutated: unsafe (4): --unsafe=enclosing or --unsafe=all includes them

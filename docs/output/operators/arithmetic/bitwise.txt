@@ -1,0 +1,18 @@
+  ✗ [MISSED]  tests pass even when & becomes | in has_flag() · ma32c7819
+    ┌─ src/arithmetic.rs:29
+    │
+ 28 │ pub fn has_flag(flags: u8, flag: u8) -> bool {
+ 29 │     flags & flag != 0
+    │           ^ changed to |
+ 30 │ }
+    │
+    = mutant  - flags & flag != 0
+              + flags | flag != 0
+    = also    ✗ tests pass even when & becomes ^ in has_flag() · maace5f2b
+              + flags ^ flag != 0
+    = note: inputs seen: flag = 1; flags = 3
+            covered by arithmetic::tests::a_flag_that_is_set (its 1 covering test still passes)
+    = help: use inputs where & and | give different results, and assert what has_flag() does
+
+    done when  mutastic verify ma32c7819,maace5f2b fixtures/operators passes
+    reproduce  mutastic run --only=ma32c7819,maace5f2b fixtures/operators

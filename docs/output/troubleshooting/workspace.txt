@@ -1,0 +1,1 @@
+mutastic: fixtures/workspace is a workspace: run mutastic in one of its packages (billing, shop)

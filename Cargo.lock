@@ -530,6 +530,7 @@ version = "0.0.1"
 dependencies = [
  "jsonschema",
  "ra_ap_syntax",
+ "regex",
  "serde_json",
  "sha2",
 ]

@@ -1,0 +1,15 @@
+  ✗ [MISSED]  tests pass even when values.iter().copied().max().unwrap_or(0) becomes values.iter().copied().max().unwrap() in largest()
+    ┌─ src/arguments.rs:16
+    │
+ 15 │ pub fn largest(values: &[u32]) -> u32 {
+ 16 │     values.iter().copied().max().unwrap_or(0)
+    │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ changed to values.iter().copied().max().unwrap()
+ 17 │ }
+    │
+    = mutant  - values.iter().copied().max().unwrap_or(0)
+              + values.iter().copied().max().unwrap()
+    = note: covered by arguments::tests::the_best_comes_first (its 1 covering test still passes)
+    = help: use inputs where values.iter().copied().max().unwrap_or(0) and values.iter().copied().max().unwrap() differ, and assert what largest() does
+
+    done when  mutastic verify m07e8bfcc fixtures/operators passes
+    reproduce  mutastic run --only=m07e8bfcc fixtures/operators
