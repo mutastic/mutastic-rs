@@ -374,9 +374,10 @@ fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
     let ids = id_list(view, entry);
     let _ = writeln!(
         out,
-        "\n{g}{}  {} passes",
+        "\n{g}{}  {} {}",
         style.dim("done when"),
-        view.command("verify", &ids)
+        view.command("verify", &ids),
+        style.dim("passes")
     );
     let _ = writeln!(
         out,

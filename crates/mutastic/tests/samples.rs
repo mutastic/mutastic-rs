@@ -190,3 +190,27 @@ fn unsafe_code_is_fenced_off_and_crashes_are_told_apart() {
         "{stdout}"
     );
 }
+
+/// `done when`'s outcome is dimmed like its label, as in the Java edition, so `passes` doesn't
+/// read as part of the command to type.
+#[test]
+fn done_when_dims_its_outcome() {
+    let dir = fixture("pricing");
+    let output = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+        .args(["run", &dir, "--format=full"])
+        .env_remove("MUTASTIC_FORMAT")
+        .env_remove("MUTASTIC_AGENT")
+        .env_remove("NO_COLOR")
+        .env("FORCE_COLOR", "1")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let line = stdout
+        .lines()
+        .find(|line| line.contains("done when"))
+        .unwrap_or_else(|| panic!("no done-when line in {stdout}"));
+    assert!(
+        line.ends_with(" \x1b[2mpasses\x1b[0m"),
+        "passes isn't dimmed: {line:?}"
+    );
+}
