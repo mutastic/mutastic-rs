@@ -78,13 +78,16 @@ fn every_card_claim_behaves_as_its_mutant_does() {
 
     // The claims, each in a module of its own, in one crate.
     let file = &found.files[0];
-    let mut claims = format!("#[allow(warnings)]\nmod v0 {{\n{}\n}}\n", file.text);
+    // Lints are capped in mutastic's build, so a claim that divides by a constant zero compiles
+    // there and panics when run; here too.
+    let allow = "#[allow(warnings, unconditional_panic, arithmetic_overflow)]";
+    let mut claims = format!("{allow}\nmod v0 {{\n{}\n}}\n", file.text);
     for mutant in &found.mutants {
         let (range, with) = mutant.claim();
         let mut text = file.text.clone();
         text.replace_range(range, &with);
         claims.push_str(&format!(
-            "#[allow(warnings)]\nmod v{} {{\n{text}\n}}\n",
+            "{allow}\nmod v{} {{\n{text}\n}}\n",
             mutant.ordinal
         ));
     }

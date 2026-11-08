@@ -100,6 +100,31 @@ fn advise_change(mutant: &Mutant, name: &str, seen: &BTreeMap<String, Vec<i128>>
             notes: inputs_seen(seen),
             help: format!("assert what `{statement}` changes, in a test of {method}"),
         },
+        Change::Compared {
+            before,
+            after,
+            differs,
+        } => {
+            let side = format!("`{} {differs} {}`", mutant.operands[0], mutant.operands[1]);
+            Advice {
+                change: format!("`{before}` becomes `{after}`"),
+                caret: format!("changed to {after}"),
+                headline: format!("no test checks {method} with {side}"),
+                notes: inputs_seen(seen),
+                help: format!("add a test where {side}, and assert what {method} does then"),
+            }
+        }
+        Change::Parameter { name, value } => Advice {
+            change: format!("`{name}` is `{value}` from the start of {method}"),
+            caret: format!("now {value}"),
+            headline: format!(
+                "tests pass even when `{name}` is `{value}` from the start of {method}"
+            ),
+            notes: inputs_seen(seen),
+            help: format!(
+                "add a test where the `{name}` given changes what {method} does, and assert it"
+            ),
+        },
         Change::Replaced { before, after } if after.is_empty() => Advice {
             change: format!("`{before}` is left out"),
             caret: "left out".into(),

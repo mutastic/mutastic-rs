@@ -256,12 +256,113 @@ pub fn more(x: i32) -> String {
     )
 }
 
+pub fn comparisons(x: i32) -> u8 {
+    let mut out = 0;
+    if x == 3 {
+        out += 1;
+    }
+    if x != -2 {
+        out += 2;
+    }
+    if x < 4 {
+        out += 4;
+    }
+    let v = vec![1, 2, 3];
+    if v.len() > 0 {
+        out += 8;
+    }
+    out
+}
+
+pub fn negations(x: i32) -> i32 {
+    let y = -x;
+    y * 3 - -4
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Point {
+    pub a: i32,
+    pub b: i32,
+}
+
+pub fn fields(x: i32) -> i32 {
+    let base = Point { a: 1, b: 2 };
+    let p = Point {
+        a: x,
+        b: x * 2,
+        ..base
+    };
+    p.a * 10 + p.b
+}
+
+pub fn optional(x: i32, limit: Option<i32>) -> i32 {
+    let found: Option<i32> = Some(x * 2);
+    let small = if found.is_some() { 1 } else { 0 };
+    let cap = limit.unwrap_or(5);
+    let d: i32 = positive(x).unwrap_or_default();
+    let e = positive(x - 3).map_or(-1, |v| v * 2);
+    let f = positive(x + 1).unwrap_or_else(|| 7);
+    small + cap * 10 + d * 100 + e * 1000 + f
+}
+
+pub fn overflowing(x: i32) -> i32 {
+    let a = (x as u8).checked_sub(3).unwrap_or(0) as i32;
+    let b = (x as u8).saturating_sub(4) as i32;
+    let c = x.wrapping_mul(3);
+    a + b * 1000 + c * 100000
+}
+
+pub fn bits(x: i32) -> i32 {
+    let mut flags = x & 6;
+    flags |= 1;
+    flags ^= x >> 1;
+    (flags << 2) | (x ^ 3)
+}
+
+pub fn constants(x: i32) -> String {
+    let label = if x > 2 { "big" } else { "" };
+    let n = x + 100;
+    let mut total = 0;
+    total += n * 2;
+    format!("{label}:{total}")
+}
+
+pub fn conditions(x: i32) -> u8 {
+    let mut out = 0;
+    if is_even(x) {
+        out += 1;
+    }
+    if matches!(x, 1 | 3) {
+        out += 2;
+    }
+    out
+}
+
+pub fn stronger(x: i32) -> String {
+    format!(
+        "{} {} {} {} {} {} {} {}",
+        comparisons(x),
+        negations(x),
+        fields(x),
+        conditions(x),
+        bits(x),
+        constants(x),
+        overflowing(x),
+        optional(x, positive(x)),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn probe() {
         for x in -6..10 {
-            println!("{x}: {} | {}", super::all(x), super::more(x));
+            println!(
+                "{x}: {} | {} | {}",
+                super::all(x),
+                super::more(x),
+                super::stronger(x)
+            );
         }
     }
 }

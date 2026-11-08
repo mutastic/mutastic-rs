@@ -21,6 +21,7 @@ use ra_ap_syntax::{AstNode, Edition, SourceFile, SyntaxKind, SyntaxNode, TextRan
 use crate::id;
 
 mod operators;
+mod stronger;
 
 /// The operators, by the ids the Java edition uses.
 pub const BOUNDARY: &str = "mutastic/boundary";
@@ -38,6 +39,18 @@ pub const SWAP_STRING: &str = "library/swap-string";
 pub const SWAP_MATH: &str = "library/swap-math";
 pub const SWAP_MATCH: &str = "stream/swap-match";
 pub const REMOVE_STAGE: &str = "stream/remove-stage";
+pub const COMPARISON: &str = "mutastic/comparison";
+pub const REMOVE_NEGATION: &str = "mutastic/remove-negation";
+pub const REMOVE_STRUCT_FIELD: &str = "mutastic/remove-struct-field";
+pub const NULL_PARAMETER: &str = "mutastic/null-parameter";
+pub const SWAP_PRESENT: &str = "optional/swap-present";
+pub const OPTIONAL_EMPTY: &str = "optional/empty";
+pub const ALWAYS_DEFAULT: &str = "optional/always-default";
+pub const NO_DEFAULT: &str = "optional/no-default";
+pub const UNCHECKED_ARITHMETIC: &str = "library/unchecked-arithmetic";
+pub const BITWISE: &str = "mutastic/bitwise";
+pub const STRING_CONSTANT: &str = "mutastic/string-constant";
+pub const CONSTANT_VALUE: &str = "mutastic/constant-value";
 
 /// The operators a run uses when none are named: the Java edition's `defaults`.
 pub const DEFAULTS: &[&str] = &[
@@ -73,6 +86,18 @@ pub const STRONGER: &[&str] = &[
     OTHER_COMPARISON,
     OTHER_ARITHMETIC,
     REMOVE_FIELD_WRITE,
+    COMPARISON,
+    REMOVE_NEGATION,
+    REMOVE_STRUCT_FIELD,
+    NULL_PARAMETER,
+    SWAP_PRESENT,
+    OPTIONAL_EMPTY,
+    ALWAYS_DEFAULT,
+    NO_DEFAULT,
+    UNCHECKED_ARITHMETIC,
+    BITWISE,
+    STRING_CONSTANT,
+    CONSTANT_VALUE,
 ];
 
 /// Every operator mutastic has, for listing every mutant (the stable-ids test).
@@ -99,6 +124,15 @@ pub enum Change {
     Removed { statement: String },
     /// An expression to another: `xs.iter().filter(p).count()` to `xs.iter().count()`.
     Replaced { before: String, after: String },
+    /// A comparison to the one that agrees with it at its edge and on one side: `<` to `!=`, which
+    /// differs only where `a > b` (`differs`).
+    Compared {
+        before: String,
+        after: String,
+        differs: String,
+    },
+    /// A parameter given another value as the function starts.
+    Parameter { name: String, value: String },
 }
 
 /// How the schema writes a mutant.
@@ -202,13 +236,14 @@ impl Mutant {
             | Change::Reversed { after, .. }
             | Change::Connector { after, .. }
             | Change::Swapped { after, .. }
+            | Change::Compared { after, .. }
             | Change::Math { after, .. } => (self.caret.clone(), after.clone()),
             Change::Always { truth, .. } if self.replacement == truth.to_string() => {
                 (self.site.clone(), truth.to_string())
             }
             Change::Always { .. } => (self.site.clone(), self.replacement.clone()),
             Change::Returns { value } => (self.site.clone(), value.clone()),
-            Change::Removed { .. } | Change::Replaced { .. } => {
+            Change::Removed { .. } | Change::Replaced { .. } | Change::Parameter { .. } => {
                 (self.site.clone(), self.replacement.clone())
             }
         }
@@ -414,6 +449,7 @@ pub fn find_with(
             facts: &facts,
             mode,
             module_unsafe: BTreeMap::new(),
+            returned: std::collections::HashSet::new(),
         };
         for function in tree.syntax().descendants().filter_map(ast::Fn::cast) {
             finder.function(&function);
@@ -642,6 +678,8 @@ struct Finder<'a> {
     mode: UnsafeMode,
     /// Whether each module (by its range in this file) has unsafe code.
     module_unsafe: BTreeMap<(u32, u32), bool>,
+    /// The values the current function returns, by range: return-value's sites.
+    returned: std::collections::HashSet<TextRange>,
 }
 
 /// What the walk knows about where it is.
@@ -713,11 +751,14 @@ impl Finder<'_> {
             in_closure: false,
             tier: self.tier(function, &name, &body),
         };
+        self.returned.clear();
         if let Some(returns) = context.returns {
             if let Some(tail) = body.tail_expr() {
                 self.returned(&tail, returns, context);
             }
+            self.mark_returns(body.syntax());
         }
+        self.parameters(function, context);
         self.walk(body.syntax(), context);
     }
 
@@ -872,6 +913,7 @@ impl Finder<'_> {
                         context,
                     );
                 }
+                self.negated(other, context);
             }
         }
     }
@@ -1096,6 +1138,7 @@ impl Finder<'_> {
             | ast::Expr::BreakExpr(_)
             | ast::Expr::ContinueExpr(_) => {}
             other => {
+                self.returned.insert(other.syntax().text_range());
                 let text = plain(other.syntax());
                 // A formatter's `Ok(())` writes nothing: arid, as `toString` is in the Java edition.
                 let formats = self.found.functions[context.function].name == "fmt";
@@ -1555,6 +1598,17 @@ mod tests {
 
     static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
+    /// The first operators, which these tests count; each later one has its shapes in the truth
+    /// fixture.
+    const CORE: &[&str] = &[
+        BOUNDARY,
+        REMOVE_CONDITIONAL,
+        LOGICAL_CONNECTOR,
+        MATH,
+        RETURN_VALUE,
+        OTHER_COMPARISON,
+    ];
+
     fn found(source: &str) -> Crate {
         let dir = std::env::temp_dir().join(format!(
             "mutastic-sites-{}-{}",
@@ -1563,7 +1617,7 @@ mod tests {
         ));
         std::fs::create_dir_all(dir.join("src")).unwrap();
         std::fs::write(dir.join("src/lib.rs"), source).unwrap();
-        let found = find(&dir, "sample", &[PathBuf::from("src/lib.rs")], STRONGER);
+        let found = find(&dir, "sample", &[PathBuf::from("src/lib.rs")], CORE);
         std::fs::remove_dir_all(&dir).ok();
         found
     }
@@ -1583,7 +1637,7 @@ mod tests {
     }
 
     #[test]
-    fn a_comparison_gets_its_boundary_both_constants_and_its_reverse() {
+    fn a_comparison_gets_its_boundary_both_constants_and_the_others() {
         let expected: Vec<(String, &str, String)> = vec![
             ("total >= 100".into(), BOUNDARY, "(total) > (100)".into()),
             ("total >= 100".into(), REMOVE_CONDITIONAL, "true".into()),
@@ -1592,6 +1646,16 @@ mod tests {
                 "total >= 100".into(),
                 OTHER_COMPARISON,
                 "(total) < (100)".into(),
+            ),
+            (
+                "total >= 100".into(),
+                OTHER_COMPARISON,
+                "(total) <= (100)".into(),
+            ),
+            (
+                "total >= 100".into(),
+                OTHER_COMPARISON,
+                "(total) != (100)".into(),
             ),
         ];
         assert_eq!(

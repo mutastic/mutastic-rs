@@ -193,6 +193,16 @@ impl Finder<'_> {
             self.function_call(&call, context);
         } else if let Some(range) = ast::RangeExpr::cast(node.clone()) {
             self.range_end(&range, context);
+        } else if let Some(expr) = ast::BinExpr::cast(node.clone()) {
+            self.more_binary(&expr, context);
+        } else if let Some(prefix) = ast::PrefixExpr::cast(node.clone()) {
+            self.negation(&prefix, context);
+        } else if let Some(record) = ast::RecordExpr::cast(node.clone()) {
+            self.struct_fields(&record, context);
+        } else if let Some(literal) = ast::Literal::cast(node.clone()) {
+            self.literal(&literal, context);
+        } else if let Some(call) = ast::MacroExpr::cast(node.clone()) {
+            self.macro_call(&call, context);
         } else if let Some(guard) = ast::MatchGuard::cast(node.clone()) {
             if let Some(condition) = guard.condition() {
                 self.condition(&condition, context);
@@ -380,10 +390,12 @@ impl Finder<'_> {
         if STAGES.contains(&text.as_str()) {
             self.stage(call, &text, REMOVE_STAGE, context);
         }
+        self.more_method_call(call, &text, name.syntax().text_range(), context);
     }
 
-    /// `cmp::min(a, b)` and `cmp::max(a, b)`, swapped.
+    /// `cmp::min(a, b)` and `cmp::max(a, b)`, swapped; `Some(x)` made `None`.
     fn function_call(&mut self, call: &ast::CallExpr, context: Context<'_>) {
+        self.some_made_none(call, context);
         let Some(ast::Expr::PathExpr(path)) = call.expr() else {
             return;
         };
@@ -412,7 +424,7 @@ impl Finder<'_> {
         }
     }
 
-    fn swap_name(
+    pub(super) fn swap_name(
         &mut self,
         operator: &'static str,
         site: &SyntaxNode,
@@ -561,7 +573,7 @@ impl Finder<'_> {
 }
 
 /// An expression as the receiver of a method call: in parentheses unless it binds tighter.
-fn receiver_text(expr: &ast::Expr) -> String {
+pub(super) fn receiver_text(expr: &ast::Expr) -> String {
     let text = plain(expr.syntax());
     match expr {
         ast::Expr::PathExpr(_)
@@ -588,7 +600,7 @@ fn called(expr: &ast::Expr) -> Option<(SyntaxNode, String)> {
     }
 }
 
-fn counterpart<'p>(pairs: &'p [(&'p str, &'p str)], name: &str) -> Option<&'p str> {
+pub(super) fn counterpart<'p>(pairs: &'p [(&'p str, &'p str)], name: &str) -> Option<&'p str> {
     pairs.iter().find_map(|(a, b)| {
         if *a == name {
             Some(*b)
