@@ -184,7 +184,10 @@ fn steady(text: &str) -> String {
         (r"Test runs  \d+", "Test runs  …"),
         (r"\b\d+(\.\d+)?(ms|s)\b", "…"),
         (r#"Ms": ?\d+"#, r#"Ms":…"#),
-        (r#""rustc": ?"[^"]*""#, r#""rustc":…"#),
+        (
+            r#""name": ?"rustc", ?"version": ?"[^"]*""#,
+            r#""name":"rustc","version":…"#,
+        ),
         (r"rustc \S+", "rustc …"),
         (r"\b\d+ workers?\b", "… workers"),
     ];

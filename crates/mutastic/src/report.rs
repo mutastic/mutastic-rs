@@ -11,6 +11,8 @@ use crate::sites::{self, Change, Mutant};
 use crate::words::{self, Advice};
 
 pub const SCHEMA: &str = "mutastic.events/v1";
+/// The events format's name for this edition, on every event.
+pub const EDITION: &str = "rust";
 pub const RULE: &str = "add or change tests only, never production code";
 pub const DECLINE: &str = "if a mutant's case can't happen in practice, or the change is one no caller can see, don't contrive a test: say why";
 
@@ -673,6 +675,7 @@ fn jsonl(report: &Report) -> String {
     let view = View { report };
     let mut lines = vec![json!({
         "schema": SCHEMA,
+        "edition": EDITION,
         "reason": "run-started",
         "project": report.project.package,
         "rules": RULE,
@@ -693,8 +696,9 @@ fn jsonl(report: &Report) -> String {
     }
     let mut finished = json!({
         "schema": SCHEMA,
+        "edition": EDITION,
         "reason": "run-finished",
-        "rustc": report.rustc,
+        "toolchain": { "name": "rustc", "version": report.rustc },
         "mutants": report.results.len(),
     });
     for status in [
@@ -793,7 +797,8 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
         Change::Always { truth, .. } => mutation["replacement"] = json!(truth.to_string()),
     }
     mutation["description"] = json!(advice.change);
-    // The schema's `bytecode` is the change as the engine makes it; in Rust that's the source.
+    // The schema's `bytecode` is the change as the engine makes it, optional outside Java. Kept:
+    // in Rust it's the whole site before and after, which no other field has for every change.
     let text = view.text(mutant);
     mutation["bytecode"] = json!(format!(
         "{} -> {}",
@@ -802,6 +807,7 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
     ));
     let mut event = json!({
         "schema": SCHEMA,
+        "edition": EDITION,
         "reason": "mutant-finished",
         "id": mutant.id,
         "fingerprint": mutant.fingerprint,
@@ -834,6 +840,7 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
     }
     if let Some(failure) = &result.killed_with {
         event["killedWith"] = json!(failure);
+        event["caughtWith"] = json!(failure);
     }
     if !result.inputs.is_empty() {
         event["inputs"] = json!(result

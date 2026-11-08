@@ -7,6 +7,7 @@
   "required": ["schema", "reason"],
   "properties": {
     "schema": { "$ref": "#/$defs/schema" },
+    "edition": { "$ref": "#/$defs/edition" },
     "reason": {
       "type": "string",
       "description": "What the event is: `run-started`, `mutant-finished`, `mutant-revised` or `run-finished`. Ignore an event whose reason you don't know: a later v1 may add one."
@@ -35,9 +36,28 @@
       "const": "mutastic.events/v1",
       "description": "The format and its major version. A change that would break a reader comes as v2, with a schema of its own."
     },
+    "edition": {
+      "enum": ["java", "rust"],
+      "description": "Which mutastic wrote the event: `java` (for Java and Kotlin, on the JVM) or `rust`. An event without one is the Java edition's, as every event was before editions: what this schema requires only of the Java edition (`jdk`, a mutation's `bytecode`, a missed mutant's `ignore` and `propose`) every such event has. The Rust edition writes it on every event."
+    },
     "status": {
-      "enum": ["Killed", "Survived", "Timeout", "NoCoverage", "Ignored"],
-      "description": "What happened to a mutant, in the mutation-testing report schema's words: `Killed` (caught: a test failed), `Survived` (missed: every test that reaches it passed), `Timeout` (the tests didn't finish, which counts as caught), `NoCoverage` (no test reaches its line) or `Ignored` (skipped, and left out of the score)."
+      "enum": ["Killed", "Survived", "Timeout", "NoCoverage", "Ignored", "RuntimeError"],
+      "description": "What happened to a mutant, in the mutation-testing report schema's words: `Killed` (caught: a test failed), `Survived` (missed: every test that reaches it passed), `Timeout` (the tests didn't finish, which counts as caught), `NoCoverage` (no test reaches its line), `Ignored` (skipped, and left out of the score) or `RuntimeError` (the Rust edition only: the tests crashed the process where the crash may be undefined behaviour, or where the standard library's own check of an unsafe precondition stopped it, so no test can be said to have caught it; left out of the score)."
+    },
+    "toolchain": {
+      "type": "object",
+      "description": "What compiled and ran the code under test, in words every edition shares.",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "`jdk` for the Java edition, `rustc` for Rust's."
+        },
+        "version": {
+          "type": "string",
+          "description": "Its version as the edition knows it: the Java feature release the tests ran on, `\"17\"`; rustc's version, `\"1.91.0\"`."
+        }
+      }
     },
     "score": {
       "type": ["number", "null"],
@@ -79,6 +99,21 @@
         "decline": {
           "type": "string",
           "description": "When not to write a test, for an agent: a mutant whose case can't happen is proposed for a person to ignore instead."
+        },
+        "edition": { "$ref": "#/$defs/edition" },
+        "profile": {
+          "type": "object",
+          "description": "The Rust edition only: the build settings that decide what a mutant means, so runs can be compared. mutastic builds with a profile of its own, with overflow checks and debug assertions on.",
+          "properties": {
+            "name": { "type": "string", "description": "The Cargo profile mutastic built with: `mutastic`." },
+            "optLevel": { "description": "Cargo's `opt-level`, as Cargo reports it: `\"0\"`, `\"3\"`, `\"s\"`." },
+            "overflowChecks": { "type": "boolean", "description": "Whether integer overflow panics." },
+            "debugAssertions": { "type": "boolean", "description": "Whether `debug_assert!` runs." }
+          }
+        },
+        "unsafe": {
+          "enum": ["skip", "enclosing", "all"],
+          "description": "The Rust edition only: which code near `unsafe` was mutated. `skip`: neither unsafe code nor a safe function holding an `unsafe` block; `enclosing`: those functions too, but not the code inside the block; `all`: everything. See `nearUnsafe`, and `run-finished`'s `notMutated`."
         }
       }
     },
@@ -101,6 +136,7 @@
       "properties": {
         "schema": { "$ref": "#/$defs/schema" },
         "reason": { "enum": ["mutant-finished", "mutant-revised"] },
+        "edition": { "$ref": "#/$defs/edition" },
         "id": { "$ref": "#/$defs/mutantId" },
         "fingerprint": {
           "type": "string",
@@ -126,20 +162,25 @@
               "minimum": 1,
               "description": "The line, from 1."
             },
+            "column": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "The column, from 1. The Rust edition only."
+            },
             "class": {
               "type": "string",
-              "description": "The class, by its binary name: `com.example.pricing.Pricing`, `com.example.Outer$Inner`."
+              "description": "What holds the method. In the Java edition, the class by its binary name: `com.example.pricing.Pricing`, `com.example.Outer$Inner`. In Rust's, the path of the item that holds the function: `pricing::Pricing`, or the crate's name for a free function."
             },
             "method": {
               "type": "string",
-              "description": "The method, by name and JVM descriptor: `discount(I)I`."
+              "description": "The method. In the Java edition, by name and JVM descriptor: `discount(I)I`. In Rust's, the function's name: `discount`."
             }
           }
         },
         "mutation": {
           "type": "object",
           "description": "What the mutant changes.",
-          "required": ["description", "bytecode"],
+          "required": ["description"],
           "properties": {
             "original": {
               "type": "string",
@@ -155,7 +196,7 @@
             },
             "bytecode": {
               "type": "string",
-              "description": "The change to the instruction: `IF_ICMPLT -> IF_ICMPLE`."
+              "description": "The change as the engine makes it. In the Java edition, to the instruction, and always there: `IF_ICMPLT -> IF_ICMPLE`."
             }
           }
         },
@@ -183,7 +224,16 @@
         },
         "killedWith": {
           "type": "string",
-          "description": "What that test failed with: the exception's class, `org.opentest4j.AssertionFailedError`."
+          "deprecated": true,
+          "description": "What that test failed with. Deprecated: removed in 1.0. Read `caughtWith`, which has the same value."
+        },
+        "caughtWith": {
+          "type": "string",
+          "description": "What the test that caught it failed with: in the Java edition the exception's class, `org.opentest4j.AssertionFailedError`. Written from 0.6.0."
+        },
+        "nearUnsafe": {
+          "type": "string",
+          "description": "The Rust edition only: why the mutant is near unsafe code, when it is (`called from unsafe code`, `in a module with unsafe code`, `in a function with an unsafe block`, `inside unsafe code`). It ran on its own, and a crash isn't counted as caught (`RuntimeError`)."
         },
         "failureOrigin": {
           "enum": ["assertion", "test", "code", "unknown"],
@@ -254,11 +304,11 @@
         },
         "ignore": {
           "type": "string",
-          "description": "The command that ignores it, with a reason. Only for a missed mutant."
+          "description": "The command that ignores it, with a reason. Only for a missed mutant, and always there for one in the Java edition."
         },
         "propose": {
           "type": "string",
-          "description": "The command that proposes ignoring it, for a person to accept: what an agent runs instead of `ignore`. Only for a missed mutant."
+          "description": "The command that proposes ignoring it, for a person to accept: what an agent runs instead of `ignore`. Only for a missed mutant, and always there for one in the Java edition."
         },
         "rendered": {
           "type": "string",
@@ -268,7 +318,19 @@
       "allOf": [
         {
           "if": { "properties": { "status": { "const": "Survived" } }, "required": ["status"] },
-          "then": { "required": ["doneWhen", "reproduce", "ignore", "propose", "rendered"] }
+          "then": { "required": ["doneWhen", "reproduce", "rendered"] }
+        },
+        {
+          "if": { "properties": { "edition": { "const": "java" } } },
+          "then": {
+            "properties": { "mutation": { "required": ["bytecode"] } },
+            "allOf": [
+              {
+                "if": { "properties": { "status": { "const": "Survived" } }, "required": ["status"] },
+                "then": { "required": ["ignore", "propose"] }
+              }
+            ]
+          }
         }
       ]
     },
@@ -356,7 +418,6 @@
       "required": [
         "schema",
         "reason",
-        "jdk",
         "mutants",
         "Killed",
         "Survived",
@@ -379,9 +440,14 @@
       "properties": {
         "schema": { "$ref": "#/$defs/schema" },
         "reason": { "const": "run-finished" },
+        "edition": { "$ref": "#/$defs/edition" },
         "jdk": {
           "type": "integer",
-          "description": "The Java feature release the tests ran on: `17`."
+          "description": "The Java feature release the tests ran on: `17`. The Java edition only, and always there in it; `toolchain` says the same in words every edition shares."
+        },
+        "toolchain": {
+          "$ref": "#/$defs/toolchain",
+          "description": "What compiled and ran the code under test: `{\"name\": \"jdk\", \"version\": \"17\"}`. Written from 0.6.0."
         },
         "mutants": { "$ref": "#/$defs/count", "description": "How many mutants there were, skipped ones too." },
         "Killed": { "$ref": "#/$defs/count", "deprecated": true, "description": "How many were caught. Deprecated: removed in 1.0. Read `killed`, which has the same value." },
@@ -394,6 +460,23 @@
         "timeout": { "$ref": "#/$defs/count", "description": "How many timed out, which counts as caught. Written from 0.6.0." },
         "noCoverage": { "$ref": "#/$defs/count", "description": "How many no test reaches. Written from 0.6.0." },
         "ignored": { "$ref": "#/$defs/count", "description": "How many were skipped. Written from 0.6.0." },
+        "RuntimeError": { "$ref": "#/$defs/count", "deprecated": true, "description": "The Rust edition only: how many crashed in a way no test can be said to have caught, out of the score. Deprecated: removed in 1.0. Read `runtimeError`, which has the same value." },
+        "runtimeError": { "$ref": "#/$defs/count", "description": "The Rust edition only: how many crashed in a way no test can be said to have caught, out of the score (`RuntimeError`)." },
+        "notMutated": {
+          "type": "object",
+          "description": "The Rust edition only: places mutastic found and chose not to mutate, by why.",
+          "properties": {
+            "unsafe": { "$ref": "#/$defs/count", "description": "Mutants not made because their code is near `unsafe` and `run-started`'s `unsafe` setting leaves it out." }
+          }
+        },
+        "build": {
+          "type": "object",
+          "description": "The Rust edition only: how the mutants were compiled.",
+          "properties": {
+            "rounds": { "$ref": "#/$defs/count", "description": "How many times the crate was compiled with mutants in." },
+            "unviable": { "$ref": "#/$defs/count", "description": "How many mutants didn't compile, and were skipped." }
+          }
+        },
         "score": {
           "$ref": "#/$defs/score",
           "description": "The share of mutants caught, skipped ones left out, as a percentage to one decimal place; null when there was nothing to score."
@@ -534,7 +617,15 @@
               "deprecated": true,
               "description": "How many source files it touched. Deprecated: removed in 1.0. Read `fileCount`, which has the same value."
             },
-            "lines": { "$ref": "#/$defs/count", "description": "How many lines it touched." },
+            "lines": {
+              "$ref": "#/$defs/count",
+              "deprecated": true,
+              "description": "How many lines it touched. Deprecated: removed in 1.0. Read `lineCount`, which has the same value."
+            },
+            "lineCount": {
+              "$ref": "#/$defs/count",
+              "description": "How many lines it touched. Written from 0.6.0."
+            },
             "fileCount": {
               "$ref": "#/$defs/count",
               "description": "How many source files it touched. Written from 0.6.0."
@@ -550,7 +641,13 @@
           "$ref": "#/$defs/count",
           "description": "How long the run took, in milliseconds."
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "edition": { "const": "java" } } },
+          "then": { "required": ["jdk"] }
+        }
+      ]
     }
   }
 }

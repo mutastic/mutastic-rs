@@ -82,6 +82,12 @@ fn pricing_misses_only_the_edge_of_the_discount() {
         "the name from 0.6.0, beside the old"
     );
     assert_eq!(events[0]["rule"], events[0]["rules"]);
+    assert!(events.iter().all(|e| e["edition"] == "rust"), "{stdout}");
+    assert_eq!(finished["toolchain"]["name"], "rustc");
+    assert!(
+        finished.get("rustc").is_none(),
+        "the schema doesn't name it"
+    );
 
     // The card, and the command it offers.
     let id = missed["id"].as_str().unwrap();
@@ -174,6 +180,7 @@ fn unsafe_code_is_fenced_off_and_crashes_are_told_apart() {
     );
     let total = fate("total", "-");
     assert_eq!(total["caughtBy"], total["killedBy"]);
+    assert_eq!(total["caughtWith"], total["killedWith"]);
     assert_eq!(
         total["killedWith"], "panic: attempt to subtract with overflow",
         "{total}"

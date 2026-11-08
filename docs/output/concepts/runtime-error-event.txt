@@ -1,5 +1,6 @@
 {
   "schema": "mutastic.events/v1",
+  "edition": "rust",
   "reason": "mutant-finished",
   "id": "m9ff28261",
   "fingerprint": "9ff2826156a229af",
@@ -28,5 +29,5 @@
     ]
   },
   "testsRun": 1,
-  "durationMs": 70
+  "durationMs": 108
 }

@@ -43,13 +43,14 @@ mutastic: m418fd2e4 is caught only because the test process crashed (SIGABRT): n
 ```
 
 The summary counts these apart, on a line of their own (`caught only because the test process
-crashed, not by a test's check`), and in the event stream the mutant has `killedWith` starting
-`crash:` and no `killedBy`:
+crashed, not by a test's check`), and in the event stream the mutant has `caughtWith` starting
+`crash:` and no `caughtBy`:
 
 <!-- output: concepts/crash-event -->
 ```text
 {
   "schema": "mutastic.events/v1",
+  "edition": "rust",
   "reason": "mutant-finished",
   "id": "m418fd2e4",
   "fingerprint": "418fd2e4aad78dcd",
@@ -71,13 +72,14 @@ crashed, not by a test's check`), and in the event stream the mutant has `killed
     "run::guards"
   ],
   "killedWith": "crash: SIGABRT",
+  "caughtWith": "crash: SIGABRT",
   "inputs": {
     "x": [
       3
     ]
   },
   "testsRun": 1,
-  "durationMs": 69
+  "durationMs": 89
 }
 ```
 

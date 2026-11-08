@@ -1,5 +1,6 @@
 {
   "schema": "mutastic.events/v1",
+  "edition": "rust",
   "reason": "mutant-finished",
   "id": "m4db96a57",
   "fingerprint": "4db96a5721e0ee95",

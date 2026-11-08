@@ -1,5 +1,6 @@
 {
   "schema": "mutastic.events/v1",
+  "edition": "rust",
   "reason": "run-started",
   "project": "unsafety",
   "rules": "add or change tests only, never production code",

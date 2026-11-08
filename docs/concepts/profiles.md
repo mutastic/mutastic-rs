@@ -35,7 +35,7 @@ unsafety fixture, whose test adds 1 and 2:
 mutastic: m24a65ba1 is caught by run::totals, through a panic: attempt to subtract with overflow
 ```
 
-Its event has the same words in `killedWith`. That's a real catch, as the test failed, but it's
+Its event has the same words in `caughtWith`. That's a real catch, as the test failed, but it's
 worth knowing when a test caught a change only because the arithmetic overflowed, and not because
 it checked the answer.
 
@@ -67,6 +67,7 @@ and mutastic's build of it still has them on:
 ```text
 {
   "schema": "mutastic.events/v1",
+  "edition": "rust",
   "reason": "run-started",
   "project": "unsafety",
   "rules": "add or change tests only, never production code",

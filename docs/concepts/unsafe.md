@@ -117,6 +117,7 @@ Near-unsafe mutants run differently:
 ```text
 {
   "schema": "mutastic.events/v1",
+  "edition": "rust",
   "reason": "mutant-finished",
   "id": "m9ff28261",
   "fingerprint": "9ff2826156a229af",
@@ -145,7 +146,7 @@ Near-unsafe mutants run differently:
     ]
   },
   "testsRun": 1,
-  "durationMs": 70
+  "durationMs": 108
 }
 ```
 
@@ -163,6 +164,7 @@ stops it. That's std's catch, not a test's, so it's a `RuntimeError` too, wherev
 ```text
 {
   "schema": "mutastic.events/v1",
+  "edition": "rust",
   "reason": "mutant-finished",
   "id": "m71ecfa0f",
   "fingerprint": "71ecfa0fc15036f8",
@@ -191,7 +193,7 @@ stops it. That's std's catch, not a test's, so it's a `RuntimeError` too, wherev
     ]
   },
   "testsRun": 1,
-  "durationMs": 46
+  "durationMs": 87
 }
 ```
 
