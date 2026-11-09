@@ -32,8 +32,9 @@ A pattern is a path: `**` matches any depth, `*` one name, and a function is its
 with the crate's name or `crate::` before it or not: `shop::Money::add`, `crate::Money::add` or
 `Money::add`, where the Java edition writes `com.acme.Money#add`. A rule covers a function by
 its path, or by the item that holds it (`shop::Money`), as a Java rule covers a method or its
-class. `mutate:` rules are read, as in the Java edition, where they take back an arid skip; the Rust
-edition has no arid skips, so they change nothing yet.
+class. A `mutate:` rule takes back an arid skip in the code it covers, as in the Java edition: a
+`println!` or `log::warn!` that's a contract runs as a mutant there. It never takes back any other
+skip.
 
 ## Rules files
 

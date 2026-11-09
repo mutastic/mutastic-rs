@@ -1903,6 +1903,41 @@ mod tests {
     }
 
     #[test]
+    fn a_statement_that_only_writes_output_is_skipped_as_arid() {
+        let source = "pub fn fee(b: i32, out: &mut String) {\n\
+             log::warn!(\"overdrawn: {b}\");\n\
+             eprintln!(\"overdrawn: {b}\");\n\
+             tracing::info!(b);\n\
+             write!(out, \"{b}\").ok();\n\
+             assert!(b < 0);\n\
+             }";
+        let dir = std::env::temp_dir().join(format!("mutastic-arid-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(dir.join("src/lib.rs"), source).unwrap();
+        let found = find(
+            &dir,
+            "sample",
+            &[PathBuf::from("src/lib.rs")],
+            &[REMOVE_VOID_CALL],
+        );
+        std::fs::remove_dir_all(&dir).ok();
+        let skipped: Vec<(&str, Option<&str>)> = found
+            .mutants
+            .iter()
+            .map(|m| (&source[m.site.clone()], m.skipped.as_deref()))
+            .collect();
+        let arid = Some("arid: only writes output");
+        assert_eq!(
+            skipped,
+            [
+                ("log::warn!(\"overdrawn: {b}\");", arid),
+                ("eprintln!(\"overdrawn: {b}\");", arid),
+                ("tracing::info!(b);", arid),
+            ]
+        );
+    }
+
+    #[test]
     fn ids_do_not_move_when_code_above_them_moves() {
         let one = found("pub fn d(t: u32) -> bool { t >= 100 }");
         let two = found("\n\n// a comment\npub fn d(t: u32) -> bool {\n    t >= 100\n}");

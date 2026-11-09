@@ -18,3 +18,13 @@ Expect your score to move, for these reasons, not because your tests changed:
   scores usually fall a little: on five real crates, the defaults score moved by between −1.7 and
   +0.4 points. No mutant's id changes, and `--operators=stronger` and `extended` are unchanged. See
   [Unwrap try](docs/operators/returns.md#unwrap-try).
+
+### Changes
+
+- **A statement that only writes output is skipped as arid,** and counted: `println!`, `eprintln!`,
+  `dbg!` and a logger's macros (`log::warn!`, `tracing::info!`). Before, it had no mutant at all, so
+  a change that only added a log line ran `0 mutants` and said nothing more; now the summary says
+  `1 skipped (1 arid)`, the agent text `(1 more skipped)`, and the event stream has the mutant with
+  `skipKind: "arid"`, as the Java edition does. Skipped mutants are out of the score, so no score
+  moves, and no existing mutant's id changes. A `mutate:` rule in `mutastic.yaml` takes the skip
+  back. See [Remove void call](docs/operators/calls.md#remove-void-call).

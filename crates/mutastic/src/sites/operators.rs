@@ -73,6 +73,18 @@ const VOID_STD: &[&str] = &[
 /// nothing about the tests.
 const ARID_STATEMENT_CALLS: &[&str] = &["unwrap", "expect"];
 
+/// Macros whose statement only writes output, to the terminal or a logger: removing one changes
+/// nothing a test should have to notice, so its mutant is made, for its id, and skipped as arid,
+/// as the Java edition skips a call to a logger or `System.out`. A `write!` goes to a writer the
+/// code chose, which a test may read, so it isn't one.
+const OUTPUT_MACROS: &[&str] = &[
+    "print", "println", "eprint", "eprintln", "dbg", "trace", "debug", "info", "warn", "error",
+    "log", "event",
+];
+
+/// The arid skip of an output macro's mutant, in the Java edition's words.
+const ONLY_WRITES_OUTPUT: &str = "arid: only writes output";
+
 /// Item-preserving iterator stages, which can be left out without changing the item type.
 const STAGES: &[&str] = &[
     "filter",
@@ -235,6 +247,10 @@ impl Finder<'_> {
             return;
         }
         self.remove_throw(statement, context);
+        if let ast::Expr::MacroExpr(output) = &expr {
+            self.output_macro(statement, output, context);
+            return;
+        }
         let Some((call, name)) = called(&expr) else {
             return;
         };
@@ -247,6 +263,40 @@ impl Finder<'_> {
             REMOVE_DISCARDED_CALL
         };
         self.removal(operator, statement.syntax(), &call, String::new(), context);
+    }
+
+    /// `log::warn!(..);` or `eprintln!(..);` removed: made, so it's counted and keeps an id, and
+    /// skipped as arid, so a change that only adds output says why nothing ran.
+    fn output_macro(
+        &mut self,
+        statement: &ast::ExprStmt,
+        output: &ast::MacroExpr,
+        context: Context<'_>,
+    ) {
+        let Some(call) = output.macro_call() else {
+            return;
+        };
+        let name = call
+            .path()
+            .and_then(|path| path.segment())
+            .map(|segment| segment.syntax().text().to_string())
+            .unwrap_or_default();
+        if !OUTPUT_MACROS.contains(&name.as_str()) {
+            return;
+        }
+        let before = self.found.mutants.len();
+        self.removal(
+            REMOVE_VOID_CALL,
+            statement.syntax(),
+            call.syntax(),
+            String::new(),
+            context,
+        );
+        if self.found.mutants.len() > before {
+            if let Some(mutant) = self.found.mutants.last_mut() {
+                mutant.skipped = Some(ONLY_WRITES_OUTPUT.to_string());
+            }
+        }
     }
 
     /// `total = total + p;` becomes `let _ = total + p;`: the variable keeps its value, and what

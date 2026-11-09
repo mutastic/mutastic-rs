@@ -12,7 +12,7 @@ pass, nothing checks what that code does: the mutant is **missed**, and that's a
 | Missed | ✗ | Every test that reaches it still passes: a gap in the tests | missed |
 | Timed out | ⏱ | The tests stopped finishing in time, usually a loop that no longer ends | caught |
 | Not covered | ○ | No test reaches it | missed |
-| Skipped | | Never run: it doesn't compile | left out |
+| Skipped | | Never run: it doesn't compile, or no test should have to notice it | left out |
 | Crashed where a crash proves nothing | | The process died where the crash may be undefined behaviour, or where std's own check stopped it | left out |
 
 Colour is never the only signal: each result also has its symbol or its words. The event stream uses
@@ -214,6 +214,16 @@ A mutant is skipped when it doesn't compile: the build withdrew it, and its reas
 error, `unviable: doesn't compile (E0308: mismatched types)`. A change that doesn't compile is one
 no test needs to catch, so it's left out of the score. See
 [How a run works](how-a-run-works.md#a-mutant-that-doesnt-compile-is-rolled-back).
+
+A skipped mutant's reason starts with its kind, and the summary counts them by kind,
+`2 skipped (1 arid, 1 unviable)`:
+
+| Kind | Means | Example |
+|---|---|---|
+| `unviable:` | It doesn't compile | `unviable: doesn't compile (E0308: mismatched types)` |
+| `arid:` | Code whose change no test should have to notice | `arid: only writes output`, for a `println!` or `log::warn!` statement removed |
+| `equivalent:` | No test can tell it from the code | a `?` that only passes on a formatter's error |
+| `user:` | The project's own decision, in `mutastic.yaml` or `.mutastic/ignores.yaml` | ``user: written by a code generator (rule `skip: shop::generated::**`)`` |
 
 Code mutastic doesn't make mutants for at all, such as test code and code inside `unsafe`, isn't in
 the count. The summary names what was left out around unsafe code (`not mutated: unsafe`, with how

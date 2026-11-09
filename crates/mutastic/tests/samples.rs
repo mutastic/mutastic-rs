@@ -156,7 +156,10 @@ fn a_field_a_pattern_binds_into_stays_a_place() {
 /// other word is told apart from an id. Nothing is built: the words are checked first.
 #[test]
 fn a_word_a_command_doesnt_take_stops_it() {
-    let dir = fixture("pricing");
+    // A copy of its own: its verify would otherwise share the fixture's copy and coverage with
+    // the tests that run pricing in place at the same time, and read theirs.
+    let copy = copy_of("pricing", "words");
+    let dir = copy.display().to_string();
     let stopped = |args: &[&str]| {
         let output = Command::new(env!("CARGO_BIN_EXE_mutastic"))
             .args(args)
@@ -196,6 +199,7 @@ fn a_word_a_command_doesnt_take_stops_it() {
         "{out}"
     );
     assert!(out.contains("mutastic: m0b3873d0 is caught by "), "{out}");
+    std::fs::remove_dir_all(&copy).ok();
 }
 
 /// Unsafe code is left alone, code near it is marked and runs isolated, and a crash counts as caught
@@ -712,6 +716,41 @@ fn since_runs_the_changed_lines_mutants() {
         .iter()
         .filter(|e| e["reason"] == "mutant-finished")
         .all(|e| e["location"]["line"] == 26));
+
+    // A change that only writes output has its mutant skipped as arid, and says so, as the Java
+    // edition does: a run that scores nothing tells why.
+    std::fs::write(
+        &lib,
+        text.replace(
+            "        if total < self.free_shipping_from {",
+            "        eprintln!(\"shipping on {total}\");\n        if total < self.free_shipping_from {",
+        ),
+    )
+    .unwrap();
+    let (_, out) = mutastic_in(
+        &dir,
+        &["run", "--since=HEAD", "--format=full", "--report=none"],
+    );
+    assert!(
+        out.contains("   Mutants  ✓ 0 caught (0) · 1 skipped (1 arid)\n"),
+        "{out}"
+    );
+    let (_, out) = mutastic_in(
+        &dir,
+        &["run", "--since=HEAD", "--format=agent", "--report=none"],
+    );
+    assert!(
+        out.contains("0 caught of 0 mutants (1 more skipped)\n"),
+        "{out}"
+    );
+    let (_, jsonl) = mutastic_in(
+        &dir,
+        &["run", "--since=HEAD", "--format=jsonl", "--report=none"],
+    );
+    let arid = events(&jsonl);
+    assert_eq!(arid[1]["statusReason"], "arid: only writes output");
+    assert_eq!(arid[1]["skipKind"], "arid");
+    assert_eq!(arid.last().unwrap()["ignored"], 1);
     std::fs::remove_dir_all(&dir).ok();
 }
 

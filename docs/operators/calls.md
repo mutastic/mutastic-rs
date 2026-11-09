@@ -21,6 +21,13 @@ Each card below comes from `mutastic run fixtures/operators` with these operator
 function or method the crate declares with no return type, or one of std's that returns `()`, such
 as `push`, `sort`, `clear`, `extend` or `drop`.
 
+A statement that only writes output, `println!`, `eprintln!`, `dbg!` or a logger's `log::warn!`
+or `tracing::info!`, is skipped as arid, `arid: only writes output`, as the Java edition skips a
+call to a logger: no test should have to notice it. It's counted in the summary's
+`skipped (1 arid)`, so a change that only adds a log line says why nothing ran, and it's out of the
+score. A `mutate:` rule takes the skip back, where output is a contract. A `write!` goes to a writer
+the code chose, which a test can read, so it isn't skipped.
+
 <!-- from: fixtures/operators/src/calls.rs -->
 ```rust
 impl Cart {

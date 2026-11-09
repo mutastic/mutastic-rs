@@ -88,6 +88,8 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
 - **The gate** is the Java edition's, so the coding agents' plugins run it unchanged. A test it
   counts is a `#[test]`-like function in `src` or `tests`, and one turned off is `#[ignore]`, where
   Java counts `@Test` and `@Disabled`.
+- **Skipped as arid:** a statement that only writes output, `println!`, `eprintln!`, `dbg!` or a
+  logger's macro, where the Java edition skips a call to a logger or `System.out`.
 - **Skipped as equivalent:** a `?` that only passes on a formatter's error, inside the `fmt` of
   `Display` and the other formatting traits, or on a write to a `Formatter`: no test can make that
   error happen.

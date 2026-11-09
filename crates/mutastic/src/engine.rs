@@ -348,9 +348,10 @@ fn apply_ignores(project: &Project, found: &mut Crate) -> Result<Vec<String>, St
 }
 
 /// Skips the mutants in code a `skip:` rule of `mutastic.yaml` covers, with its reason. A mutant
-/// something else already skips keeps that reason. A rule names a function by its path in the
-/// crate, as `generated::checksum`, `crate::generated::checksum` or, with the crate's name,
-/// `shop::generated::checksum`.
+/// something else already skips keeps that reason, except that a `mutate:` rule takes back an arid
+/// skip, as in the Java edition: the project says that output is a contract. A rule names a
+/// function by its path in the crate, as `generated::checksum`, `crate::generated::checksum` or,
+/// with the crate's name, `shop::generated::checksum`.
 fn apply_rules(rules: &[crate::config::Rule], crate_name: &str, found: &mut Crate) {
     for index in 0..found.mutants.len() {
         let path = &found.functions[found.mutants[index].function].path;
@@ -359,13 +360,26 @@ fn apply_rules(rules: &[crate::config::Rule], crate_name: &str, found: &mut Crat
             format!("crate::{path}"),
             format!("{crate_name}::{path}"),
         ];
-        let rule = rules
-            .iter()
-            .find(|rule| !rule.mutate && named.iter().any(|path| rule.covers(path)));
-        if let (Some(rule), None) = (rule, &found.mutants[index].skipped) {
-            found.mutants[index].skipped = Some(rule.skip_reason());
+        let covering = |mutate: bool| {
+            rules
+                .iter()
+                .find(|rule| rule.mutate == mutate && named.iter().any(|path| rule.covers(path)))
+        };
+        let skip = covering(false);
+        let mutate = covering(true);
+        let mutant = &mut found.mutants[index];
+        if mutate.is_some() && mutant.skipped.as_deref().is_some_and(is_arid) {
+            mutant.skipped = None;
+        }
+        if let (Some(rule), None) = (skip, &mutant.skipped) {
+            mutant.skipped = Some(rule.skip_reason());
         }
     }
+}
+
+/// `arid: only writes output`: a skip a `mutate:` rule may take back.
+fn is_arid(reason: &str) -> bool {
+    reason.starts_with("arid:")
 }
 
 /// The source line a mutant is on, as written.
@@ -734,4 +748,39 @@ pub fn rustc_version() -> String {
         .and_then(|out| String::from_utf8(out.stdout).ok())
         .and_then(|text| text.split_whitespace().nth(1).map(str::to_string))
         .unwrap_or_else(|| "unknown".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A `mutate:` rule takes back an arid skip, and only that: a `skip:` rule still skips.
+    #[test]
+    fn a_mutate_rule_takes_back_an_arid_skip() {
+        let dir = std::env::temp_dir().join(format!("mutastic-rules-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let source = "pub fn told(b: i32) { eprintln!(\"{b}\"); }\n\
+                      pub fn quiet(b: i32) { eprintln!(\"{b}\"); }\n";
+        std::fs::write(dir.join("src/lib.rs"), source).unwrap();
+        let mut found = sites::find(
+            &dir,
+            "shop",
+            &[PathBuf::from("src/lib.rs")],
+            &[sites::REMOVE_VOID_CALL],
+        );
+        std::fs::remove_dir_all(&dir).ok();
+        let rule = |mutate: bool, target: &str| crate::config::Rule {
+            mutate,
+            target: target.into(),
+            reason: "the log is what the operator reads".into(),
+        };
+        apply_rules(
+            &[rule(true, "shop::told"), rule(false, "quiet")],
+            "shop",
+            &mut found,
+        );
+        let skipped: Vec<Option<&str>> =
+            found.mutants.iter().map(|m| m.skipped.as_deref()).collect();
+        assert_eq!(skipped, [None, Some("arid: only writes output")]);
+    }
 }
