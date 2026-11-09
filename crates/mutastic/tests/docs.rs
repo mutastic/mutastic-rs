@@ -222,6 +222,7 @@ fn steady(text: &str) -> String {
         ),
         (r"rustc \S+", "rustc …"),
         (r"(?<c>\x1b\[[0-9;]*m|\b)\d+ workers?\b", "${c}… workers"),
+        (r#""workers(?<s>Started)?": ?\d+"#, r#""workers$s":…"#),
     ];
     rules
         .iter()
