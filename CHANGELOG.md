@@ -21,6 +21,17 @@ Expect your score to move, for these reasons, not because your tests changed:
 
 ### Changes
 
+- **A flaky test is left out of the run, not a reason to stop it.** A test that fails before any
+  mutant runs again on its own, up to three times, as in the Java edition. One that then passes is
+  flaky: the run goes on without it, and says so: `(1 flaky, left out)` on the coverage line,
+  `! flaky: … failed, then passed when run again; left out of this run; it reaches RandomState`
+  before the summary, a `Flaky` row, a `flaky:` line in the agent text, and `flaky` and
+  `flakyEvidence` in the event stream. What it reaches that varies is read from the source: calls
+  such as `SystemTime::now` or `rand::thread_rng`, and a `RandomState` field a method reads. Its
+  catches don't count, so code only it reaches is not covered. A test that fails every time still
+  stops the run, now in the Java edition's words, `the tests fail without any mutant: …; their
+  output is in target/mutastic/tests.log`, where it used to say to mark the test `#[ignore]`, which
+  agents are told never to do. See [A test is flaky](docs/troubleshooting.md#a-test-is-flaky).
 - **A statement that only writes output is skipped as arid,** and counted: `println!`, `eprintln!`,
   `dbg!` and a logger's macros (`log::warn!`, `tracing::info!`). Before, it had no mutant at all, so
   a change that only added a log line ran `0 mutants` and said nothing more; now the summary says

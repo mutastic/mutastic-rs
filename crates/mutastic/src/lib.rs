@@ -13,6 +13,7 @@ pub mod compile;
 pub mod config;
 pub mod edition;
 pub mod engine;
+pub mod flaky;
 pub mod gate;
 pub mod id;
 pub mod ignores;

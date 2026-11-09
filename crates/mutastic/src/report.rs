@@ -465,8 +465,69 @@ fn human(report: &Report, style: Style, cards: bool) -> String {
         }
     }
     not_covered(&mut out, &view, style);
+    warnings(&mut out, report, style);
     summary(&mut out, report, style);
     out
+}
+
+/// The run's warnings, before the summary: each flaky test left out, as the Java edition shows them.
+fn warnings(out: &mut String, report: &Report, style: Style) {
+    if report.flaky.is_empty() {
+        return;
+    }
+    out.push('\n');
+    for flaky in &report.flaky {
+        let _ = writeln!(
+            out,
+            " {} {} failed, then passed when run again; left out of this run{}",
+            style.amber("! flaky:"),
+            flaky.test,
+            flaky_reason(flaky)
+        );
+    }
+}
+
+/// `; it reaches SystemTime::now`: what it reaches that changes from run to run, its own code first.
+fn flaky_reason(flaky: &crate::flaky::Flaky) -> String {
+    if !flaky.reaches_in_test.is_empty() {
+        format!(
+            "; its own code reaches {}",
+            flaky.reaches_in_test.join(", ")
+        )
+    } else if !flaky.reaches.is_empty() {
+        format!("; it reaches {}", flaky.reaches.join(", "))
+    } else {
+        String::new()
+    }
+}
+
+/// What to do about a flaky test, by what mutastic saw, in the Java edition's words: its own code
+/// varies, the code it runs varies, or nothing is known. A test's failure in Rust is a panic,
+/// never an exception from the network or a file, so the Java edition's advice for those has no
+/// counterpart.
+fn flaky_advice(flaky: &crate::flaky::Flaky) -> String {
+    if !flaky.reaches_in_test.is_empty() {
+        format!(
+            "Its own code reaches {}, which answers differently every run, so it makes its own flakiness: making that the same every time is likely safe, and if it stands in for something real (a slow service), keep that checked by a test of its own.",
+            flaky.reaches_in_test.join(", ")
+        )
+    } else if !flaky.reaches.is_empty() {
+        format!(
+            "The code it runs reaches {}, which answers differently every run: making that the same every time (a seed, a fixed clock, through the code's own seam) is likely safe, so long as the test still checks what it did.",
+            flaky.reaches.join(", ")
+        )
+    } else {
+        "mutastic can't tell why: leave it unless the cause is plain in the code, and say in your final message that it's flaky.".to_string()
+    }
+}
+
+/// `, or only a flaky one does`, after "no test reaches these lines", when a flaky test was left out.
+fn or_only_flaky(report: &Report) -> &'static str {
+    if report.flaky.is_empty() {
+        ""
+    } else {
+        ", or only a flaky one does"
+    }
 }
 
 /// `┌─ src/lib.rs:26`, then the changed line between the lines either side, the change marked under
@@ -665,7 +726,10 @@ fn not_covered(out: &mut String, view: &View, style: Style) {
         out,
         "\n{}{}",
         style.amber(&style.bold(" Not covered ")),
-        style.dim("(no test reaches these lines)")
+        style.dim(&format!(
+            "(no test reaches these lines{})",
+            or_only_flaky(view.report)
+        ))
     );
     for (place, count) in places.iter().take(NOT_COVERED_SHOWN) {
         let _ = writeln!(
@@ -734,6 +798,13 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
     }
     if let Some(worst) = worst_at(report) {
         rows.push(("Worst at", worst));
+    }
+    if !report.flaky.is_empty() {
+        let count = report.flaky.len();
+        rows.push((
+            "Flaky",
+            format!("{count} test{} left out", if count == 1 { "" } else { "s" }),
+        ));
     }
     let by_crash = report
         .results
@@ -1036,6 +1107,14 @@ fn agent(report: &Report) -> String {
             format!(" ({skipped} more skipped)")
         }
     );
+    for flaky in &report.flaky {
+        let _ = writeln!(
+            out,
+            "flaky: {} failed, then passed when run again; left out of this run, so its catches don't count. {} Never remove, disable or loosen it to get a run through",
+            flaky.test,
+            flaky_advice(flaky)
+        );
+    }
     let _ = writeln!(
         out,
         "rules: {RULE}; a fix counts when `mutastic verify <id> {dir}` passes"
@@ -1060,7 +1139,8 @@ fn agent(report: &Report) -> String {
     if !places.is_empty() {
         let _ = writeln!(
             out,
-            "\nnot covered (no test reaches these lines{}):",
+            "\nnot covered (no test reaches these lines{}{}):",
+            or_only_flaky(report),
             if entries.is_empty() {
                 ""
             } else {
@@ -1190,8 +1270,22 @@ fn jsonl(report: &Report) -> String {
         .covered_score()
         .map_or(Value::Null, |s| json!(round1(s)));
     finished["tests"] = json!(report.tests);
+    finished["flaky"] = json!(report.flaky.iter().map(|f| &f.test).collect::<Vec<_>>());
+    // A Rust test fails with a panic, not a chain of exceptions, so `failure` is empty and
+    // nothing came from outside the code.
+    finished["flakyEvidence"] = json!(report
+        .flaky
+        .iter()
+        .map(|f| json!({
+            "test": f.test,
+            "failure": [],
+            "reaches": f.reaches,
+            "reachesInTest": f.reaches_in_test,
+            "outside": false,
+        }))
+        .collect::<Vec<_>>());
     // Nothing of these is built yet, so each is empty, as the schema asks.
-    for none in ["flaky", "flakyEvidence", "likelyFlaky", "unrelatedCatches"] {
+    for none in ["likelyFlaky", "unrelatedCatches"] {
         finished[none] = json!([]);
     }
     if let Some(scope) = &report.scope {

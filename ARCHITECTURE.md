@@ -29,7 +29,9 @@ for the conventions the code is held to, [AGENTS.md](AGENTS.md).
    `RUSTC_WORKSPACE_WRAPPER`, which is the mutastic binary itself (`wrapper`), never `RUSTFLAGS`.
 4. **Coverage.** `testrun` lists the tests in each built test binary and runs each test alone with
    the switches recording which sites it reaches and the whole numbers each function was called
-   with: the "inputs seen" on a card. Every test must pass here.
+   with: the "inputs seen" on a card. Every test must pass here: one that fails runs again on its
+   own, and if it then passes it's flaky, left out of the run, with what it reaches that varies
+   (`flaky`); one that fails every time stops the run.
 5. **Mutants, side by side.** `engine` runs each mutant against only the tests that reach its site,
    the fastest binary first, with `MUTASTIC_ACTIVE` naming it, each run a process of its own under a
    time limit, on `--workers` threads. The first failing test catches it. A process that dies
@@ -64,6 +66,7 @@ All the code is in `crates/mutastic/src`:
 | `compile` | Builds the copy, blames compile errors on mutants, withdraws the unviable ones |
 | `wrapper` | mutastic as Cargo's `RUSTC_WORKSPACE_WRAPPER`, adding flags to the user's crate only |
 | `testrun` | Lists and runs libtest binaries' tests, with a time limit, and runs work side by side |
+| `flaky` | Flaky tests: how many reruns, what a test reaches that varies, and the words for a test that always fails |
 | `engine` | A run: finds, builds, records coverage, runs each mutant, and decides its status |
 | `words` | What a card says: the gap, the change, the inputs seen and the help |
 | `suggest` | Suggested tests: candidate inputs, running the probes, and the test written out |
@@ -93,7 +96,8 @@ check the events mutastic prints against it. Every event says `"edition": "rust"
 `fixtures/` holds the crates they run on, each a package of its own outside mutastic's workspace:
 `pricing` (the Java edition's sample, ported), `operators` (an example of each operator), `truth`
 (each shape a mutated expression can take), `unsafety`, `loops`, `places`, `platforms`, `ranking`,
-`suggestions`, `repeats` (identical lines in one function) and `workspace`. `samples.rs` and
+`suggestions`, `repeats` (identical lines in one function), `flaky` (a test that fails on its first
+try, and passes after) and `workspace`. `samples.rs` and
 `truth.rs` run mutastic on them in place, so its copy goes in each fixture's own `target/`;
 `docs.rs` copies them to the system's temporary directory first, so the commands it captures read
 as a person types them at the repository's root.

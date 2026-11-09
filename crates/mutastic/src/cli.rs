@@ -591,12 +591,18 @@ impl<'a> Progress<'a> {
                 rustc,
                 took,
                 mutants,
+                flaky,
             } => {
                 counter.total = mutants;
                 eprintln!(
-                    "coverage  {} on rustc {rustc} in {} · {}",
+                    "coverage  {} on rustc {rustc} in {}{} · {}",
                     count(tests, "test"),
                     report::duration(took),
+                    if flaky == 0 {
+                        String::new()
+                    } else {
+                        format!(" ({flaky} flaky, left out)")
+                    },
                     count(mutants, "mutant")
                 )
             }
@@ -1285,33 +1291,42 @@ fn gate_verdict(
     )))
 }
 
-/// A test that fails before any mutant. One that was there when the task started is most likely
-/// broken by the change, and rewriting what it expects would pass a wrong change: the agent is
-/// told to find out which is wrong, and to ask. The gate remembers it, so taking it away later
-/// holds the gate.
+/// Tests that fail before any mutant, each time they run. One that was there when the task
+/// started is most likely broken by the change, and rewriting what it expects would pass a wrong
+/// change: the agent is told to find out which is wrong, and to ask. The gate remembers them, so
+/// taking one away later holds the gate. The words are the Java edition's.
 fn red_verdict(
     here: &std::path::Path,
     state: &gate::State,
     error: &str,
 ) -> Result<gate::Verdict, String> {
-    let Some((test, _)) = error.split_once(" fails without any mutant") else {
+    let Some(failing) = crate::flaky::failing_tests(error) else {
         return Err(error.to_string());
     };
-    let failed = format!("{test} fails without any mutant");
-    let name = test.rsplit("::").next().unwrap_or(test);
-    let was_there =
-        crate::since::git(here, &["grep", "-q", "-w", name, &state.base, "--", "."]).is_some();
-    let text = if was_there {
+    let before: Vec<&String> = failing
+        .iter()
+        .filter(|test| {
+            let name = test.rsplit("::").next().unwrap_or(test);
+            crate::since::git(here, &["grep", "-q", "-w", name, &state.base, "--", "."]).is_some()
+        })
+        .collect();
+    let text = if before.is_empty() {
         format!(
-            "mutastic gate: {failed}.\n\n{test} was there when the task started: if it passed then, the task's change broke it. Find out whether the change or the test is wrong. Don't change what a test expects, or take it away, to make it pass unless the task asked for that behaviour, and if you're not sure, ask"
+            "mutastic gate: {error}. Make them pass first, unless the spec or plan is what's wrong, in which case say so and stop. Either way, leave a failing test in place: the gate doesn't pass a task by taking it away"
         )
     } else {
+        let one = before.len() == 1;
+        let names: Vec<&str> = before.iter().map(|test| test.as_str()).collect();
         format!(
-            "mutastic gate: {failed}. Make it pass first, unless the spec or plan is what's wrong, in which case say so and stop. Either way, leave a failing test in place: the gate doesn't pass a task by taking it away"
+            "mutastic gate: {error}.\n\n{} {} there when the task started: if {} passed then, the task's change broke {}. Find out whether the change or the test is wrong. Don't change what a test expects, or take it away, to make it pass unless the task asked for that behaviour, and if you're not sure, ask",
+            names.join(", "),
+            if one { "was" } else { "were" },
+            if one { "it" } else { "they" },
+            if one { "it" } else { "them" }
         )
     };
     Ok(gate::Verdict {
-        red: gate::remember(&[test.to_string()], here),
+        red: gate::remember(&failing, here),
         ..gate::Verdict::block(text)
     })
 }

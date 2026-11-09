@@ -98,6 +98,8 @@ pub struct Report {
     pub stale_ignores: Vec<String>,
     /// The change the run was scoped to, with `--since`.
     pub scope: Option<Scope>,
+    /// The tests that failed in the coverage pass and passed when run again: left out of the run.
+    pub flaky: Vec<crate::flaky::Flaky>,
 }
 
 impl Report {
@@ -196,6 +198,8 @@ pub enum Progress<'a> {
         rustc: &'a str,
         took: Duration,
         mutants: usize,
+        /// The tests left out because they failed, then passed when run again.
+        flaky: usize,
     },
     /// One mutant has its result.
     MutantFinished { status: Status },
@@ -275,11 +279,33 @@ pub fn run(
         .collect();
     let built = compile::build(project, &found, &live, &recorders)?;
     let cwd = project.copy_dir().join(&project.package_dir);
-    let tests = testrun::list(&built.binaries, &cwd)?;
+    let listed = testrun::list(&built.binaries, &cwd)?;
     let setup = started.elapsed();
 
     let coverage_started = Instant::now();
-    let reach = coverage(project, &built.binaries, &tests, options.workers)?;
+    let covered = coverage(project, &built.binaries, &listed, options.workers)?;
+    let flaky: Vec<crate::flaky::Flaky> = covered
+        .flaky
+        .iter()
+        .map(|&index| {
+            flaky_evidence(
+                project,
+                &found,
+                &built.binaries,
+                &listed[index],
+                &covered.reach[index],
+            )
+        })
+        .collect();
+    // A flaky test left in would fail at random against mutants too, and its failures would count
+    // as catches it never made.
+    let (tests, reach): (Vec<Test>, Vec<Reach>) = listed
+        .into_iter()
+        .zip(covered.reach)
+        .enumerate()
+        .filter(|(index, _)| !covered.flaky.contains(index))
+        .map(|(_, kept)| kept)
+        .unzip();
     let coverage_took = coverage_started.elapsed();
     let rustc = rustc_version();
     progress(Progress::Covered {
@@ -287,6 +313,7 @@ pub fn run(
         rustc: &rustc,
         took: coverage_took,
         mutants: selected.len(),
+        flaky: flaky.len(),
     });
 
     let mutants_started = Instant::now();
@@ -324,7 +351,43 @@ pub fn run(
         reports: Vec::new(),
         stale_ignores,
         scope,
+        flaky,
     })
+}
+
+/// What a flaky test reaches that varies from run to run: in the functions with mutants it ran,
+/// and in its own code.
+fn flaky_evidence(
+    project: &Project,
+    found: &Crate,
+    binaries: &[Binary],
+    test: &Test,
+    reach: &Reach,
+) -> crate::flaky::Flaky {
+    let mut reached: BTreeSet<usize> = reach
+        .hits
+        .iter()
+        .filter_map(|&hit| found.mutants.iter().find(|m| m.ordinal == hit))
+        .map(|mutant| mutant.function)
+        .collect();
+    reached.extend(
+        reach
+            .seen
+            .keys()
+            .filter_map(|&ordinal| found.functions.iter().position(|f| f.ordinal == ordinal)),
+    );
+    let binary = &binaries[test.binary];
+    let sources = crate::flaky::test_sources(
+        found,
+        &project.workspace.join(&project.package_dir),
+        &binary.kind,
+        &binary.target,
+    );
+    crate::flaky::Flaky {
+        test: test.display.clone(),
+        reaches: crate::flaky::reaches(found, &reached),
+        reaches_in_test: crate::flaky::reaches_in_test(&sources, &test.name),
+    }
 }
 
 /// Skips each mutant the project decided not to test, in `.mutastic/ignores.yaml`, while its line
@@ -449,20 +512,28 @@ fn clock() -> Option<String> {
     (output.status.success() && time.len() == 8).then_some(time)
 }
 
+/// What the coverage pass found: each test's reach, and which tests are flaky.
+struct Covered {
+    reach: Vec<Reach>,
+    /// Indexes of the tests that failed, then passed when run again on their own.
+    flaky: Vec<usize>,
+}
+
 /// Runs each test alone, with the switches recording which sites it reaches and the whole
-/// numbers each function was called with. Every test must pass here: a test that fails alone
-/// would look as if it caught every mutant it met.
+/// numbers each function was called with. A test that fails runs again on its own, up to
+/// [`crate::flaky::RERUNS`] times: one that passes is flaky, and left out of the run, as in the
+/// Java edition. One that fails every time stops the run, since a test that fails with no mutant
+/// in would look as if it caught every mutant it met.
 fn coverage(
     project: &Project,
     binaries: &[Binary],
     tests: &[Test],
     workers: usize,
-) -> Result<Vec<Reach>, String> {
+) -> Result<Covered, String> {
     let dir = project.mutastic_dir().join("coverage");
     std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
     let cwd = project.copy_dir().join(&project.package_dir);
-    let indexed: Vec<(usize, &Test)> = tests.iter().enumerate().collect();
-    let reached = testrun::parallel(&indexed, workers, |(index, test)| {
+    let cover = |index: usize, test: &Test| {
         let file: PathBuf = dir.join(format!("{index}.cov"));
         let _ = std::fs::remove_file(&file);
         let outcome = testrun::run(
@@ -474,20 +545,55 @@ fn coverage(
         );
         let text = std::fs::read_to_string(&file).unwrap_or_default();
         (outcome, read_reach(&text))
-    });
-    let mut reach = Vec::new();
-    for ((outcome, mut found), test) in reached.into_iter().zip(tests) {
-        if !outcome.passed {
-            return Err(format!(
-                "{} fails without any mutant{}: fix it, or mark it #[ignore], before running mutastic",
-                test.display,
-                if outcome.timed_out { " (it timed out)" } else { "" }
-            ));
+    };
+    let indexed: Vec<(usize, &Test)> = tests.iter().enumerate().collect();
+    let mut reached = testrun::parallel(&indexed, workers, |&(index, test)| cover(index, test));
+    let mut flaky = Vec::new();
+    let mut failing = Vec::new();
+    for (index, test) in tests.iter().enumerate() {
+        if reached[index].0.passed {
+            continue;
         }
-        found.took = outcome.took;
-        reach.push(found);
+        for _ in 0..crate::flaky::RERUNS {
+            reached[index] = cover(index, test);
+            if reached[index].0.passed {
+                break;
+            }
+        }
+        if reached[index].0.passed {
+            flaky.push(index);
+        } else {
+            failing.push(index);
+        }
     }
-    Ok(reach)
+    if !failing.is_empty() {
+        let log = project.mutastic_dir().join("tests.log");
+        let output: String = failing
+            .iter()
+            .map(|&index| {
+                let outcome = &reached[index].0;
+                format!(
+                    "── {} ──\n{}{}\n",
+                    tests[index].display, outcome.stdout, outcome.stderr
+                )
+            })
+            .collect();
+        std::fs::write(&log, output).map_err(|error| error.to_string())?;
+        let named: Vec<(String, bool)> = failing
+            .iter()
+            .map(|&index| (tests[index].display.clone(), reached[index].0.timed_out))
+            .collect();
+        let shown = log.strip_prefix(&project.workspace).unwrap_or(&log);
+        return Err(crate::flaky::failed_message(&named, shown));
+    }
+    let reach = reached
+        .into_iter()
+        .map(|(outcome, mut found)| {
+            found.took = outcome.took;
+            found
+        })
+        .collect();
+    Ok(Covered { reach, flaky })
 }
 
 fn read_reach(text: &str) -> Reach {

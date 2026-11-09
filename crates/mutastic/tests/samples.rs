@@ -1121,3 +1121,87 @@ fn identical_lines_have_ids_of_their_own() {
     );
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// A test that fails, then passes when run again on its own, is flaky: the run goes on without it
+/// and says so, in each format, in the Java edition's words, and what only it reached is not
+/// covered. A test that fails every time stops the run, and nothing says to turn it off.
+#[test]
+fn a_flaky_test_is_left_out_and_one_that_always_fails_stops_the_run() {
+    let dir = copy_of("flaky", "flaky");
+    let test = "raffle::a_draw_is_a_place_in_the_raffle";
+    let (code, out) = mutastic_in(&dir, &["run", "--format=full", "--report=none"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains(" (1 flaky, left out) · "), "{out}");
+    assert!(
+        out.contains(&format!(
+            " ! flaky: {test} failed, then passed when run again; left out of this run; it reaches SystemTime::now\n"
+        )),
+        "{out}"
+    );
+    assert!(out.contains("  Flaky  1 test left out\n"), "{out}");
+    assert!(
+        out.contains("(no test reaches these lines, or only a flaky one does)"),
+        "{out}"
+    );
+
+    let (_, agent) = mutastic_in(&dir, &["run", "--format=agent", "--report=none"]);
+    assert!(
+        agent.contains(&format!(
+            "flaky: {test} failed, then passed when run again; left out of this run, so its catches don't count. The code it runs reaches SystemTime::now, which answers differently every run: making that the same every time (a seed, a fixed clock, through the code's own seam) is likely safe, so long as the test still checks what it did. Never remove, disable or loosen it to get a run through\n"
+        )),
+        "{agent}"
+    );
+    assert!(!agent.contains("ignore]"), "{agent}");
+
+    let (_, jsonl) = mutastic_in(&dir, &["run", "--format=jsonl", "--report=none"]);
+    let found = events(&jsonl);
+    let validator = schema();
+    for event in &found {
+        assert!(validator.is_valid(event), "{event}");
+    }
+    let finished = found.last().unwrap();
+    assert_eq!(finished["flaky"], serde_json::json!([test]));
+    assert_eq!(
+        finished["flakyEvidence"],
+        serde_json::json!([{
+            "test": test,
+            "failure": [],
+            "reaches": ["SystemTime::now"],
+            "reachesInTest": [],
+            "outside": false,
+        }])
+    );
+    // Its catches don't count: what only it reaches is not covered.
+    let in_draw: Vec<&Value> = found
+        .iter()
+        .filter(|e| e["location"]["method"] == "draw")
+        .collect();
+    assert!(!in_draw.is_empty());
+    assert!(
+        in_draw.iter().all(|e| e["status"] == "NoCoverage"),
+        "{jsonl}"
+    );
+
+    let tests = dir.join("tests/raffle.rs");
+    let text = std::fs::read_to_string(&tests).unwrap();
+    std::fs::write(
+        &tests,
+        text.replace(
+            "    first_try_fails();\n}",
+            "    panic!(\"fails every time\");\n}",
+        ),
+    )
+    .unwrap();
+    let (code, out) = mutastic_in(&dir, &["run", "--report=none"]);
+    assert_eq!(code, 2, "{out}");
+    assert!(
+        out.contains(&format!(
+            "mutastic: the tests fail without any mutant: {test}; their output is in target/mutastic/tests.log\n"
+        )),
+        "{out}"
+    );
+    assert!(!out.contains("ignore"), "{out}");
+    let log = std::fs::read_to_string(dir.join("target/mutastic/tests.log")).unwrap();
+    assert!(log.contains("fails every time"), "{log}");
+    std::fs::remove_dir_all(&dir).ok();
+}

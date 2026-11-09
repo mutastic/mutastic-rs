@@ -86,6 +86,7 @@ The commands a missed mutant's `ignore` and `propose` would offer don't exist in
 yet, so it leaves those fields out, as the schema allows for `edition: "rust"`: output never offers
 a command that doesn't exist.
 
-The lists in `run-finished` the Java edition fills (`flaky`, `flakyEvidence`, `likelyFlaky`,
-`unrelatedCatches`, `reports`, `staleIgnores`) are there and empty: the Rust edition doesn't do what
-fills them yet.
+`flaky` names each test that failed, then passed when run again, and `flakyEvidence` says what it
+reaches that varies, as the Java edition's do. A Rust test fails with a panic, not a chain of
+exceptions, so each one's `failure` is empty and `outside` is `false`. The lists the Java edition
+fills that the Rust edition doesn't yet (`likelyFlaky`, `unrelatedCatches`) are there and empty.

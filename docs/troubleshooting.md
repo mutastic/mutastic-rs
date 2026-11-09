@@ -217,12 +217,22 @@ make it a default one while you run, or run on a package that turns it on.
 ## A test fails before any mutant
 
 mutastic runs every test once, alone, before any mutant, and every test has to pass. One that
-fails stops the run, with its name: `… fails without any mutant: fix it, or mark it #[ignore],
-before running mutastic`.
+fails runs again on its own; one that fails every time stops the run, with its name and where its
+output is: `the tests fail without any mutant: pricing::big_orders; their output is in
+target/mutastic/tests.log`.
 
 A test that passes in `cargo test` but fails here usually depends on another test having run
 first, or on running in parallel with others: mutastic runs each one alone, in a process of its
-own. Make it stand alone, or mark it `#[ignore]` so mutastic leaves it out.
+own. Make it stand alone.
+
+## A test is flaky
+
+A test that failed, then passed when run again, is left out of the run: `! flaky: … failed, then
+passed when run again; left out of this run`. Its catches don't count, so code only it reaches
+shows as not covered. When mutastic sees what varies, it says: `it reaches SystemTime::now` (the
+code the test runs) or `its own code reaches Instant::now` (the test itself). Making that the same
+every run, with a seed or a fixed clock through the code's own seam, is usually the fix. Don't
+remove the test, turn it off or loosen what it checks to get a run through.
 
 ## A kept id names another line, or nothing
 

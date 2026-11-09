@@ -78,7 +78,11 @@ which sites it reaches and the whole numbers each function was called with. Thos
 "inputs seen" on a card.
 
 Every test must pass here. A test that fails with no mutant in would look as if it caught every
-mutant it met, so mutastic stops and names it: fix it, or mark it `#[ignore]`.
+mutant it met, so a test that fails runs again, on its own, a few times. If it passes, it's flaky:
+the run goes on without it, and says so (`! flaky:` before the summary, and a `Flaky` row), with
+what it reaches that answers differently every run, such as `SystemTime::now` or a `RandomState`.
+Its catches don't count, so code only it reaches is not covered. A test that fails every time
+stops the run, with its name and where its output is.
 
 ## Each mutant against the tests that reach it
 

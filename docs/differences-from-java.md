@@ -28,8 +28,12 @@ the code. See [Troubleshooting](troubleshooting.md#a-workspace).
 - **Test names** are libtest's, `tests::small_orders_pay_full_price` for a unit test, and the
   target's name first for an integration test, `pricing::big_orders_get_ten_percent_off` for one in
   `tests/pricing.rs`, where the Java edition writes `PricingTest#smallOrdersPayFullPrice`.
-- **A test that fails with no mutant in stops the run** in both, but the Rust edition has no flaky
-  test handling yet: fix the test or mark it `#[ignore]`.
+- **A test that fails with no mutant in** runs again on its own, in both: one that then passes is
+  flaky, left out of the run and reported, and one that fails every time stops the run. What a
+  flaky test reaches that varies is read from source: calls such as `SystemTime::now`,
+  `Instant::now` or `rand::thread_rng`, and fields of a type like `RandomState` that a method reads
+  through `self`. A Rust test fails with a panic, so there's no failure chain, and none of the Java
+  edition's advice for a test that failed on the network or a file.
 
 ## Cards
 
