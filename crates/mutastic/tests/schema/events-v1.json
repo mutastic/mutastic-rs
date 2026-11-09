@@ -575,7 +575,8 @@
           "description": "The Rust edition only: how the mutants were compiled.",
           "properties": {
             "rounds": { "$ref": "#/$defs/count", "description": "How many times the crate was compiled with mutants in." },
-            "unviable": { "$ref": "#/$defs/count", "description": "How many mutants didn't compile, and were skipped." }
+            "unviable": { "$ref": "#/$defs/count", "description": "How many mutants didn't compile, and were skipped." },
+            "setupMs": { "$ref": "#/$defs/count", "description": "How long reading the package and building it took, before the coverage pass, in milliseconds, of `durationMs`. Optional." }
           }
         },
         "score": {
@@ -599,9 +600,9 @@
           "description": "The score of the code some test reaches: how well the tests check what they run."
         },
         "tests": { "$ref": "#/$defs/count", "description": "How many tests the project has." },
-        "workers": { "$ref": "#/$defs/count", "description": "The Java edition: how many test workers ran side by side. Written from 0.6.0." },
-        "workersStarted": { "$ref": "#/$defs/count", "description": "The Java edition: how many test workers started in all: one for each worker, and one more after each was stopped for taking too long. Written from 0.6.0." },
-        "coverageMs": { "$ref": "#/$defs/count", "description": "The Java edition: how long the coverage pass took, in milliseconds, of `durationMs`. Written from 0.6.0." },
+        "workers": { "$ref": "#/$defs/count", "description": "How many test workers ran side by side: in the Java edition each is a JVM, in Rust's a thread. Written from 0.6.0." },
+        "workersStarted": { "$ref": "#/$defs/count", "description": "How many test workers started in all: one for each worker, and one more after each was stopped for taking too long. The Rust edition never stops one, so it's `workers` there. Written from 0.6.0." },
+        "coverageMs": { "$ref": "#/$defs/count", "description": "How long the coverage pass took, in milliseconds, of `durationMs`. Written from 0.6.0." },
         "flaky": {
           "type": "array",
           "items": { "$ref": "#/$defs/test" },
