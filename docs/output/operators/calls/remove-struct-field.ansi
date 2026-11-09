@@ -1,0 +1,15 @@
+ [41;30;1m ✗ MISSED [0m tests pass even without [1mmuted: true[0m in [1mmuted()[0m
+    [2m┌─[0m src/calls.rs:56
+    [2m│[0m
+ [2m55[0m [2m│[0m     Settings {
+ [2m56[0m [2m│[0m         muted: true,
+    [2m│[0m         [1;31m^^^^^^^^^^^ left out[0m
+ [2m57[0m [2m│[0m         ..settings.clone()
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mmuted: true,
+              [32m+ [0m(nothing: the line is gone)
+    [2m=[0m [1;34m[1mnote[0m[0m: covered by calls::tests::muting_keeps_the_volume (its 1 covering test still passes)
+    [2m=[0m [32m[1mhelp[0m[0m: use inputs that [1mmuted: true[0m makes a difference to, and assert what [1mmuted()[0m does
+
+    [2mdone when [0m mutastic verify m0af1aacd fixtures/operators [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=m0af1aacd fixtures/operators

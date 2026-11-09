@@ -67,9 +67,9 @@ against the tests that reach it. One mutant gets past them:
   Worst at  Pricing::discount() 1 ✗
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  13 (33 without coverage selection)
-  Start at  00:25:38
-  Duration  1.5s (setup 1.4s, coverage 6ms, mutants 29ms)
-     Tests  3 on rustc 1.94.0 · 4 workers
+  Start at  13:21:31
+  Duration  2.2s (setup 2.1s, coverage 5ms, mutants 32ms)
+     Tests  3 on rustc 1.98.0 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
      Score  90.9%  threshold 80
 
@@ -145,9 +145,9 @@ mutastic run fixtures/pricing
    Mutants  ✓ 11 caught (11)
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  15 (44 without coverage selection)
-  Start at  18:25:19
-  Duration  1.0s (setup 1.0s, coverage 4ms, mutants 16ms)
-     Tests  4 on rustc 1.94.0 · 4 workers
+  Start at  13:21:34
+  Duration  1.4s (setup 1.3s, coverage 15ms, mutants 17ms)
+     Tests  4 on rustc 1.98.0 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
      Score  100.0%  threshold 80
 
@@ -160,5 +160,5 @@ Every mutant is caught.
 
 - [Results and the score](concepts/results.md): what caught, missed and the rest mean.
 - [Operators](operators.md): the kinds of change mutastic makes, with a card for each.
-- [Commands](https://docs.mutastic.io/rust/reference/run/): every option, for CI and coding agents, and [the other formats](concepts/output.md).
+- [Commands](reference/commands.md): every option, for CI and coding agents, and [the other formats](concepts/output.md).
 - [How a run works](concepts/how-a-run-works.md): what happens to your crate, and what doesn't.

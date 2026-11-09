@@ -1,0 +1,15 @@
+ [41;30;1m ✗ MISSED [0m tests pass even without [1m.inspect(|value| log.push(**value))[0m in [1mlogged_total()[0m
+    [2m┌─[0m src/iterators.rs:19
+    [2m│[0m
+ [2m18[0m [2m│[0m pub fn logged_total(values: &[u32], log: &mut Vec<u32>) -> u32 {
+ [2m19[0m [2m│[0m     values.iter().inspect(|value| log.push(**value)).sum()
+    [2m│[0m                   [1;31m^^^^^^^ left out[0m
+ [2m20[0m [2m│[0m }
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mvalues.iter().inspect(|value| log.push(**value)).sum()
+              [32m+ [0mvalues.iter().sum()
+    [2m=[0m [1;34m[1mnote[0m[0m: covered by iterators::tests::totals_add_up (its 1 covering test still passes)
+    [2m=[0m [32m[1mhelp[0m[0m: use inputs that [1m.inspect(|value| log.push(**value))[0m makes a difference to, and assert what [1mlogged_total()[0m does
+
+    [2mdone when [0m mutastic verify m23f62e2d fixtures/operators [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=m23f62e2d fixtures/operators

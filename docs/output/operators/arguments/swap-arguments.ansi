@@ -1,0 +1,23 @@
+ [41;30;1m ✗ MISSED [0m tests pass even when [1m0, 100[0m becomes [1m100, 0[0m in [1mis_percent()[0m
+    [2m┌─[0m src/arguments.rs:12
+    [2m│[0m
+ [2m11[0m [2m│[0m pub fn is_percent(value: i32) -> bool {
+ [2m12[0m [2m│[0m     between(value, 0, 100)
+    [2m│[0m                    [1;31m^^^^^^ changed to 100, 0[0m
+ [2m13[0m [2m│[0m }
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mbetween(value, 0, 100)
+              [32m+ [0mbetween(value, 100, 0)
+    [2m=[0m [1;34m[1mnote[0m[0m: inputs seen: value = 150
+            [2mcovered by arguments::tests::too_much_is_not_a_percent (its 1 covering test still passes)[0m
+    [2m=[0m [32m[1mhelp[0m[0m: use inputs where [1m0, 100[0m and [1m100, 0[0m give different results, and assert what [1mis_percent()[0m does
+
+            // in mod arguments::tests
+            #[test]
+            fn is_percent_with_value_0() {
+                assert!(is_percent(0)); // today true · with this mutant false
+            }
+            [2mcheck today's value is the one you intend: the test pins what the code does now[0m
+
+    [2mdone when [0m mutastic verify m1a3c85a8 fixtures/operators [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=m1a3c85a8 fixtures/operators

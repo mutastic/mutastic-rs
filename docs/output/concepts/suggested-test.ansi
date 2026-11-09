@@ -1,0 +1,24 @@
+ [41;30;1m ✗ MISSED [0m no test checks [1mlate_fee()[0m at [1mdays_late == 7[0m
+   [2m┌─[0m src/lib.rs:7
+   [2m│[0m
+ [2m6[0m [2m│[0m     pub fn late_fee(days_late: i64) -> i64 {
+ [2m7[0m [2m│[0m         if days_late <= 7 {
+   [2m│[0m                      [1;31m^^ changed to <[0m
+ [2m8[0m [2m│[0m             return 0;
+   [2m│[0m
+   [2m=[0m mutant  [1;31m- [0mif days_late <= 7 {
+             [32m+ [0mif days_late < 7 {
+   [2m=[0m [1;34m[1mnote[0m[0m: every test calls [1mlate_fee()[0m away from the boundary
+           [2minputs seen: 2, 20 (none is 7)[0m
+           [2mcovered by rates::tests::late_fees_accrue_after_a_week (its 1 covering test still passes)[0m
+   [2m=[0m [32m[1mhelp[0m[0m: test [1mlate_fee()[0m with [1mdays_late = 7[0m and assert the result
+
+           // in mod rates::tests
+           #[test]
+           fn late_fee_with_days_late_7() {
+               assert_eq!(late_fee(7), 0); // today 0 · with this mutant 5
+           }
+           [2mcheck today's value is the one you intend: the test pins what the code does now[0m
+
+   [2mdone when [0m mutastic verify m416bb0e1 fixtures/suggestions [2mpasses[0m
+   [2mreproduce [0m mutastic run --only=m416bb0e1 fixtures/suggestions

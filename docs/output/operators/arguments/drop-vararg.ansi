@@ -1,0 +1,23 @@
+ [41;30;1m ✗ MISSED [0m tests pass even without [1mc[0m in [1mbest_of_three()[0m
+    [2m┌─[0m src/arguments.rs:20
+    [2m│[0m
+ [2m19[0m [2m│[0m pub fn best_of_three(a: u32, b: u32, c: u32) -> u32 {
+ [2m20[0m [2m│[0m     largest(&[a, b, c])
+    [2m│[0m                   [1;31m^^^ left out[0m
+ [2m21[0m [2m│[0m }
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mlargest(&[a, b, c])
+              [32m+ [0mlargest(&[a, b])
+    [2m=[0m [1;34m[1mnote[0m[0m: inputs seen: a = 9; b = 2; c = 1
+            [2mcovered by arguments::tests::the_best_comes_first (its 1 covering test still passes)[0m
+    [2m=[0m [32m[1mhelp[0m[0m: use inputs that [1mc[0m makes a difference to, and assert what [1mbest_of_three()[0m does
+
+            // in mod arguments::tests
+            #[test]
+            fn best_of_three_with_a_9_and_b_9_and_c_10() {
+                assert_eq!(best_of_three(9, 9, 10), 10); // today 10 · with this mutant 9
+            }
+            [2mcheck today's value is the one you intend: the test pins what the code does now[0m
+
+    [2mdone when [0m mutastic verify m6bcfe468 fixtures/operators [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=m6bcfe468 fixtures/operators

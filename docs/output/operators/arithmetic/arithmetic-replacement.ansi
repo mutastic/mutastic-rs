@@ -1,0 +1,23 @@
+ [41;30;1m ✗ MISSED [0m tests pass even when [1m+[0m becomes [1m*[0m in [1mwith_fee()[0m
+   [2m┌─[0m src/arithmetic.rs:8
+   [2m│[0m
+ [2m7[0m [2m│[0m pub fn with_fee(price: u32, fee: u32) -> u32 {
+ [2m8[0m [2m│[0m     price + fee
+   [2m│[0m           [1;31m^ changed to *[0m
+ [2m9[0m [2m│[0m }
+   [2m│[0m
+   [2m=[0m mutant  [1;31m- [0mprice + fee
+             [32m+ [0mprice * fee
+   [2m=[0m [1;34m[1mnote[0m[0m: inputs seen: fee = 2; price = 2
+           [2mcovered by arithmetic::tests::a_fee_is_added (its 1 covering test still passes)[0m
+   [2m=[0m [32m[1mhelp[0m[0m: use inputs where [1mprice + fee[0m and [1mprice * fee[0m differ, and assert the result
+
+           // in mod arithmetic::tests
+           #[test]
+           fn with_fee_with_price_2_and_fee_0() {
+               assert_eq!(with_fee(2, 0), 2); // today 2 · with this mutant 0
+           }
+           [2mcheck today's value is the one you intend: the test pins what the code does now[0m
+
+   [2mdone when [0m mutastic verify m2159bc78 fixtures/operators [2mpasses[0m
+   [2mreproduce [0m mutastic run --only=m2159bc78 fixtures/operators

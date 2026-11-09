@@ -1,0 +1,15 @@
+ [41;30;1m ✗ MISSED [0m tests pass even without [1m.filter(|(_, paid)| *paid)[0m in [1mpaid_total()[0m
+    [2m┌─[0m src/iterators.rs:12
+    [2m│[0m
+ [2m11[0m [2m│[0m         .iter()
+ [2m12[0m [2m│[0m         .filter(|(_, paid)| *paid)
+    [2m│[0m          [1;31m^^^^^^ left out[0m
+ [2m13[0m [2m│[0m         .map(|(total, _)| total)
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0m.filter(|(_, paid)| *paid)
+              [32m+ [0m(nothing: the line is gone)
+    [2m=[0m [1;34m[1mnote[0m[0m: covered by iterators::tests::a_paid_order (its 1 covering test still passes)
+    [2m=[0m [32m[1mhelp[0m[0m: use inputs that [1m.filter(|(_, paid)| *paid)[0m makes a difference to, and assert what [1mpaid_total()[0m does
+
+    [2mdone when [0m mutastic verify ma6f92819 fixtures/operators [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=ma6f92819 fixtures/operators

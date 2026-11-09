@@ -1,0 +1,11 @@
+ [2m  Mutants[0m  [32m✓ [1m9 caught[0m[0m[2m (9)[0m
+ [2m Left out[0m  [2mnot built here: `cfg(feature = "simd")` (2), `cfg(windows)` (15)[0m
+ [2m    Build[0m  one build of every mutant, 2 rounds (check and build)
+ [2mTest runs[0m  9[2m (18 without coverage selection)[0m
+ [2m Start at[0m  13:22:32
+ [2m Duration[0m  584ms [2m(setup 539ms, coverage 4ms, mutants 12ms)[0m
+ [2m    Tests[0m  2 on rustc 1.98.0 · 4 workers
+ [2m  Reports[0m  target/mutastic/mutation.json[2m · [0mtarget/mutastic/mutation.html
+ [2m    Score[0m  [32m[1m100.0%[0m[0m[2m  threshold 80[0m
+
+ [42;30;1m PASS [0m [32mEvery mutant was caught.[0m

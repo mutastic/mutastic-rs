@@ -1,0 +1,35 @@
+
+ [41;30;1m ✗ MISSED [0m no test checks [1mdiscount()[0m at [1mtotal == 100[0m
+    [2m┌─[0m src/lib.rs:26
+    [2m│[0m
+ [2m25[0m [2m│[0m     pub fn discount(&self, total: u32) -> u32 {
+ [2m26[0m [2m│[0m         if total >= 100 {
+    [2m│[0m                  [1;31m^^ changed to >[0m
+ [2m27[0m [2m│[0m             return total / 10;
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mif total >= 100 {
+              [32m+ [0mif total > 100 {
+    [2m=[0m [1;34m[1mnote[0m[0m: every test calls [1mdiscount()[0m away from the boundary
+            [2minputs seen: 50, 250 (none is 100)[0m
+            [2mcovered by pricing::big_orders_get_ten_percent_off, tests::small_orders_pay_full_price (all 2 covering tests still pass)[0m
+    [2m=[0m [32m[1mhelp[0m[0m: test [1mdiscount()[0m with [1mtotal = 100[0m and assert the result
+
+            // in mod tests
+            #[test]
+            fn discount_with_total_100() {
+                assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
+            }
+            [2mcheck today's value is the one you intend: the test pins what the code does now[0m
+
+    [2mdone when [0m mutastic verify mb2f8ae57 fixtures/pricing [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=mb2f8ae57 fixtures/pricing
+    [2mor ignore [0m mutastic ignore mb2f8ae57 --reason="<why>" fixtures/pricing
+
+[1m About this mutant [0m[2m───────────────────────────────────────────────[0m
+    [2m=[0m [1;34m[1mchange  [0m[0m  [1mtotal >= 100 → (total) > (100)[0m
+                [2mthe code the switch puts in place of the original when this mutant is live[0m
+    [2m=[0m [1;34m[1moperator[0m[0m  mutastic/boundary: `>=` becomes `>`
+    [2m=[0m [1;34m[1mid      [0m[0m  mb2f8ae57: `m` and the first 8 hex digits of its fingerprint, b2f8ae57ca6c48cb, a SHA-256 of the crate, function, operator, site and change
+                [2mno line number goes in, so the id stays the same when code above it moves[0m
+    [2m=[0m [1;34m[1msite    [0m[0m  `total >= 100` in Pricing::discount, line 26, column 18
+    [2m=[0m [1;34m[1mlast run[0m[0m  missed: every covering test still passed

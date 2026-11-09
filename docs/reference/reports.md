@@ -35,4 +35,4 @@ you want; it can be given more than once.
 mutastic run fixtures/pricing --report=json
 ```
 
-See [`--report`](https://docs.mutastic.io/rust/reference/run/#report) for the option itself.
+See [`--report`](commands.md#--report) for the option itself.

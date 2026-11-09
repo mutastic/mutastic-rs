@@ -1,0 +1,23 @@
+ [41;30;1m ✗ MISSED [0m no test checks what [1mtotal = total + tip;[0m does in [1mwith_tip()[0m
+    [2m┌─[0m src/calls.rs:31
+    [2m│[0m
+ [2m30[0m [2m│[0m     let mut total = bill;
+ [2m31[0m [2m│[0m     total = total + tip;
+    [2m│[0m     [1;31m^^^^^ removed[0m
+ [2m32[0m [2m│[0m     total
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mtotal = total + tip;
+              [32m+ [0mlet _ = total + tip;
+    [2m=[0m [1;34m[1mnote[0m[0m: inputs seen: bill = 10; tip = 0
+            [2mcovered by calls::tests::no_tip (its 1 covering test still passes)[0m
+    [2m=[0m [32m[1mhelp[0m[0m: assert what [1mtotal = total + tip;[0m changes, in a test of [1mwith_tip()[0m
+
+            // in mod calls::tests
+            #[test]
+            fn with_tip_with_bill_10_and_tip_10() {
+                assert_eq!(with_tip(10, 10), 20); // today 20 · with this mutant 10
+            }
+            [2mcheck today's value is the one you intend: the test pins what the code does now[0m
+
+    [2mdone when [0m mutastic verify mb171c131 fixtures/operators [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=mb171c131 fixtures/operators

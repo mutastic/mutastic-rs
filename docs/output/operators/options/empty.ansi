@@ -1,0 +1,23 @@
+ [41;30;1m ✗ MISSED [0m tests pass even when [1mSome(chosen)[0m becomes [1mNone[0m in [1mpage_size()[0m
+    [2m┌─[0m src/options.rs:12
+    [2m│[0m
+ [2m11[0m [2m│[0m pub fn page_size(chosen: u32) -> u32 {
+ [2m12[0m [2m│[0m     let custom = if chosen > 0 { Some(chosen) } else { None };
+    [2m│[0m                                  [1;31m^^^^ changed to None[0m
+ [2m13[0m [2m│[0m     custom.unwrap_or(20)
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mlet custom = if chosen > 0 { Some(chosen) } else { None };
+              [32m+ [0mlet custom = if chosen > 0 { None } else { None };
+    [2m=[0m [1;34m[1mnote[0m[0m: inputs seen: chosen = 20
+            [2mcovered by options::tests::a_chosen_page_size (its 1 covering test still passes)[0m
+    [2m=[0m [32m[1mhelp[0m[0m: use inputs where [1mSome(chosen)[0m and [1mNone[0m differ, and assert what [1mpage_size()[0m does
+
+            // in mod options::tests
+            #[test]
+            fn page_size_with_chosen_1() {
+                assert_eq!(page_size(1), 1); // today 1 · with this mutant 20
+            }
+            [2mcheck today's value is the one you intend: the test pins what the code does now[0m
+
+    [2mdone when [0m mutastic verify m328e06d3 fixtures/operators [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=m328e06d3 fixtures/operators

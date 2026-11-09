@@ -1,0 +1,23 @@
+ [41;30;1m ✗ MISSED [0m no test checks [1mneeds_restock()[0m with [1mstock > low[0m
+    [2m┌─[0m src/conditions.rs:10
+    [2m│[0m
+ [2m 9[0m [2m│[0m pub fn needs_restock(stock: u32, low: u32) -> bool {
+ [2m10[0m [2m│[0m     stock < low
+    [2m│[0m           [1;31m^ changed to !=[0m
+ [2m11[0m [2m│[0m }
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mstock < low
+              [32m+ [0mstock != low
+    [2m=[0m [1;34m[1mnote[0m[0m: inputs seen: low = 5; stock = 2, 5
+            [2mcovered by conditions::tests::restock_when_low (its 1 covering test still passes)[0m
+    [2m=[0m [32m[1mhelp[0m[0m: add a test where [1mstock > low[0m, and assert what [1mneeds_restock()[0m does then
+
+            // in mod conditions::tests
+            #[test]
+            fn needs_restock_with_stock_5_and_low_2() {
+                assert!(!needs_restock(5, 2)); // today false · with this mutant true
+            }
+            [2mcheck today's value is the one you intend: the test pins what the code does now[0m
+
+    [2mdone when [0m mutastic verify m0afcf739 fixtures/operators [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=m0afcf739 fixtures/operators

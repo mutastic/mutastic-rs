@@ -7,7 +7,7 @@ mutastic prints its result on stdout and its progress on stderr. How the result 
 
 `--format` chooses how a run prints its result. At a terminal it's `full`; when stdout isn't a
 terminal, such as in CI or a pipe, it's `concise`; with `MUTASTIC_AGENT=1` it's `agent`.
-`MUTASTIC_FORMAT` sets it too: see [Environment and exit codes](https://docs.mutastic.io/rust/reference/environment/).
+`MUTASTIC_FORMAT` sets it too: see [Environment and exit codes](../reference/commands.md#environment).
 
 ### `full`
 
@@ -29,9 +29,9 @@ One line for each line with a missed mutant, with its ids, then the summary. For
   Worst at  Pricing::discount() 1 ✗
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  13 (33 without coverage selection)
-  Start at  18:25:20
-  Duration  1.1s (setup 1.1s, coverage 4ms, mutants 16ms)
-     Tests  3 on rustc 1.94.0 · 4 workers
+  Start at  13:21:36
+  Duration  1.3s (setup 1.2s, coverage 4ms, mutants 29ms)
+     Tests  3 on rustc 1.98.0 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
      Score  90.9%  threshold 80
 

@@ -1,0 +1,15 @@
+ [41;30;1m ✗ MISSED [0m no test passes [1mclean()[0m text with spaces for [1m.trim()[0m to remove
+   [2m┌─[0m src/lib.rs:6
+   [2m│[0m
+ [2m5[0m [2m│[0m pub fn clean(name: &str) -> String {
+ [2m6[0m [2m│[0m     name.trim().to_lowercase()
+   [2m│[0m          [1;31m^^^^ .trim() removed[0m
+ [2m7[0m [2m│[0m }
+   [2m│[0m
+   [2m=[0m mutant  [1;31m- [0mname.trim().to_lowercase()
+             [32m+ [0mname.to_lowercase()
+   [2m=[0m [1;34m[1mnote[0m[0m: covered by tests::names_are_lower_case (its 1 covering test still passes)
+   [2m=[0m [32m[1mhelp[0m[0m: add a test whose input has spaces around it, and assert they're gone
+
+   [2mdone when [0m mutastic verify m06d09770 fixtures/configured [2mpasses[0m
+   [2mreproduce [0m mutastic run --only=m06d09770 fixtures/configured

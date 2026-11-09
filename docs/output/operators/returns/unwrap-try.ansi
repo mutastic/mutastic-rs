@@ -1,0 +1,15 @@
+ [41;30;1m ✗ MISSED [0m no test makes this [1m?[0m return its error from [1mparse_quantity()[0m
+    [2m┌─[0m src/returns.rs:14
+    [2m│[0m
+ [2m13[0m [2m│[0m pub fn parse_quantity(text: &str) -> Result<u32, std::num::ParseIntError> {
+ [2m14[0m [2m│[0m     let quantity: u32 = text.trim().parse()?;
+    [2m│[0m                                            [1;31m^ changed to .unwrap()[0m
+ [2m15[0m [2m│[0m     Ok(quantity)
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mlet quantity: u32 = text.trim().parse()?;
+              [32m+ [0mlet quantity: u32 = text.trim().parse().unwrap();
+    [2m=[0m [1;34m[1mnote[0m[0m: covered by returns::tests::spaces_are_ignored (its 1 covering test still passes)
+    [2m=[0m [32m[1mhelp[0m[0m: add a test where the expression before [1m?[0m fails, and assert that [1mparse_quantity()[0m returns the error
+
+    [2mdone when [0m mutastic verify m18c28709 fixtures/operators [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=m18c28709 fixtures/operators

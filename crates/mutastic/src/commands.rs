@@ -692,3 +692,118 @@ pub fn json() -> String {
     text.push('\n');
     text
 }
+
+/// `docs/reference/commands.md`: the same declarations as `commands.json`, as a page GitHub shows,
+/// so the repository's own docs can link to a command (`commands.md#run`), an option
+/// (`commands.md#--threshold`), the environment and the exit codes. The docs site renders
+/// `commands.json` instead, and maps those links to its own pages.
+pub fn markdown() -> String {
+    let mut page = String::from(
+        "# Commands\n\n\
+         <!-- Written from crates/mutastic/src/commands.rs by the docs test, with \
+         MUTASTIC_DOCS_WRITE=1 cargo test --test docs; change the declarations, not this page. -->\n\n\
+         Every command `mutastic` takes, with its options, the environment it reads and the codes it \
+         exits with. `cargo mutastic` takes the same words.\n\n",
+    );
+    for command in COMMANDS {
+        page.push_str(&format!(
+            "- [`mutastic {}`](#{}): {}\n",
+            command.name, command.page, command.summary
+        ));
+    }
+    page.push_str("- [Environment](#environment) and [exit codes](#exit-codes)\n");
+    for command in COMMANDS {
+        page.push_str(&command_markdown(command));
+    }
+    page.push_str("\n## Options\n");
+    for option in OPTIONS {
+        page.push_str(&option_markdown(option));
+    }
+    page.push_str("\n## Environment\n\n");
+    page.push_str(&entries_markdown(ENVIRONMENT, true));
+    page.push_str("\n## Exit codes\n\n");
+    page.push_str(&entries_markdown(EXIT_CODES, false));
+    page
+}
+
+/// A command's section, headed by its name so its anchor is its page on the docs site: `gate-open`.
+fn command_markdown(command: &Command) -> String {
+    let options: Vec<String> = options_for(command.name)
+        .into_iter()
+        .map(|option| format!("[`{}`](#--{})", option.synopsis(), option.name))
+        .collect();
+    let listed = if options.is_empty() {
+        String::new()
+    } else {
+        format!("**Options:** {}.\n\n", options.join(", "))
+    };
+    format!(
+        "\n## {}\n\n`{}`\n\n{}. {}\n\n```sh\n{}\n```\n\n{listed}**Exit status:** {}\n",
+        command.name,
+        command.synopsis,
+        command.summary,
+        command.detail,
+        command.examples.join("\n"),
+        command.exits
+    )
+}
+
+fn option_markdown(option: &CliOption) -> String {
+    let mut commands: Vec<&Command> = option
+        .commands
+        .iter()
+        .filter_map(|name| command(name))
+        .collect();
+    commands.sort_by_key(|command| command.name);
+    let taken: Vec<String> = commands
+        .iter()
+        .map(|command| format!("[`{}`](#{})", command.name, command.page))
+        .collect();
+    let choices = if option.choices.is_empty() {
+        String::new()
+    } else {
+        let each: Vec<String> = option.choices.iter().map(|c| format!("`{c}`")).collect();
+        format!(" One of {}.", each.join(", "))
+    };
+    let environment = if option.environment.is_empty() {
+        String::new()
+    } else {
+        let each: Vec<String> = option
+            .environment
+            .split(", ")
+            .map(|name| format!("`{name}`"))
+            .collect();
+        format!(" Also set by {}.", each.join(" or "))
+    };
+    let examples: Vec<String> = commands
+        .iter()
+        .map(|command| option.example_for(command))
+        .collect();
+    format!(
+        "\n### `--{}`\n\n`{}`, for {}. {}.{choices}{environment}\n\n```sh\n{}\n```\n",
+        option.name,
+        option.synopsis(),
+        taken.join(", "),
+        option.help,
+        examples.join("\n")
+    )
+}
+
+fn entries_markdown(entries: &[Entry], code: bool) -> String {
+    entries
+        .iter()
+        .map(|entry| {
+            let name = if code {
+                format!("`{}`", entry.name)
+            } else {
+                format!("**{}**", entry.name)
+            };
+            let detail = if entry.detail.is_empty() {
+                String::new()
+            } else {
+                format!(" {}", entry.detail)
+            };
+            format!("- {name}: {}.{detail}\n", entry.meaning)
+        })
+        .collect()
+}

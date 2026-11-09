@@ -1,0 +1,15 @@
+ [41;30;1m ✗ MISSED [0m no test checks what [1mself.history.push(format!("added {item}"));[0m does in [1madd()[0m
+    [2m┌─[0m src/calls.rs:14
+    [2m│[0m
+ [2m13[0m [2m│[0m         self.items.push(item.to_string());
+ [2m14[0m [2m│[0m         self.history.push(format!("added {item}"));
+    [2m│[0m         [1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ removed[0m
+ [2m15[0m [2m│[0m     }
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mself.history.push(format!("added {item}"));
+              [32m+ [0m(nothing: the line is gone)
+    [2m=[0m [1;34m[1mnote[0m[0m: covered by calls::tests::adding_an_item_counts_it (its 1 covering test still passes)
+    [2m=[0m [32m[1mhelp[0m[0m: assert what [1mself.history.push(format!("added {item}"));[0m changes, in a test of [1madd()[0m
+
+    [2mdone when [0m mutastic verify m9dd52d50 fixtures/operators [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=m9dd52d50 fixtures/operators

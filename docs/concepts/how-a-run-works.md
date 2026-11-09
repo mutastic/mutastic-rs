@@ -8,8 +8,8 @@ once, with every mutant in it, and picks which one is live when the tests run. W
 ```text
 mutastic 0.1.0 · reading the Cargo package…
 building  11 mutants in one build…
-coverage  3 tests on rustc 1.94.0 in 4ms · 11 mutants
- ❯ [pricing] src/lib.rs (11 mutants | 1 missed) 60ms
+coverage  3 tests on rustc 1.98.0 in 5ms · 11 mutants
+ ❯ [pricing] src/lib.rs (11 mutants | 1 missed) 70ms
    × discount() :26 >= becomes >
 ```
 

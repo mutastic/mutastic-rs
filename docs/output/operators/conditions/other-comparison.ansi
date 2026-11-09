@@ -1,0 +1,23 @@
+ [41;30;1m ✗ MISSED [0m tests pass even when [1mmatches!(day, 6 | 7)[0m becomes [1m!matches!(day, 6 | 7)[0m in [1mis_weekend()[0m
+    [2m┌─[0m src/conditions.rs:27
+    [2m│[0m
+ [2m26[0m [2m│[0m pub fn is_weekend(day: u8) -> bool {
+ [2m27[0m [2m│[0m     matches!(day, 6 | 7)
+    [2m│[0m     [1;31m^^^^^^^^^^^^^^^^^^^^ changed to !matches!(day, 6 | 7)[0m
+ [2m28[0m [2m│[0m }
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mmatches!(day, 6 | 7)
+              [32m+ [0m!matches!(day, 6 | 7)
+    [2m=[0m [1;34m[1mnote[0m[0m: inputs seen: day = 6
+            [2mcovered by conditions::tests::weekend_days_are_known (its 1 covering test still passes)[0m
+    [2m=[0m [32m[1mhelp[0m[0m: use inputs where [1mmatches!(day, 6 | 7)[0m and [1m!matches!(day, 6 | 7)[0m differ, and assert what [1mis_weekend()[0m does
+
+            // in mod conditions::tests
+            #[test]
+            fn is_weekend_with_day_6() {
+                assert!(is_weekend(6)); // today true · with this mutant false
+            }
+            [2mcheck today's value is the one you intend: the test pins what the code does now[0m
+
+    [2mdone when [0m mutastic verify m4f55c224 fixtures/operators [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=m4f55c224 fixtures/operators

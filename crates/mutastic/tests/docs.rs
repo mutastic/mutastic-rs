@@ -1,6 +1,7 @@
 //! The docs are kept true. Every output block in `docs/` and the README is what mutastic prints on
-//! one of the fixtures: it's captured in `docs/output/`, and this fails while a fresh run prints
-//! anything else.
+//! one of the fixtures: it's captured in `docs/output/`, in colour as a terminal shows it, and this
+//! fails while a fresh run prints anything else. A page shows its copy without colour, as GitHub
+//! can't show it; the docs site shows the captured colour.
 //! Every Rust block is either an excerpt of a fixture these runs build, word for word, or the test
 //! the getting-started page adds, which this adds and runs. Every link between pages resolves, every
 //! `mutastic` command a page shows parses, and every id it names is a mutant of its fixture. And
@@ -153,16 +154,16 @@ struct Ran {
     stderr: String,
 }
 
-/// `mutastic` in `work`, as a person at a terminal runs it there (cards, unless `--format` says
-/// otherwise), without colour.
+/// `mutastic` in `work`, as a person at a terminal runs it there: cards, unless `--format` says
+/// otherwise, in colour.
 fn mutastic(work: &Path, args: &[&str]) -> Ran {
     let output = Command::new(env!("CARGO_BIN_EXE_mutastic"))
         .args(args)
         .current_dir(work)
         .env("MUTASTIC_FORMAT", "full")
         .env_remove("MUTASTIC_AGENT")
-        .env_remove("FORCE_COLOR")
-        .env("NO_COLOR", "1")
+        .env_remove("NO_COLOR")
+        .env("FORCE_COLOR", "1")
         .output()
         .unwrap();
     Ran {
@@ -185,6 +186,20 @@ fn ran(work: &Path, args: &[&str]) -> Ran {
     ran
 }
 
+/// An escape that sets a colour, or a run of them.
+const ESCAPES: &str = r"(?:\x1b\[[0-9;]*m)*";
+
+/// Output as mutastic prints it without colour: a label, black on a block of colour, is `[MISSED]`,
+/// and every other colour is gone.
+fn plain(text: &str) -> String {
+    let label = regex::Regex::new(r"\x1b\[4[0-9];30;1m (?<label>[^\x1b]*) \x1b\[0m").unwrap();
+    let labelled = label.replace_all(text, "[$label]");
+    regex::Regex::new(ESCAPES)
+        .unwrap()
+        .replace_all(&labelled, "")
+        .into_owned()
+}
+
 /// What changes from run to run or machine to machine: timings, when the run started, the
 /// compiler's version, the number of workers, which follows the cores, and how many tests ran,
 /// which follows timing too: a mutant tries the binary whose tests were fastest first, and stops at
@@ -192,17 +207,21 @@ fn ran(work: &Path, args: &[&str]) -> Ran {
 fn steady(text: &str) -> String {
     let rules = [
         (r#""testsRun": ?\d+"#, r#""testsRun":…"#),
-        (r"Test runs  \d+", "Test runs  …"),
-        (r"Start at  \d\d:\d\d:\d\d", "Start at  …"),
-        (r"\b\d+m\d\ds\b", "…"),
-        (r"\b\d+(\.\d+)?(ms|s)\b", "…"),
+        (r"Test runs(?<e>(?:\x1b\[[0-9;]*m)*)  \d+", "Test runs$e  …"),
+        (
+            r"Start at(?<e>(?:\x1b\[[0-9;]*m)*)  \d\d:\d\d:\d\d",
+            "Start at$e  …",
+        ),
+        // A number starts at a word's edge, or straight after a colour, whose `m` would hide the edge.
+        (r"(?<c>\x1b\[[0-9;]*m|\b)\d+m\d\ds\b", "${c}…"),
+        (r"(?<c>\x1b\[[0-9;]*m|\b)\d+(\.\d+)?(ms|s)\b", "${c}…"),
         (r#"Ms": ?\d+"#, r#"Ms":…"#),
         (
             r#""name": ?"rustc", ?"version": ?"[^"]*""#,
             r#""name":"rustc","version":…"#,
         ),
         (r"rustc \S+", "rustc …"),
-        (r"\b\d+ workers?\b", "… workers"),
+        (r"(?<c>\x1b\[[0-9;]*m|\b)\d+ workers?\b", "${c}… workers"),
     ];
     rules
         .iter()
@@ -214,9 +233,11 @@ fn steady(text: &str) -> String {
         })
 }
 
-/// The card on `output` whose mutants include one of `ids`, from its headline to its last command.
+/// The card on `output` whose mutants include one of `ids`, from its headline to its last command,
+/// in its colour.
 fn card(output: &str, ids: &BTreeSet<String>) -> Option<String> {
-    let lines: Vec<&str> = output.lines().collect();
+    let coloured: Vec<&str> = output.lines().collect();
+    let lines: Vec<String> = coloured.iter().map(|line| plain(line)).collect();
     let mut start = None;
     for (index, line) in lines.iter().enumerate() {
         let trimmed = line.trim_start();
@@ -229,7 +250,7 @@ fn card(output: &str, ids: &BTreeSet<String>) -> Option<String> {
                 let end = (index..lines.len())
                     .find(|&i| lines[i].trim_start().starts_with("reproduce"))
                     .unwrap();
-                return Some(lines[first..=end].join("\n") + "\n");
+                return Some(coloured[first..=end].join("\n") + "\n");
             }
         }
     }
@@ -238,8 +259,14 @@ fn card(output: &str, ids: &BTreeSet<String>) -> Option<String> {
 
 /// The summary at the end of a run, from its `Mutants` line.
 fn summary(output: &str) -> String {
-    let at = output.find("   Mutants").unwrap();
-    output[at..].to_string()
+    let mut at = 0;
+    for line in output.split_inclusive('\n') {
+        if plain(line).starts_with("   Mutants") {
+            return output[at..].to_string();
+        }
+        at += line.len();
+    }
+    panic!("no summary: {output}")
 }
 
 fn events(stdout: &str) -> Vec<Value> {
@@ -366,8 +393,7 @@ fn getting_started(work: &Path, shown: &mut BTreeMap<String, String>) {
     let line = copy.lines().nth(25).unwrap();
     assert!(line.contains("total >= 100"), "{line}");
     shown.insert("concepts/schema-line".into(), format!("{}\n", line.trim()));
-    let id = run
-        .stdout
+    let id = plain(&run.stdout)
         .split_whitespace()
         .skip_while(|word| *word != "verify")
         .nth(1)
@@ -408,11 +434,11 @@ fn readme_card(output: &str, id: &str) -> String {
     let card = card(output, &BTreeSet::from([id.to_string()])).expect("the run has a card");
     let verdict: String = output
         .lines()
-        .skip_while(|line| !line.trim_start().starts_with("Score "))
-        .take_while(|line| !line.trim_start().starts_with("Next:"))
+        .skip_while(|line| !plain(line).trim_start().starts_with("Score "))
+        .take_while(|line| !plain(line).trim_start().starts_with("Next:"))
         .map(|line| format!("{line}\n"))
         .collect();
-    assert!(verdict.contains("[PASS]"), "{output}");
+    assert!(plain(&verdict).contains("[PASS]"), "{output}");
     format!("{card}\n{verdict}")
 }
 
@@ -454,7 +480,7 @@ fn reference(work: &Path, shown: &mut BTreeMap<String, String>) {
         String::from_utf8_lossy(&version.stdout).into_owned(),
     );
     // mutastic.yaml's rules file adds an operator, whose card says its own words.
-    let listed = ran(work, &["mutants", "fixtures/configured"]).stdout;
+    let listed = plain(&ran(work, &["mutants", "fixtures/configured"]).stdout);
     let ids: BTreeSet<String> = listed
         .lines()
         .filter(|line| line.contains(" acme/remove-trim "))
@@ -464,7 +490,7 @@ fn reference(work: &Path, shown: &mut BTreeMap<String, String>) {
     let configured = ran(work, &["run", "fixtures/configured", "--format=full"]);
     let found = card(&configured.stdout, &ids).expect("the rules file's card");
     assert!(
-        found.contains("no test passes clean() text with spaces for .trim() to remove"),
+        plain(&found).contains("no test passes clean() text with spaces for .trim() to remove"),
         "{found}"
     );
     shown.insert("reference/configured-card".into(), found);
@@ -477,7 +503,11 @@ fn reference(work: &Path, shown: &mut BTreeMap<String, String>) {
         } else {
             "last run  caught by pricing::big_orders_get_ten_percent_off"
         };
-        assert!(explained.stdout.contains(last), "{}", explained.stdout);
+        assert!(
+            plain(&explained.stdout).contains(last),
+            "{}",
+            explained.stdout
+        );
         if name == "missed" {
             shown.insert("commands/explain".into(), explained.stdout.clone());
         }
@@ -621,13 +651,16 @@ fn troubleshooting(work: &Path, shown: &mut BTreeMap<String, String>) {
             "--workers=4",
         ],
     );
-    assert!(loops.stdout.contains("timed out"), "{}", loops.stdout);
+    assert!(
+        plain(&loops.stdout).contains("timed out"),
+        "{}",
+        loops.stdout
+    );
     shown.insert("troubleshooting/loops".into(), summary(&loops.stdout));
     // Code for another platform, and behind a feature that's off, is counted, not mutated.
     let platforms = ran(work, &["run", "fixtures/platforms"]);
     assert!(
-        platforms
-            .stdout
+        plain(&platforms.stdout)
             .contains("not built here: `cfg(feature = \"simd\")` (2), `cfg(windows)`"),
         "{}",
         platforms.stdout
@@ -646,7 +679,10 @@ fn suggested(work: &Path, shown: &mut BTreeMap<String, String>) {
     let run = ran(work, &["run", "fixtures/suggestions", "--report=none"]);
     let ids = ids_of(work, "suggestions", "late_fee", "mutastic/boundary");
     let card = card(&run.stdout, &ids).expect("late_fee's boundary is missed");
-    assert!(card.contains("assert_eq!(late_fee(7), 0);"), "{card}");
+    assert!(
+        plain(&card).contains("assert_eq!(late_fee(7), 0);"),
+        "{card}"
+    );
     shown.insert("concepts/suggested-test".into(), card);
 }
 
@@ -664,7 +700,7 @@ fn the_docs_show_what_mutastic_prints() {
     let output = docs().join("output");
     let mut stale = Vec::new();
     for (name, text) in &shown {
-        let file = output.join(format!("{name}.txt"));
+        let file = output.join(format!("{name}.ansi"));
         let kept = std::fs::read_to_string(&file).unwrap_or_default();
         if steady(&kept) != steady(text) {
             if writing() {
@@ -679,7 +715,7 @@ fn the_docs_show_what_mutastic_prints() {
                     .map_or("(one is longer)".to_string(), |(a, b)| {
                         format!("kept: {a}\n  now:  {b}")
                     });
-                stale.push(format!("docs/output/{name}.txt\n  {differs}"));
+                stale.push(format!("docs/output/{name}.ansi\n  {differs}"));
             }
         }
     }
@@ -689,7 +725,8 @@ fn the_docs_show_what_mutastic_prints() {
         stale.join("\n")
     );
 
-    // Each page's output blocks are the kept copies, and every copy is on a page.
+    // Each page's output blocks are the kept copies without their colour, and every copy is on a
+    // page.
     let mut used = BTreeSet::new();
     for page in pages() {
         let mut text = std::fs::read_to_string(&page).unwrap();
@@ -707,7 +744,8 @@ fn the_docs_show_what_mutastic_prints() {
                 page.display()
             );
             used.insert(name.clone());
-            let kept = std::fs::read_to_string(output.join(format!("{name}.txt"))).unwrap();
+            let kept =
+                plain(&std::fs::read_to_string(output.join(format!("{name}.ansi"))).unwrap());
             if text[block.text.clone()] != kept {
                 edits.push((block.text.clone(), kept));
             }
@@ -838,9 +876,10 @@ fn every_test_that_catches_a_card_does() {
     let mut ids = BTreeSet::new();
     for (family, _, operator) in CARDS {
         let name = operator.rsplit('/').next().unwrap();
-        let card =
-            std::fs::read_to_string(docs().join(format!("output/operators/{family}/{name}.txt")))
-                .unwrap();
+        let card = plain(
+            &std::fs::read_to_string(docs().join(format!("output/operators/{family}/{name}.ansi")))
+                .unwrap(),
+        );
         let named = card
             .lines()
             .find_map(|line| line.trim_start().strip_prefix("done when"))
@@ -880,6 +919,10 @@ fn anchors(text: &str) -> BTreeSet<String> {
     found
 }
 
+/// The docs site's Rust section, which isn't published yet: until it is, a page links to its copy
+/// here, which GitHub shows, and the site maps that link to its own page.
+const UNPUBLISHED: &str = "https://docs.mutastic.io/rust/";
+
 #[test]
 fn every_link_between_pages_resolves() {
     let mut broken = Vec::new();
@@ -889,6 +932,13 @@ fn every_link_between_pages_resolves() {
         while let Some(at) = rest.find("](") {
             rest = &rest[at + 2..];
             let target = &rest[..rest.find(')').unwrap()];
+            if target.starts_with(UNPUBLISHED) {
+                broken.push(format!(
+                    "{}: {target} (not published yet: link the page here)",
+                    page.display()
+                ));
+                continue;
+            }
             if target.starts_with("http") || target.starts_with("mailto:") {
                 continue;
             }
@@ -938,6 +988,7 @@ fn shell_words(line: &str) -> Vec<String> {
 
 #[test]
 fn every_command_shown_parses_and_names_real_mutants() {
+    let mutant_id = regex::Regex::new(r"^m[0-9a-f]{8}$").unwrap();
     let mut wrong = Vec::new();
     let mut found: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for page in pages() {
@@ -964,10 +1015,23 @@ fn every_command_shown_parses_and_names_real_mutants() {
                 let positional: Vec<&String> =
                     args[1..].iter().filter(|a| !a.starts_with("--")).collect();
                 let (named, dir) = match args[0].as_str() {
-                    "verify" => (
-                        positional.first().map(|s| s.to_string()),
-                        positional.get(1).map(|s| s.to_string()),
-                    ),
+                    // The first word's ids, split by commas, then each word that's an id too, then
+                    // the directory.
+                    "verify" => {
+                        let more = positional
+                            .iter()
+                            .skip(1)
+                            .take_while(|word| mutant_id.is_match(word))
+                            .count();
+                        let ids: Vec<&str> = positional[..positional.len().min(1 + more)]
+                            .iter()
+                            .map(|s| s.as_str())
+                            .collect();
+                        (
+                            (!ids.is_empty()).then(|| ids.join(",")),
+                            positional.get(1 + more).map(|s| s.to_string()),
+                        )
+                    }
                     "run" => (
                         args.iter()
                             .find_map(|a| a.strip_prefix("--only=").map(str::to_string)),
@@ -1163,19 +1227,25 @@ fn every_setting_read_is_documented() {
     }
 }
 
-/// `docs/commands.json`, the docs site's command reference, is what the parser's declarations
-/// write, and every id its examples name is a mutant of the pricing fixture.
+/// `docs/commands.json`, the docs site's command reference, and `docs/reference/commands.md`, the
+/// repository's, are what the parser's declarations write, and every id their examples name is a
+/// mutant of the pricing fixture.
 #[test]
-fn the_commands_json_is_the_parsers_declarations() {
-    let file = docs().join("commands.json");
+fn the_commands_reference_is_the_parsers_declarations() {
     let now = mutastic::commands::json();
-    let kept = std::fs::read_to_string(&file).unwrap_or_default();
-    if kept != now {
-        assert!(
-            writing(),
-            "docs/commands.json isn't what the CLI declares: MUTASTIC_DOCS_WRITE=1 cargo test --test docs"
-        );
-        std::fs::write(&file, &now).unwrap();
+    for (name, text) in [
+        ("commands.json", &now),
+        ("reference/commands.md", &mutastic::commands::markdown()),
+    ] {
+        let file = docs().join(name);
+        let kept = std::fs::read_to_string(&file).unwrap_or_default();
+        if kept != *text {
+            assert!(
+                writing(),
+                "docs/{name} isn't what the CLI declares: MUTASTIC_DOCS_WRITE=1 cargo test --test docs"
+            );
+            std::fs::write(&file, text).unwrap();
+        }
     }
     let pricing = root().join("fixtures/pricing").display().to_string();
     let ids: BTreeSet<String> = engine::find_all(&workspace::read(&pricing).unwrap())

@@ -45,8 +45,8 @@ page stands alone and links to the others by relative path.
 
 ## Reference
 
-- [Commands](https://docs.mutastic.io/rust/reference/run/): a page for each, with every option it takes, and
-  [environment and exit codes](https://docs.mutastic.io/rust/reference/environment/).
+- [Commands](reference/commands.md): each with every option it takes, and
+  [environment and exit codes](reference/commands.md#environment).
 - [Report files](reference/reports.md): `mutation.json` and `mutation.html`.
 - [Events](reference/events.md): the `--format=jsonl` stream, and what the Rust edition adds to it.
 - [Configuration](reference/configuration.md): `mutastic.yaml`, rules files, and ignoring one mutant.

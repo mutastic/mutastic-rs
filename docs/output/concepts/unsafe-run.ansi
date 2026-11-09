@@ -1,0 +1,93 @@
+
+[1;31m[1m Missed [0m[0m[2m────────────────────────────────────────────────────────────[0m
+
+ [1;34m❯[0m [1msrc/plain.rs[0m  [2m2 missed in 1 function[0m
+
+ [41;30;1m ✗ MISSED [0m no test checks [1mguarded()[0m at [1mx == 0[0m[2m · mdb89abdf[0m
+   [2m┌─[0m src/plain.rs:5
+   [2m│[0m
+ [2m4[0m [2m│[0m pub fn guarded(x: i32) -> i32 {
+ [2m5[0m [2m│[0m     if x < 0 {
+   [2m│[0m          [1;31m^ changed to <=[0m
+ [2m6[0m [2m│[0m         std::process::abort();
+   [2m│[0m
+   [2m=[0m mutant  [1;31m- [0mif x < 0 {
+             [32m+ [0mif x <= 0 {
+   [2m=[0m also    [1;31m✗[0m no test needs [1mx < 0[0m to be true in [1mguarded()[0m [2m· m476f7baf[0m
+             [32m+ [0mif false {
+   [2m=[0m [1;34m[1mnote[0m[0m: every test calls [1mguarded()[0m away from the boundary
+           [2minputs seen: 3 (none is 0)[0m
+           [2mcovered by run::guards (its 1 covering test still passes)[0m
+   [2m=[0m [32m[1mhelp[0m[0m: test [1mguarded()[0m with [1mx = 0[0m and assert the result
+
+   [2mdone when [0m mutastic verify mdb89abdf,m476f7baf fixtures/unsafety [2mpasses[0m
+   [2mreproduce [0m mutastic run --only=mdb89abdf,m476f7baf fixtures/unsafety
+   [2mor ignore [0m mutastic ignore <id> --reason="<why>" fixtures/unsafety for each of mdb89abdf, m476f7baf
+
+ [1;34m❯[0m [1msrc/raw.rs[0m  [2m5 missed in 2 functions[0m
+
+ [41;30;1m ✗ MISSED [0m no test checks [1mpositive()[0m at [1mx == 0[0m[2m · m97f387f6[0m
+   [2m┌─[0m src/raw.rs:5
+   [2m│[0m
+ [2m4[0m [2m│[0m pub fn positive(x: i32) -> bool {
+ [2m5[0m [2m│[0m     x > 0
+   [2m│[0m       [1;31m^ changed to >=[0m
+ [2m6[0m [2m│[0m }
+   [2m│[0m
+   [2m=[0m mutant  [1;31m- [0mx > 0
+             [32m+ [0mx >= 0
+   [2m=[0m also    [1;31m✗[0m no test checks [1mpositive()[0m returning [1mfalse[0m here [2m· m2fcb19d0[0m
+             [32m+ [0mtrue
+   [2m=[0m also    [1;31m✗[0m no test needs [1mx > 0[0m to be false in [1mpositive()[0m [2m· mbff60c78[0m
+             [32m+ [0mtrue
+   [2m=[0m [1;34m[1mnote[0m[0m: every test calls [1mpositive()[0m away from the boundary
+           [2minputs seen: 4 (none is 0)[0m
+           [2mthis code is near unsafe code (called from unsafe code): a change no test notices here can break what the unsafe code relies on, so check that code with Miri too[0m
+           [2mcovered by run::halves (its 1 covering test still passes)[0m
+   [2m=[0m [32m[1mhelp[0m[0m: test [1mpositive()[0m with [1mx = 0[0m and assert the result
+
+   [2mdone when [0m mutastic verify m97f387f6,m2fcb19d0,mbff60c78 fixtures/unsafety [2mpasses[0m
+   [2mreproduce [0m mutastic run --only=m97f387f6,m2fcb19d0,mbff60c78 fixtures/unsafety
+   [2mor ignore [0m mutastic ignore <id> --reason="<why>" fixtures/unsafety for each of m97f387f6, m2fcb19d0, mbff60c78
+
+ [41;30;1m ✗ MISSED [0m no test checks [1mchecked()[0m at [1mx == 0[0m[2m · m68f8c8e3[0m
+    [2m┌─[0m src/raw.rs:24
+    [2m│[0m
+ [2m23[0m [2m│[0m pub fn checked(x: i32) -> i32 {
+ [2m24[0m [2m│[0m     if x < 0 {
+    [2m│[0m          [1;31m^ changed to <=[0m
+ [2m25[0m [2m│[0m         std::process::abort();
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mif x < 0 {
+              [32m+ [0mif x <= 0 {
+    [2m=[0m also    [1;31m✗[0m no test needs [1mx < 0[0m to be true in [1mchecked()[0m [2m· mbb05698b[0m
+              [32m+ [0mif false {
+    [2m=[0m [1;34m[1mnote[0m[0m: every test calls [1mchecked()[0m away from the boundary
+            [2minputs seen: 3 (none is 0)[0m
+            [2mthis code is near unsafe code (in a module with unsafe code): a change no test notices here can break what the unsafe code relies on, so check that code with Miri too[0m
+            [2mcovered by run::checks (its 1 covering test still passes)[0m
+    [2m=[0m [32m[1mhelp[0m[0m: test [1mchecked()[0m with [1mx = 0[0m and assert the result
+
+    [2mdone when [0m mutastic verify m68f8c8e3,mbb05698b fixtures/unsafety [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=m68f8c8e3,mbb05698b fixtures/unsafety
+    [2mor ignore [0m mutastic ignore <id> --reason="<why>" fixtures/unsafety for each of m68f8c8e3, mbb05698b
+
+[33m[1m Not covered [0m[0m[2m(no test reaches these lines)[0m
+   [33m○[0m src/raw.rs:25 checked() [2m(1 mutant)[0m
+   [33m○[0m src/plain.rs:6 guarded() [2m(1 mutant)[0m
+
+ [2m    Files[0m  [32m[1m0 clean[0m[0m[2m | [0m[1;31m[1m2 with misses[0m[0m[2m (2)[0m
+ [2m  Mutants[0m  [32m✓ [1m5 caught[0m[0m[2m · [0m[1;31m✗ [1m7 missed[0m[0m[2m · [0m[33m○ 2 not covered[0m[2m (14)[0m[2m · 3 crashed where a crash proves nothing[0m
+ [2m Left out[0m  [2mnot mutated: unsafe (4), in or around unsafe blocks; --unsafe=enclosing or --unsafe=all includes them[0m
+ [2m Worst at[0m  raw::positive() 3 ✗ · raw::checked() 2 ✗ · plain::guarded() 2 ✗
+ [2m  Crashes[0m  [2m1 caught only because the test process crashed, not by a test's check[0m
+ [2m    Build[0m  one build of every mutant, 2 rounds (check and build)
+ [2mTest runs[0m  15[2m (90 without coverage selection)[0m
+ [2m Start at[0m  13:21:41
+ [2m Duration[0m  1.4s [2m(setup 1.2s, coverage 9ms, mutants 144ms)[0m
+ [2m    Tests[0m  6 on rustc 1.98.0 · 4 workers
+ [2m  Reports[0m  target/mutastic/mutation.json[2m · [0mtarget/mutastic/mutation.html
+ [2m    Score[0m  [1;31m[1m35.7%[0m[0m[2m  threshold 80[0m[2m  · 41.7% where tests reach[0m
+
+ [41;30;1m FAIL [0m [1;31mScore below 80: 7 missed, 2 not covered.[0m
+[2m Next: mutastic verify <id> fixtures/unsafety · mutastic run --only=<id> fixtures/unsafety · mutastic explain <id> fixtures/unsafety[0m

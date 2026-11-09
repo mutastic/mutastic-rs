@@ -1,0 +1,15 @@
+ [41;30;1m ✗ MISSED [0m tests pass even when [1ma.cmp(b)[0m becomes [1mb.cmp(a)[0m in [1msorted()[0m
+    [2m┌─[0m src/library.rs:17
+    [2m│[0m
+ [2m16[0m [2m│[0m pub fn sorted(mut names: Vec<String>) -> Vec<String> {
+ [2m17[0m [2m│[0m     names.sort_by(|a, b| a.cmp(b));
+    [2m│[0m                            [1;31m^^^ changed to b.cmp(a)[0m
+ [2m18[0m [2m│[0m     names
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mnames.sort_by(|a, b| a.cmp(b));
+              [32m+ [0mnames.sort_by(|a, b| b.cmp(a));
+    [2m=[0m [1;34m[1mnote[0m[0m: covered by library::tests::sorting_keeps_every_name (its 1 covering test still passes)
+    [2m=[0m [32m[1mhelp[0m[0m: use inputs where [1ma.cmp(b)[0m and [1mb.cmp(a)[0m differ, and assert what [1msorted()[0m does
+
+    [2mdone when [0m mutastic verify m6a7d7d94 fixtures/operators [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=m6a7d7d94 fixtures/operators

@@ -1,0 +1,15 @@
+ [41;30;1m ✗ MISSED [0m tests pass even without [1m.trim()[0m in [1musername()[0m
+   [2m┌─[0m src/arguments.rs:4
+   [2m│[0m
+ [2m3[0m [2m│[0m pub fn username(input: &str) -> String {
+ [2m4[0m [2m│[0m     input.trim().to_lowercase()
+   [2m│[0m           [1;31m^^^^ left out[0m
+ [2m5[0m [2m│[0m }
+   [2m│[0m
+   [2m=[0m mutant  [1;31m- [0minput.trim().to_lowercase()
+             [32m+ [0minput.to_lowercase()
+   [2m=[0m [1;34m[1mnote[0m[0m: covered by arguments::tests::usernames_are_lowercase (its 1 covering test still passes)
+   [2m=[0m [32m[1mhelp[0m[0m: use inputs that [1m.trim()[0m makes a difference to, and assert what [1musername()[0m does
+
+   [2mdone when [0m mutastic verify m3b69ecd2 fixtures/operators [2mpasses[0m
+   [2mreproduce [0m mutastic run --only=m3b69ecd2 fixtures/operators

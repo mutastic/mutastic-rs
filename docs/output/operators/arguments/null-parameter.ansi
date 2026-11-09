@@ -1,0 +1,16 @@
+ [41;30;1m ✗ MISSED [0m tests pass even when [1mcoupon[0m is [1mNone[0m from the start of [1mprice_with()[0m
+    [2m┌─[0m src/arguments.rs:23
+    [2m│[0m
+ [2m22[0m [2m│[0m 
+ [2m23[0m [2m│[0m pub fn price_with(base: u32, coupon: Option<u32>) -> u32 {
+    [2m│[0m                              [1;31m^^^^^^ now None[0m
+ [2m24[0m [2m│[0m     base - coupon.unwrap_or(0)
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mpub fn price_with(base: u32, coupon: Option<u32>) -> u32 {
+              [32m+ [0mpub fn price_with(base: u32, coupon: Option<u32>) -> u32 { let coupon: Option<u32> = None;
+    [2m=[0m [1;34m[1mnote[0m[0m: inputs seen: base = 10
+            [2mcovered by arguments::tests::full_price_without_a_coupon (its 1 covering test still passes)[0m
+    [2m=[0m [32m[1mhelp[0m[0m: add a test where the [1mcoupon[0m given changes what [1mprice_with()[0m does, and assert it
+
+    [2mdone when [0m mutastic verify m51d65a09 fixtures/operators [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=m51d65a09 fixtures/operators

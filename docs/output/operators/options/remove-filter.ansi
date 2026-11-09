@@ -1,0 +1,15 @@
+ [41;30;1m ✗ MISSED [0m tests pass even without [1m.filter(|years| *years < 150)[0m in [1mplausible_age()[0m
+    [2m┌─[0m src/options.rs:21
+    [2m│[0m
+ [2m20[0m [2m│[0m pub fn plausible_age(age: Option<u32>) -> Option<u32> {
+ [2m21[0m [2m│[0m     age.filter(|years| *years < 150)
+    [2m│[0m         [1;31m^^^^^^ left out[0m
+ [2m22[0m [2m│[0m }
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mage.filter(|years| *years < 150)
+              [32m+ [0mage
+    [2m=[0m [1;34m[1mnote[0m[0m: covered by options::tests::an_ordinary_age (its 1 covering test still passes)
+    [2m=[0m [32m[1mhelp[0m[0m: use inputs that [1m.filter(|years| *years < 150)[0m makes a difference to, and assert what [1mplausible_age()[0m does
+
+    [2mdone when [0m mutastic verify m5a861387 fixtures/operators [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=m5a861387 fixtures/operators

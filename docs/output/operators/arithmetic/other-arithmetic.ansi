@@ -1,0 +1,25 @@
+ [41;30;1m ✗ MISSED [0m tests pass even when [1m/[0m becomes [1m-[0m in [1mper_person()[0m[2m · mea866977[0m
+    [2m┌─[0m src/arithmetic.rs:12
+    [2m│[0m
+ [2m11[0m [2m│[0m pub fn per_person(bill: u32, people: u32) -> u32 {
+ [2m12[0m [2m│[0m     bill / people
+    [2m│[0m          [1;31m^ changed to -[0m
+ [2m13[0m [2m│[0m }
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mbill / people
+              [32m+ [0mbill - people
+    [2m=[0m also    [1;31m✗[0m tests pass even when [1mbill / people[0m becomes [1mpeople[0m in [1mper_person()[0m [2m· m82fdb48b[0m
+              [32m+ [0mpeople
+    [2m=[0m [1;34m[1mnote[0m[0m: inputs seen: bill = 4; people = 2
+            [2mcovered by arithmetic::tests::a_bill_is_shared (its 1 covering test still passes)[0m
+    [2m=[0m [32m[1mhelp[0m[0m: use inputs where [1mbill / people[0m and [1mbill - people[0m differ, and assert the result
+
+            // in mod arithmetic::tests
+            #[test]
+            fn per_person_with_bill_4_and_people_4() {
+                assert_eq!(per_person(4, 4), 1); // today 1 · with mea866977 0
+            }
+            [2mcheck today's value is the one you intend: the test pins what the code does now[0m
+
+    [2mdone when [0m mutastic verify mea866977,m82fdb48b fixtures/operators [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=mea866977,m82fdb48b fixtures/operators

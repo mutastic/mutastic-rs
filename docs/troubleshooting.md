@@ -81,9 +81,9 @@ pub fn digits(mut n: u64) -> u64 {
   Worst at  digits() 6 ✗
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  25 (25 without coverage selection)
-  Start at  18:25:53
-  Duration  20.2s (setup 161ms, coverage 4ms, mutants 20.0s)
-     Tests  1 on rustc 1.94.0 · 4 workers
+  Start at  13:22:11
+  Duration  20.7s (setup 642ms, coverage 4ms, mutants 20.0s)
+     Tests  1 on rustc 1.98.0 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
      Score  76.0%  threshold 80
 
@@ -193,9 +193,9 @@ pub fn is_absolute(path: &str) -> bool {
   Left out  not built here: `cfg(feature = "simd")` (2), `cfg(windows)` (15)
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  9 (18 without coverage selection)
-  Start at  18:26:13
-  Duration  199ms (setup 161ms, coverage 4ms, mutants 17ms)
-     Tests  2 on rustc 1.94.0 · 4 workers
+  Start at  13:22:32
+  Duration  584ms (setup 539ms, coverage 4ms, mutants 12ms)
+     Tests  2 on rustc 1.98.0 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
      Score  100.0%  threshold 80
 

@@ -1,6 +1,6 @@
 # Configuration
 
-A run is set by its options (see [`mutastic run`](https://docs.mutastic.io/rust/reference/run/)), by `mutastic.yaml` in the package's directory,
+A run is set by its options (see [`mutastic run`](commands.md#run)), by `mutastic.yaml` in the package's directory,
 and by a few environment variables. Nothing goes in `Cargo.toml`.
 
 ## `mutastic.yaml`
@@ -96,7 +96,7 @@ Rust edition yet.
 ## What mutastic reads
 
 The environment variables mutastic reads, and the option each stands in for, are on
-[Environment and exit codes](https://docs.mutastic.io/rust/reference/environment/). The order for
+[Environment and exit codes](commands.md#environment). The order for
 the format is `--format`, then `MUTASTIC_FORMAT`, then `MUTASTIC_AGENT`, then whether stdout is a
 terminal.
 
@@ -119,7 +119,7 @@ mutastic ignore mb2f8ae57 --reason="totals are rounded to tens" --as=unreachable
 
 The files are the Java edition's, in the same shape, with the function's path in `at`
 (`pricing::Pricing::discount, line 26`). See
-[`mutastic ignore`](https://docs.mutastic.io/rust/reference/ignore/) for the command and its options.
+[`mutastic ignore`](commands.md#ignore) for the command and its options.
 
 ## What your tests see
 

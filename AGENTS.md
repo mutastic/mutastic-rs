@@ -56,8 +56,9 @@ Formatting is rustfmt's, with its defaults: that is the spec, not taste.
 - **A command takes what it declares, and the docs say so.** Every command, option, environment
   variable and exit status is declared once, in `src/commands.rs`. The parser takes an option only
   on the commands it names there, and `docs/commands.json`, which the docs site's page for each
-  command is written from, is written from the same declarations: the docs test fails while it's
-  stale.
+  command is written from, and `docs/reference/commands.md`, the same reference for GitHub, are
+  written from the same declarations: the docs test fails while either is stale. Link a command
+  there (`commands.md#run`), never to the docs site's Rust section until it's published.
 - **Ids never change.** A mutant's id is a hash of what it is, never its line. A new operator,
   filter or output must not move an existing id: `tests/ids.rs` holds every fixture's mutants to
   `tests/ids/ids.tsv`, and the list only grows.
@@ -72,7 +73,8 @@ Formatting is rustfmt's, with its defaults: that is the spec, not taste.
   `fixtures/truth`: a new shape an operator finds goes in that fixture. The docs test does the same
   for every missed mutant on `fixtures/operators`.
 - **The docs show what mutastic prints.** Every output block in `docs/` and the README is a kept
-  copy of a real run, and every Rust example is a fixture's own code. Change what's printed, then
+  copy of a real run, in colour in `docs/output/*.ansi` for the docs site and without it on the
+  page for GitHub, and every Rust example is a fixture's own code. Change what's printed, then
   write the copies again and read the diff.
 - **The words are the Java edition's.** Where both editions say something, say it the same way, so
   the agent plugins and their users read one product. Where Rust needs different words (crashes,

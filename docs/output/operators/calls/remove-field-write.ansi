@@ -1,0 +1,15 @@
+ [41;30;1m ✗ MISSED [0m no test checks what [1mself.paid = true;[0m does in [1mpay()[0m
+    [2m┌─[0m src/calls.rs:43
+    [2m│[0m
+ [2m42[0m [2m│[0m     pub fn pay(&mut self) -> u32 {
+ [2m43[0m [2m│[0m         self.paid = true;
+    [2m│[0m         [1;31m^^^^^^^^^ removed[0m
+ [2m44[0m [2m│[0m         self.total
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mself.paid = true;
+              [32m+ [0mlet _ = true;
+    [2m=[0m [1;34m[1mnote[0m[0m: covered by calls::tests::paying_gives_the_total (its 1 covering test still passes)
+    [2m=[0m [32m[1mhelp[0m[0m: assert what [1mself.paid = true;[0m changes, in a test of [1mpay()[0m
+
+    [2mdone when [0m mutastic verify m17121fd7 fixtures/operators [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=m17121fd7 fixtures/operators

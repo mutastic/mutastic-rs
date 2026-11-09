@@ -1,0 +1,24 @@
+ [41;30;1m ✗ MISSED [0m no test checks what [1mloyalty_points()[0m returns here
+   [2m┌─[0m src/returns.rs:5
+   [2m│[0m
+ [2m4[0m [2m│[0m pub fn loyalty_points(spent: u32) -> u32 {
+ [2m5[0m [2m│[0m     spent / 10
+   [2m│[0m     [1;31m^^^^^^^^^^ now returns 0[0m
+ [2m6[0m [2m│[0m }
+   [2m│[0m
+   [2m=[0m mutant  [1;31m- [0mspent / 10
+             [32m+ [0m0
+   [2m=[0m [1;34m[1mnote[0m[0m: tests reach this return, but none fails when it returns [1m0[0m
+           [2minputs seen: spent = 5[0m
+           [2mcovered by returns::tests::small_spends_earn_nothing (its 1 covering test still passes)[0m
+   [2m=[0m [32m[1mhelp[0m[0m: assert the value [1mloyalty_points()[0m returns on this path, with inputs where it isn't [1m0[0m
+
+           // in mod returns::tests
+           #[test]
+           fn loyalty_points_with_spent_10() {
+               assert_eq!(loyalty_points(10), 1); // today 1 · with this mutant 0
+           }
+           [2mcheck today's value is the one you intend: the test pins what the code does now[0m
+
+   [2mdone when [0m mutastic verify m5dafbb78 fixtures/operators [2mpasses[0m
+   [2mreproduce [0m mutastic run --only=m5dafbb78 fixtures/operators

@@ -1,0 +1,24 @@
+
+ [42;30;1m ✓ CAUGHT [0m [1mcaught by pricing::big_orders_get_ten_percent_off[0m
+    [2m┌─[0m src/lib.rs:27
+    [2m│[0m
+ [2m26[0m [2m│[0m         if total >= 100 {
+ [2m27[0m [2m│[0m             return total / 10;
+    [2m│[0m                          [1;31m^ changed to *[0m
+ [2m28[0m [2m│[0m         }
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mreturn total / 10;
+              [32m+ [0mreturn total * 10;
+    [2m=[0m [1;34m[1mnote[0m[0m: inputs seen: total = 250
+            [2mcovered by pricing::big_orders_get_ten_percent_off[0m
+
+    [2mreproduce [0m mutastic run --only=m95f96847 fixtures/pricing
+
+[1m About this mutant [0m[2m───────────────────────────────────────────────[0m
+    [2m=[0m [1;34m[1mchange  [0m[0m  [1mtotal / 10 → (total) * (10)[0m
+                [2mthe code the switch puts in place of the original when this mutant is live[0m
+    [2m=[0m [1;34m[1moperator[0m[0m  mutastic/math: `/` becomes `*`
+    [2m=[0m [1;34m[1mid      [0m[0m  m95f96847: `m` and the first 8 hex digits of its fingerprint, 95f96847248b0509, a SHA-256 of the crate, function, operator, site and change
+                [2mno line number goes in, so the id stays the same when code above it moves[0m
+    [2m=[0m [1;34m[1msite    [0m[0m  `total / 10` in Pricing::discount, line 27, column 26
+    [2m=[0m [1;34m[1mlast run[0m[0m  caught by pricing::big_orders_get_ten_percent_off

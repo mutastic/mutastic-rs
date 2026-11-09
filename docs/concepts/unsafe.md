@@ -80,9 +80,9 @@ end of `mutastic run fixtures/unsafety`:
    Crashes  1 caught only because the test process crashed, not by a test's check
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  15 (90 without coverage selection)
-  Start at  18:25:25
-  Duration  1.6s (setup 1.4s, coverage 8ms, mutants 147ms)
-     Tests  6 on rustc 1.94.0 · 4 workers
+  Start at  13:21:41
+  Duration  1.4s (setup 1.2s, coverage 9ms, mutants 144ms)
+     Tests  6 on rustc 1.98.0 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
      Score  35.7%  threshold 80  · 41.7% where tests reach
 

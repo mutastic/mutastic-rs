@@ -1,0 +1,23 @@
+ [41;30;1m ✗ MISSED [0m tests pass even when [1mdelivery_days()[0m has no arm for [1m2[0m
+   [2m┌─[0m src/control.rs:6
+   [2m│[0m
+ [2m5[0m [2m│[0m         1 => 1,
+ [2m6[0m [2m│[0m         2 => 3,
+   [2m│[0m         [1;31m^ arm removed[0m
+ [2m7[0m [2m│[0m         _ => 7,
+   [2m│[0m
+   [2m=[0m mutant  [1;31m- [0m2 => 3,
+             [32m+ [0m(nothing: the line is gone)
+   [2m=[0m [1;34m[1mnote[0m[0m: inputs seen: zone = 1, 2, 3
+           [2mcovered by control::tests::every_zone_within_a_week (its 1 covering test still passes)[0m
+   [2m=[0m [32m[1mhelp[0m[0m: add a test where [1mdelivery_days()[0m takes the [1m2[0m arm, and assert what it does there
+
+           // in mod control::tests
+           #[test]
+           fn delivery_days_with_zone_2() {
+               assert_eq!(delivery_days(2), 3); // today 3 · with this mutant 7
+           }
+           [2mcheck today's value is the one you intend: the test pins what the code does now[0m
+
+   [2mdone when [0m mutastic verify mc9468457 fixtures/operators [2mpasses[0m
+   [2mreproduce [0m mutastic run --only=mc9468457 fixtures/operators
