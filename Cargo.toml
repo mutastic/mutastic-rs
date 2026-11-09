@@ -9,7 +9,13 @@ edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/mutastic/mutastic-rs"
 homepage = "https://mutastic.io"
-rust-version = "1.85"
+documentation = "https://github.com/mutastic/mutastic-rs/tree/main/docs"
+readme = "README.md"
+keywords = ["mutation-testing", "testing", "mutants", "test-quality", "cargo"]
+categories = ["development-tools::testing", "development-tools::cargo-plugins", "command-line-utilities"]
+# The oldest toolchain that builds mutastic, set by its parser's (ra_ap_syntax). CI builds on it.
+# The crates mutastic tests build with their own toolchain, not this one.
+rust-version = "1.91"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
