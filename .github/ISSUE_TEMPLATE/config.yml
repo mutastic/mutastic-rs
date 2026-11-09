@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/mutastic/mutastic-rs/tree/main/docs
+    about: Getting started, how a run works, and every command and option.
+  - name: Report a security problem
+    url: https://github.com/mutastic/mutastic-rs/security/advisories/new
+    about: Privately, rather than in a public issue.

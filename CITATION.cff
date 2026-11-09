@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use mutastic for Rust in your work, please cite it like this."
+type: software
+title: "mutastic for Rust"
+abstract: "The Rust edition of mutastic: mutation testing that finds out whether your tests, or your agent's, actually check anything."
+authors:
+  - family-names: Corbin
+    given-names: Brian
+repository-code: "https://github.com/mutastic/mutastic-rs"
+url: "https://mutastic.io"
+license: Apache-2.0
+keywords:
+  - mutation testing
+  - software testing
+  - rust
+references:
+  - type: software
+    title: mutastic
+    abstract: "Mutation testing that finds out whether your tests, or your agent's, actually check anything."
+    authors:
+      - family-names: Corbin
+        given-names: Brian
+    repository-code: "https://github.com/mutastic/mutastic"
+    url: "https://mutastic.io"
+    license: Apache-2.0

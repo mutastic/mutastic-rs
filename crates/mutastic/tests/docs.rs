@@ -1,5 +1,6 @@
-//! The docs are kept true. Every output block in `docs/` is what mutastic prints on one of the
-//! fixtures: it's captured in `docs/output/`, and this fails while a fresh run prints anything else.
+//! The docs are kept true. Every output block in `docs/` and the README is what mutastic prints on
+//! one of the fixtures: it's captured in `docs/output/`, and this fails while a fresh run prints
+//! anything else.
 //! Every Rust block is either an excerpt of a fixture these runs build, word for word, or the test
 //! the getting-started page adds, which this adds and runs. Every link between pages resolves, every
 //! `mutastic` command a page shows parses, and every id it names is a mutant of its fixture. And
@@ -287,7 +288,12 @@ fn pages() -> Vec<PathBuf> {
             }
         }
     }
-    let mut out = vec![root().join("README.md")];
+    // The repository's own pages (the README, CONTRIBUTING and the rest), then the docs.
+    let mut out: Vec<PathBuf> = std::fs::read_dir(root())
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|e| e == "md"))
+        .collect();
     walk(&docs(), &mut out);
     out.sort();
     out
@@ -364,6 +370,7 @@ fn getting_started(work: &Path, shown: &mut BTreeMap<String, String>) {
         .nth(1)
         .unwrap()
         .to_string();
+    shown.insert("readme/card".into(), readme_card(&run.stdout, &id));
 
     let lib = work.join("fixtures/pricing/src/lib.rs");
     let source = std::fs::read_to_string(&lib).unwrap();
@@ -389,6 +396,20 @@ fn getting_started(work: &Path, shown: &mut BTreeMap<String, String>) {
     let unknown = mutastic(work, &["verify", "m00000000", "fixtures/pricing"]);
     assert_eq!(unknown.code, 2, "{}", unknown.stderr);
     shown.insert("concepts/unknown-id".into(), unknown.stderr);
+}
+
+/// What the README shows of the getting-started run: the card for `id`, then the score and the
+/// verdict, as the Java edition's README shows its own.
+fn readme_card(output: &str, id: &str) -> String {
+    let card = card(output, &BTreeSet::from([id.to_string()])).expect("the run has a card");
+    let verdict: String = output
+        .lines()
+        .skip_while(|line| !line.trim_start().starts_with("Score "))
+        .take_while(|line| !line.trim_start().starts_with("Next:"))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    assert!(verdict.contains("[PASS]"), "{output}");
+    format!("{card}\n{verdict}")
 }
 
 /// The pricing fixture in each format but `full`, the `mutants` listing, and the help.

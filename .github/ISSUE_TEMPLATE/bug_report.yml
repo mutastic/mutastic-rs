@@ -1,0 +1,52 @@
+name: Bug report
+description: mutastic did something wrong, or something it shouldn't.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you ran, what it printed, and what you expected instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: mutastic version
+      description: "`mutastic --version`, or the commit you built it from"
+      placeholder: "0.0.1"
+    validations:
+      required: true
+  - type: input
+    id: rustc
+    attributes:
+      label: rustc version
+      description: "`rustc --version` in the crate you ran it on, and the target if it isn't the host's"
+      placeholder: "rustc 1.94.0 (4a4ef493e 2026-03-02)"
+    validations:
+      required: true
+  - type: dropdown
+    id: runner
+    attributes:
+      label: How you ran it
+      options:
+        - mutastic
+        - cargo mutastic
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system
+      placeholder: "macOS 26 on Apple silicon"
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The command and its output. `--format=agent` is the most compact to paste.
+      render: text
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: A crate that shows it
+      description: A link to a small crate, or the code and test, if you can share one.
