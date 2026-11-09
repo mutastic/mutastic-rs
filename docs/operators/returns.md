@@ -72,6 +72,13 @@ The only test spends too little to earn a point, so a function that always retur
            covered by returns::tests::small_spends_earn_nothing (its 1 covering test still passes)
    = help: assert the value loyalty_points() returns on this path, with inputs where it isn't 0
 
+           // in mod returns::tests
+           #[test]
+           fn loyalty_points_with_spent_10() {
+               assert_eq!(loyalty_points(10), 1); // today 1 · with this mutant 0
+           }
+           check today's value is the one you intend: the test pins what the code does now
+
    done when  mutastic verify m5dafbb78 fixtures/operators passes
    reproduce  mutastic run --only=m5dafbb78 fixtures/operators
 ```

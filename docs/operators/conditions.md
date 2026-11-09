@@ -57,6 +57,13 @@ fn small_orders_pay_for_delivery() {
            covered by conditions::tests::small_orders_pay_for_delivery (its 1 covering test still passes)
    = help: test free_delivery() with total = 50 and assert the result
 
+           // in mod conditions::tests
+           #[test]
+           fn free_delivery_with_total_50() {
+               assert!(free_delivery(50)); // today true · with this mutant false
+           }
+           check today's value is the one you intend: the test pins what the code does now
+
    done when  mutastic verify m27535e4c fixtures/operators passes
    reproduce  mutastic run --only=m27535e4c fixtures/operators
 ```
@@ -205,6 +212,13 @@ fn restock_when_low() {
             covered by conditions::tests::restock_when_low (its 1 covering test still passes)
     = help: add a test where stock > low, and assert what needs_restock() does then
 
+            // in mod conditions::tests
+            #[test]
+            fn needs_restock_with_stock_5_and_low_2() {
+                assert!(!needs_restock(5, 2)); // today false · with this mutant true
+            }
+            check today's value is the one you intend: the test pins what the code does now
+
     done when  mutastic verify m0afcf739 fixtures/operators passes
     reproduce  mutastic run --only=m0afcf739 fixtures/operators
 ```
@@ -254,6 +268,13 @@ fn weekend_days_are_known() {
     = note: inputs seen: day = 6
             covered by conditions::tests::weekend_days_are_known (its 1 covering test still passes)
     = help: use inputs where matches!(day, 6 | 7) and !matches!(day, 6 | 7) differ, and assert what is_weekend() does
+
+            // in mod conditions::tests
+            #[test]
+            fn is_weekend_with_day_6() {
+                assert!(is_weekend(6)); // today true · with this mutant false
+            }
+            check today's value is the one you intend: the test pins what the code does now
 
     done when  mutastic verify m4f55c224 fixtures/operators passes
     reproduce  mutastic run --only=m4f55c224 fixtures/operators

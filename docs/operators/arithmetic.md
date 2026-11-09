@@ -62,6 +62,13 @@ fn one_of_each() {
            covered by arithmetic::tests::one_of_each (its 1 covering test still passes)
    = help: use inputs where price * quantity and price / quantity differ, and assert the result
 
+           // in mod arithmetic::tests
+           #[test]
+           fn line_total_with_price_30_and_quantity_30() {
+               assert_eq!(line_total(30, 30), 900); // today 900 · with m7c2deaec 1
+           }
+           check today's value is the one you intend: the test pins what the code does now
+
    done when  mutastic verify m7c2deaec,m9fbcbdb2 fixtures/operators passes
    reproduce  mutastic run --only=m7c2deaec,m9fbcbdb2 fixtures/operators
 ```
@@ -101,6 +108,13 @@ fn a_fee_is_added() {
    = note: inputs seen: fee = 2; price = 2
            covered by arithmetic::tests::a_fee_is_added (its 1 covering test still passes)
    = help: use inputs where price + fee and price * fee differ, and assert the result
+
+           // in mod arithmetic::tests
+           #[test]
+           fn with_fee_with_price_2_and_fee_0() {
+               assert_eq!(with_fee(2, 0), 2); // today 2 · with this mutant 0
+           }
+           check today's value is the one you intend: the test pins what the code does now
 
    done when  mutastic verify m2159bc78 fixtures/operators passes
    reproduce  mutastic run --only=m2159bc78 fixtures/operators
@@ -146,6 +160,13 @@ fn a_bill_is_shared() {
     = note: inputs seen: bill = 4; people = 2
             covered by arithmetic::tests::a_bill_is_shared (its 1 covering test still passes)
     = help: use inputs where bill / people and bill - people differ, and assert the result
+
+            // in mod arithmetic::tests
+            #[test]
+            fn per_person_with_bill_4_and_people_4() {
+                assert_eq!(per_person(4, 4), 1); // today 1 · with mea866977 0
+            }
+            check today's value is the one you intend: the test pins what the code does now
 
     done when  mutastic verify mea866977,m82fdb48b fixtures/operators passes
     reproduce  mutastic run --only=mea866977,m82fdb48b fixtures/operators
@@ -193,6 +214,13 @@ is math's, with keep operand's under it:
             covered by arithmetic::tests::nothing_refunded (its 1 covering test still passes)
     = help: use inputs where paid - refund and paid + refund differ, and assert the result
 
+            // in mod arithmetic::tests
+            #[test]
+            fn after_refund_with_paid_10_and_refund_10() {
+                assert_eq!(after_refund(10, 10), 0); // today 0 · with m4e284c1b 20
+            }
+            check today's value is the one you intend: the test pins what the code does now
+
     done when  mutastic verify m4e284c1b,mb46190a0 fixtures/operators passes
     reproduce  mutastic run --only=m4e284c1b,mb46190a0 fixtures/operators
 ```
@@ -231,6 +259,13 @@ fn an_empty_balance_reversed() {
     = note: inputs seen: balance = 0
             covered by arithmetic::tests::an_empty_balance_reversed (its 1 covering test still passes)
     = help: use inputs where -balance and balance differ, and assert what reversed() does
+
+            // in mod arithmetic::tests
+            #[test]
+            fn reversed_with_balance_1() {
+                assert_eq!(reversed(1), -1); // today -1 · with this mutant 1
+            }
+            check today's value is the one you intend: the test pins what the code does now
 
     done when  mutastic verify me0933ca7 fixtures/operators passes
     reproduce  mutastic run --only=me0933ca7 fixtures/operators
@@ -289,6 +324,13 @@ the test: the operator's, the constant's, and keep operand's, on one card:
             covered by arithmetic::tests::a_letter_costs_the_minimum (its 1 covering test still passes)
     = help: use inputs where kilos * 3 and kilos / 3 differ, and assert the result
 
+            // in mod arithmetic::tests
+            #[test]
+            fn postage_with_kilos_3() {
+                assert_eq!(postage(3), 11); // today 11 · with m0f04c581 3
+            }
+            check today's value is the one you intend: the test pins what the code does now
+
     done when  mutastic verify m0f04c581,mc5b1b361,mebd4cb5e,mbed3c12d,ma0fa708a,m9d8f7916,mb750003e fixtures/operators passes
     reproduce  mutastic run --only=m0f04c581,mc5b1b361,mebd4cb5e,mbed3c12d,ma0fa708a,m9d8f7916,mb750003e fixtures/operators
 ```
@@ -331,6 +373,13 @@ fn a_flag_that_is_set() {
     = note: inputs seen: flag = 1; flags = 3
             covered by arithmetic::tests::a_flag_that_is_set (its 1 covering test still passes)
     = help: use inputs where & and | give different results, and assert what has_flag() does
+
+            // in mod arithmetic::tests
+            #[test]
+            fn has_flag_with_flags_0_and_flag_1() {
+                assert!(!has_flag(0, 1)); // today false · with ma32c7819 true
+            }
+            check today's value is the one you intend: the test pins what the code does now
 
     done when  mutastic verify ma32c7819,maace5f2b fixtures/operators passes
     reproduce  mutastic run --only=ma32c7819,maace5f2b fixtures/operators

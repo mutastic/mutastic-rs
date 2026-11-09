@@ -8,6 +8,7 @@ use serde_json::{json, Value};
 
 use crate::engine::{MutantResult, Report, Status};
 use crate::sites::{self, Change, Crate, Mutant};
+use crate::suggest::{self, SuggestedTest};
 use crate::words::{self, Advice};
 
 pub mod files;
@@ -136,6 +137,36 @@ impl<'a> View<'a> {
 
     fn id(&self, result: &MutantResult) -> &'a str {
         &self.mutant(result).id
+    }
+
+    /// The tests suggested for an entry's mutants, each test once: two mutants of one line can
+    /// have the same call, and pasting it twice wouldn't compile. On a card with others, each
+    /// test's comment names the mutant it was found for.
+    fn suggested(&self, entry: &Entry) -> Vec<SuggestedTest> {
+        let shared = !entry.also.is_empty();
+        let mut tests: Vec<SuggestedTest> = Vec::new();
+        for result in std::iter::once(entry.main).chain(entry.also.iter().copied()) {
+            if let Some(test) = self.suggested_test(result, shared) {
+                if !tests.iter().any(|kept| kept.name == test.name) {
+                    tests.push(test);
+                }
+            }
+        }
+        tests
+    }
+
+    fn suggested_test(&self, result: &MutantResult, named: bool) -> Option<SuggestedTest> {
+        let suggestion = result.suggestion.as_ref()?;
+        let mutant = self.mutant(result);
+        let callable = self.report.found.functions[mutant.function]
+            .callable
+            .as_ref()?;
+        Some(suggest::test(
+            callable,
+            &mutant.file,
+            suggestion,
+            named.then_some(mutant.id.as_str()),
+        ))
     }
 
     /// The missed mutants, a line's together, the line's most telling first.
@@ -546,6 +577,17 @@ fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
         style.green(&style.bold("help")),
         style.code(&advice.help)
     );
+    let tests = view.suggested(entry);
+    if !tests.is_empty() {
+        let _ = writeln!(out);
+        for test in &tests {
+            let _ = writeln!(out, "{g}        // in {}", test.place);
+            for line in &test.lines {
+                let _ = writeln!(out, "{g}        {line}");
+            }
+        }
+        let _ = writeln!(out, "{g}        {}", style.dim(CHECK_TODAY));
+    }
     let ids = id_list(view, entry);
     let _ = writeln!(
         out,
@@ -567,6 +609,11 @@ fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
         view.command("ignore", &ids)
     );
 }
+
+/// Under a suggested test, as the Java edition says it: the value it asserts is what the code
+/// does, which may not be what it should.
+const CHECK_TODAY: &str =
+    "check today's value is the one you intend: the test pins what the code does now";
 
 /// How many functions the Not covered section lists, as the Java edition caps it.
 const NOT_COVERED_SHOWN: usize = 50;
@@ -1060,6 +1107,16 @@ fn agent_entry(view: &View, entry: &Entry) -> String {
         let _ = writeln!(out, "   evidence: {note}");
     }
     let _ = writeln!(out, "   fix: {}", advice.help);
+    let tests = view.suggested(entry);
+    for test in &tests {
+        let _ = writeln!(out, "   test to add in {}:", test.place);
+        for line in &test.lines {
+            let _ = writeln!(out, "     {line}");
+        }
+    }
+    if !tests.is_empty() {
+        let _ = writeln!(out, "     // {CHECK_TODAY}");
+    }
     let _ = writeln!(out, "   done when: {} passes", view.command("verify", &ids));
     let _ = writeln!(out, "   reproduce: {}", view.command("run", &ids));
     let _ = writeln!(out, "   or propose: {}", view.command("propose", &ids));
@@ -1266,6 +1323,16 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
         event["reproduce"] = json!(view.command("run", &mutant.id));
         event["ignore"] = json!(view.command("ignore", &mutant.id));
         event["propose"] = json!(view.command("propose", &mutant.id));
+        if let Some(test) = view.suggested_test(result, false) {
+            event["suggestedTest"] = json!({
+                "testClass": test.module,
+                "name": test.name,
+                "code": test.lines.join("\n"),
+                "call": test.call,
+                "today": test.today,
+                "withMutant": test.mutated,
+            });
+        }
         let entry = Entry {
             main: result,
             also: Vec::new(),

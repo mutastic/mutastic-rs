@@ -33,9 +33,11 @@ the code. See [Troubleshooting](troubleshooting.md#a-workspace).
 
 ## Cards
 
-The Rust edition's cards have the gap, the change, the inputs seen, the covering tests and the
-commands, as the Java edition's do, but no suggested test yet. Write the test the `help` line
-describes yourself: [Getting started](getting-started.md#4-write-the-test) shows one.
+The Rust edition's cards have the gap, the change, the inputs seen, the covering tests, the
+suggested test and the commands, as the Java edition's do. The suggested test is a `#[test] fn` for
+the module's `mod tests`, asserted with `assert_eq!` or `assert!`, and it's written for functions
+and methods a test can call with whole numbers alone: see
+[Suggested tests](concepts/suggested-tests.md). Code no test reaches gets no starting point yet.
 
 ## What's different in the results
 

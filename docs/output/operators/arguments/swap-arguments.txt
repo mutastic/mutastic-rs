@@ -12,5 +12,12 @@
             covered by arguments::tests::too_much_is_not_a_percent (its 1 covering test still passes)
     = help: use inputs where 0, 100 and 100, 0 give different results, and assert what is_percent() does
 
+            // in mod arguments::tests
+            #[test]
+            fn is_percent_with_value_0() {
+                assert!(is_percent(0)); // today true · with this mutant false
+            }
+            check today's value is the one you intend: the test pins what the code does now
+
     done when  mutastic verify m1a3c85a8 fixtures/operators passes
     reproduce  mutastic run --only=m1a3c85a8 fixtures/operators

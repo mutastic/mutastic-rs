@@ -29,6 +29,8 @@ Options:
   --report=<kind>[:<path>]  Write a report file: json (mutation.json) or html (mutation.html), in
                         target/mutastic unless a path is given; repeat it for more, or none.
                         A full run writes both by default
+  --no-suggestions      Don't look for a test that catches each missed mutant, which runs the
+                        missed mutant's function outside the tests
   --progress=<mode>     auto (default): a line redrawn in place at a terminal, none for agent
                         and jsonl; bar, counter (a line every so often) or none
   --edition=<edition>   rust or java: which edition runs. Unless given, the build file in dir, or

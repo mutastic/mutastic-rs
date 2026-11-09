@@ -12,5 +12,12 @@
             covered by options::tests::a_chosen_page_size (its 1 covering test still passes)
     = help: use inputs where Some(chosen) and None differ, and assert what page_size() does
 
+            // in mod options::tests
+            #[test]
+            fn page_size_with_chosen_1() {
+                assert_eq!(page_size(1), 1); // today 1 · with this mutant 20
+            }
+            check today's value is the one you intend: the test pins what the code does now
+
     done when  mutastic verify m328e06d3 fixtures/operators passes
     reproduce  mutastic run --only=m328e06d3 fixtures/operators

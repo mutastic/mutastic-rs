@@ -29,6 +29,8 @@ pub struct Emitted {
     pub arms: Vec<(Range<usize>, usize)>,
     /// Each function's text, with its index.
     pub functions: Vec<(Range<usize>, usize)>,
+    /// Each probe's text, with its function's index.
+    pub probes: Vec<(Range<usize>, usize)>,
 }
 
 struct Site {
@@ -47,16 +49,19 @@ struct Insert {
     text: String,
     /// The mutant whose code it is.
     mutant: Option<usize>,
+    /// The function whose probe it is: written after the function, never inside a guard.
+    probe: Option<usize>,
 }
 
-/// The rewritten text of one file, with only the `live` mutants (indices) written in, and an
-/// inputs recorder at the top of each listed function.
+/// The rewritten text of one file, with only the `live` mutants (indices) written in, an inputs
+/// recorder at the top of each function in `recorders`, and a probe after each in `probes`.
 pub fn emit(
     found: &Crate,
     file: &Path,
     text: &str,
     live: &BTreeSet<usize>,
     recorders: &BTreeSet<usize>,
+    probes: &BTreeSet<usize>,
 ) -> Emitted {
     let sites = nest(found, file, live);
     let mut inserts: Vec<Insert> = found
@@ -69,8 +74,23 @@ pub fn emit(
             offset: function.body_open,
             text: recorder(function),
             mutant: None,
+            probe: None,
         })
         .collect();
+    for (index, function) in found.functions.iter().enumerate() {
+        if let (true, true, Some(callable)) = (
+            function.file == file,
+            probes.contains(&index),
+            &function.callable,
+        ) {
+            inserts.push(Insert {
+                offset: callable.after,
+                text: probe(function.ordinal, callable),
+                mutant: None,
+                probe: Some(index),
+            });
+        }
+    }
     for (index, mutant) in found.mutants.iter().enumerate() {
         if let Form::Insert { text } = &mutant.form {
             if mutant.file == file && live.contains(&index) {
@@ -78,17 +98,26 @@ pub fn emit(
                     offset: mutant.site.start,
                     text: text.replace("{n}", &mutant.ordinal.to_string()),
                     mutant: Some(index),
+                    probe: None,
                 });
             }
         }
     }
     // The recorder first, so it sees the values the function was called with.
-    inserts.sort_by_key(|insert| (insert.offset, insert.mutant.is_some(), insert.mutant));
+    inserts.sort_by_key(|insert| {
+        (
+            insert.offset,
+            insert.mutant.is_some(),
+            insert.mutant,
+            insert.probe,
+        )
+    });
     let mut out = Emitter {
         text,
         found,
         inserts,
         next_insert: 0,
+        depth: 0,
         emitted: Emitted::default(),
         offsets: Vec::new(),
     };
@@ -120,6 +149,33 @@ fn recorder(function: &Function) -> String {
         " crate::__mutastic::seen({}, &[{}]);",
         function.ordinal,
         values.join(", ")
+    )
+}
+
+/// A test that calls the function on each line of whole numbers mutastic gives it, and writes down
+/// what each call returned: how a suggested test's values are found, by running the code, with
+/// and without a mutant. Written after the function, or its `impl`, on the same line.
+fn probe(ordinal: u32, callable: &crate::sites::callable::Callable) -> String {
+    let types = callable.types();
+    let lets: String = types
+        .iter()
+        .enumerate()
+        .map(|(index, ty)| {
+            format!(
+                "let __a{index} = <{ty} as ::core::convert::TryFrom<i128>>::try_from(*__v.get({index})?).ok()?; "
+            )
+        })
+        .collect();
+    let names: Vec<String> = (0..types.len())
+        .map(|index| format!("__a{index}"))
+        .collect();
+    let call = callable.call(&names, "");
+    let cfgs: String = callable.cfgs.iter().map(|cfg| format!("{cfg} ")).collect();
+    format!(
+        " {cfgs}#[::core::prelude::v1::test] #[doc(hidden)] #[allow(warnings, clippy::all)] fn {}{ordinal}() {{ \
+         crate::__mutastic::probe(&|__v: &[i128]| -> ::core::option::Option<crate::__mutastic::Shown> {{ \
+         {lets}::core::option::Option::Some(crate::__mutastic::shown(&{call})) }}); }}",
+        crate::sites::callable::PROBE
     )
 }
 
@@ -165,6 +221,8 @@ struct Emitter<'a> {
     found: &'a Crate,
     inserts: Vec<Insert>,
     next_insert: usize,
+    /// How many guards deep the text being written is: a probe waits until it's out of them all.
+    depth: usize,
     emitted: Emitted,
     /// (original offset, output offset) at the start of each verbatim copy.
     offsets: Vec<(usize, usize)>,
@@ -174,7 +232,10 @@ impl Emitter<'_> {
     fn verbatim(&mut self, from: usize, to: usize) {
         let mut at = from;
         while let Some(insert) = self.inserts.get(self.next_insert).cloned() {
-            if insert.offset < at || insert.offset > to {
+            if insert.offset < at
+                || insert.offset > to
+                || (insert.probe.is_some() && self.depth > 0)
+            {
                 break;
             }
             self.copy(at, insert.offset);
@@ -184,6 +245,10 @@ impl Emitter<'_> {
                 let range = start..self.emitted.text.len();
                 self.emitted.arms.push((range.clone(), mutant));
                 self.emitted.guards.push((range, vec![mutant]));
+            }
+            if let Some(function) = insert.probe {
+                let range = start..self.emitted.text.len();
+                self.emitted.probes.push((range, function));
             }
             self.next_insert += 1;
             at = insert.offset;
@@ -239,7 +304,9 @@ impl Emitter<'_> {
             self.emitted.text.push_str(" } ");
         }
         self.emitted.text.push_str("_ => { ");
+        self.depth += 1;
         self.range(site.range.start, site.range.end, &site.children);
+        self.depth -= 1;
         self.emitted.text.push_str(close);
         self.emitted
             .guards
@@ -352,6 +419,45 @@ pub(crate) mod __mutastic {{
         }}
     }}
 
+    pub(crate) type Shown = std::string::String;
+
+    /// What a probe's call returned, as `{{:?}}` writes it: a literal, for what a probe calls.
+    pub(crate) fn shown<T: core::fmt::Debug + ?Sized>(value: &T) -> Shown {{
+        std::format!("{{value:?}}")
+    }}
+
+    /// A probe's run: `call` on each line of whole numbers in the file `MUTASTIC_PROBE` names,
+    /// writing a line for each to the file `MUTASTIC_PROBE_OUT` names as it goes: `r` and what it
+    /// returned, `p` when it panicked, `s` when the numbers don't fit its types, and, with
+    /// `MUTASTIC_PROBE_TWICE`, `x` when a second call returned something else.
+    pub(crate) fn probe(call: &dyn Fn(&[i128]) -> Option<Shown>) {{
+        let (Some(input), Some(output)) = (std::env::var_os("MUTASTIC_PROBE"), std::env::var_os("MUTASTIC_PROBE_OUT")) else {{
+            return;
+        }};
+        let twice = std::env::var_os("MUTASTIC_PROBE_TWICE").is_some();
+        std::panic::set_hook(std::boxed::Box::new(|_| {{}}));
+        let text = std::fs::read_to_string(input).unwrap_or_default();
+        let Ok(mut out) = std::fs::File::create(output) else {{
+            return;
+        }};
+        for line in text.lines() {{
+            let values: std::vec::Vec<i128> = line.split(' ').filter_map(|word| word.parse().ok()).collect();
+            let once = || std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| call(&values)));
+            let written = match once() {{
+                Ok(None) => std::string::String::from("s"),
+                Ok(Some(value)) => {{
+                    if twice && once().ok().flatten().as_ref() != Some(&value) {{
+                        std::string::String::from("x")
+                    }} else {{
+                        std::format!("r {{value}}")
+                    }}
+                }}
+                Err(_) => std::string::String::from("p"),
+            }};
+            let _ = std::io::Write::write_all(&mut out, std::format!("{{written}}\n").as_bytes());
+        }}
+    }}
+
     /// Records the whole numbers a function was called with, in the coverage pass only.
     pub(crate) fn seen(function: u32, values: &[(&str, i128)]) {{
         let mut active = ACTIVE.load(Relaxed);
@@ -410,6 +516,7 @@ mod tests {
             source,
             &live,
             &BTreeSet::new(),
+            &BTreeSet::new(),
         );
         assert_eq!(
             emitted.text,
@@ -433,6 +540,7 @@ mod tests {
             source,
             &BTreeSet::new(),
             &BTreeSet::new(),
+            &BTreeSet::new(),
         );
         assert_eq!(emitted.text, source);
     }
@@ -447,6 +555,7 @@ mod tests {
             source,
             &BTreeSet::new(),
             &BTreeSet::from([0]),
+            &BTreeSet::new(),
         );
         assert_eq!(
             emitted.text,

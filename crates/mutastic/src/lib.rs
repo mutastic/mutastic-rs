@@ -21,6 +21,7 @@ pub mod report;
 pub mod schema;
 pub mod since;
 pub mod sites;
+pub mod suggest;
 pub mod testrun;
 pub mod words;
 pub mod workspace;

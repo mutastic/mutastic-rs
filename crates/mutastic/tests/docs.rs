@@ -92,6 +92,7 @@ const BUILT: &[&str] = &[
     "truth",
     "platforms",
     "configured",
+    "suggestions",
 ];
 
 fn root() -> PathBuf {
@@ -635,6 +636,15 @@ fn troubleshooting(work: &Path, shown: &mut BTreeMap<String, String>) {
     shown.insert("troubleshooting/workspace".into(), root.stderr);
 }
 
+/// The suggested-tests page's card: a test written out for `late_fee`'s boundary.
+fn suggested(work: &Path, shown: &mut BTreeMap<String, String>) {
+    let run = ran(work, &["run", "fixtures/suggestions", "--report=none"]);
+    let ids = ids_of(work, "suggestions", "late_fee", "mutastic/boundary");
+    let card = card(&run.stdout, &ids).expect("late_fee's boundary is missed");
+    assert!(card.contains("assert_eq!(late_fee(7), 0);"), "{card}");
+    shown.insert("concepts/suggested-test".into(), card);
+}
+
 #[test]
 fn the_docs_show_what_mutastic_prints() {
     let work = work();
@@ -644,6 +654,7 @@ fn the_docs_show_what_mutastic_prints() {
     unsafety(&work, &mut shown);
     operators(&work, &mut shown);
     troubleshooting(&work, &mut shown);
+    suggested(&work, &mut shown);
 
     let output = docs().join("output");
     let mut stale = Vec::new();

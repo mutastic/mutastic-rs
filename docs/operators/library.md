@@ -96,6 +96,13 @@ At exactly the cap, `min` and `max` agree:
             covered by library::tests::half_off_at_most (its 1 covering test still passes)
     = help: use inputs where min and max give different results, and assert what capped_discount() does
 
+            // in mod library::tests
+            #[test]
+            fn capped_discount_with_percent_49() {
+                assert_eq!(capped_discount(49), 49); // today 49 · with this mutant 50
+            }
+            check today's value is the one you intend: the test pins what the code does now
+
     done when  mutastic verify m5bb85f22 fixtures/operators passes
     reproduce  mutastic run --only=m5bb85f22 fixtures/operators
 ```

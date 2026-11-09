@@ -51,6 +51,13 @@ against the tests that reach it. One mutant gets past them:
             covered by pricing::big_orders_get_ten_percent_off, tests::small_orders_pay_full_price (all 2 covering tests still pass)
     = help: test discount() with total = 100 and assert the result
 
+            // in mod tests
+            #[test]
+            fn discount_with_total_100() {
+                assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
+            }
+            check today's value is the one you intend: the test pins what the code does now
+
     done when  mutastic verify mb2f8ae57 fixtures/pricing passes
     reproduce  mutastic run --only=mb2f8ae57 fixtures/pricing
     or ignore  mutastic ignore mb2f8ae57 --reason="<why>" fixtures/pricing
@@ -60,8 +67,8 @@ against the tests that reach it. One mutant gets past them:
   Worst at  Pricing::discount() 1 ✗
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  13 (33 without coverage selection)
-  Start at  18:25:16
-  Duration  2.1s (setup 1.9s, coverage 37ms, mutants 62ms)
+  Start at  00:25:38
+  Duration  1.5s (setup 1.4s, coverage 6ms, mutants 29ms)
      Tests  3 on rustc 1.94.0 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
      Score  90.9%  threshold 80
@@ -80,7 +87,9 @@ Each line with a missed mutant gets a card.
 - **The change** that got through, under the code, and again as a diff.
 - **The evidence:** the values your tests actually passed to `total`, none of them 100, and the
   tests that reach the line, which all still pass with the change in.
-- **What to do:** test `discount()` with `total = 100`, and assert the result.
+- **What to do:** test `discount()` with `total = 100`, and assert the result. Below it is that
+  test, written out: mutastic called `discount(100)` as the code is and with the mutant in, and
+  the comment says what each gave.
 - **The commands:** `done when` proves the fix, and `reproduce` runs just this mutant again. Each
   names this crate, so it works as it's copied. `mb2f8ae57` is the mutant's id; it stays the same
   while the code around it moves. See [Mutant ids](concepts/ids.md).
@@ -90,18 +99,21 @@ one it missed: a passing score isn't a reason to leave a gap you can close.
 
 ## 4. Write the test
 
-What should `discount(100)` be? The doc comment says 10% off orders of 100 or more, so 10. Add a
-test to the `tests` module at the end of `fixtures/pricing/src/lib.rs`:
+The card's test asserts what `discount(100)` gives today, 10. Is that right? The doc comment says
+10% off orders of 100 or more, so yes. Paste it into the `tests` module at the end of
+`fixtures/pricing/src/lib.rs`:
 
 <!-- added to: fixtures/pricing/src/lib.rs -->
 ```rust
 #[test]
-fn discount_starts_at_100() {
-    assert_eq!(Pricing::new().discount(100), 10);
+fn discount_with_total_100() {
+    assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
 }
 ```
 
-With `>` in place of `>=`, `discount(100)` is 0, and this test fails.
+With `>` in place of `>=`, `discount(100)` is 0, and this test fails. When today's value isn't the
+one the code should give, keep the test and write the right value: then it's the code that needs
+fixing. See [Suggested tests](concepts/suggested-tests.md).
 
 ## 5. Prove it
 
@@ -113,7 +125,7 @@ mutastic verify mb2f8ae57 fixtures/pricing
 
 <!-- output: getting-started/verify -->
 ```text
-mutastic: mb2f8ae57 is caught by tests::discount_starts_at_100
+mutastic: mb2f8ae57 is caught by tests::discount_with_total_100
 ```
 
 The mutant is caught: a test now fails when `>=` becomes `>`. `verify` exits with 0 when every

@@ -14,5 +14,12 @@
             covered by arithmetic::tests::a_bill_is_shared (its 1 covering test still passes)
     = help: use inputs where bill / people and bill - people differ, and assert the result
 
+            // in mod arithmetic::tests
+            #[test]
+            fn per_person_with_bill_4_and_people_4() {
+                assert_eq!(per_person(4, 4), 1); // today 1 · with mea866977 0
+            }
+            check today's value is the one you intend: the test pins what the code does now
+
     done when  mutastic verify mea866977,m82fdb48b fixtures/operators passes
     reproduce  mutastic run --only=mea866977,m82fdb48b fixtures/operators

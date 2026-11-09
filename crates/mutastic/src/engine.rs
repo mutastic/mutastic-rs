@@ -67,6 +67,8 @@ pub struct MutantResult {
     pub took: Duration,
     /// The whole numbers its function was called with, by parameter.
     pub inputs: BTreeMap<String, Vec<i128>>,
+    /// A test that would catch it, found by running its function with and without it.
+    pub suggestion: Option<crate::suggest::Suggestion>,
 }
 
 #[derive(Debug)]
@@ -138,6 +140,8 @@ pub struct Options {
     pub since: Option<crate::since::ChangedLines>,
     /// `mutastic.yaml`'s rules.
     pub rules: Vec<crate::config::Rule>,
+    /// Look for a test that catches each missed mutant, by running its function.
+    pub suggestions: bool,
 }
 
 /// The change a run was scoped to: what it's since, and the crate's lines and files it touched.
@@ -289,11 +293,14 @@ pub fn run(
     let order: Vec<usize> = selected.iter().copied().collect();
     let first = first_at_site(&found, &live, &built);
     let files = Files::new(&found, &order);
-    let results = testrun::parallel(&order, options.workers, |&mutant| {
+    let mut results = testrun::parallel(&order, options.workers, |&mutant| {
         let result = result(&found, mutant, first[mutant], &built, &tests, &reach, &cwd);
         files.finished(&found, &result, progress);
         result
     });
+    if options.suggestions {
+        suggest_all(project, &found, &built, &mut results, options.workers);
+    }
     // The tests run against mutants; the coverage pass's runs aren't counted, as in the Java
     // edition, so the count compares with running every test on every mutant.
     let test_runs = results.iter().map(|r| r.tests_run).sum::<usize>();
@@ -545,6 +552,7 @@ fn result(
             tests_run: 0,
             took: Duration::ZERO,
             inputs: BTreeMap::new(),
+            suggestion: None,
         };
     }
     let covering: Vec<usize> = (0..tests.len())
@@ -576,6 +584,7 @@ fn result(
                     .map(|values| (name.clone(), values.iter().copied().collect()))
             })
             .collect(),
+        suggestion: None,
     };
     result.covered_by.sort();
     if let Some(error) = built.unviable.get(&index) {
@@ -644,6 +653,49 @@ fn result(
     }
     result.took = started.elapsed();
     result
+}
+
+/// Looks for a test that catches each missed mutant whose function has a probe, side by side.
+fn suggest_all(
+    project: &Project,
+    found: &Crate,
+    built: &compile::Built,
+    results: &mut [MutantResult],
+    workers: usize,
+) {
+    let cwd = project.copy_dir().join(&project.package_dir);
+    let dir = project.mutastic_dir().join("probes");
+    let missed: Vec<usize> = (0..results.len())
+        .filter(|&index| results[index].status == Status::Survived)
+        .filter(|&index| {
+            built
+                .probes
+                .contains(&found.mutants[results[index].mutant].function)
+        })
+        .collect();
+    if missed.is_empty() || std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let probes = testrun::probes(&built.binaries, &cwd);
+    let found_tests = testrun::parallel(&missed, workers, |&index| {
+        let result = &results[index];
+        let mutant = &found.mutants[result.mutant];
+        let function = &found.functions[mutant.function];
+        let callable = function.callable.as_ref()?;
+        let name = callable.probe_name(function.ordinal);
+        let &binary = probes.get(&name)?;
+        let constants = crate::suggest::constants(&source_line(found, result.mutant));
+        let candidates = crate::suggest::candidates(&callable.types(), &constants, &result.inputs);
+        let probe = crate::suggest::Probe {
+            binary: &built.binaries[binary],
+            cwd: &cwd,
+            name: &name,
+        };
+        crate::suggest::find(&probe, &dir, mutant.ordinal, &candidates)
+    });
+    for (index, suggestion) in missed.into_iter().zip(found_tests) {
+        results[index].suggestion = suggestion;
+    }
 }
 
 /// What a crash means. A safe mutant that crashes the process was caught, but by the crash, not a

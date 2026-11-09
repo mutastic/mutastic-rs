@@ -14,5 +14,12 @@
             covered by arithmetic::tests::a_flag_that_is_set (its 1 covering test still passes)
     = help: use inputs where & and | give different results, and assert what has_flag() does
 
+            // in mod arithmetic::tests
+            #[test]
+            fn has_flag_with_flags_0_and_flag_1() {
+                assert!(!has_flag(0, 1)); // today false · with ma32c7819 true
+            }
+            check today's value is the one you intend: the test pins what the code does now
+
     done when  mutastic verify ma32c7819,maace5f2b fixtures/operators passes
     reproduce  mutastic run --only=ma32c7819,maace5f2b fixtures/operators

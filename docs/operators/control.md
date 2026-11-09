@@ -59,6 +59,13 @@ fn every_zone_within_a_week() {
            covered by control::tests::every_zone_within_a_week (its 1 covering test still passes)
    = help: add a test where delivery_days() takes the 2 arm, and assert what it does there
 
+           // in mod control::tests
+           #[test]
+           fn delivery_days_with_zone_2() {
+               assert_eq!(delivery_days(2), 3); // today 3 · with this mutant 7
+           }
+           check today's value is the one you intend: the test pins what the code does now
+
    done when  mutastic verify mc9468457 fixtures/operators passes
    reproduce  mutastic run --only=mc9468457 fixtures/operators
 ```

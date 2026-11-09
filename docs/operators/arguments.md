@@ -102,6 +102,13 @@ With the range turned round, nothing is a percent, and 150 still isn't:
             covered by arguments::tests::too_much_is_not_a_percent (its 1 covering test still passes)
     = help: use inputs where 0, 100 and 100, 0 give different results, and assert what is_percent() does
 
+            // in mod arguments::tests
+            #[test]
+            fn is_percent_with_value_0() {
+                assert!(is_percent(0)); // today true · with this mutant false
+            }
+            check today's value is the one you intend: the test pins what the code does now
+
     done when  mutastic verify m1a3c85a8 fixtures/operators passes
     reproduce  mutastic run --only=m1a3c85a8 fixtures/operators
 ```
@@ -187,6 +194,13 @@ fn the_best_comes_first() {
     = note: inputs seen: a = 9; b = 2; c = 1
             covered by arguments::tests::the_best_comes_first (its 1 covering test still passes)
     = help: use inputs that c makes a difference to, and assert what best_of_three() does
+
+            // in mod arguments::tests
+            #[test]
+            fn best_of_three_with_a_9_and_b_9_and_c_10() {
+                assert_eq!(best_of_three(9, 9, 10), 10); // today 10 · with this mutant 9
+            }
+            check today's value is the one you intend: the test pins what the code does now
 
     done when  mutastic verify m6bcfe468 fixtures/operators passes
     reproduce  mutastic run --only=m6bcfe468 fixtures/operators

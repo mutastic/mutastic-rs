@@ -36,7 +36,12 @@ for the conventions the code is held to, [AGENTS.md](AGENTS.md).
    without a test failing is run again, one test at a time, to see how: in safe code that's caught
    by the crash, and near unsafe code, or in std's own check of an unsafe precondition, it's a
    `RuntimeError`, out of the score. Near-unsafe mutants run with one test thread.
-6. **The report.** `report` prints the result in one of four formats: `full` cards for people,
+6. **Suggested tests.** For each missed mutant whose function a test can call with whole numbers
+   alone (`sites/callable.rs`), `suggest` runs the probe `schema` built beside that function: a
+   test of mutastic's own, left out of the test list, that calls it on candidate inputs, as the
+   code is and with the mutant in. The first input where they differ, and both values, go on the
+   card. A probe that doesn't compile is dropped, not blamed on a mutant.
+7. **The report.** `report` prints the result in one of four formats: `full` cards for people,
    `concise` lines, `agent` text for coding agents, and `jsonl`, the `mutastic.events/v1` stream.
    `words` writes what a card says about a mutant: the gap, the change and the fix, in the Java
    edition's words.
@@ -53,7 +58,7 @@ All the code is in `crates/mutastic/src`:
 | `cli` | The command: parses options, picks the format, runs the engine, sets the exit status |
 | `workspace` | Reads the package from `cargo metadata`; keeps mutastic's copy in step |
 | `cfg` | Which `cfg` predicates hold in mutastic's build: built, not built, or not known |
-| `sites` | Finds mutants with rust-analyzer's parser; the operators, their sets, and unsafe fencing |
+| `sites` | Finds mutants with rust-analyzer's parser; the operators, their sets, and unsafe fencing; `sites/callable.rs`, whether a test can call a function, and how |
 | `id` | Mutant ids and fingerprints |
 | `schema` | Writes every mutant into the copy behind a switch, and the switch's runtime |
 | `compile` | Builds the copy, blames compile errors on mutants, withdraws the unviable ones |
@@ -61,6 +66,7 @@ All the code is in `crates/mutastic/src`:
 | `testrun` | Lists and runs libtest binaries' tests, with a time limit, and runs work side by side |
 | `engine` | A run: finds, builds, records coverage, runs each mutant, and decides its status |
 | `words` | What a card says: the gap, the change, the inputs seen and the help |
+| `suggest` | Suggested tests: candidate inputs, running the probes, and the test written out |
 | `report` | The formats: `full`, `concise`, `agent` and `jsonl` |
 
 `crates/cargo-mutastic` and `crates/mutastic-rs` hold the other two names reserved on crates.io.

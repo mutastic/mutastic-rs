@@ -48,6 +48,13 @@ On `fixtures/pricing`, a small crate in this repository whose tests reach every 
             covered by pricing::big_orders_get_ten_percent_off, tests::small_orders_pay_full_price (all 2 covering tests still pass)
     = help: test discount() with total = 100 and assert the result
 
+            // in mod tests
+            #[test]
+            fn discount_with_total_100() {
+                assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
+            }
+            check today's value is the one you intend: the test pins what the code does now
+
     done when  mutastic verify mb2f8ae57 fixtures/pricing passes
     reproduce  mutastic run --only=mb2f8ae57 fixtures/pricing
 
@@ -56,7 +63,8 @@ On `fixtures/pricing`, a small crate in this repository whose tests reach every 
  [PASS] 1 missed, above the threshold.
 ```
 
-Add a test that calls `discount(100)` and checks the result, then prove it:
+Paste the test the card wrote, once you've checked today's value is the one you want, then prove
+it:
 
 ```sh
 mutastic verify mb2f8ae57 fixtures/pricing
@@ -64,7 +72,7 @@ mutastic verify mb2f8ae57 fixtures/pricing
 
 <!-- output: getting-started/verify -->
 ```text
-mutastic: mb2f8ae57 is caught by tests::discount_starts_at_100
+mutastic: mb2f8ae57 is caught by tests::discount_with_total_100
 ```
 
 ## Install

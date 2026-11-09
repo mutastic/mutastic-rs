@@ -27,6 +27,8 @@ page stands alone and links to the others by relative path.
 - [Unsafe code](concepts/unsafe.md): what's left alone, what's marked, and when to reach for Miri.
 - [Profiles](concepts/profiles.md): why overflow checks and debug assertions are always on.
 - [Mutant ids](concepts/ids.md): what an id is made of, and what keeps it stable.
+- [Suggested tests](concepts/suggested-tests.md): the test a card writes, and how its values are
+  found by running your code.
 
 ## Operators
 

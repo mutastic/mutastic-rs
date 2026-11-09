@@ -18,6 +18,13 @@
             covered by pricing::big_orders_get_ten_percent_off, tests::small_orders_pay_full_price (all 2 covering tests still pass)
     = help: test discount() with total = 100 and assert the result
 
+            // in mod tests
+            #[test]
+            fn discount_with_total_100() {
+                assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
+            }
+            check today's value is the one you intend: the test pins what the code does now
+
     done when  mutastic verify mb2f8ae57 fixtures/pricing passes
     reproduce  mutastic run --only=mb2f8ae57 fixtures/pricing
     or ignore  mutastic ignore mb2f8ae57 --reason="<why>" fixtures/pricing
@@ -27,8 +34,8 @@
   Worst at  Pricing::discount() 1 ✗
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  13 (33 without coverage selection)
-  Start at  18:25:16
-  Duration  2.1s (setup 1.9s, coverage 37ms, mutants 62ms)
+  Start at  00:25:38
+  Duration  1.5s (setup 1.4s, coverage 6ms, mutants 29ms)
      Tests  3 on rustc 1.94.0 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
      Score  90.9%  threshold 80

@@ -3,7 +3,7 @@
 //! of the source, builds all those copies in one crate, and checks each behaves as the mutant does
 //! in mutastic's own build, over a range of inputs.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
@@ -205,4 +205,182 @@ fn every_card_claim_behaves_as_its_mutant_does() {
         "{changed} of {}",
         compared.len()
     );
+}
+
+/// A copy of a fixture in a directory of its own, without its `target`, to paste tests into.
+fn copy_of(name: &str) -> PathBuf {
+    let to = std::env::temp_dir().join(format!("mutastic-suggested-{name}-{}", std::process::id()));
+    std::fs::remove_dir_all(&to).ok();
+    let from = PathBuf::from(fixture(name));
+    let mut stack = vec![PathBuf::new()];
+    while let Some(relative) = stack.pop() {
+        std::fs::create_dir_all(to.join(&relative)).unwrap();
+        for entry in std::fs::read_dir(from.join(&relative)).unwrap() {
+            let entry = entry.unwrap();
+            let path = relative.join(entry.file_name());
+            if entry.file_name() == "target" {
+                continue;
+            }
+            if entry.file_type().unwrap().is_dir() {
+                stack.push(path);
+            } else {
+                std::fs::copy(from.join(&path), to.join(&path)).unwrap();
+            }
+        }
+    }
+    to
+}
+
+fn mutastic_in(dir: &Path, args: &[&str]) -> (i32, String) {
+    let output = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+        .args(args)
+        .current_dir(dir)
+        .env_remove("MUTASTIC_FORMAT")
+        .env_remove("MUTASTIC_AGENT")
+        .env("NO_COLOR", "1")
+        .output()
+        .unwrap();
+    (
+        output.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&output.stdout).into_owned()
+            + &String::from_utf8_lossy(&output.stderr),
+    )
+}
+
+/// `code` pasted into the module `module` names in `text`: after the brace that opens it, found by
+/// each of its names in turn (the first may be the file's own module, with no `mod` line); or, when
+/// there's no such module, in a new test module at the end, as the card says.
+fn pasted(text: &str, module: &str, code: &str) -> String {
+    let names: Vec<&str> = module.split("::").collect();
+    let mut at = 0;
+    let mut opened = false;
+    for name in &names {
+        let open = format!("mod {name} {{");
+        opened = match text[at..].find(&open) {
+            Some(found) => {
+                at += found + open.len();
+                true
+            }
+            None => false,
+        };
+    }
+    if opened {
+        format!("{}\n{code}{}", &text[..at], &text[at..])
+    } else {
+        format!("{text}\n#[cfg(test)]\nmod tests {{\n{code}}}\n")
+    }
+}
+
+/// Runs `dir` with `operators`, pastes every test its cards suggest into its module, and checks
+/// they compile, pass as the code is (or `verify` couldn't run), and catch the mutants they were
+/// found for. Gives the events that had one.
+fn suggested_tests_hold(dir: &Path, operators: &str) -> Vec<serde_json::Value> {
+    let (_, jsonl) = mutastic_in(
+        dir,
+        &[
+            "run",
+            "--format=jsonl",
+            "--report=none",
+            &format!("--operators={operators}"),
+        ],
+    );
+    let suggested: Vec<serde_json::Value> = jsonl
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|event| event.get("suggestedTest").is_some())
+        .collect();
+    let mut by_place: BTreeMap<(String, String), BTreeMap<String, String>> = BTreeMap::new();
+    for event in &suggested {
+        let test = &event["suggestedTest"];
+        let indented: String = test["code"]
+            .as_str()
+            .unwrap()
+            .lines()
+            .map(|line| format!("    {line}\n"))
+            .collect();
+        by_place
+            .entry((
+                event["location"]["file"].as_str().unwrap().to_string(),
+                test["testClass"].as_str().unwrap().to_string(),
+            ))
+            .or_default()
+            .insert(test["name"].as_str().unwrap().to_string(), indented);
+    }
+    for ((file, module), tests) in &by_place {
+        let path = dir.join(file);
+        let text = std::fs::read_to_string(&path).unwrap();
+        let code: String = tests.values().cloned().collect();
+        std::fs::write(&path, pasted(&text, module, &code)).unwrap();
+    }
+    if suggested.is_empty() {
+        return suggested;
+    }
+    let ids: Vec<&str> = suggested
+        .iter()
+        .map(|event| event["id"].as_str().unwrap())
+        .collect();
+    let (code, out) = mutastic_in(dir, &["verify", &ids.join(",")]);
+    assert_eq!(
+        code, 0,
+        "every suggested test compiles, passes and catches: {out}"
+    );
+    for id in ids {
+        assert!(
+            out.contains(&format!("mutastic: {id} is caught by ")),
+            "{out}"
+        );
+    }
+    suggested
+}
+
+/// A suggested test says something true. Pasted into its module, every test the fixtures' cards
+/// suggest compiles, passes as the code is, and catches the mutants it was found for; and a
+/// function that answers one call two ways gets none.
+#[test]
+fn every_suggested_test_compiles_and_catches_its_mutant() {
+    for (name, operators, least) in [
+        ("pricing", "defaults", 1),
+        ("suggestions", "defaults", 3),
+        ("operators", "extended", 10),
+    ] {
+        let dir = copy_of(name);
+        let suggested = suggested_tests_hold(&dir, operators);
+        assert!(suggested.len() >= least, "{name}: {}", suggested.len());
+        assert!(
+            suggested
+                .iter()
+                .all(|e| e["location"]["method"] != "jitter"),
+            "a clock's answer can't be pinned"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}
+
+/// The library `cargo new --lib` makes: its test calls `add(2, 2)`, which can't tell `+` from `*`,
+/// and the card gives a call that can, with the values running it gave.
+#[test]
+fn a_new_librarys_add_gets_a_test_that_tells_plus_from_times() {
+    let dir = std::env::temp_dir().join(format!("mutastic-new-lib-{}", std::process::id()));
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(
+        dir.join("Cargo.toml"),
+        "[package]\nname = \"mylib\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("src/lib.rs"),
+        "pub fn add(left: u64, right: u64) -> u64 {\n    left + right\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn it_works() {\n        let result = add(2, 2);\n        assert_eq!(result, 4);\n    }\n}\n",
+    )
+    .unwrap();
+    let suggested = suggested_tests_hold(&dir, "stronger");
+    let times = suggested
+        .iter()
+        .find(|e| e["mutation"]["replacement"] == "*")
+        .expect("+ becoming * is missed, and gets a test");
+    assert_eq!(
+        times["suggestedTest"]["code"],
+        "#[test]\nfn add_with_left_2_and_right_0() {\n    assert_eq!(add(2, 0), 2); // today 2 · with this mutant 0\n}"
+    );
+    std::fs::remove_dir_all(&dir).ok();
 }

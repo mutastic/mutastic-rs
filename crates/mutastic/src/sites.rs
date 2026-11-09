@@ -21,6 +21,7 @@ use ra_ap_syntax::{AstNode, Edition, SourceFile, SyntaxKind, SyntaxNode, TextRan
 use crate::cfg::Cfg;
 use crate::id;
 
+pub mod callable;
 mod extended;
 mod operators;
 mod rollback;
@@ -367,6 +368,8 @@ pub struct Function {
     pub body_open: usize,
     /// Its whole-number parameters, by name and type, for "inputs seen".
     pub numbers: Vec<(String, String)>,
+    /// How a test calls it with whole numbers alone, when one can: what a suggested test writes.
+    pub callable: Option<callable::Callable>,
 }
 
 /// A source file and what was found in it.
@@ -436,6 +439,8 @@ struct Facts {
     swappable: BTreeSet<(String, bool)>,
     /// Types that visibly have a `Default`: derived, or implemented in the crate.
     default_types: BTreeSet<String>,
+    /// How each type can be made with whole numbers, by its module and name.
+    receivers: BTreeMap<(String, String), callable::Receiver>,
 }
 
 impl Facts {
@@ -506,6 +511,7 @@ impl Facts {
                 facts.signature(&function);
             }
             facts.defaults(&parsed.tree);
+            callable::receivers(&parsed.module, &parsed.tree, &mut facts.receivers);
             for node in parsed.tree.syntax().descendants() {
                 if !opens_unsafe(&node) {
                     continue;
@@ -929,6 +935,12 @@ impl Finder<'_> {
             .and_then(|list| list.l_curly_token())
             .map(|curly| usize::from(curly.text_range().end()))
             .unwrap_or_else(|| usize::from(body.syntax().text_range().start()) + 1);
+        let tier = self.tier(function, &name, &body);
+        // Code near unsafe code isn't run outside the tests: arbitrary inputs could reach
+        // undefined behaviour.
+        let callable = (tier == Tier::Safe)
+            .then(|| callable::of(function, self.module, &self.facts.receivers))
+            .flatten();
         self.found.functions.push(Function {
             ordinal: index as u32 + 1,
             name: name.clone(),
@@ -938,12 +950,13 @@ impl Finder<'_> {
             range: usize::from(range.start())..usize::from(range.end()),
             body_open,
             numbers,
+            callable,
         });
         let context = Context {
             function: index,
             returns: returns.as_deref(),
             in_closure: false,
-            tier: self.tier(function, &name, &body),
+            tier,
         };
         self.returned.clear();
         // Before any return is mutated, so a returned `Err` comes from this function's own.

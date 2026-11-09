@@ -56,7 +56,7 @@ pub fn list(binaries: &[Binary], cwd: &Path) -> Result<Vec<Test>, String> {
         };
         let ignored = names(&["--ignored"])?;
         for name in names(&[])? {
-            if ignored.contains(&name) {
+            if ignored.contains(&name) || is_probe(&name) {
                 continue;
             }
             let display = if binary.kind == "lib" {
@@ -72,6 +72,34 @@ pub fn list(binaries: &[Binary], cwd: &Path) -> Result<Vec<Test>, String> {
         }
     }
     Ok(tests)
+}
+
+/// Whether a test is one of mutastic's probes, which it builds beside a function to call it: not
+/// one of the project's tests.
+pub fn is_probe(name: &str) -> bool {
+    name.rsplit("::")
+        .next()
+        .is_some_and(|last| last.starts_with(crate::sites::callable::PROBE))
+}
+
+/// The probes in the binaries, by libtest's name, with the binary each is in.
+pub fn probes(binaries: &[Binary], cwd: &Path) -> std::collections::BTreeMap<String, usize> {
+    let mut found = std::collections::BTreeMap::new();
+    for (index, binary) in binaries.iter().enumerate() {
+        let Ok(output) = Command::new(&binary.path)
+            .args(["--list", "--format=terse"])
+            .current_dir(cwd)
+            .output()
+        else {
+            continue;
+        };
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            if let Some(name) = line.strip_suffix(": test").filter(|name| is_probe(name)) {
+                found.entry(name.to_string()).or_insert(index);
+            }
+        }
+    }
+    found
 }
 
 /// Runs the named tests of one binary, with `env` set, killing it after `timeout`.

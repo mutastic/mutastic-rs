@@ -43,6 +43,8 @@ Options:
   --report=<kind>[:<path>]  Write a report file: json (mutation.json) or html (mutation.html), in
                         target/mutastic unless a path is given; repeat it for more, or none.
                         A full run writes both by default
+  --no-suggestions      Don't look for a test that catches each missed mutant, which runs the
+                        missed mutant's function outside the tests
   --progress=<mode>     auto (default): a line redrawn in place at a terminal, none for agent
                         and jsonl; bar, counter (a line every so often) or none
   --edition=<edition>   rust or java: which edition runs. Unless given, the build file in dir, or
@@ -158,6 +160,9 @@ struct Parsed {
     help: bool,
     hook: String,
     tries: usize,
+    /// `--no-suggestions`: no test is looked for, so none of the project's code runs outside its
+    /// tests.
+    no_suggestions: bool,
 }
 
 fn parse(args: &[String]) -> Result<Parsed, String> {
@@ -184,6 +189,7 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
         help: false,
         hook: String::new(),
         tries: 3,
+        no_suggestions: false,
     };
     for arg in args {
         let Some(option) = arg.strip_prefix("--") else {
@@ -230,6 +236,7 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
             "prune" => parsed.prune = true,
             "since" => parsed.since = Some(value.to_string()),
             "help" => parsed.help = true,
+            "no-suggestions" => parsed.no_suggestions = true,
             "hook" => {
                 if value != "claude" {
                     return Err(format!("--hook: {value} isn't claude"));
@@ -647,6 +654,7 @@ fn options(parsed: &Parsed, only: Vec<String>) -> Options {
         unsafe_mode: parsed.unsafe_mode,
         since: None,
         rules: parsed.rules.clone(),
+        suggestions: false,
     }
 }
 
@@ -658,6 +666,7 @@ fn run(parsed: &Parsed) -> Result<ExitCode, String> {
     let project = workspace::read(dir)?;
     let progress = Progress::new(&project.package, quiet, true, parsed.progress);
     let mut options = options(parsed, parsed.only.clone());
+    options.suggestions = !parsed.no_suggestions;
     if let Some(since) = &parsed.since {
         options.since = Some(crate::since::changed_since(
             std::path::Path::new(dir),
@@ -739,9 +748,9 @@ fn explain(parsed: &Parsed) -> Result<ExitCode, String> {
     started(false);
     let project = workspace::read(dir)?;
     let progress = Progress::new(&project.package, false, false, parsed.progress);
-    let report = engine::run(&project, &options(parsed, vec![id.clone()]), &|step| {
-        progress.step(step)
-    })?;
+    let mut options = options(parsed, vec![id.clone()]);
+    options.suggestions = !parsed.no_suggestions;
+    let report = engine::run(&project, &options, &|step| progress.step(step))?;
     progress.finished();
     let last = report::last_run(&project.mutastic_dir().join("mutation.json"), id);
     print!(

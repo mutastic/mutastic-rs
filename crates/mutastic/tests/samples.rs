@@ -108,6 +108,13 @@ fn pricing_misses_only_the_edge_of_the_discount() {
             covered by pricing::big_orders_get_ten_percent_off, tests::small_orders_pay_full_price (all 2 covering tests still pass)
     = help: test discount() with total = 100 and assert the result
 
+            // in mod tests
+            #[test]
+            fn discount_with_total_100() {{
+                assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
+            }}
+            check today's value is the one you intend: the test pins what the code does now
+
     done when  mutastic verify {id} {dir} passes
     reproduce  mutastic run --only={id} {dir}
 "

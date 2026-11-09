@@ -53,9 +53,13 @@ pub struct Built {
     /// The profile Cargo built the package with, from its own report: `opt_level`,
     /// `debug_assertions`, `overflow_checks`.
     pub profile: Value,
+    /// The functions whose probe was built: a probe that didn't compile is left out, not blamed
+    /// on a mutant.
+    pub probes: BTreeSet<usize>,
 }
 
-/// Builds the copy with the `live` mutants, withdrawing those that don't compile.
+/// Builds the copy with the `live` mutants, withdrawing those that don't compile, and a recorder
+/// and a probe for each function in `recorders` (a probe only where a test could call it).
 pub fn build(
     project: &Project,
     found: &Crate,
@@ -63,10 +67,15 @@ pub fn build(
     recorders: &BTreeSet<usize>,
 ) -> Result<Built, String> {
     let mut live = live.clone();
+    let mut probes: BTreeSet<usize> = recorders
+        .iter()
+        .copied()
+        .filter(|&function| found.functions[function].callable.is_some())
+        .collect();
     let mut rounds = Vec::new();
     let mut unviable = BTreeMap::new();
     'rounds: while rounds.len() < MAX_ROUNDS {
-        let (overrides, emitted) = rewrite(project, found, &live, recorders);
+        let (overrides, emitted) = rewrite(project, found, &live, recorders, &probes);
         workspace::sync(project, &overrides)?;
         for phase in ["check", "build"] {
             let started = Instant::now();
@@ -74,7 +83,7 @@ pub fn build(
             let took = started.elapsed();
             if !succeeded {
                 let blame = blame(&stdout, &emitted, project);
-                if blame.mutants.is_empty() {
+                if blame.mutants.is_empty() && blame.probes.is_empty() {
                     return Err(format!(
                         "the build fails, and not because of a mutant:\n{}",
                         blame.unattributed.join("\n")
@@ -90,6 +99,9 @@ pub fn build(
                     live.remove(&mutant);
                     unviable.entry(mutant).or_insert(error);
                 }
+                for function in &blame.probes {
+                    probes.remove(function);
+                }
                 continue 'rounds;
             }
             rounds.push(Round {
@@ -104,6 +116,7 @@ pub fn build(
                     rounds,
                     unviable,
                     profile: profile(&stdout, project),
+                    probes,
                 });
             }
         }
@@ -120,11 +133,12 @@ pub fn rewrite(
     found: &Crate,
     live: &BTreeSet<usize>,
     recorders: &BTreeSet<usize>,
+    probes: &BTreeSet<usize>,
 ) -> (Overrides, BTreeMap<PathBuf, Emitted>) {
     let mut overrides = Overrides::new();
     let mut emitted = BTreeMap::new();
     for file in &found.files {
-        let mut out = schema::emit(found, &file.path, &file.text, live, recorders);
+        let mut out = schema::emit(found, &file.path, &file.text, live, recorders, probes);
         if project.roots.contains(&file.path) {
             out.text
                 .push_str(&schema::runtime(found.mutants.len(), &project.edition));
@@ -210,6 +224,8 @@ pub fn environment(command: &mut Command, project: &Project) {
 
 struct Blame {
     mutants: BTreeMap<usize, String>,
+    /// Functions whose probe an error lies in.
+    probes: BTreeSet<usize>,
     by_function: usize,
     unattributed: Vec<String>,
 }
@@ -218,6 +234,7 @@ struct Blame {
 fn blame(stdout: &str, emitted: &BTreeMap<PathBuf, Emitted>, project: &Project) -> Blame {
     let mut found = Blame {
         mutants: BTreeMap::new(),
+        probes: BTreeSet::new(),
         by_function: 0,
         unattributed: Vec::new(),
     };
@@ -243,6 +260,11 @@ fn blame(stdout: &str, emitted: &BTreeMap<PathBuf, Emitted>, project: &Project) 
         if spans.is_empty() {
             continue;
         }
+        let in_probes = in_probes(&spans, emitted, project);
+        if !in_probes.is_empty() {
+            found.probes.extend(in_probes);
+            continue;
+        }
         let (blamed, by_function) = blame_one(&spans, emitted, project, code);
         if blamed.is_empty() {
             found.unattributed.push(text);
@@ -259,6 +281,30 @@ fn blame(stdout: &str, emitted: &BTreeMap<PathBuf, Emitted>, project: &Project) 
         }
     }
     found
+}
+
+/// The functions whose probe any of an error's spans lies in.
+fn in_probes(
+    spans: &[Value],
+    emitted: &BTreeMap<PathBuf, Emitted>,
+    project: &Project,
+) -> BTreeSet<usize> {
+    spans
+        .iter()
+        .filter_map(|span| {
+            let path = Path::new(span["file_name"].as_str()?);
+            let out = emitted.get(path.strip_prefix(project.copy_dir()).unwrap_or(path))?;
+            let start = span["byte_start"].as_u64()? as usize;
+            let end = span["byte_end"].as_u64()? as usize;
+            Some(
+                out.probes
+                    .iter()
+                    .filter(move |(probe, _)| probe.start < end.max(start + 1) && start < probe.end)
+                    .map(|(_, function)| *function),
+            )
+        })
+        .flatten()
+        .collect()
 }
 
 /// Errors whose cause is a span other than the primary one: a use after a move is reported at the
