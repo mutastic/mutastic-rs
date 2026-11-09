@@ -21,6 +21,12 @@ In a `for` loop, a slice (`&s[lo..hi]`) or a `contains`, `lo..hi` becomes `lo..=
 finds the off-by-one at the edge of a range, which tests that only try values far from the edge
 never notice.
 
+**The bug it stands for:** the off-by-one. `>=` and `>` read almost the same, and reviews rarely
+stop on them, so the wrong one gets written and gets through. It costs wherever a rule has a limit:
+free delivery from 50, a discount from 10 items, a lock after 3 failures, the last day a refund is
+allowed. Someone who spends exactly 50 because the site said "free delivery from 50" is the case the
+rule exists for.
+
 <!-- from: fixtures/operators/src/conditions.rs -->
 ```rust
 /// Free delivery from 50 up.
@@ -68,6 +74,21 @@ fn small_orders_pay_for_delivery() {
    reproduce  mutastic run --only=m27535e4c fixtures/operators
 ```
 
+**The test that catches it:** one at the edge. Totals of 20 and 80 pass either way; only 50 tells
+`>=` from `>`. A boundary miss is also a question for whoever owns the rule: should 50 get free
+delivery? The test records the answer.
+
+<!-- added to: fixtures/operators/src/conditions.rs -->
+```rust
+#[test]
+fn delivery_is_free_from_exactly_50() {
+    assert!(free_delivery(50));
+}
+```
+
+**Edition notes:** the Java edition has the same id, for `<`, `<=`, `>` and `>=`; it has no ranges
+to move.
+
 ## Remove conditional
 
 `mutastic/remove-conditional`, in the defaults. A condition stops deciding: the code it guards
@@ -75,6 +96,12 @@ always runs, or never does. Each condition gets two mutants, one each way. It re
 a match arm's guard, and `let Some(x) = e` in an `if let`, `while let` or `let`-`else`, where the
 pattern is made never to match. It goes unnoticed when no test needs the condition to be true one
 time and false another.
+
+**The bug it stands for:** a check that doesn't matter as much as its author thought, or that's the
+wrong check entirely. It costs in guards: a permission check, a validation, an "only if it's
+changed" before a write. If the code behaves the same with the guard always passing, no test has
+ever been refused by it; if it behaves the same with the guard never passing, no test has ever
+needed it to let something through.
 
 <!-- from: fixtures/operators/src/conditions.rs -->
 ```rust
@@ -116,11 +143,29 @@ fn members_are_welcomed_back() {
     reproduce  mutastic run --only=m62a2d487 fixtures/operators
 ```
 
+**The test that catches it:** one for each answer the condition can give. The card names the one no
+test has tried: here, someone who isn't a member.
+
+<!-- added to: fixtures/operators/src/conditions.rs -->
+```rust
+#[test]
+fn others_are_welcomed() {
+    assert_eq!(greeting(false), "welcome");
+}
+```
+
+**Edition notes:** the Java edition has the same id, for every condition the bytecode jumps on, `&&`
+and `||`'s sides among them.
+
 ## Logical connector
 
 `mutastic/logical-connector`, in the defaults. `&&` becomes `||`, and `||` becomes `&&`. The two
 give different answers exactly when one side holds and the other doesn't, so it goes unnoticed when
 no test has one side true and the other false.
+
+**The bug it stands for:** `&&` where `||` was meant, or the other way round: a rule that needs both
+conditions written as either, a discount for members *or* big orders written as *and*. It costs in
+eligibility and permission rules, and validation that should reject on any of several problems.
 
 <!-- from: fixtures/operators/src/conditions.rs -->
 ```rust
@@ -157,6 +202,21 @@ fn ships_when_paid_and_in_stock() {
     reproduce  mutastic run --only=m069e3be4 fixtures/operators
 ```
 
+**The test that catches it:** one where the two sides disagree, each way round: paid but out of
+stock, and in stock but unpaid.
+
+<!-- added to: fixtures/operators/src/conditions.rs -->
+```rust
+#[test]
+fn neither_alone_is_enough() {
+    assert!(!can_ship(true, false));
+    assert!(!can_ship(false, true));
+}
+```
+
+**Edition notes:** the Java edition has the same id. It reads `&&` from the bytecode's jumps, so it
+leaves alone a condition of three or more tests, which this edition, reading the source, doesn't.
+
 ## Comparison
 
 `mutastic/comparison`, in the `stronger` set. A comparison becomes the one that gives the same
@@ -170,6 +230,11 @@ answer at its edge and on one side of it, and the other answer on the other side
 | `a >= b` | `a == b` | `a > b` |
 | `a == b` | `a <= b`, and `a >= b` | `a < b`, and `a > b` |
 | `a != b` | `a < b`, and `a > b` | `a > b`, and `a < b` |
+
+**The bug it stands for:** a comparison that's right at the edge and wrong past it: `==` where `>=`
+was meant, so a rule holds for exactly 100 and stops at 101. It costs in the same rules as a
+boundary, on the side tests skip: tests often try a value below a limit and one exactly at it, and
+never one well past it.
 
 `==` and `!=` get these only beside a number, a character, a length or a cast, where an order is
 plain from the code. With boundary and remove conditional, they're the smallest set of changes
@@ -223,8 +288,22 @@ fn restock_when_low() {
     reproduce  mutastic run --only=m0afcf739 fixtures/operators
 ```
 
+**The test that catches it:** one on the side where the two disagree, which the card names: here,
+stock above the low mark.
+
+<!-- added to: fixtures/operators/src/conditions.rs -->
+```rust
+#[test]
+fn plenty_in_stock_needs_no_restock() {
+    assert!(!needs_restock(8, 5));
+}
+```
+
 It's in `stronger` because on real code much of what it misses is noise: a loop counter that counts
 up to its end, where `i < n` and `i != n` stop at the same place.
+
+**Edition notes:** the Java edition has the same id and the same changes, and makes them only
+between numbers, as only numbers have an order in its bytecode.
 
 ## Other comparison
 
@@ -233,6 +312,12 @@ operators above don't make (`<` becomes `>`, `>=` or `==`), `if c` becomes `if !
 `matches!(..)` becomes `!matches!(..)`. It goes unnoticed when no test checks one side of a
 decision at all. A test that catches boundary, comparison and remove conditional catches these too,
 so they'd only add to the score in the defaults.
+
+**The bug it stands for:** a condition the wrong way round: a missing `!`, `==` for `!=`, a check
+that guards the wrong case. It costs where code decides which way to go: whether an order is paid
+before it ships, whether a user may see a page. Getting it backwards usually means doing the wrong
+thing in exactly the case that matters, and a permission check whose opposite no test notices is one
+nobody has proved refuses anyone.
 
 <!-- from: fixtures/operators/src/conditions.rs -->
 ```rust
@@ -279,3 +364,18 @@ fn weekend_days_are_known() {
     done when  mutastic verify m4f55c224 fixtures/operators passes
     reproduce  mutastic run --only=m4f55c224 fixtures/operators
 ```
+
+**The test that catches it:** one that checks the answer on each side: a weekend day, and a weekday.
+
+<!-- added to: fixtures/operators/src/conditions.rs -->
+```rust
+#[test]
+fn saturday_is_the_weekend_and_wednesday_isnt() {
+    assert!(is_weekend(6));
+    assert!(!is_weekend(3));
+}
+```
+
+**Edition notes:** the Java edition has the same id, and turns a `Predicate`'s `and` and `or`,
+`negate()` and `Predicate.not` round with `predicate/*` operators of its own; here, `&&` and `!`
+inside a closure are logical connector's and this one's.

@@ -765,9 +765,12 @@ fn every_rust_example_is_compiled() {
                     assert!(found, "{place}: isn't in {path} word for word:\n{body}");
                 }
                 Some((kind, path)) if kind == "added to" => {
-                    assert_eq!(
-                        path, "fixtures/pricing/src/lib.rs",
-                        "{place}: only the getting-started test is added and run"
+                    let catching = page.starts_with(docs().join("operators"))
+                        && path.starts_with("fixtures/operators/src/");
+                    assert!(
+                        path == "fixtures/pricing/src/lib.rs" || catching,
+                        "{place}: only the getting-started test and the operators' tests that \
+                         catch them are added and run"
                     );
                 }
                 _ => assert!(
@@ -777,6 +780,68 @@ fn every_rust_example_is_compiled() {
             }
         }
     }
+}
+
+/// Each operator's section ends with the test that catches it. Every one is added to the tests of
+/// its file in a copy of the operators fixture, and one `verify` runs the mutants of every card the
+/// sections show: each must be caught, so what a page says catches a mutant does.
+#[test]
+fn every_test_that_catches_a_card_does() {
+    let work = scratch("catching");
+    let fixture = work.join("fixtures/operators");
+    sync(&root().join("fixtures/operators"), &fixture);
+    let mut added: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for page in pages() {
+        let text = std::fs::read_to_string(&page).unwrap();
+        for block in blocks(&text) {
+            if let Some((kind, path)) = &block.marker {
+                if kind == "added to" && path.starts_with("fixtures/operators/") {
+                    added
+                        .entry(path.clone())
+                        .or_default()
+                        .push(text[block.text].to_string());
+                }
+            }
+        }
+    }
+    let count: usize = added.values().map(Vec::len).sum();
+    assert!(
+        count >= CARDS.len(),
+        "{count} tests that catch, for {} cards",
+        CARDS.len()
+    );
+    for (path, tests) in &added {
+        let source = std::fs::read_to_string(root().join(path)).unwrap();
+        let close = source.trim_end().rfind('}').unwrap();
+        let mut with = source[..close].trim_end().to_string();
+        for test in tests {
+            with.push('\n');
+            for line in test.lines() {
+                with.push('\n');
+                if !line.is_empty() {
+                    with.push_str("    ");
+                    with.push_str(line);
+                }
+            }
+        }
+        workspace::write_if_changed(&work.join(path), &format!("{with}\n}}\n")).unwrap();
+    }
+    let mut ids = BTreeSet::new();
+    for (family, _, operator) in CARDS {
+        let name = operator.rsplit('/').next().unwrap();
+        let card =
+            std::fs::read_to_string(docs().join(format!("output/operators/{family}/{name}.txt")))
+                .unwrap();
+        let named = card
+            .lines()
+            .find_map(|line| line.trim_start().strip_prefix("done when"))
+            .and_then(|rest| rest.split_whitespace().nth(2))
+            .unwrap_or_else(|| panic!("{family}/{name} has no card"));
+        ids.extend(named.split(',').map(str::to_string));
+    }
+    let ids: Vec<String> = ids.into_iter().collect();
+    let verify = mutastic(&work, &["verify", &ids.join(","), "fixtures/operators"]);
+    assert_eq!(verify.code, 0, "{}{}", verify.stdout, verify.stderr);
 }
 
 /// GitHub's anchor for a heading: lowercase, spaces to `-`, other punctuation gone.

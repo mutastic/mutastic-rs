@@ -22,6 +22,10 @@ comes from `mutastic run fixtures/operators` with these operators, on `src/optio
 and `is_err()`. mutastic matches these by name, so on a type of your own that has `is_none` but no
 `is_some`, the build withdraws the mutant.
 
+**The bug it stands for:** a check the wrong way round, so that the code handles a missing value as
+if it were there. It costs on the path a test rarely tries: the customer who isn't found, the
+setting that isn't set.
+
 <!-- from: fixtures/operators/src/options.rs -->
 ```rust
 pub fn display_name(name: &str, nickname: Option<&str>) -> String {
@@ -62,10 +66,26 @@ which way the check went:
    reproduce  mutastic run --only=maedc1a33 fixtures/operators
 ```
 
+**The test that catches it:** one with a value and one without, asserting what each does.
+
+<!-- added to: fixtures/operators/src/options.rs -->
+```rust
+#[test]
+fn a_nickname_is_shown() {
+    assert_eq!(display_name("Ann", Some("Annie")), "Annie");
+}
+```
+
+**Edition notes:** the Java edition has the same id in `extended`, for `Optional`'s `isPresent` and
+`isEmpty`.
+
 ## Empty
 
 `optional/empty`, in the `stronger` set. `Some(x)` becomes `None`, where it isn't the function's
 return value, which return value covers.
+
+**The bug it stands for:** code that gives back nothing where it should give a value, which callers
+treat as "not found" without complaint. An empty result looks just like a real absence.
 
 <!-- from: fixtures/operators/src/options.rs -->
 ```rust
@@ -113,11 +133,27 @@ The test chose the size that's also the default:
     reproduce  mutastic run --only=m328e06d3 fixtures/operators
 ```
 
+**The test that catches it:** one that gets the value out, with a value unlike the default.
+
+<!-- added to: fixtures/operators/src/options.rs -->
+```rust
+#[test]
+fn a_page_of_fifty() {
+    assert_eq!(page_size(50), 50);
+}
+```
+
+**Edition notes:** the Java edition has the same id in `extended`, for `Optional.of` and
+`ofNullable`.
+
 ## Always default
 
 `optional/always-default`, in the `stronger` set. The value is never used, only the default:
 `o.unwrap_or(d)` becomes `d`, `unwrap_or_default()` becomes `Default::default()`,
 `unwrap_or_else(f)` becomes `f()`, and `map_or(d, f)` becomes `d`.
+
+**The bug it stands for:** a default that's always used, so the configured value is ignored. It
+costs in configuration: a setting that does nothing until someone's production value matters.
 
 <!-- from: fixtures/operators/src/options.rs -->
 ```rust
@@ -155,12 +191,28 @@ fn the_configured_port() {
     reproduce  mutastic run --only=m9e594423,ma9fa63c7 fixtures/operators
 ```
 
+**The test that catches it:** a value that isn't the default, and none at all.
+
+<!-- added to: fixtures/operators/src/options.rs -->
+```rust
+#[test]
+fn a_port_of_ones_own() {
+    assert_eq!(port(Some(9090)), 9090);
+    assert_eq!(port(None), 8080);
+}
+```
+
+**Edition notes:** the Java edition has the same id in `extended`, for `Optional.orElse`.
+
 ## No default
 
 `optional/no-default`, in the `stronger` set. The default is never used, only the value:
 `o.unwrap_or(d)`, `unwrap_or_else(f)` and `unwrap_or_default()` become `o.unwrap()`, which panics
 on `None`. It goes unnoticed when no test gets the default. In `port` above it's the second mutant
-on the card; here it's on its own:
+on the card; here it's on its own.
+
+**The bug it stands for:** no default at all, so a missing value panics. It costs in configuration
+and input: a start-up failure when a setting is left out, a panic on an empty list.
 
 <!-- from: fixtures/operators/src/arguments.rs -->
 ```rust
@@ -190,10 +242,27 @@ No test calls `largest` with no values, so nothing needs the 0:
     reproduce  mutastic run --only=m07e8bfcc fixtures/operators
 ```
 
+**The test that catches it:** one with nothing there.
+
+<!-- added to: fixtures/operators/src/arguments.rs -->
+```rust
+#[test]
+fn nothing_to_compare() {
+    assert_eq!(largest(&[]), 0);
+}
+```
+
+**Edition notes:** the Java edition has the same id in `extended`, for `Optional.orElse` and
+`orElseGet`, which become `get()`.
+
 ## Remove filter
 
 `optional/remove-filter`, in the `extended` set. `o.filter(p)` becomes `o`, on a value that isn't
 plainly an iterator, nor used as one.
+
+**The bug it stands for:** a check that's missing, or wrong, in a chain: the value is used when it
+shouldn't be. It costs in rules that hide in one call: only a plausible age, only a discount that's
+still valid.
 
 <!-- from: fixtures/operators/src/options.rs -->
 ```rust
@@ -228,3 +297,15 @@ fn an_ordinary_age() {
     done when  mutastic verify m5a861387 fixtures/operators passes
     reproduce  mutastic run --only=m5a861387 fixtures/operators
 ```
+
+**The test that catches it:** one with a value the filter must turn away.
+
+<!-- added to: fixtures/operators/src/options.rs -->
+```rust
+#[test]
+fn an_age_too_great_is_refused() {
+    assert_eq!(plausible_age(Some(200)), None);
+}
+```
+
+**Edition notes:** the Java edition has the same id, for `Optional.filter`.

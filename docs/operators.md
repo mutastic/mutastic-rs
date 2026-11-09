@@ -9,114 +9,92 @@ A run uses `defaults` unless `--operators` says otherwise: `--operators=stronger
 commas picks exactly those. Code inside `unsafe`, and safe functions holding an `unsafe` block, get
 no mutants unless `--unsafe=enclosing` or `--unsafe=all` asks (see [Unsafe code](concepts/unsafe.md)).
 
-## By family
+Each operator has its place on a family's page: what it changes, the bug it stands for, an example
+from `fixtures/operators` with the card mutastic prints for it, and the test that catches it. The
+families are the Java edition's, with the Java edition's names wherever the language allows:
 
-Each family has a page with an example of each operator, from a real run on
-`fixtures/operators`, and the card it gives:
+- [Conditions](operators/conditions.md): comparisons, conditions, and how two combine.
+- [Arithmetic](operators/arithmetic.md): operators, numbers and bits.
+- [Returns and errors](operators/returns.md): what a function returns, and the error it gives.
+- [Calls and writes](operators/calls.md): calls, assignments and writes left out.
+- [Arguments](operators/arguments.md): what a call is given, and what a function gets.
+- [Library methods](operators/library.md): std's methods swapped for their counterparts, and the
+  text in your code.
+- [Iterators](operators/iterators.md): iterator stages and consumers, where the Java edition has
+  streams.
+- [`Option` and `Result`](operators/options.md): how they're asked about and unwrapped, where the
+  Java edition has `Optional`.
+- [Control flow](operators/control.md): `match` arms and loops.
 
-| Family | Operators |
-|---|---|
-| [Conditions](operators/conditions.md) | boundary, remove-conditional, logical-connector, comparison, other-comparison |
-| [Arithmetic](operators/arithmetic.md) | math, arithmetic-replacement, other-arithmetic, keep-operand, remove-negation, constant-value, bitwise, library/unchecked-arithmetic |
-| [Returns and errors](operators/returns.md) | return-value, unwrap-try, replace-body, remove-throw |
-| [Calls and writes](operators/calls.md) | remove-void-call, remove-discarded-call, remove-assignment, remove-field-write, remove-struct-field |
-| [Arguments](operators/arguments.md) | omit-call, swap-arguments, null-parameter, drop-vararg, default-parameter |
-| [std's methods and strings](operators/library.md) | library/swap-string, swap-math, swap-index-of, reverse-ordering; string-constant, regex-constant, bigdecimal/remove-step |
-| [Iterators](operators/iterators.md) | stream/swap-match, remove-stage, remove-other-stage |
-| [`Option` and `Result`](operators/options.md) | optional/swap-present, empty, always-default, no-default, remove-filter |
-| [`match` and loops](operators/control.md) | remove-switch-arm, swap-break |
+## Every operator
+
+| Operator | What it changes | Set | Family | In Java |
+|---|---|---|---|---|
+| [`mutastic/boundary`](operators/conditions.md#boundary) | `<` and `<=`, `>` and `>=`; `lo..hi` and `lo..=hi` | defaults | [Conditions](operators/conditions.md) | the same |
+| [`mutastic/remove-conditional`](operators/conditions.md#remove-conditional) | a condition to always `true`, and to always `false` | defaults | [Conditions](operators/conditions.md) | the same |
+| [`mutastic/logical-connector`](operators/conditions.md#logical-connector) | `&&` and `\|\|` | defaults | [Conditions](operators/conditions.md) | the same |
+| [`mutastic/comparison`](operators/conditions.md#comparison) | a comparison to the one that differs on one side: `<` to `!=` | stronger | [Conditions](operators/conditions.md) | the same |
+| [`mutastic/other-comparison`](operators/conditions.md#other-comparison) | a comparison to the others; a condition to its opposite | stronger | [Conditions](operators/conditions.md) | the same |
+| [`mutastic/math`](operators/arithmetic.md#math) | `+` and `-`, `*` and `/`, and their `checked_`, `wrapping_`, `saturating_` and `overflowing_` methods | defaults | [Arithmetic](operators/arithmetic.md) | the same |
+| [`mutastic/arithmetic-replacement`](operators/arithmetic.md#arithmetic-replacement) | `+` to `*` | stronger | [Arithmetic](operators/arithmetic.md) | the same |
+| [`mutastic/other-arithmetic`](operators/arithmetic.md#other-arithmetic) | an arithmetic operator to each of the others | stronger | [Arithmetic](operators/arithmetic.md) | the same |
+| [`mutastic/keep-operand`](operators/arithmetic.md#keep-operand) | `a + b` to `a`, and to `b` | stronger | [Arithmetic](operators/arithmetic.md) | the same |
+| [`mutastic/remove-negation`](operators/arithmetic.md#remove-negation) | `-x` to `x` | stronger | [Arithmetic](operators/arithmetic.md) | the same |
+| [`mutastic/constant-value`](operators/arithmetic.md#constant-value) | a number to the ones next to it, `0`, `1` and `-1` | stronger | [Arithmetic](operators/arithmetic.md) | the same |
+| [`mutastic/bitwise`](operators/arithmetic.md#bitwise) | `&`, `\|` and `^`; `<<` and `>>` | stronger | [Arithmetic](operators/arithmetic.md) | the same |
+| [`library/unchecked-arithmetic`](operators/arithmetic.md#unchecked-arithmetic) | `checked_add` to a `wrapping_add` that can't fail | stronger | [Arithmetic](operators/arithmetic.md) | the same |
+| [`mutastic/return-value`](operators/returns.md#return-value) | a returned value to another of its type: `0`, the other `bool`, `None`, an empty one | defaults | [Returns and errors](operators/returns.md) | the same |
+| [`mutastic/unwrap-try`](operators/returns.md#unwrap-try) | `f()?` to `f().unwrap()` | defaults | [Returns and errors](operators/returns.md) | — |
+| [`mutastic/replace-body`](operators/returns.md#replace-body) | a function's whole body to one value, or to nothing | extended | [Returns and errors](operators/returns.md) | the same |
+| [`mutastic/remove-throw`](operators/returns.md#remove-throw) | `return Err(e);` or `panic!(..);` removed, so the code carries on | extended | [Returns and errors](operators/returns.md) | the same |
+| [`mutastic/remove-void-call`](operators/calls.md#remove-void-call) | a call that returns nothing, removed | defaults | [Calls and writes](operators/calls.md) | the same |
+| [`mutastic/remove-discarded-call`](operators/calls.md#remove-discarded-call) | a call whose result is thrown away, removed | defaults | [Calls and writes](operators/calls.md) | the same |
+| [`mutastic/remove-assignment`](operators/calls.md#remove-assignment) | an assignment to a variable that already has a value, removed | defaults | [Calls and writes](operators/calls.md) | the same |
+| [`mutastic/remove-field-write`](operators/calls.md#remove-field-write) | a write to a field, through a reference, or to an element, removed | stronger | [Calls and writes](operators/calls.md) | the same |
+| [`mutastic/remove-struct-field`](operators/calls.md#remove-struct-field) | a field set in a struct literal with `..base`, left to `base` | stronger | [Calls and writes](operators/calls.md) | — |
+| [`mutastic/omit-call`](operators/arguments.md#omit-call) | a call that returns what it's given, left out: `s.trim()` to `s` | stronger | [Arguments](operators/arguments.md) | the same |
+| [`mutastic/swap-arguments`](operators/arguments.md#swap-arguments) | a call's last two arguments of one type, swapped | stronger | [Arguments](operators/arguments.md) | the same |
+| [`mutastic/null-parameter`](operators/arguments.md#null-parameter) | an `Option` parameter, `None` from the start of the function | stronger | [Arguments](operators/arguments.md) | the same |
+| [`mutastic/drop-vararg`](operators/arguments.md#drop-vararg) | the last value of an array or `vec!` passed to a call, left out | extended | [Arguments](operators/arguments.md) | the same, in `stronger` |
+| [`mutastic/default-parameter`](operators/arguments.md#default-parameter) | a parameter, its type's default from the start of the function | extended | [Arguments](operators/arguments.md) | — |
+| [`library/swap-string`](operators/library.md#swap-string) | `starts_with` and `ends_with`, `to_uppercase` and `to_lowercase`, `trim_start` and `trim_end`, `strip_prefix` and `strip_suffix` | defaults | [Library methods](operators/library.md) | the same |
+| [`library/swap-math`](operators/library.md#swap-math) | `min` and `max`, `floor` and `ceil` | defaults | [Library methods](operators/library.md) | the same |
+| [`library/swap-index-of`](operators/library.md#swap-index-of) | `find` and `rfind`, `position` and `rposition`, `split_once` and `rsplit_once` | stronger | [Library methods](operators/library.md) | the same |
+| [`library/reverse-ordering`](operators/library.md#reverse-ordering) | `a.cmp(&b)` to `b.cmp(&a)`; `.reverse()` left out | stronger | [Library methods](operators/library.md) | — |
+| [`mutastic/string-constant`](operators/library.md#string-constant) | a string to `""`, and `""` to `"mutastic"` | stronger | [Library methods](operators/library.md) | the same |
+| [`mutastic/regex-constant`](operators/library.md#regex-constant) | a regular expression to one that differs and still compiles | extended | [Library methods](operators/library.md) | the same |
+| [`bigdecimal/remove-step`](operators/library.md#remove-step) | `round_dp(2)` and the like, left out | extended | [Library methods](operators/library.md) | the same, in a plugin |
+| [`stream/swap-match`](operators/iterators.md#swap-match) | `any` and `all` | defaults | [Iterators](operators/iterators.md) | the same |
+| [`stream/remove-stage`](operators/iterators.md#remove-stage) | `.filter(p)`, `.skip(n)`, `.take(n)`, `.skip_while(p)`, `.take_while(p)`, `.step_by(n)` or `.rev()`, left out | defaults | [Iterators](operators/iterators.md) | the same |
+| [`stream/remove-other-stage`](operators/iterators.md#remove-other-stage) | `.inspect(f)` or `.map(f)`, left out | extended | [Iterators](operators/iterators.md) | the same |
+| [`optional/swap-present`](operators/options.md#swap-present) | `is_some` and `is_none`, `is_ok` and `is_err` | stronger | [`Option` and `Result`](operators/options.md) | the same, in `extended` |
+| [`optional/empty`](operators/options.md#empty) | `Some(x)` to `None` | stronger | [`Option` and `Result`](operators/options.md) | the same, in `extended` |
+| [`optional/always-default`](operators/options.md#always-default) | `o.unwrap_or(d)` to `d` | stronger | [`Option` and `Result`](operators/options.md) | the same, in `extended` |
+| [`optional/no-default`](operators/options.md#no-default) | `o.unwrap_or(d)` to `o.unwrap()` | stronger | [`Option` and `Result`](operators/options.md) | the same, in `extended` |
+| [`optional/remove-filter`](operators/options.md#remove-filter) | `o.filter(p)` to `o` | extended | [`Option` and `Result`](operators/options.md) | the same |
+| [`mutastic/remove-switch-arm`](operators/control.md#remove-switch-arm) | a `match` arm stops matching, so its values go to a later arm | stronger | [Control flow](operators/control.md) | the same, in `extended` |
+| [`mutastic/swap-break`](operators/control.md#swap-break) | `break` and `continue` | extended | [Control flow](operators/control.md) | — |
+
+`mutastic/return-value(extended)` in a set turns on return value's extended forms, a return of
+`Default::default()` for a type that visibly has one, and an `Err(..)` the function returns
+elsewhere; it isn't an operator of its own, and its mutants are `mutastic/return-value`'s.
 
 Every mutant here compiles whenever the code it changes did, or is withdrawn by the build: a site's
 mutants and its original code are arms of one `match`, so a change that gives the expression another
 type is rejected by the compiler and reported as unviable, never run.
 
-## The table
-
-Status is **implemented** or **deferred**; the deferred ones are listed again below, with the
-reason.
-
-| Id | Before → after | Set | Java equivalent | Status |
-|---|---|---|---|---|
-| `mutastic/boundary` | `a < b` → `a <= b`, `a >= b` → `a > b`; `lo..hi` ↔ `lo..=hi` in a `for`, a slice (`&s[lo..hi]`) or a `contains` | defaults | `mutastic/boundary` | implemented |
-| `mutastic/remove-conditional` | `if c`, `while c`, a match guard → `true`, and `false`; `let Some(x) = e` (`let`-`else`, `if let`, `while let`) → `e.filter(\|_\| false)` | defaults | `mutastic/remove-conditional` | implemented |
-| `mutastic/logical-connector` | `a && b` ↔ `a \|\| b` | defaults | `mutastic/logical-connector` | implemented |
-| `mutastic/math` | `+` ↔ `-`, `*` ↔ `/`, and `+=` ↔ `-=`, `*=` ↔ `/=`; `checked_add` ↔ `checked_sub`, `checked_mul` ↔ `checked_div`, likewise `wrapping_`, `saturating_`, `overflowing_` | defaults | `mutastic/math` | implemented |
-| `mutastic/return-value` | a returned value → `0` (or `1`), `0.0` (or `1.0`), the other `bool`, `String::new()`, `""`, `None`, `Vec::new()`, `HashMap::new()` and the other collections, `PathBuf::new()`, `&[]`, `Cow::Borrowed("")`, `Box::new(..)`/`Rc`/`Arc` of the inner value, `Ok(..)` of it (`Ok(())` for `Result<()>`, not in `fmt`) | defaults | `mutastic/return-value` | implemented |
-| `mutastic/remove-void-call` | `v.push(x);` → removed: a call the crate declares with no return, or one of std's (`push`, `sort`, `clear`, `extend`, `drop`, …) | defaults | `mutastic/remove-void-call` | implemented |
-| `mutastic/remove-discarded-call` | `map.insert(k, v);`, `w.flush()?;`, `let _ = f();` → removed | defaults | `mutastic/remove-discarded-call` | implemented |
-| `mutastic/remove-assignment` | `total = total + p;` → `let _ = total + p;` (never a `let x;`'s first value) | defaults | `mutastic/remove-assignment` | implemented |
-| `library/swap-string` | `starts_with` ↔ `ends_with`, `to_uppercase` ↔ `to_lowercase` (and ASCII), `trim_start` ↔ `trim_end` (and `_matches`), `strip_prefix` ↔ `strip_suffix` | defaults | `library/swap-string` | implemented |
-| `library/swap-math` | `a.min(b)` ↔ `a.max(b)`, `cmp::min` ↔ `cmp::max`, `min_by(_key)` ↔ `max_by(_key)`, `floor` ↔ `ceil` | defaults | `library/swap-math` | implemented |
-| `stream/swap-match` | `it.any(p)` ↔ `it.all(p)` | defaults | `stream/swap-match` | implemented |
-| `stream/remove-stage` | `.filter(p)`, `.skip(n)`, `.take(n)`, `.skip_while(p)`, `.take_while(p)`, `.step_by(n)`, `.rev()` left out of a chain that visibly starts as an iterator, up to its consumer or the `for` it feeds | defaults | `stream/remove-stage` | implemented |
-| `mutastic/unwrap-try` | `f()?` → `f().unwrap()`; not a `?` on a formatter's write, which no test can make fail | defaults | Rust only | implemented |
-| `mutastic/comparison` | `<` → `!=`, `<=` → `==`, `>` → `!=`, `>=` → `==`; `==` → `<=`, `>=` and `!=` → `<`, `>` beside a number, a character, a length or a cast | stronger | `mutastic/comparison` | implemented |
-| `mutastic/other-comparison` | a comparison → each of the others boundary and comparison don't make (`<` → `>`, `>=`, `==`); `if c` → `if !c`; `matches!(..)` → `!matches!(..)` | stronger | `mutastic/other-comparison` | implemented |
-| `mutastic/arithmetic-replacement` | `a + b` → `a * b`, `+=` → `*=` (not `+= 1`) | stronger | `mutastic/arithmetic-replacement` | implemented |
-| `mutastic/other-arithmetic` | each of `+ - * / %` → the others math and arithmetic-replacement don't make: `+` → `/`, `%`; `-` → `*`, `/`, `%`; `*` and `/` → `+`, `-`, `%`; `%` → `+`, `-`, `*`, `/`; and compound forms | stronger | `mutastic/other-arithmetic` | implemented |
-| `mutastic/keep-operand` | `price + fee` → `price`, and → `fee` (the other still worked out when it could do something; never the constant beside a value) | stronger | `mutastic/keep-operand` | implemented |
-| `mutastic/omit-call` | `s.trim()` → `s`, `x.abs()` → `x` (and `to_lowercase`, `round`, …), a builder's `(self) -> Self` step left out, `escape(text)` → `text` for a crate function returning its one argument's type | stronger | `mutastic/omit-call` | implemented |
-| `mutastic/swap-arguments` | `transfer(a, from, to)` → `transfer(a, to, from)`, for a crate function or method whose last two parameters have one type | stronger | `mutastic/swap-arguments` | implemented |
-| `library/swap-index-of` | `find` ↔ `rfind`, `position` ↔ `rposition`, `split_once` ↔ `rsplit_once`, `match_indices` ↔ `rmatch_indices` | stronger | `library/swap-index-of` | implemented |
-| `library/reverse-ordering` | `a.cmp(&b)` → `b.cmp(&a)` (and `partial_cmp`); `.reverse()` on an ordering left out | stronger | Rust only | implemented |
-| `mutastic/remove-switch-arm` | `P => e` stops matching (a guard the switch decides), so its values go to the next arm that matches; only before a later unguarded catch-all | stronger | `mutastic/remove-switch-arm` (extended there) | implemented |
-| `mutastic/remove-field-write` | `self.status = s;`, `*p = v;`, `v[i] = x;` → `let _ = s;` | stronger | `mutastic/remove-field-write` | implemented |
-| `mutastic/remove-negation` | `-x` → `x` | stronger | `mutastic/remove-negation` | implemented |
-| `mutastic/constant-value` | a whole number → the ones next to it, `0`, `1`, and `-1` where it's visibly signed; never past its type's range, never a size, capacity, wait, or a counter's first `0` or `1` | stronger | `mutastic/constant-value` | implemented |
-| `mutastic/string-constant` | `"csv"` → `""`, `""` → `"mutastic"`; not an error's or `expect`'s message | stronger | `mutastic/string-constant` | implemented |
-| `mutastic/null-parameter` | `fn f(c: Option<C>)` → `let c: Option<C> = None;` as the function starts | stronger | `mutastic/null-parameter` | implemented |
-| `optional/swap-present` | `is_some()` ↔ `is_none()`, `is_ok()` ↔ `is_err()` | stronger | `optional/swap-present` (extended there) | implemented |
-| `optional/empty` | `Some(x)` → `None` (where it isn't returned) | stronger | `optional/empty` (extended there) | implemented |
-| `optional/always-default` | `o.unwrap_or(d)` → `d`, `unwrap_or_default()` → `Default::default()`, `unwrap_or_else(f)` → `f()`, `map_or(d, f)` → `d` | stronger | `optional/always-default` (extended there) | implemented |
-| `optional/no-default` | `o.unwrap_or(d)`, `unwrap_or_else(f)`, `unwrap_or_default()` → `o.unwrap()` | stronger | `optional/no-default` (extended there) | implemented |
-| `library/unchecked-arithmetic` | `a.checked_add(b)` → `Some(a.wrapping_add(b))`; `saturating_sub` → `wrapping_sub` | stronger | `library/unchecked-arithmetic` | implemented |
-| `mutastic/bitwise` | `&` → `\|`, `^`; `\|` → `&`, `^`; `^` → `&`, `\|`; `<<` ↔ `>>`; compound forms, but `&=` and `\|=` not to `^=` | stronger | Rust only | implemented |
-| `mutastic/remove-struct-field` | `S { a, b, ..base }` → `S { a, ..base }` | stronger | Rust only | implemented |
-| `mutastic/replace-body` | a function's whole body → `{ <a value return-value would give> }`, or `{}` when it returns nothing; not `new`, `fmt`, `hash` or a getter of one field | extended | `mutastic/replace-body` | implemented |
-| `mutastic/return-value` (extended forms) | a return → `Default::default()` for a type that visibly derives or implements `Default`; and → an `Err(..)` the same function returns elsewhere, when it mentions nothing local | extended | `mutastic/return-value` | implemented |
-| `mutastic/regex-constant` | `Regex::new(r"^\d+$")` → `r"\d+$"`, `r"^\d+"`, `r"^\D+$"`: an anchor dropped, a class turned round, each still valid | extended | `mutastic/regex-constant` | implemented |
-| `mutastic/drop-vararg` | `f(&[a, b, c])` → `f(&[a, b])`, `f(vec![a, b, c])` → `f(vec![a, b])` | extended | `mutastic/drop-vararg` (stronger there) | implemented |
-| `stream/remove-other-stage` | `.inspect(f)` and `.map(f)` left out of an iterator's chain, as stream/remove-stage's stages are | extended | `stream/remove-other-stage` | implemented |
-| `optional/remove-filter` | `opt.filter(p)` → `opt`, where `opt` isn't visibly an iterator, nor used as one (looped over, a closure over pairs) | extended | `optional/remove-filter` | implemented |
-| `mutastic/default-parameter` | `fn f(p: T)` → `let p: T = Default::default();` as the function starts, for a type that visibly has a default (std's numbers, `bool`, `char`, `String`, collections, or one the crate derives or implements it for); an `Option` is null-parameter's | extended | Rust only | implemented |
-| `mutastic/swap-break` | `break` ↔ `continue`, with no label and no value | extended | Rust only | implemented |
-| `bigdecimal/remove-step` | `x.round_dp(2)`, `round_sf`, `normalize()`, `trunc_with_scale` → `x` | extended | `bigdecimal/remove-step` (a plugin there) | implemented |
-| `mutastic/remove-throw` | `return Err(e);`, `panic!(..);`, `bail!(..);` removed: the code carries on; not the last statement of a block whose value is used | extended | `mutastic/remove-throw` | implemented |
-| `mutastic/flip-increment` | — | — | `mutastic/flip-increment` | deferred: Rust has no `++`, and `+=` ↔ `-=` is `mutastic/math`'s; the id stays reserved so the change has one owner |
-| `library/omit-argument` | — | — | `library/omit-argument` | deferred: needs overloading, which Rust doesn't have |
-| `predicate/swap-connector`, `predicate/remove-negate`, `predicate/remove-not` | — | — | the same ids | deferred: std has no `Predicate` combinators; `&&` and `!` inside closures are logical-connector's and other-comparison's |
-| `mutastic/drop-catch-type` | — | — | `mutastic/drop-catch-type` | deferred: Rust has no multi-catch |
-| `concurrency/weaken-ordering` | `SeqCst` → `Acquire`/`Release` → `Relaxed`, legal per method | experimental | Rust only | deferred: almost never changes what a test sees on x86-64 or Apple Silicon, and `load(Release)` panics, so it needs loom or Miri to mean anything; never scored |
-| `clone` removal | `x.clone()` → `x` | experimental | Rust only | deferred: mostly fails the borrow checker, and where it compiles it's usually equivalent; evidence about performance, not wrong output |
-| ghosts | the missing peer call inserted after a write that lacks it (`self.dirty = true`, `notify_all()`) | experimental | ghosts (experimental there too) | deferred: not built in the Java edition yet either; to share its design |
-| `proposed/rewrite` | a function's body → a proposed body, behind its switch | extended | `proposed/rewrite` | deferred: waits on the proposals format and a measured run on real model output, as in the Java edition |
-| `mutastic/narrow-cast` | `x as u32` → `x as u16 as u32` | experimental | Rust only | deferred: no tool or bug count behind it yet |
-| unsafe-specific operators | `ptr.add(i)`, `set_len(n)`, `Layout` sizes off by one | experimental | Rust only | deferred: their mutants are undefined behaviour by design, so they mean something only with a Miri pass, which needs nightly |
-
-`mutastic/return-value(extended)` in a set turns on return-value's extended forms; it isn't an
-operator of its own, and its mutants are `mutastic/return-value`'s.
-
 ## Parity with the Java edition
 
-The Java edition has 43 operator ids. **37 carry over** with the same meaning, all implemented;
-**6 don't**, for want of the language feature they change. mutastic for Rust adds **6 ids of its
-own**, and implements one of the Java edition's plugin operators.
+The Java edition has 44 operator ids. **38 carry over** with the same meaning, all implemented;
+**6 don't**, for want of the language feature they change. mutastic for Rust adds **5 ids of its
+own**, each in the family it fits, and implements one of the Java edition's plugin operators.
 
-- **Carried over (37):** `mutastic/boundary`, `comparison`, `other-comparison`,
-  `remove-conditional`, `logical-connector`, `math`, `arithmetic-replacement`, `other-arithmetic`,
-  `keep-operand`, `constant-value`, `remove-negation`, `return-value`, `remove-void-call`,
-  `remove-discarded-call`, `remove-assignment`, `remove-field-write`, `omit-call`,
-  `swap-arguments`, `null-parameter`, `drop-vararg`, `remove-switch-arm`, `replace-body`,
-  `remove-throw`, `regex-constant`, `string-constant`; `library/unchecked-arithmetic`,
-  `swap-string`, `swap-index-of`, `swap-math`; `stream/remove-stage`, `swap-match`,
-  `remove-other-stage`; `optional/swap-present`, `empty`, `remove-filter`, `always-default`,
-  `no-default`.
 - **Not carried over (6):** `mutastic/flip-increment` (no `++`; `+=` and `-=` are math's),
   `library/omit-argument` (no overloading), the three `predicate/*` ids (no `Predicate`
-  combinators in std), `mutastic/drop-catch-type` (no multi-catch).
-- **Rust only (6):** `mutastic/bitwise`, `mutastic/remove-struct-field`,
-  `library/reverse-ordering`, `mutastic/unwrap-try`, `mutastic/default-parameter`,
-  `mutastic/swap-break`.
+  combinators in std; `&&` and `!` inside a closure are logical connector's and other
+  comparison's), `mutastic/drop-catch-type` (no multi-catch).
+- **Rust only (5):** `mutastic/unwrap-try`, `mutastic/remove-struct-field`,
+  `mutastic/default-parameter`, `library/reverse-ordering`, `mutastic/swap-break`.
 - **From the Java edition's plugins:** `bigdecimal/remove-step`, for `rust_decimal`. The others
   don't carry: `bigdecimal/swap-arithmetic` and `swap-scaling` come free through math and
   swap-math, as `Decimal` uses operators; `kotlin/empty-return`'s empty values are Rust's own, and
@@ -128,3 +106,19 @@ Some ids sit in another set than in Java: the four `optional/*` ids and `remove-
 is in `extended`, as an array's length is part of its type, and more of its mutants are withdrawn.
 `mutastic/unwrap-try`, Rust's own, is in the defaults: a `?` whose error no test makes happen is an
 error path never run, and on real crates most of its missed mutants are just that.
+
+Not built yet, each for its reason:
+
+- `concurrency/weaken-ordering` (`SeqCst` to `Acquire`/`Release` to `Relaxed`): it almost never
+  changes what a test sees on x86-64 or Apple Silicon, and `load(Release)` panics, so it needs loom
+  or Miri to mean anything; it would never be scored.
+- Removing `x.clone()`: it mostly fails the borrow checker, and where it compiles it's usually
+  equivalent; evidence about performance, not wrong output.
+- Ghosts, the missing peer call inserted after a write that lacks it: not built in the Java edition
+  either, so the two can share its design.
+- `proposed/rewrite`, a function's body to a proposed one: waits on the proposals format and a
+  measured run on real model output, as in the Java edition.
+- `mutastic/narrow-cast` (`x as u32` to `x as u16 as u32`): no tool or bug count behind it yet.
+- Unsafe-specific operators (`ptr.add(i)`, `set_len(n)`, `Layout` sizes off by one): their mutants
+  are undefined behaviour by design, so they mean something only with a Miri pass, which needs
+  nightly.

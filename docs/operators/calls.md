@@ -21,6 +21,11 @@ Each card below comes from `mutastic run fixtures/operators` with these operator
 function or method the crate declares with no return type, or one of std's that returns `()`, such
 as `push`, `sort`, `clear`, `extend` or `drop`.
 
+**The bug it stands for:** a step left out: a call removed in a refactor, never added, or skipped on
+one path. It costs in side effects, which are often the point of the code: saving a record, writing
+an audit entry, releasing a lock. If removing the call passes every test, nothing checks the step
+happens.
+
 A statement that only writes output, `println!`, `eprintln!`, `dbg!` or a logger's `log::warn!`
 or `tracing::info!`, is skipped as arid, `arid: only writes output`, as the Java edition skips a
 call to a logger: no test should have to notice it. It's counted in the summary's
@@ -68,11 +73,29 @@ The test counts the items, so removing the first `push` is caught. Nothing reads
     reproduce  mutastic run --only=m9dd52d50 fixtures/operators
 ```
 
+**The test that catches it:** one that checks the effect: here, the history, not only the count.
+
+<!-- added to: fixtures/operators/src/calls.rs -->
+```rust
+#[test]
+fn adding_an_item_is_recorded() {
+    let mut cart = Cart::default();
+    cart.add("tea");
+    assert_eq!(cart.history, vec!["added tea".to_string()]);
+}
+```
+
+**Edition notes:** the Java edition has the same id, for a method that returns `void`.
+
 ## Remove discarded call
 
 `mutastic/remove-discarded-call`, in the defaults. A call whose result is thrown away is removed:
 `map.insert(k, v);`, `w.flush()?;`, `let _ = f();`. A bare `x.unwrap();` is left alone, as its only
 effect is the panic.
+
+**The bug it stands for:** the same as a removed void call: a step left out. Many calls that do
+something also return something nobody needs: `insert` returns what was there, `write` how much it
+wrote. These hide best, since a call written for its effect reads like a query.
 
 <!-- from: fixtures/operators/src/calls.rs -->
 ```rust
@@ -114,11 +137,29 @@ No test visits twice, so nothing needs the name remembered:
     reproduce  mutastic run --only=m691cb348 fixtures/operators
 ```
 
+**The test that catches it:** one that checks the effect: that a second visit isn't a first.
+
+<!-- added to: fixtures/operators/src/calls.rs -->
+```rust
+#[test]
+fn a_second_visit() {
+    let mut seen = HashMap::new();
+    first_visit(&mut seen, "ann");
+    assert!(!first_visit(&mut seen, "ann"));
+}
+```
+
+**Edition notes:** the Java edition has the same id, for `add`, `put`, `append` and the like.
+
 ## Remove assignment
 
 `mutastic/remove-assignment`, in the defaults. `total = total + tip;` becomes `let _ = total +
 tip;`: the value is still worked out, and thrown away. Never the first value of a `let x;`, which
 the code couldn't compile without.
+
+**The bug it stands for:** a step left out of a calculation: a running total that isn't updated on
+one path, a value worked out and then not kept. The code still runs and still returns something,
+only from a value that's out of date.
 
 <!-- from: fixtures/operators/src/calls.rs -->
 ```rust
@@ -164,10 +205,27 @@ fn no_tip() {
     reproduce  mutastic run --only=mb171c131 fixtures/operators
 ```
 
+**The test that catches it:** one whose result depends on the new value, not one where the earlier
+value happens to be right.
+
+<!-- added to: fixtures/operators/src/calls.rs -->
+```rust
+#[test]
+fn a_tip_is_added() {
+    assert_eq!(with_tip(10, 2), 12);
+}
+```
+
+**Edition notes:** the Java edition has the same id, for a local variable that already has a value.
+
 ## Remove field write
 
 `mutastic/remove-field-write`, in the `stronger` set. A write to a field (`self.status = s;`),
 through a reference (`*p = v;`) or to an element (`v[i] = x;`) becomes `let _ = s;`.
+
+**The bug it stands for:** state that never changes: an update left out, or a write lost in a
+refactor, so the value goes on saying what it said before. Each call looks fine alone; what's wrong
+only shows in the next one.
 
 <!-- from: fixtures/operators/src/calls.rs -->
 ```rust
@@ -211,11 +269,31 @@ fn paying_gives_the_total() {
     reproduce  mutastic run --only=m17121fd7 fixtures/operators
 ```
 
+**The test that catches it:** one that makes the change and then looks at the field.
+
+<!-- added to: fixtures/operators/src/calls.rs -->
+```rust
+#[test]
+fn paying_marks_the_order_paid() {
+    let mut order = Order {
+        paid: false,
+        total: 30,
+    };
+    order.pay();
+    assert!(order.paid);
+}
+```
+
+**Edition notes:** the Java edition has the same id, for a write to a field.
+
 ## Remove struct field
 
 `mutastic/remove-struct-field`, in the `stronger` set, and only in Rust. In a struct literal that
 ends in `..base`, a field set before it is left out, so it takes `base`'s value: `S { a, b, ..base }`
 becomes `S { a, ..base }`.
+
+**The bug it stands for:** a field left at the value it came with, in an update that was meant to
+change it.
 
 <!-- from: fixtures/operators/src/calls.rs -->
 ```rust
@@ -259,3 +337,19 @@ The test checks what muting keeps, but not that it mutes:
     done when  mutastic verify m0af1aacd fixtures/operators passes
     reproduce  mutastic run --only=m0af1aacd fixtures/operators
 ```
+
+**The test that catches it:** one that checks the field the update sets.
+
+<!-- added to: fixtures/operators/src/calls.rs -->
+```rust
+#[test]
+fn muting_mutes() {
+    let loud = Settings {
+        volume: 9,
+        muted: false,
+    };
+    assert!(muted(&loud).muted);
+}
+```
+
+**Edition notes:** the Java edition has no such operator, as Java has no struct update syntax.

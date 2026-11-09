@@ -1,4 +1,4 @@
-# `match` and loops
+# Control flow
 
 Operators that change which arm of a `match` runs, or how a loop goes on. They ask whether your
 tests reach every arm with a value that matters, and every way out of a loop.
@@ -18,6 +18,10 @@ matching, so its values go on to the next arm that matches. mutastic does it wit
 switch decides, and only for an arm that comes before an unguarded catch-all, so there's always an
 arm for the values to go to, and not for an arm that binds a variable. A test reaches the mutant
 only when it passes a value that arm matches.
+
+**The bug it stands for:** a case that's missing or never worked, so its values get another arm's
+behaviour: the wrong rate, the wrong message. Tests tend to try one or two arms, and the others can
+be wrong for a long time, as the catch-all gives an answer that looks fine.
 
 <!-- from: fixtures/operators/src/control.rs -->
 ```rust
@@ -70,11 +74,27 @@ fn every_zone_within_a_week() {
    reproduce  mutastic run --only=mc9468457 fixtures/operators
 ```
 
+**The test that catches it:** one with a value that reaches the arm, asserting what it does.
+
+<!-- added to: fixtures/operators/src/control.rs -->
+```rust
+#[test]
+fn zone_two_takes_three_days() {
+    assert_eq!(delivery_days(2), 3);
+}
+```
+
+**Edition notes:** the Java edition has the same id in `extended`, for a `switch`, whose arm's
+values go to the default.
+
 ## Swap break
 
 `mutastic/swap-break`, in the `extended` set, and only in Rust. `break` becomes `continue`, and
 `continue` becomes `break`, where it has no label and no value. It goes unnoticed when the loop
 ends the same way on every input the tests try.
+
+**The bug it stands for:** a loop that stops where it should go on, or goes on where it should stop:
+the first match wanted and the last one found. Input with one match can't tell them apart.
 
 <!-- from: fixtures/operators/src/control.rs -->
 ```rust
@@ -119,3 +139,15 @@ difference:
     done when  mutastic verify mde47e51e fixtures/operators passes
     reproduce  mutastic run --only=mde47e51e fixtures/operators
 ```
+
+**The test that catches it:** one with a second match after the first.
+
+<!-- added to: fixtures/operators/src/control.rs -->
+```rust
+#[test]
+fn the_first_negative_of_two() {
+    assert_eq!(first_negative(&[4, -1, -2]), Some(1));
+}
+```
+
+**Edition notes:** the Java edition has no such operator.

@@ -18,6 +18,10 @@ The ids are the Java edition's, where these are stream operators. Each card belo
 `stream/swap-match`, in the defaults. `it.any(p)` becomes `it.all(p)`, and the other way round.
 With one item, or items that all agree, the two give the same answer.
 
+**The bug it stands for:** "any" where "all" was meant, or the other way round. They read alike, and
+with the inputs tests usually pick, all of them matching or none, they give the same answer. It
+costs in checks over collections: whether any item is late, whether all approvers have signed.
+
 <!-- from: fixtures/operators/src/iterators.rs -->
 ```rust
 /// Whether any invoice is more than 30 days late.
@@ -53,6 +57,19 @@ fn one_late_invoice() {
    reproduce  mutastic run --only=m2f11fb5d fixtures/operators
 ```
 
+**The test that catches it:** one with a mix: some elements that match and some that don't.
+
+<!-- added to: fixtures/operators/src/iterators.rs -->
+```rust
+#[test]
+fn one_late_invoice_among_others() {
+    assert!(any_overdue(&[10, 45]));
+}
+```
+
+**Edition notes:** the Java edition has the same id, for a stream's `anyMatch`, `allMatch` and
+`noneMatch`.
+
 ## Remove stage
 
 `stream/remove-stage`, in the defaults. A stage is left out of a chain that plainly starts as an
@@ -60,6 +77,10 @@ iterator, up to its consumer or the `for` loop it feeds: `.filter(p)`, `.skip(n)
 `.skip_while(p)`, `.take_while(p)`, `.step_by(n)` and `.rev()`. Not `.take(n)` on an iterator that
 never ends, which would only hang, nor `.rev()` before a consumer that ignores order, such as
 `sum`.
+
+**The bug it stands for:** a stage that's wrong, or in the wrong place, and no test would know: a
+filter with the wrong condition, a `take` that's off by one, a `skip` someone forgot. Chains are
+where business rules hide in one line: only the paid orders, the first ten results.
 
 <!-- from: fixtures/operators/src/iterators.rs -->
 ```rust
@@ -102,12 +123,29 @@ No test has an unpaid order to leave out:
     reproduce  mutastic run --only=ma6f92819 fixtures/operators
 ```
 
+**The test that catches it:** one whose input the stage has to change: here, an unpaid order the
+filter must drop.
+
+<!-- added to: fixtures/operators/src/iterators.rs -->
+```rust
+#[test]
+fn unpaid_orders_dont_count() {
+    assert_eq!(paid_total(&[(10, true), (5, false)]), 10);
+}
+```
+
+**Edition notes:** the Java edition has the same id, for a stream's `filter`, `distinct`, `sorted`,
+`limit`, `skip`, `dropWhile` and `takeWhile`.
+
 ## Remove other stage
 
 `stream/remove-other-stage`, in the `extended` set. `.inspect(f)` or `.map(f)` is left out of an
 iterator chain, as remove stage leaves out its stages. Leaving out a `map` usually changes the
 item's type, and the build withdraws those mutants: in `paid_total` above, the `map` that picks the
 total is withdrawn.
+
+**The bug it stands for:** a conversion that's wrong, or forgotten, and an `inspect` that does real
+work someone relies on.
 
 <!-- from: fixtures/operators/src/iterators.rs -->
 ```rust
@@ -144,3 +182,18 @@ fn totals_add_up() {
     done when  mutastic verify m23f62e2d fixtures/operators passes
     reproduce  mutastic run --only=m23f62e2d fixtures/operators
 ```
+
+**The test that catches it:** one that checks what the stage does.
+
+<!-- added to: fixtures/operators/src/iterators.rs -->
+```rust
+#[test]
+fn each_value_is_logged() {
+    let mut log = Vec::new();
+    logged_total(&[1, 2], &mut log);
+    assert_eq!(log, vec![1, 2]);
+}
+```
+
+**Edition notes:** the Java edition has the same id, for a stream's `peek` and a primitive stream's
+`map`.

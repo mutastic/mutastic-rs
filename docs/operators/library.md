@@ -1,4 +1,4 @@
-# std's methods and the strings in the code
+# Library methods
 
 Operators that swap a method from std for its counterpart, or change a string or a pattern the code
 holds. They ask whether your tests would notice the wrong end, the wrong direction, or the wrong
@@ -22,6 +22,10 @@ The first five cards come from `mutastic run fixtures/operators` with these oper
 `library/swap-string`, in the defaults. A `str` method becomes its counterpart: `starts_with` and
 `ends_with`, `to_uppercase` and `to_lowercase` (and their ASCII forms), `trim_start` and `trim_end`
 (and their `_matches` forms), `strip_prefix` and `strip_suffix`.
+
+**The bug it stands for:** the method next to the one you meant. They take the same arguments, the
+compiler can't tell them apart, and on the text tests usually pick they give the same answer. It
+costs in parsing and normalising: a prefix check that's really a suffix check.
 
 <!-- from: fixtures/operators/src/library.rs -->
 ```rust
@@ -57,10 +61,26 @@ fn plain_lines_are_not_comments() {
    reproduce  mutastic run --only=m739423e6 fixtures/operators
 ```
 
+**The test that catches it:** text with what's looked for at one end only.
+
+<!-- added to: fixtures/operators/src/library.rs -->
+```rust
+#[test]
+fn a_comment_starts_with_the_hash() {
+    assert!(is_comment("# a note"));
+}
+```
+
+**Edition notes:** the Java edition has the same id, for `startsWith` and `endsWith` and the like.
+
 ## Swap math
 
 `library/swap-math`, in the defaults. `a.min(b)` and `a.max(b)` swap, as do `cmp::min` and
 `cmp::max`, `min_by` and `max_by` (and their `_key` forms), and `floor` and `ceil`.
+
+**The bug it stands for:** `min` where `max` was meant, a limit that's a floor instead of a ceiling,
+or rounding the wrong way. Each reads right at a glance, and tests whose values are all on one side
+of the limit can't tell.
 
 <!-- from: fixtures/operators/src/library.rs -->
 ```rust
@@ -107,11 +127,28 @@ At exactly the cap, `min` and `max` agree:
     reproduce  mutastic run --only=m5bb85f22 fixtures/operators
 ```
 
+**The test that catches it:** one on the side the code guards against.
+
+<!-- added to: fixtures/operators/src/library.rs -->
+```rust
+#[test]
+fn more_than_half_is_capped() {
+    assert_eq!(capped_discount(80), 50);
+}
+```
+
+**Edition notes:** the Java edition has the same id, for `Math.min` and `Math.max`, `floor` and
+`ceil`.
+
 ## Swap index of
 
 `library/swap-index-of`, in the `stronger` set. A search from one end becomes the search from the
 other: `find` and `rfind`, `position` and `rposition`, `split_once` and `rsplit_once`,
 `match_indices` and `rmatch_indices`.
+
+**The bug it stands for:** the first match where the last was meant. On text with one match they
+agree, and that's the text tests usually have. It costs in taking text apart: an extension taken
+from the first dot.
 
 <!-- from: fixtures/operators/src/library.rs -->
 ```rust
@@ -150,11 +187,27 @@ apart:
     reproduce  mutastic run --only=m1c9a050a fixtures/operators
 ```
 
+**The test that catches it:** one where what's searched for appears twice.
+
+<!-- added to: fixtures/operators/src/library.rs -->
+```rust
+#[test]
+fn an_archive() {
+    assert_eq!(extension("backup.tar.gz"), Some("tar.gz"));
+}
+```
+
+**Edition notes:** the Java edition has the same id, for `indexOf` and `lastIndexOf`.
+
 ## Reverse ordering
 
 `library/reverse-ordering`, in the `stronger` set, and only in Rust. A comparison of two values
 turns round, `a.cmp(&b)` becoming `b.cmp(&a)` (and `partial_cmp` too), and a `.reverse()` on an
 ordering is left out. It goes unnoticed when no test checks the order something is sorted in.
+
+**The bug it stands for:** a sort the wrong way round: newest first where oldest was meant, a
+ranking upside down. Tests with input already in order, or that only count what comes back, can't
+tell.
 
 <!-- from: fixtures/operators/src/library.rs -->
 ```rust
@@ -192,12 +245,28 @@ fn sorting_keeps_every_name() {
     reproduce  mutastic run --only=m6a7d7d94 fixtures/operators
 ```
 
+**The test that catches it:** one with input out of order, asserting the order that comes out.
+
+<!-- added to: fixtures/operators/src/library.rs -->
+```rust
+#[test]
+fn names_come_out_in_order() {
+    let names = vec!["cy".to_string(), "al".to_string(), "bo".to_string()];
+    assert_eq!(sorted(names), vec!["al", "bo", "cy"]);
+}
+```
+
+**Edition notes:** the Java edition has no such operator.
+
 ## String constant
 
 `mutastic/string-constant`, in the `stronger` set. A string in the code becomes `""`, and `""`
 becomes `"mutastic"`. Not a string given straight to `Err`, `expect`, `context`, `with_context` or
 `wrap_err`, which is a message for people; not a returned one, which is return value's; and not one
 inside a macro such as `format!`, whose tokens mutastic leaves alone.
+
+**The bug it stands for:** the wrong key, name or format: a typo in a header, a separator someone
+changed in one place and not the other. The compiler can't check any of it.
 
 <!-- from: fixtures/operators/src/library.rs -->
 ```rust
@@ -235,11 +304,28 @@ With one column there's nothing to separate:
     reproduce  mutastic run --only=m55b8a89c fixtures/operators
 ```
 
+**The test that catches it:** one whose result depends on the text.
+
+<!-- added to: fixtures/operators/src/library.rs -->
+```rust
+#[test]
+fn columns_are_separated_by_commas() {
+    assert_eq!(header(&["name", "email"]), "name, email");
+}
+```
+
+**Edition notes:** the Java edition has the same id, and skips as arid what goes into a log or an
+exception's message.
+
 ## Regex constant
 
 `mutastic/regex-constant`, in the `extended` set. The pattern given to `Regex::new` becomes ones
 that differ and still compile: an anchor dropped, a class turned round. It goes unnoticed when no
 test gives the regular expression text it should reject.
+
+**The bug it stands for:** an expression that accepts more than it should, or less: a missing
+anchor, a class the wrong way round. Tests of a regular expression tend to try text that should
+match, and an unanchored `\d+` finds `abc123` too.
 
 The fixtures depend on no crates, so there's no card here from the `regex` crate itself. The truth
 fixture has a stand-in `Regex` that mutastic knows by its path, and `mutastic mutants` shows what
@@ -258,11 +344,20 @@ mf617b484 src/lib.rs:535:25 mutastic/regex-constant r"^\d+$" becomes r"^\D+$" in
 3 mutants
 ```
 
+**The test that catches it:** text that only one of the two matches, at each end: `abc123` and
+`123abc` as well as `123`.
+
+**Edition notes:** the Java edition has the same id, for `Pattern.compile`, `matches`, `split` and
+the `replace` methods.
+
 ## Remove step
 
 `bigdecimal/remove-step`, in the `extended` set: the Java edition's `BigDecimal` operator, for
 `rust_decimal`. A rounding or scaling step is left out: `x.round_dp(2)`, `round_sf`, `normalize()`
 and `trunc_with_scale` become `x`. It goes unnoticed when no test uses a value the step would change.
+
+**The bug it stands for:** a rounding step left out, so an amount keeps more decimal places than it
+should, and a total adds up from values nobody rounded.
 
 As with regular expressions, the truth fixture has a stand-in `Decimal`, known by its method's
 name:
@@ -277,3 +372,9 @@ let price = Decimal(x as i64 * 137).round_dp(1);
 ma0a93565 src/lib.rs:536:41 bigdecimal/remove-step .round_dp(1) is left out in patterns
 1 mutants
 ```
+
+**The test that catches it:** an amount with more places than the step keeps, asserting what comes
+out.
+
+**Edition notes:** the Java edition has the same id in its `BigDecimal` plugin, for `BigDecimal`'s
+`setScale`, `round`, `stripTrailingZeros`, `abs` and `negate`.

@@ -27,6 +27,10 @@ and the test that runs it fails: see [Profiles](../concepts/profiles.md).
 compound assignments too (`+=` and `-=`). So do the methods: `checked_add` and `checked_sub`,
 `checked_mul` and `checked_div`, and likewise for `wrapping_`, `saturating_` and `overflowing_`.
 
+**The bug it stands for:** the wrong operator in a calculation: `-` for `+`, `/` for `*`. It costs
+in money, quantities and time. A wrong calculation is often silent: nothing panics, the number is
+just wrong, and it's found later on an invoice or in a report.
+
 <!-- from: fixtures/operators/src/arithmetic.rs -->
 ```rust
 pub fn line_total(price: u32, quantity: u32) -> u32 {
@@ -73,10 +77,28 @@ fn one_of_each() {
    reproduce  mutastic run --only=m7c2deaec,m9fbcbdb2 fixtures/operators
 ```
 
+**The test that catches it:** one whose values tell the operators apart. A quantity of `1` gives the
+same answer for `*` and `/`, and adding `0` the same for `+` and `-`: those are the values a quick
+test tends to pick.
+
+<!-- added to: fixtures/operators/src/arithmetic.rs -->
+```rust
+#[test]
+fn two_of_each() {
+    assert_eq!(line_total(30, 2), 60);
+}
+```
+
+**Edition notes:** the Java edition has the same id, on `int` and `long`.
+
 ## Arithmetic replacement
 
 `mutastic/arithmetic-replacement`, in the `stronger` set. `a + b` becomes `a * b`, and `+=` becomes
 `*=`, but not `+= 1`, which would only stop a counter.
+
+**The bug it stands for:** one operation mixed up with another entirely: adding where it should
+multiply. Its real value is as a check on the tests' values: `2 + 2 == 2 * 2` and `0 + 0 == 0 * 0`
+are the numbers quick tests pick.
 
 <!-- from: fixtures/operators/src/arithmetic.rs -->
 ```rust
@@ -120,11 +142,27 @@ fn a_fee_is_added() {
    reproduce  mutastic run --only=m2159bc78 fixtures/operators
 ```
 
+**The test that catches it:** one with ordinary values, where the sum and the product are far apart.
+
+<!-- added to: fixtures/operators/src/arithmetic.rs -->
+```rust
+#[test]
+fn a_fee_of_three() {
+    assert_eq!(with_fee(10, 3), 13);
+}
+```
+
+**Edition notes:** the Java edition has the same id.
+
 ## Other arithmetic
 
 `mutastic/other-arithmetic`, in the `stronger` set. Each of `+ - * / %` becomes each of the others
 that math and arithmetic replacement don't make: `+` to `/` and `%`; `-` to `*`, `/` and `%`; `*`
 and `/` to `+`, `-` and `%`; `%` to the four others. Compound assignments too.
+
+**The bug it stands for:** any operator mixed up with another: `%` for `/`, a `-` where a `*`
+belongs. It costs in rates, ratios, averages and paging, where the wrong operator gives a plausible
+number.
 
 <!-- from: fixtures/operators/src/arithmetic.rs -->
 ```rust
@@ -172,11 +210,28 @@ fn a_bill_is_shared() {
     reproduce  mutastic run --only=mea866977,m82fdb48b fixtures/operators
 ```
 
+**The test that catches it:** one with values that tell every operator apart, and neither `0`, `1`
+nor two values the same.
+
+<!-- added to: fixtures/operators/src/arithmetic.rs -->
+```rust
+#[test]
+fn twelve_shared_by_four() {
+    assert_eq!(per_person(12, 4), 3);
+}
+```
+
+**Edition notes:** the Java edition has the same id, on `float` and `double` too.
+
 ## Keep operand
 
 `mutastic/keep-operand`, in the `stronger` set. A calculation becomes one of its values: `price +
 fee` becomes `price`, and `fee`. The other side is still worked out when working it out could do
 something, such as call a function. A constant beside a value is never what's kept.
+
+**The bug it stands for:** a part of a calculation left out: the fee not added, the refund not taken
+off, the offset forgotten. It costs in totals of several parts, where tests set the one being looked
+at and leave the rest at `0`.
 
 <!-- from: fixtures/operators/src/arithmetic.rs -->
 ```rust
@@ -225,9 +280,25 @@ is math's, with keep operand's under it:
     reproduce  mutastic run --only=m4e284c1b,mb46190a0 fixtures/operators
 ```
 
+**The test that catches it:** one where each part has a value that changes the result.
+
+<!-- added to: fixtures/operators/src/arithmetic.rs -->
+```rust
+#[test]
+fn a_refund_is_taken_off() {
+    assert_eq!(after_refund(10, 3), 7);
+}
+```
+
+**Edition notes:** the Java edition has the same id.
+
 ## Remove negation
 
 `mutastic/remove-negation`, in the `stronger` set. `-x` becomes `x`.
+
+**The bug it stands for:** a missing sign: a refund that adds, a delta applied the wrong way round.
+It costs in money and coordinates, where a value and its opposite are both plausible, and a test
+that only uses zero can't tell them apart.
 
 <!-- from: fixtures/operators/src/arithmetic.rs -->
 ```rust
@@ -271,11 +342,27 @@ fn an_empty_balance_reversed() {
     reproduce  mutastic run --only=me0933ca7 fixtures/operators
 ```
 
+**The test that catches it:** one with a value that isn't zero, asserting the sign of the result.
+
+<!-- added to: fixtures/operators/src/arithmetic.rs -->
+```rust
+#[test]
+fn a_balance_reversed() {
+    assert_eq!(reversed(5), -5);
+}
+```
+
+**Edition notes:** the Java edition has the same id.
+
 ## Constant value
 
 `mutastic/constant-value`, in the `stronger` set. A whole number becomes the numbers next to it,
 `0` and `1`, and `-1` where the type is plainly signed. Never a number outside its type's range, and
 never one that only sizes something, sets a wait, or starts a counter at `0` or `1`.
+
+**The bug it stands for:** a number set wrong: a rate of `3` that should be `4`, a minimum one too
+high, a digit out. Nothing else shows these: the calculation is right, and only its number is wrong.
+It costs in limits and rates held as constants, which tests often reuse instead of stating.
 
 <!-- from: fixtures/operators/src/arithmetic.rs -->
 ```rust
@@ -335,11 +422,28 @@ the test: the operator's, the constant's, and keep operand's, on one card:
     reproduce  mutastic run --only=m0f04c581,mc5b1b361,mebd4cb5e,mbed3c12d,ma0fa708a,m9d8f7916,mb750003e fixtures/operators
 ```
 
+**The test that catches it:** one that states the numbers, with an input where each of them shows.
+
+<!-- added to: fixtures/operators/src/arithmetic.rs -->
+```rust
+#[test]
+fn two_kilos_cost_eight() {
+    assert_eq!(postage(2), 8);
+}
+```
+
+**Edition notes:** the Java edition has the same id, and reaches a `static final` number through the
+value javac writes where it's used.
+
 ## Bitwise
 
 `mutastic/bitwise`, in the `stronger` set, and only in Rust. `&` becomes `|` and `^`, `|` becomes
 `&` and `^`, `^` becomes `&` and `|`, and `<<` and `>>` swap. Compound assignments too, except that
 `&=` and `|=` never become `^=`.
+
+**The bug it stands for:** the wrong bit operation: setting a flag where it should be tested,
+toggling where it should be set. It costs in permissions, flags and packed fields, where tests use
+bits that are set, and on those `&`, `|` and `^` agree.
 
 <!-- from: fixtures/operators/src/arithmetic.rs -->
 ```rust
@@ -385,11 +489,28 @@ fn a_flag_that_is_set() {
     reproduce  mutastic run --only=ma32c7819,maace5f2b fixtures/operators
 ```
 
+**The test that catches it:** one with a flag that isn't set.
+
+<!-- added to: fixtures/operators/src/arithmetic.rs -->
+```rust
+#[test]
+fn a_flag_that_is_not_set() {
+    assert!(!has_flag(2, 1));
+}
+```
+
+**Edition notes:** the Java edition has the same id, for `>>>` too.
+
 ## Unchecked arithmetic
 
 `library/unchecked-arithmetic`, in the `stronger` set. A checked operation becomes one that can't
 fail: `a.checked_add(b)` becomes `Some(a.wrapping_add(b))`, and `saturating_sub` becomes
 `wrapping_sub`. It goes unnoticed when no test reaches the overflow the check is there for.
+
+**The bug it stands for:** arithmetic that overflows silently: a total that wraps round, because
+nothing checked that it fits. It costs in money and sizes, where someone chose `checked_add` because
+a wrong number is worse than none. If no test overflows, nothing shows that the check is still
+there.
 
 <!-- from: fixtures/operators/src/arithmetic.rs -->
 ```rust
@@ -426,3 +547,15 @@ fn points_add_up() {
     done when  mutastic verify mcc88a618 fixtures/operators passes
     reproduce  mutastic run --only=mcc88a618 fixtures/operators
 ```
+
+**The test that catches it:** one whose result doesn't fit the type, asserting there's no answer.
+
+<!-- added to: fixtures/operators/src/arithmetic.rs -->
+```rust
+#[test]
+fn too_many_points() {
+    assert_eq!(add_points(u32::MAX, 1), None);
+}
+```
+
+**Edition notes:** the Java edition has the same id, for `Math.addExact` and the like, which throw.

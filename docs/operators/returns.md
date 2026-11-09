@@ -31,6 +31,11 @@ becomes another value of its type, as plain from the signature:
 | `Box<T>`, `Rc<T>`, `Arc<T>` | `Box::new(..)`, `Rc::new(..)` or `Arc::new(..)` of a value for `T` from this table |
 | `Result<T, E>` | `Ok(..)` of one of these values, and `Ok(())` for `Result<()>` |
 
+**The bug it stands for:** a function that doesn't return what it worked out. This is less a typo
+than a sign: tests that call the function but never look at its answer. The value is the one a
+function of that kind most plausibly gets wrong: a check that answers the wrong way, a count of
+nothing, a search that finds nothing.
+
 A `fmt` function's `Ok(())` is left alone: what it writes is the result.
 
 With `extended`, it also makes `Default::default()` for a type that plainly derives or implements
@@ -83,12 +88,29 @@ The only test spends too little to earn a point, so a function that always retur
    reproduce  mutastic run --only=m5dafbb78 fixtures/operators
 ```
 
+**The test that catches it:** one that asserts a result other than the mutant's: here, a spend that
+earns points.
+
+<!-- added to: fixtures/operators/src/returns.rs -->
+```rust
+#[test]
+fn a_point_for_every_10() {
+    assert_eq!(loyalty_points(35), 3);
+}
+```
+
+**Edition notes:** the Java edition has the same id, with Java's empty values (`0`, `""`,
+`List.of()`, `Optional.empty()`) and `null` for anything else.
+
 ## Unwrap try
 
 `mutastic/unwrap-try`, in the defaults, and only in Rust. `f()?` becomes `f().unwrap()`: the
 error that `?` would hand back to the caller panics instead. It goes unnoticed when no test makes
 that call fail, so the error path is never run. Line coverage can't see that: the line runs either
 way.
+
+**The bug it stands for:** an error path never taken: a `?` whose error no test makes happen. Code
+that handles a bad input by returning the error is only as good as the test that sends one.
 
 <!-- from: fixtures/operators/src/returns.rs -->
 ```rust
@@ -123,6 +145,17 @@ fn spaces_are_ignored() {
 
     done when  mutastic verify m18c28709 fixtures/operators passes
     reproduce  mutastic run --only=m18c28709 fixtures/operators
+```
+
+**The test that catches it:** one where the expression before `?` fails, asserting the error comes
+back.
+
+<!-- added to: fixtures/operators/src/returns.rs -->
+```rust
+#[test]
+fn a_word_is_not_a_quantity() {
+    assert!(parse_quantity("three").is_err());
+}
 ```
 
 A `?` that only passes on a formatter's error is skipped as equivalent: inside the `fmt` of
@@ -173,11 +206,17 @@ impl std::fmt::Display for Pieces {
 }
 ```
 
+**Edition notes:** the Java edition has no such operator, as Java has no `?`.
+
 ## Replace body
 
 `mutastic/replace-body`, in the `extended` set. A function's whole body becomes one value
 return value would give, or `{}` when it returns nothing. Not `new`, `fmt`, `hash`, or a getter that
 returns one field. It goes unnoticed when no test can tell the function from one that does nothing.
+
+**The bug it stands for:** a function that's wrong from top to bottom, or does nothing, and nobody
+would know: not a slip in one line, but code no test depends on. It costs in the code everyone
+assumes is tested because coverage says it runs.
 
 <!-- from: fixtures/operators/src/returns.rs -->
 ```rust
@@ -214,14 +253,32 @@ fn a_good_code() {
     reproduce  mutastic run --only=m4f13eb3c fixtures/operators
 ```
 
+**The test that catches it:** one that calls the function and asserts a result other than that
+value: here, a code that isn't valid.
+
+<!-- added to: fixtures/operators/src/returns.rs -->
+```rust
+#[test]
+fn a_letter_spoils_a_code() {
+    assert!(!is_valid_code("12a456"));
+}
+```
+
 It's in `extended` because it overlaps return value: a test that catches one mostly catches the
 other.
+
+**Edition notes:** the Java edition has the same id, and leaves alone constructors and trivial
+getters and setters.
 
 ## Remove throw
 
 `mutastic/remove-throw`, in the `extended` set. A `return Err(e);`, a `panic!(..);` or a
 `bail!(..);` is removed, and the code carries on past it. Not when it's the last statement of a block
 whose value is used. It goes unnoticed when a test checks that there's an error, but not which.
+
+**The bug it stands for:** a check that doesn't stop anything: bad input carries on into the code
+that assumed it had been refused, and what comes out is wrong, or a different error from the one the
+caller handles.
 
 <!-- from: fixtures/operators/src/returns.rs -->
 ```rust
@@ -261,3 +318,16 @@ Without the early return, `"".parse()` fails too, and the test still gets an err
     done when  mutastic verify ma1f287d8 fixtures/operators passes
     reproduce  mutastic run --only=ma1f287d8 fixtures/operators
 ```
+
+**The test that catches it:** one where it fails, asserting that it's this error, not one that
+happens to be there anyway.
+
+<!-- added to: fixtures/operators/src/returns.rs -->
+```rust
+#[test]
+fn no_quantity_is_refused_as_such() {
+    assert_eq!(quantity(""), Err("no quantity given".to_string()));
+}
+```
+
+**Edition notes:** the Java edition has the same id, for `throw`, in `extended` and experimental.

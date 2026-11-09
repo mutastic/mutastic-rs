@@ -23,6 +23,10 @@ and std's other such methods; a builder's `(self) -> Self` step; and a crate fun
 its one argument's type, `escape(text)` becoming `text`. Some of these change the type, as
 `to_lowercase` turns a `&str` into a `String`; the build withdraws those as unviable.
 
+**The bug it stands for:** the step that was never written: the `trim` that isn't on a pasted value,
+the escape that isn't around user input. The code reads as finished without it, and on clean input,
+which is what tests tend to have, it makes no difference.
+
 <!-- from: fixtures/operators/src/arguments.rs -->
 ```rust
 pub fn username(input: &str) -> String {
@@ -59,11 +63,29 @@ No test gives a name with spaces round it:
    reproduce  mutastic run --only=m3b69ecd2 fixtures/operators
 ```
 
+**The test that catches it:** one with a value the call changes: here, spaces to trim.
+
+<!-- added to: fixtures/operators/src/arguments.rs -->
+```rust
+#[test]
+fn spaces_are_not_part_of_a_username() {
+    assert_eq!(username(" Ann "), "ann");
+}
+```
+
+**Edition notes:** the Java edition has the same id, for `String`'s methods, `Math.abs` and your
+own.
+
 ## Swap arguments
 
 `mutastic/swap-arguments`, in the `stronger` set. A call to a crate function or method whose last
 two parameters have one type gets those two arguments swapped: `transfer(amount, from, to)` becomes
 `transfer(amount, to, from)`.
+
+**The bug it stands for:** two arguments the wrong way round. When they have the same type the
+compiler has nothing to say, and a test whose values give the same answer either way has nothing to
+say either. It costs in anything with a direction: a range's start and end, a transfer's source and
+destination.
 
 <!-- from: fixtures/operators/src/arguments.rs -->
 ```rust
@@ -113,10 +135,26 @@ With the range turned round, nothing is a percent, and 150 still isn't:
     reproduce  mutastic run --only=m1a3c85a8 fixtures/operators
 ```
 
+**The test that catches it:** one that passes values whose order shows: here, a percentage that is
+one.
+
+<!-- added to: fixtures/operators/src/arguments.rs -->
+```rust
+#[test]
+fn fifty_is_a_percent() {
+    assert!(is_percent(50));
+}
+```
+
+**Edition notes:** the Java edition has the same id, for any call's last two arguments of one type.
+
 ## Null parameter
 
 `mutastic/null-parameter`, in the `stronger` set. A parameter of type `Option<T>` is set to `None`
 as the function starts, as if every caller passed `None`.
+
+**The bug it stands for:** a value that's handed in and doesn't matter as it should: a parameter
+ignored on one path. It costs in code with many inputs where tests pin only some.
 
 <!-- from: fixtures/operators/src/arguments.rs -->
 ```rust
@@ -153,12 +191,29 @@ fn full_price_without_a_coupon() {
     reproduce  mutastic run --only=m51d65a09 fixtures/operators
 ```
 
+**The test that catches it:** one whose result depends on the parameter: here, a coupon.
+
+<!-- added to: fixtures/operators/src/arguments.rs -->
+```rust
+#[test]
+fn a_coupon_comes_off() {
+    assert_eq!(price_with(10, Some(3)), 7);
+}
+```
+
+**Edition notes:** the Java edition has the same id, for any parameter holding an object, which
+becomes `null`.
+
 ## Drop vararg
 
 `mutastic/drop-vararg`, in the `extended` set. The last value of an array or a `vec!` built for a
 call is left out: `f(&[a, b, c])` becomes `f(&[a, b])`, and `f(vec![a, b, c])` becomes `f(vec![a,
 b])`. Where the length is part of the type, the build withdraws the mutant, which is why it's in
 `extended`.
+
+**The bug it stands for:** a value left out of a list: the role not in the set, the last column not
+in the query. It costs in lists built in one expression, where one element's absence shows only for
+inputs that need it.
 
 <!-- from: fixtures/operators/src/arguments.rs -->
 ```rust
@@ -206,12 +261,28 @@ fn the_best_comes_first() {
     reproduce  mutastic run --only=m6bcfe468 fixtures/operators
 ```
 
+**The test that catches it:** one that depends on the last value, not only on the others.
+
+<!-- added to: fixtures/operators/src/arguments.rs -->
+```rust
+#[test]
+fn the_best_comes_last() {
+    assert_eq!(best_of_three(1, 2, 9), 9);
+}
+```
+
+**Edition notes:** the Java edition has the same id in `stronger`, for an array built for a varargs
+call.
+
 ## Default parameter
 
 `mutastic/default-parameter`, in the `extended` set, and only in Rust. A parameter is set to its
 type's `Default::default()` as the function starts: for std's numbers, `bool`, `char`, `String` and
 collections, and for a type the crate plainly derives or implements `Default` for. An `Option` is
 null parameter's.
+
+**The bug it stands for:** a value that's handed in and makes no difference: a flag ignored, an
+option the function never reads on the path tests take.
 
 <!-- from: fixtures/operators/src/arguments.rs -->
 ```rust
@@ -252,3 +323,16 @@ fn a_calm_greeting() {
     done when  mutastic verify m68aafb6e fixtures/operators passes
     reproduce  mutastic run --only=m68aafb6e fixtures/operators
 ```
+
+**The test that catches it:** one where the value given changes the result.
+
+<!-- added to: fixtures/operators/src/arguments.rs -->
+```rust
+#[test]
+fn an_excited_greeting() {
+    assert_eq!(greet("Ann".into(), true), "Hi Ann!");
+}
+```
+
+**Edition notes:** the Java edition has no such operator; its [null parameter](#null-parameter) is
+the nearest.
