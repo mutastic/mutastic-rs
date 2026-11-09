@@ -160,5 +160,5 @@ Every mutant is caught.
 
 - [Results and the score](concepts/results.md): what caught, missed and the rest mean.
 - [Operators](operators.md): the kinds of change mutastic makes, with a card for each.
-- [Commands](reference/cli.md): every option, and the other formats, for CI and coding agents.
+- [Commands](https://docs.mutastic.io/rust/reference/run/): every option, for CI and coding agents, and [the other formats](concepts/output.md).
 - [How a run works](concepts/how-a-run-works.md): what happens to your crate, and what doesn't.

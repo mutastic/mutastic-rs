@@ -20,7 +20,7 @@ Each event has `schema` (`mutastic.events/v1`), `edition` (`rust`, where the Jav
 
 This is the pricing fixture's whole stream:
 
-<!-- output: reference/format-jsonl -->
+<!-- output: concepts/format-jsonl -->
 ```text
 {"schema":"mutastic.events/v1","edition":"rust","reason":"run-started","project":"pricing","rules":"add or change tests only, never production code","rule":"add or change tests only, never production code","decline":"if a mutant's case can't happen in practice, or the change is one no caller can see, don't contrive a test: say why","profile":{"name":"mutastic","optLevel":"0","overflowChecks":true,"debugAssertions":true},"unsafe":"skip"}
 {"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"mc9e13290","fingerprint":"c9e13290e7d1ce44","status":"Killed","operator":"mutastic/return-value","location":{"file":"src/lib.rs","line":29,"column":9,"class":"Pricing","method":"discount"},"mutation":{"replacement":"1","description":"returns `1` instead","bytecode":"0 -> 1"},"coveredBy":["tests::small_orders_pay_full_price"],"killedBy":"tests::small_orders_pay_full_price","caughtBy":"tests::small_orders_pay_full_price","killedWith":"panic","caughtWith":"panic","inputs":{"total":[50]},"testsRun":1,"durationMs":4}

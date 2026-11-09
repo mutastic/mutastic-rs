@@ -29,6 +29,7 @@ page stands alone and links to the others by relative path.
 - [Mutant ids](concepts/ids.md): what an id is made of, and what keeps it stable.
 - [Suggested tests](concepts/suggested-tests.md): the test a card writes, and how its values are
   found by running your code.
+- [Output](concepts/output.md): each format, for people, coding agents and tools, and `explain`.
 
 ## Operators
 
@@ -44,9 +45,11 @@ page stands alone and links to the others by relative path.
 
 ## Reference
 
-- [Commands](reference/cli.md): `run`, `verify` and `mutants`, and every option.
+- [Commands](https://docs.mutastic.io/rust/reference/run/): a page for each, with every option it takes, and
+  [environment and exit codes](https://docs.mutastic.io/rust/reference/environment/).
+- [Report files](reference/reports.md): `mutation.json` and `mutation.html`.
 - [Events](reference/events.md): the `--format=jsonl` stream, and what the Rust edition adds to it.
-- [Configuration](reference/configuration.md): the environment variables mutastic reads.
+- [Configuration](reference/configuration.md): `mutastic.yaml`, rules files, and ignoring one mutant.
 
 ## Help
 

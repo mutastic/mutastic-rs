@@ -106,6 +106,6 @@ instead:
 | In the Java edition | In the Rust edition, for now |
 |---|---|
 | Compiled plugins, and `filters:` in `mutastic.yaml` | A rules file, for call operators: [Configuration](reference/configuration.md#rules-files) |
-| `@DoNotMutate` | `mutastic ignore`, one mutant at a time: [Commands](reference/cli.md#mutastic-ignore) |
+| `@DoNotMutate` | `mutastic ignore`, one mutant at a time: [Configuration](reference/configuration.md#ignoring-one-mutant) |
 | Suggested tests on cards | The card's `help` line |
 | `--vocabulary=classic` | The standard words only |

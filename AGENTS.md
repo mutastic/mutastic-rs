@@ -11,7 +11,7 @@ judgement, written down so they're designed around rather than met as a failure 
 cargo fmt --all                            # format the code
 cargo clippy --all-targets -- -D warnings  # every lint, as errors
 cargo test                                 # unit tests, then mutastic run on the fixtures
-MUTASTIC_DOCS_WRITE=1 cargo test --test docs  # after changing what mutastic prints: the docs' copies
+MUTASTIC_DOCS_WRITE=1 cargo test --test docs  # after changing what mutastic prints or takes: the docs' copies
 MUTASTIC_IDS_WRITE=1 cargo test --test ids    # after adding an operator or a shape: the ids list
 cargo run --bin mutastic -- run fixtures/pricing
 ```
@@ -53,6 +53,11 @@ Formatting is rustfmt's, with its defaults: that is the spec, not taste.
   mutastic's own terms. Comparisons belong in code comments and notes.
 - **A command the output offers exists.** The docs test parses every `mutastic` command a page
   shows with `cli::check`, and every id it names must be a mutant of its fixture.
+- **A command takes what it declares, and the docs say so.** Every command, option, environment
+  variable and exit status is declared once, in `src/commands.rs`. The parser takes an option only
+  on the commands it names there, and `docs/commands.json`, which the docs site's page for each
+  command is written from, is written from the same declarations: the docs test fails while it's
+  stale.
 - **Ids never change.** A mutant's id is a hash of what it is, never its line. A new operator,
   filter or output must not move an existing id: `tests/ids.rs` holds every fixture's mutants to
   `tests/ids/ids.tsv`, and the list only grows.

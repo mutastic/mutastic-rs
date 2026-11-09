@@ -9,6 +9,7 @@
 pub mod callrules;
 pub mod cfg;
 pub mod cli;
+pub mod commands;
 pub mod compile;
 pub mod config;
 pub mod edition;

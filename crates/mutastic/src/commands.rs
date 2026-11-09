@@ -1,0 +1,694 @@
+//! The commands and options `mutastic` takes, declared once. The parser accepts an option only as
+//! declared here, and only on the commands it names; `gate <action> --help` is written from these;
+//! and so is `docs/commands.json`, the docs site's reference pages, in the Java edition's shape
+//! (`mutastic.commands/v1`). The docs test fails while the committed copy differs from
+//! [`model`]: `MUTASTIC_DOCS_WRITE=1 cargo test --test docs` writes it again.
+
+use serde_json::{json, Value};
+
+/// The version of `commands.json`'s shape, the Java edition's, for the docs site to check.
+pub const SCHEMA: &str = "mutastic.commands/v1";
+
+/// Where the Rust edition's docs are served.
+pub const DOCS: &str = "https://docs.mutastic.io/rust/";
+
+/// A mutant of the pricing fixture, for the examples: its boundary at `total == 100`.
+const ID: &str = "mb2f8ae57";
+
+pub struct Command {
+    /// As it's typed after `mutastic`: `run`, `gate open`.
+    pub name: &'static str,
+    /// Its page in the docs: `run`, `gate-open`.
+    pub page: &'static str,
+    /// The words it takes, as an error about them shows them.
+    pub synopsis: &'static str,
+    pub summary: &'static str,
+    pub detail: &'static str,
+    pub exits: &'static str,
+    pub takes_mutant_id: bool,
+    pub examples: &'static [&'static str],
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Kind {
+    /// `--propose`: nothing after it.
+    Flag,
+    /// `--threshold=70`.
+    Value,
+    /// `--since`, or `--since=main`.
+    OptionalValue,
+    /// `--report=json --report=html`: given again, it adds.
+    Repeated,
+}
+
+impl Kind {
+    fn name(self) -> &'static str {
+        match self {
+            Kind::Flag => "flag",
+            Kind::Value => "value",
+            Kind::OptionalValue => "optional_value",
+            Kind::Repeated => "repeated",
+        }
+    }
+}
+
+pub struct CliOption {
+    /// Without its dashes: `threshold`.
+    pub name: &'static str,
+    /// What its value stands for, `N`; empty for a flag.
+    pub value: &'static str,
+    pub kind: Kind,
+    /// The heading it's listed under, as the Java edition groups its options.
+    pub group: &'static str,
+    /// Every value it takes, when it takes only a few.
+    pub choices: &'static [&'static str],
+    pub help: &'static str,
+    /// The commands that take it.
+    pub commands: &'static [&'static str],
+    /// The environment variables that stand in for it.
+    pub environment: &'static str,
+    /// What an example adds to a command for it, `--threshold=70`; or, starting `mutastic `, the
+    /// whole example, for an option only one command takes.
+    pub example: &'static str,
+}
+
+impl CliOption {
+    /// `--threshold=N`, `--since[=REF]`, `--propose`.
+    pub fn synopsis(&self) -> String {
+        match self.kind {
+            Kind::Flag => format!("--{}", self.name),
+            Kind::OptionalValue => format!("--{}[={}]", self.name, self.value),
+            Kind::Value | Kind::Repeated => format!("--{}={}", self.name, self.value),
+        }
+    }
+
+    /// The option at work on `command`, as the command line writes it.
+    pub fn example_for(&self, command: &Command) -> String {
+        if self.example.starts_with("mutastic ") {
+            return self.example.to_string();
+        }
+        let id = if command.takes_mutant_id {
+            format!(" {ID}")
+        } else {
+            String::new()
+        };
+        format!("mutastic {}{id} {}", command.name, self.example)
+    }
+}
+
+/// A variable of the environment mutastic reads, or a status it exits with.
+pub struct Entry {
+    pub name: &'static str,
+    pub meaning: &'static str,
+    pub detail: &'static str,
+}
+
+const EVERY_COMMAND: &[&str] = &[
+    "run",
+    "verify",
+    "explain",
+    "ignore",
+    "gate open",
+    "gate check",
+    "gate close",
+    "mutants",
+];
+
+pub const COMMANDS: &[Command] = &[
+    Command {
+        name: "run",
+        page: "run",
+        synopsis: "mutastic run [dir] [options]",
+        summary: "Mutate the package and run its tests against each mutant",
+        detail: "dir is the package's directory, here unless given; in a workspace, a member's. The \
+                 run passes when the score reaches the threshold. A full run, one without --only, \
+                 writes report files, and offers the commands to work on each missed mutant. Its \
+                 progress goes to stderr, so stdout holds only the result.",
+        exits: "0 when the score reaches the threshold, 1 when it doesn't.",
+        takes_mutant_id: false,
+        examples: &[
+            "mutastic run",
+            "mutastic run fixtures/pricing --threshold=70",
+            "mutastic run --since=main",
+            "mutastic run fixtures/pricing --operators=stronger",
+        ],
+    },
+    Command {
+        name: "verify",
+        page: "verify",
+        synopsis: "mutastic verify <id>[,<id>…] [<id>…] [dir]",
+        summary: "Run mutants' tests: it passes when they catch every one not skipped",
+        detail: "How a fix is proved: each missed mutant offers it as \"done when\", and a card \
+                 with several mutants names them all, split by commas; spaces split them too, and \
+                 the directory comes after them. An id names its mutant whatever options showed \
+                 it, so verify needs no --operators or --unsafe to find one.",
+        exits: "0 when it catches each mutant named, or the mutant is skipped or crashed where a \
+                crash proves nothing; 1 while one is still missed or not covered.",
+        takes_mutant_id: true,
+        examples: &[
+            "mutastic verify mb2f8ae57",
+            "mutastic verify mb2f8ae57 fixtures/pricing",
+            "mutastic verify mb2f8ae57 m95f96847 fixtures/pricing",
+        ],
+    },
+    Command {
+        name: "explain",
+        page: "explain",
+        synopsis: "mutastic explain <id> [dir]",
+        summary: "Everything known of one mutant, with its tests run",
+        detail: "Its card when it's missed, or what became of it otherwise, then what the change \
+                 is, its operator, how its id is made, where it is, and how the last full run went \
+                 for it, from that run's mutation.json.",
+        exits: "0 whatever the mutant's result: it explains, it doesn't judge.",
+        takes_mutant_id: true,
+        examples: &[
+            "mutastic explain mb2f8ae57",
+            "mutastic explain mb2f8ae57 fixtures/pricing",
+        ],
+    },
+    Command {
+        name: "ignore",
+        page: "ignore",
+        synopsis: "mutastic ignore <id> [dir] --reason=<why>",
+        summary: "Record a decision not to test one mutant",
+        detail: "It goes in .mutastic/ignores.yaml in the package's directory with its line and \
+                 the reason, to commit and review, and lapses when that line changes: the mutant \
+                 runs again, and run-finished lists it in staleIgnores. --remove takes one back; \
+                 ignore --prune takes away every one that has lapsed. --propose records it in \
+                 .mutastic/proposals.yaml instead, for a person to accept with --accept: how a \
+                 coding agent says a mutant isn't worth a test, since until then it still counts \
+                 as missed. It runs no tests, and each step says how to undo it.",
+        exits: "0 when the decision is recorded, proposed, accepted or removed; 1 when --accept \
+                names a mutant that isn't proposed.",
+        takes_mutant_id: true,
+        examples: &[
+            "mutastic ignore mb2f8ae57 --reason=\"totals are rounded to tens\"",
+            "mutastic ignore mb2f8ae57 --propose --as=unreachable --reason=\"totals are rounded to tens\"",
+            "mutastic ignore --accept mb2f8ae57",
+            "mutastic ignore --remove mb2f8ae57",
+            "mutastic ignore --prune",
+        ],
+    },
+    Command {
+        name: "gate open",
+        page: "gate-open",
+        synopsis: "mutastic gate open [dir]",
+        summary: "Start gating a coding agent's task: keep where it starts",
+        detail: "Keeps the commit the task starts from, its ignores, and how many tests run and \
+                 are ignored, in target/mutastic, so gate check can say whether the task is done. \
+                 With --hook, once for each of the agent's sessions.",
+        exits: "0 once it has kept where the task starts; 2 outside a git repository with a \
+                commit.",
+        takes_mutant_id: false,
+        examples: &["mutastic gate open", "mutastic gate open --hook=claude"],
+    },
+    Command {
+        name: "gate check",
+        page: "gate-check",
+        synopsis: "mutastic gate check [dir]",
+        summary: "Say whether a gated task is done: its changed lines' mutants caught",
+        detail: "Runs the mutants on the lines changed since gate open. The task is done when each \
+                 is caught or proposed for a person to ignore, no ignore was made by the task, and \
+                 no test was taken away or ignored; until then it says what's left, as the agent \
+                 format does. With --hook it answers as the agent's hook, and lets the agent stop, \
+                 saying what's left, when it changed nothing since it was sent back, or after \
+                 --tries.",
+        exits: "0 when the task is done, 1 when it isn't, 2 when no task is open. With --hook, 0 \
+                either way: the answer is what it prints, a block or a message, as the agent's \
+                hooks read it, and with nothing open the agent may stop.",
+        takes_mutant_id: false,
+        examples: &["mutastic gate check", "mutastic gate check --hook=claude"],
+    },
+    Command {
+        name: "gate close",
+        page: "gate-close",
+        synopsis: "mutastic gate close [dir]",
+        summary: "Stop gating a task: forget where it started",
+        detail: "The next gate open starts a new task.",
+        exits: "0 whether a task was open or not: it says which, or with --hook says nothing.",
+        takes_mutant_id: false,
+        examples: &["mutastic gate close"],
+    },
+    Command {
+        name: "mutants",
+        page: "mutants",
+        synopsis: "mutastic mutants [dir]",
+        summary: "List the mutants, without building or running anything",
+        detail: "One line each: its id, place, operator, the change, and the function it's in. A \
+                 mutant near unsafe code says why it's marked, and the last lines count what was \
+                 left out. With --operators and --unsafe, it shows what those would add before a \
+                 run.",
+        exits: "0 once they're listed.",
+        takes_mutant_id: false,
+        examples: &[
+            "mutastic mutants",
+            "mutastic mutants fixtures/pricing --operators=stronger",
+        ],
+    },
+];
+
+pub const OPTIONS: &[CliOption] = &[
+    CliOption {
+        name: "threshold",
+        value: "N",
+        kind: Kind::Value,
+        group: "Running",
+        choices: &[],
+        help: "The score a run must reach to pass; 80 unless set",
+        commands: &["run"],
+        environment: "",
+        example: "--threshold=70",
+    },
+    CliOption {
+        name: "since",
+        value: "REF",
+        kind: Kind::OptionalValue,
+        group: "Running",
+        choices: &[],
+        help: "Mutate only the lines changed since the merge-base of HEAD and REF, uncommitted \
+               and new files included; the default branch without one",
+        commands: &["run"],
+        environment: "",
+        example: "--since=main",
+    },
+    CliOption {
+        name: "only",
+        value: "ID",
+        kind: Kind::Value,
+        group: "Running",
+        choices: &[],
+        help: "Run one mutant, or several split by commas, whatever --operators says",
+        commands: &["run"],
+        environment: "",
+        example: "--only=mb2f8ae57",
+    },
+    CliOption {
+        name: "workers",
+        value: "N",
+        kind: Kind::Value,
+        group: "Running",
+        choices: &[],
+        help: "How many mutants run side by side; half the cores, from 1 to 4, unless set",
+        commands: &["run", "verify", "explain"],
+        environment: "",
+        example: "--workers=2",
+    },
+    CliOption {
+        name: "no-suggestions",
+        value: "",
+        kind: Kind::Flag,
+        group: "Running",
+        choices: &[],
+        help: "Don't look for a test that catches each missed mutant, which runs the missed \
+               mutant's function outside the tests",
+        commands: &["run", "explain"],
+        environment: "",
+        example: "--no-suggestions",
+    },
+    CliOption {
+        name: "operators",
+        value: "OPERATORS",
+        kind: Kind::Value,
+        group: "Running",
+        choices: &[],
+        help: "Which operators run: a set (defaults, stronger or extended), or operator ids split \
+               by commas, in place of mutastic.yaml's operators; defaults unless set",
+        commands: &["run", "mutants"],
+        environment: "",
+        example: "--operators=stronger",
+    },
+    CliOption {
+        name: "unsafe",
+        value: "MODE",
+        kind: Kind::Value,
+        group: "Running",
+        choices: &["skip", "enclosing", "all"],
+        help: "Which unsafe code is mutated: skip leaves unsafe code and the functions holding \
+               an unsafe block alone, enclosing mutates those functions too, all unsafe code as \
+               well; skip unless set",
+        commands: &["run", "mutants"],
+        environment: "",
+        example: "--unsafe=enclosing",
+    },
+    CliOption {
+        name: "report",
+        value: "KIND[:PATH]",
+        kind: Kind::Repeated,
+        group: "Running",
+        choices: &["json", "html", "none"],
+        help: "A report file a full run writes: json (mutation.json) or html (mutation.html), in \
+               target/mutastic unless a path is given, or none; json and html unless set",
+        commands: &["run"],
+        environment: "",
+        example: "--report=json",
+    },
+    CliOption {
+        name: "format",
+        value: "FORMAT",
+        kind: Kind::Value,
+        group: "Output",
+        choices: &["full", "concise", "agent", "jsonl"],
+        help: "How the result is shown; full on a terminal, concise elsewhere, agent for coding \
+               agents",
+        commands: &["run"],
+        environment: "MUTASTIC_FORMAT, MUTASTIC_AGENT",
+        example: "--format=agent",
+    },
+    CliOption {
+        name: "progress",
+        value: "STYLE",
+        kind: Kind::Value,
+        group: "Output",
+        choices: &["auto", "bar", "counter", "none"],
+        help: "Progress on stderr: a bar on a terminal, counter lines in logs, none for agents",
+        commands: &["run", "verify", "explain"],
+        environment: "",
+        example: "--progress=counter",
+    },
+    CliOption {
+        name: "reason",
+        value: "WHY",
+        kind: Kind::Value,
+        group: "Ignoring",
+        choices: &[],
+        help: "Why the mutant isn't worth a test: every ignore says",
+        commands: &["ignore"],
+        environment: "",
+        example: "--reason=\"totals are rounded to tens\"",
+    },
+    CliOption {
+        name: "as",
+        value: "KIND",
+        kind: Kind::Value,
+        group: "Ignoring",
+        choices: crate::ignores::KINDS,
+        help: "What sort of decision it is",
+        commands: &["ignore"],
+        environment: "",
+        example: "--as=unreachable --reason=\"totals are rounded to tens\"",
+    },
+    CliOption {
+        name: "remove",
+        value: "",
+        kind: Kind::Flag,
+        group: "Ignoring",
+        choices: &[],
+        help: "Take the mutant's ignore, or its proposal, away, so it runs again",
+        commands: &["ignore"],
+        environment: "",
+        example: "mutastic ignore --remove mb2f8ae57",
+    },
+    CliOption {
+        name: "propose",
+        value: "",
+        kind: Kind::Flag,
+        group: "Ignoring",
+        choices: &[],
+        help: "Propose the ignore for a person to accept, rather than make it: a coding agent's \
+               way",
+        commands: &["ignore"],
+        environment: "",
+        example: "--propose --as=unreachable --reason=\"totals are rounded to tens\"",
+    },
+    CliOption {
+        name: "accept",
+        value: "",
+        kind: Kind::Flag,
+        group: "Ignoring",
+        choices: &[],
+        help: "Accept a proposed ignore: it moves into the ignores, as proposed",
+        commands: &["ignore"],
+        environment: "",
+        example: "mutastic ignore --accept mb2f8ae57",
+    },
+    CliOption {
+        name: "prune",
+        value: "",
+        kind: Kind::Flag,
+        group: "Ignoring",
+        choices: &[],
+        help: "Take away every ignore whose line has changed",
+        commands: &["ignore"],
+        environment: "",
+        example: "mutastic ignore --prune",
+    },
+    CliOption {
+        name: "hook",
+        value: "AGENT",
+        kind: Kind::Value,
+        group: "Gate",
+        choices: &["claude"],
+        help: "Run as the agent's hook: read its input on stdin, and answer as its hooks do",
+        commands: &["gate open", "gate check", "gate close"],
+        environment: "",
+        example: "--hook=claude",
+    },
+    CliOption {
+        name: "tries",
+        value: "N",
+        kind: Kind::Value,
+        group: "Gate",
+        choices: &[],
+        help: "With --hook, how many times check sends the agent back before it lets it stop and \
+               says what's left, from 1 to 100; 3 unless set",
+        commands: &["gate check"],
+        environment: "",
+        example: "mutastic gate check --hook=claude --tries=5",
+    },
+    CliOption {
+        name: "edition",
+        value: "EDITION",
+        kind: Kind::Value,
+        group: "Editions",
+        choices: &["rust", "java"],
+        help: "Which edition runs; unless set, the build file in dir, or the nearest above it: \
+               Cargo.toml for rust, pom.xml, build.gradle or settings.gradle for java",
+        commands: EVERY_COMMAND,
+        environment: "",
+        example: "--edition=rust",
+    },
+];
+
+pub const ENVIRONMENT: &[Entry] = &[
+    Entry {
+        name: "MUTASTIC_FORMAT",
+        meaning: "The format when --format isn't given",
+        detail: "For a machine or a CI job that always wants the same format, `concise` say.",
+    },
+    Entry {
+        name: "MUTASTIC_AGENT=1",
+        meaning: "The agent format, for coding agents",
+        detail: "Coding agents set it, so mutastic answers in the format they read best. \
+                 `MUTASTIC_FORMAT` still wins.",
+    },
+    Entry {
+        name: "NO_COLOR",
+        meaning: "No colour",
+        detail: "Set to anything, it turns colour off, as it does for many tools.",
+    },
+    Entry {
+        name: "FORCE_COLOR",
+        meaning: "Colour even off a terminal",
+        detail: "Set to anything, it turns colour on where mutastic can't tell a person is \
+                 reading, such as a CI log that shows colour. It wins over `NO_COLOR`.",
+    },
+    Entry {
+        name: "TERM=dumb",
+        meaning: "No colour, unless `FORCE_COLOR` is set",
+        detail: "",
+    },
+    Entry {
+        name: "CARGO",
+        meaning: "The cargo mutastic runs",
+        detail: "Cargo sets it for `cargo mutastic`; `cargo` on the `PATH` otherwise.",
+    },
+    Entry {
+        name: "RUSTC",
+        meaning: "The rustc Cargo builds with, as for any Cargo build",
+        detail: "The result names its version.",
+    },
+    Entry {
+        name: "MUTASTIC_VERSION",
+        meaning: "In a Maven or Gradle project, the Java edition's release to use",
+        detail: "Such as `0.5.0`, fetched if it isn't kept.",
+    },
+    Entry {
+        name: "MUTASTIC_HOME",
+        meaning: "Where the Java edition's releases are kept",
+        detail: "`~/.mutastic` unless set.",
+    },
+    Entry {
+        name: "MUTASTIC_JAVA_ENGINE",
+        meaning:
+            "A Java edition's `bin/mutastic` to run instead, such as one built from its source",
+        detail: "Nothing is fetched.",
+    },
+    Entry {
+        name: "MUTASTIC_JAVA_RELEASES",
+        meaning: "Where the Java edition's releases are downloaded from, for a mirror",
+        detail: "GitHub's releases of `mutastic/mutastic` unless set.",
+    },
+    Entry {
+        name: "JAVA_HOME",
+        meaning: "The JDK the Java edition runs on",
+        detail: "`java` on the `PATH` unless set.",
+    },
+];
+
+pub const EXIT_CODES: &[Entry] = &[
+    Entry {
+        name: "0",
+        meaning: "The score reaches the threshold; for verify, each mutant named is caught, \
+                  skipped, or crashed where a crash proves nothing; for gate check, the task is \
+                  done",
+        detail: "",
+    },
+    Entry {
+        name: "1",
+        meaning: "The score is below the threshold; for verify, a mutant named is still missed or \
+                  not covered; for gate check, the task isn't done; for ignore --accept, the \
+                  mutant isn't proposed",
+        detail: "",
+    },
+    Entry {
+        name: "2",
+        meaning: "mutastic couldn't run: an unknown option, a word the command doesn't take, not \
+                  a Cargo package, a workspace's root, a test that fails with no mutant in, an id \
+                  that isn't a mutant of the package, or no task open for gate check",
+        detail: "",
+    },
+];
+
+/// The command declared by that name: `run`, `gate open`.
+pub fn command(name: &str) -> Option<&'static Command> {
+    COMMANDS.iter().find(|command| command.name == name)
+}
+
+/// The option declared by that name, without its dashes.
+pub fn option(name: &str) -> Option<&'static CliOption> {
+    OPTIONS.iter().find(|option| option.name == name)
+}
+
+/// The options `command` takes, in the order they're declared.
+pub fn options_for(command: &str) -> Vec<&'static CliOption> {
+    OPTIONS
+        .iter()
+        .filter(|option| option.commands.contains(&command))
+        .collect()
+}
+
+/// Whether `command` takes `--name`, given `value` (`None` without an `=`): an option mutastic
+/// doesn't declare, one this command doesn't take, or a flag given a value is an error.
+pub fn accepts(command: Option<&Command>, name: &str, value: Option<&str>) -> Result<(), String> {
+    let Some(option) = option(name) else {
+        return Err(format!("unknown option --{name}"));
+    };
+    if let Some(command) = command {
+        if !option.commands.contains(&command.name) {
+            return Err(format!(
+                "{} doesn't take --{name}: {}",
+                command.name, command.synopsis
+            ));
+        }
+    }
+    if option.kind == Kind::Flag && value.is_some() {
+        return Err(format!("--{name} takes no value"));
+    }
+    Ok(())
+}
+
+/// `gate <action> --help`: the command, what it does, its options, and how it exits.
+pub fn help(command: &Command) -> String {
+    let options: Vec<String> = options_for(command.name)
+        .into_iter()
+        .filter(|option| option.name != "edition")
+        .map(|option| format!("  {:<14}{}", option.synopsis(), option.help))
+        .collect();
+    let listed = if options.is_empty() {
+        String::new()
+    } else {
+        format!("Options:\n{}\n\n", options.join("\n"))
+    };
+    format!(
+        "{}\n\n{}. {}\n\n{listed}Exit status: {}",
+        command.synopsis, command.summary, command.detail, command.exits
+    )
+}
+
+/// `commands.json`: the commands and options as the docs site's reference pages read them, in the
+/// Java edition's shape. Each example is written for the two ways to run mutastic, `mutastic` and
+/// `cargo mutastic`; the Java edition's Maven and Gradle runners have no counterpart here.
+pub fn model() -> Value {
+    json!({
+        "schema": SCHEMA,
+        "docs": DOCS,
+        "commands": COMMANDS.iter().map(command_model).collect::<Vec<_>>(),
+        "options": OPTIONS.iter().map(option_model).collect::<Vec<_>>(),
+        "environment": ENVIRONMENT.iter().map(entry_model).collect::<Vec<_>>(),
+        "exitCodes": EXIT_CODES.iter().map(entry_model).collect::<Vec<_>>(),
+    })
+}
+
+/// A command line, as each runner writes it.
+fn runners(command_line: &str) -> Value {
+    json!({ "commandLine": command_line, "cargo": format!("cargo {command_line}") })
+}
+
+fn command_model(command: &Command) -> Value {
+    let options: Vec<String> = options_for(command.name)
+        .into_iter()
+        .map(|option| format!("--{}", option.name))
+        .collect();
+    json!({
+        "name": command.name,
+        "page": command.page,
+        "synopsis": command.synopsis,
+        "summary": command.summary,
+        "detail": command.detail,
+        "exits": command.exits,
+        "takesMutantId": command.takes_mutant_id,
+        "examples": command.examples.iter().copied().map(runners).collect::<Vec<_>>(),
+        "options": options,
+    })
+}
+
+fn option_model(option: &CliOption) -> Value {
+    let mut commands: Vec<&Command> = option
+        .commands
+        .iter()
+        .filter_map(|name| command(name))
+        .collect();
+    commands.sort_by_key(|command| command.name);
+    let examples: serde_json::Map<String, Value> = commands
+        .iter()
+        .map(|command| {
+            (
+                command.name.to_string(),
+                runners(&option.example_for(command)),
+            )
+        })
+        .collect();
+    json!({
+        "name": format!("--{}", option.name),
+        "synopsis": option.synopsis(),
+        "kind": option.kind.name(),
+        "group": option.group,
+        "value": option.value,
+        "choices": option.choices,
+        "help": option.help,
+        "commands": commands.iter().map(|command| command.name).collect::<Vec<_>>(),
+        "environment": option.environment,
+        "examples": examples,
+    })
+}
+
+fn entry_model(entry: &Entry) -> Value {
+    json!({ "name": entry.name, "meaning": entry.meaning, "detail": entry.detail })
+}
+
+/// `commands.json` as it's kept in `docs/`: two-space indents and a final newline.
+pub fn json() -> String {
+    let mut text = serde_json::to_string_pretty(&model()).unwrap_or_default();
+    text.push('\n');
+    text
+}

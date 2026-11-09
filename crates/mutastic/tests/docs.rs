@@ -357,6 +357,7 @@ fn getting_started(work: &Path, shown: &mut BTreeMap<String, String>) {
     let run = ran(work, &["run", "fixtures/pricing"]);
     assert_eq!(run.code, 0, "{}", run.stdout);
     shown.insert("getting-started/run".into(), run.stdout.clone());
+    shown.insert("commands/run".into(), run.stdout.clone());
     shown.insert("concepts/run-progress".into(), run.stderr);
     // The line as mutastic's copy holds it, every mutant of it behind the switch.
     let copy =
@@ -391,7 +392,8 @@ fn getting_started(work: &Path, shown: &mut BTreeMap<String, String>) {
     .unwrap();
     let verify = ran(work, &["verify", &id, "fixtures/pricing"]);
     assert_eq!(verify.code, 0, "{}", verify.stdout);
-    shown.insert("getting-started/verify".into(), verify.stdout);
+    shown.insert("getting-started/verify".into(), verify.stdout.clone());
+    shown.insert("commands/verify".into(), verify.stdout);
     let again = ran(work, &["run", "fixtures/pricing"]);
     shown.insert("getting-started/run-again".into(), again.stdout);
     std::fs::write(&lib, source).unwrap();
@@ -414,7 +416,8 @@ fn readme_card(output: &str, id: &str) -> String {
     format!("{card}\n{verdict}")
 }
 
-/// The pricing fixture in each format but `full`, the `mutants` listing, and the help.
+/// The pricing fixture in each format but `full`, the `mutants` listing, `--version`, and
+/// `explain`.
 fn reference(work: &Path, shown: &mut BTreeMap<String, String>) {
     for format in ["concise", "agent", "jsonl"] {
         let run = ran(
@@ -430,13 +433,12 @@ fn reference(work: &Path, shown: &mut BTreeMap<String, String>) {
                 assert!(errors.is_empty(), "{event}\n{}", errors.join("\n"));
             }
         }
-        shown.insert(format!("reference/format-{format}"), run.stdout);
+        shown.insert(format!("concepts/format-{format}"), run.stdout);
     }
     shown.insert(
-        "reference/mutants".into(),
+        "commands/mutants".into(),
         ran(work, &["mutants", "fixtures/pricing"]).stdout,
     );
-    shown.insert("reference/help".into(), ran(work, &["--help"]).stdout);
     // Before the Java edition is fetched: a home with nothing kept in it.
     let home = scratch("no-java-edition");
     std::fs::create_dir_all(&home).unwrap();
@@ -476,7 +478,10 @@ fn reference(work: &Path, shown: &mut BTreeMap<String, String>) {
             "last run  caught by pricing::big_orders_get_ten_percent_off"
         };
         assert!(explained.stdout.contains(last), "{}", explained.stdout);
-        shown.insert(format!("reference/explain-{name}"), explained.stdout);
+        if name == "missed" {
+            shown.insert("commands/explain".into(), explained.stdout.clone());
+        }
+        shown.insert(format!("concepts/explain-{name}"), explained.stdout);
     }
 }
 
@@ -719,6 +724,10 @@ fn the_docs_show_what_mutastic_prints() {
             text.replace_range(range, &kept);
         }
         std::fs::write(&page, text).unwrap();
+    }
+    // A command's page on the docs site shows its own, `commands/<page>`, from commands.json.
+    for command in mutastic::commands::COMMANDS {
+        used.insert(format!("commands/{}", command.page));
     }
     let unused: Vec<&String> = shown.keys().filter(|name| !used.contains(*name)).collect();
     assert!(unused.is_empty(), "output no page shows: {unused:?}");
@@ -1149,6 +1158,57 @@ fn every_setting_read_is_documented() {
                 shown.contains(&format!("`{}`", name.as_str())),
                 "{source} reads {}, which {page} doesn't name",
                 name.as_str()
+            );
+        }
+    }
+}
+
+/// `docs/commands.json`, the docs site's command reference, is what the parser's declarations
+/// write, and every id its examples name is a mutant of the pricing fixture.
+#[test]
+fn the_commands_json_is_the_parsers_declarations() {
+    let file = docs().join("commands.json");
+    let now = mutastic::commands::json();
+    let kept = std::fs::read_to_string(&file).unwrap_or_default();
+    if kept != now {
+        assert!(
+            writing(),
+            "docs/commands.json isn't what the CLI declares: MUTASTIC_DOCS_WRITE=1 cargo test --test docs"
+        );
+        std::fs::write(&file, &now).unwrap();
+    }
+    let pricing = root().join("fixtures/pricing").display().to_string();
+    let ids: BTreeSet<String> = engine::find_all(&workspace::read(&pricing).unwrap())
+        .mutants
+        .into_iter()
+        .map(|m| m.id)
+        .collect();
+    let pattern = regex::Regex::new(r"\bm[0-9a-f]{8}\b").unwrap();
+    for found in pattern.find_iter(&now) {
+        assert!(
+            ids.contains(found.as_str()),
+            "{} isn't a mutant of fixtures/pricing",
+            found.as_str()
+        );
+    }
+}
+
+/// Every variable of the environment the command reads is on the reference's environment page.
+#[test]
+fn every_variable_read_is_declared() {
+    let read = regex::Regex::new(r#"env::var(?:_os)?\("(?<name>[A-Z_]+)"\)"#).unwrap();
+    let declared: BTreeSet<&str> = mutastic::commands::ENVIRONMENT
+        .iter()
+        .map(|entry| entry.name.split('=').next().unwrap())
+        .collect();
+    for source in ["cli.rs", "java.rs", "workspace.rs"] {
+        let text =
+            std::fs::read_to_string(root().join("crates/mutastic/src").join(source)).unwrap();
+        for found in read.captures_iter(&text) {
+            let name = &found["name"];
+            assert!(
+                name == "HOME" || declared.contains(name),
+                "{source} reads {name}, which commands::ENVIRONMENT doesn't declare"
             );
         }
     }

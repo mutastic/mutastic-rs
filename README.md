@@ -13,7 +13,7 @@ the inputs your tests used, what a test would need to check, and the command tha
 **[Website](https://mutastic.io/)** ·
 [Getting started](docs/getting-started.md) ·
 [Documentation](docs/README.md) ·
-[Commands](docs/reference/cli.md) ·
+[Commands](https://docs.mutastic.io/rust/reference/run/) ·
 [Java edition](https://github.com/mutastic/mutastic)
 
 ## Why
@@ -117,7 +117,7 @@ runs it alone. `mutastic mutants` lists the mutants without building or running 
   [unsafe code](docs/concepts/unsafe.md), [profiles](docs/concepts/profiles.md) and
   [mutant ids](docs/concepts/ids.md);
 - [operators](docs/operators.md), with a page and a real card for each family;
-- [commands](docs/reference/cli.md), [events](docs/reference/events.md) and
+- [commands](https://docs.mutastic.io/rust/reference/run/), [report files](docs/reference/reports.md), [events](docs/reference/events.md) and
   [configuration](docs/reference/configuration.md);
 - [troubleshooting](docs/troubleshooting.md) and the
   [differences from the Java edition](docs/differences-from-java.md).

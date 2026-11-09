@@ -230,6 +230,24 @@ the count. The summary names what was left out around unsafe code (`not mutated:
 many), and code under a `cfg` this build doesn't have (``not built here: `cfg(windows)` ``, with how
 many), so you know what the score doesn't cover.
 
+## What `verify` says
+
+`mutastic verify` runs only the mutants named, and passes when each is settled. One line each says
+how it went:
+
+| It prints | Means | Passes |
+|---|---|---|
+| `is caught by tests::discount_with_total_100` | a test failed | yes |
+| `is caught by run::totals, through a panic: attempt to subtract with overflow` | a test failed through a panic the language raised | yes |
+| `is caught only because the test process crashed (SIGABRT): no test's check caught it` | no test failed: the process died, in safe code | yes |
+| `is caught by a timeout` | the tests ran out of time | yes |
+| `is still missed` | every test that reaches it passed | no |
+| `isn't reached by any test` | no test reaches it | no |
+| `is skipped (unviable: …), so it isn't run and needs no test` | it doesn't compile | yes |
+| `crashes, and no test can be said to catch it (…)` | it crashed where a crash proves nothing | yes |
+
+See [`mutastic verify`](https://docs.mutastic.io/rust/reference/verify/) for the command itself.
+
 ## Exit status
 
 | Status | When |

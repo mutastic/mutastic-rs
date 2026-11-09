@@ -1,6 +1,6 @@
 # Configuration
 
-A run is set by its options (see [Commands](cli.md)), by `mutastic.yaml` in the package's directory,
+A run is set by its options (see [`mutastic run`](https://docs.mutastic.io/rust/reference/run/)), by `mutastic.yaml` in the package's directory,
 and by a few environment variables. Nothing goes in `Cargo.toml`.
 
 ## `mutastic.yaml`
@@ -95,22 +95,31 @@ Rust edition yet.
 
 ## What mutastic reads
 
-| Variable | Effect |
-|---|---|
-| `MUTASTIC_FORMAT` | The format when `--format` isn't given: `full`, `concise`, `agent` or `jsonl` |
-| `MUTASTIC_AGENT=1` | The `agent` format, when neither `--format` nor `MUTASTIC_FORMAT` chooses one. Coding agents' plugins set it |
-| `NO_COLOR` | No colour, even at a terminal |
-| `FORCE_COLOR` | Colour, even when stdout isn't a terminal |
-| `TERM=dumb` | No colour |
-| `CARGO` | The `cargo` to run, as Cargo sets it for `cargo mutastic`; `cargo` on the `PATH` otherwise |
-| `RUSTC` | The `rustc` Cargo builds with, as for any Cargo build, and whose version the result names |
-
-The order for the format is `--format`, then `MUTASTIC_FORMAT`, then `MUTASTIC_AGENT`, then
-whether stdout is a terminal.
+The environment variables mutastic reads, and the option each stands in for, are on
+[Environment and exit codes](https://docs.mutastic.io/rust/reference/environment/). The order for
+the format is `--format`, then `MUTASTIC_FORMAT`, then `MUTASTIC_AGENT`, then whether stdout is a
+terminal.
 
 In a Maven or Gradle project, `MUTASTIC_VERSION`, `MUTASTIC_HOME`, `MUTASTIC_JAVA_ENGINE` and
 `MUTASTIC_JAVA_RELEASES` say which Java edition runs, and where it's kept: see
 [One command, two editions](../editions.md#the-java-edition).
+
+## Ignoring one mutant
+
+`mutastic ignore` records a decision not to test one mutant in `.mutastic/ignores.yaml` in the
+package's directory, with the line it's on and the reason, to commit and review. The mutant is
+skipped (`user: … (ignored)`) while its line stays as it was; once the line changes, the decision no
+longer holds, the mutant runs again, and `run-finished` lists it in `staleIgnores`. Every card
+offers it as `or ignore`; a coding agent proposes one instead, in `.mutastic/proposals.yaml`, for a
+person to accept.
+
+```sh
+mutastic ignore mb2f8ae57 --reason="totals are rounded to tens" --as=unreachable fixtures/pricing
+```
+
+The files are the Java edition's, in the same shape, with the function's path in `at`
+(`pricing::Pricing::discount, line 26`). See
+[`mutastic ignore`](https://docs.mutastic.io/rust/reference/ignore/) for the command and its options.
 
 ## What your tests see
 

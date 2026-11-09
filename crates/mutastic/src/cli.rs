@@ -9,7 +9,7 @@ use crate::engine::{self, Options, Status};
 use crate::report::files::Kind;
 use crate::report::{self, Format, Style};
 use crate::sites::UnsafeMode;
-use crate::{gate, ignores, java, sites, testrun, workspace, wrapper};
+use crate::{commands, gate, ignores, java, sites, testrun, workspace, wrapper};
 
 const USAGE: &str = "\
 mutastic: find the tests that run your code but don't check it
@@ -166,7 +166,20 @@ struct Parsed {
     no_suggestions: bool,
 }
 
-fn parse(args: &[String]) -> Result<Parsed, String> {
+/// The command as it's declared: `gate open` for `gate` and its action. `None` for one that isn't,
+/// such as `--help`, or `gate` with an action it doesn't have, which is an error of its own.
+fn declared(command: &str, args: &[String]) -> Option<&'static commands::Command> {
+    if command == "gate" {
+        let action = args.iter().find(|arg| !arg.starts_with("--"))?;
+        return commands::command(&format!("gate {action}"));
+    }
+    commands::command(command)
+}
+
+/// `command`'s options and words. An option is taken only as [`commands`] declares it, on the
+/// commands it names there, so what the docs say a command takes is what it takes.
+fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
+    let declared = declared(command, args);
     let mut parsed = Parsed {
         positional: Vec::new(),
         only: Vec::new(),
@@ -197,7 +210,19 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
             parsed.positional.push(arg.clone());
             continue;
         };
-        let (name, value) = option.split_once('=').unwrap_or((option, ""));
+        let (name, value) = match option.split_once('=') {
+            Some((name, value)) => (name, Some(value)),
+            None => (option, None),
+        };
+        // `--help` is every command's, and `--fraction` the measuring `build`'s, not a user's.
+        let internal = name == "help" || (name == "fraction" && command == "build");
+        if !internal {
+            if commands::option(name).is_none() {
+                return Err(format!("unknown option --{name}\n\n{USAGE}"));
+            }
+            commands::accepts(declared, name, value)?;
+        }
+        let value = value.unwrap_or("");
         match name {
             "only" => parsed.only.extend(ids(value)),
             "format" => {
@@ -230,7 +255,15 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
                 })?
             }
             "reason" => parsed.reason = Some(value.to_string()),
-            "as" => parsed.kind = value.to_string(),
+            "as" => {
+                if !ignores::KINDS.contains(&value) {
+                    return Err(format!(
+                        "--as: {value} isn't one of {}",
+                        ignores::KINDS.join(", ")
+                    ));
+                }
+                parsed.kind = value.to_string()
+            }
             "propose" => parsed.propose = true,
             "accept" => parsed.accept = true,
             "remove" => parsed.remove = true,
@@ -302,7 +335,7 @@ pub fn check(args: &[String]) -> Result<(), String> {
     match command.as_str() {
         "run" | "verify" | "explain" | "ignore" | "gate" | "mutants" | "help" | "--help" | "-h"
         | "--version" | "-V" => {
-            let parsed = parse(&args[1..])?;
+            let parsed = parse(command, &args[1..])?;
             arguments(command, &parsed)?;
             match &parsed.operators_given {
                 Some(given) => operators(given).map(|_| ()),
@@ -317,18 +350,18 @@ pub fn check(args: &[String]) -> Result<(), String> {
 /// one, then a directory, and nothing after. A word it doesn't take would otherwise be dropped
 /// without a word, and the run would be one nobody asked for.
 fn arguments(command: &str, parsed: &Parsed) -> Result<(), String> {
+    let synopsis = |name: &str| commands::command(name).map_or("", |command| command.synopsis);
     let (usage, takes_id, most) = match command {
-        "run" => ("mutastic run [dir] [options]", false, 1),
-        "mutants" => ("mutastic mutants [dir]", false, 1),
+        "run" | "mutants" => (synopsis(command), false, 1),
         "build" => ("mutastic build [dir] --fraction=<share>", false, 1),
         "verify" => (
-            "mutastic verify <id>[,<id>…] [<id>…] [dir]",
+            synopsis(command),
             true,
             1 + verify_ids(&parsed.positional).1,
         ),
-        "explain" => ("mutastic explain <id> [dir]", true, 2),
+        "explain" => (synopsis(command), true, 2),
         "ignore" if parsed.prune => ("mutastic ignore --prune [dir]", false, 1),
-        "ignore" => ("mutastic ignore <id> [dir] --reason=<why>", true, 2),
+        "ignore" => (synopsis(command), true, 2),
         "gate" => ("mutastic gate open|check|close [dir]", false, 2),
         _ => return Ok(()),
     };
@@ -441,7 +474,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, String> {
         println!("{USAGE}");
         return Ok(ExitCode::from(2));
     };
-    let mut parsed = parse(&args[1..])?;
+    let mut parsed = parse(command, &args[1..])?;
     arguments(command, &parsed)?;
     if matches!(
         command.as_str(),
@@ -825,13 +858,6 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, String> {
             "ignore needs a reason, for whoever reviews it: mutastic ignore {id} --reason=\"<why>\" {dir}"
         ));
     };
-    if !parsed.kind.is_empty() && !ignores::KINDS.contains(&parsed.kind.as_str()) {
-        return Err(format!(
-            "--as: {} isn't one of {}",
-            parsed.kind,
-            ignores::KINDS.join(", ")
-        ));
-    }
     let project = workspace::read(&dir)?;
     let found = engine::find_all(&project);
     let Some(index) = found.mutants.iter().position(|m| m.id == id) else {
@@ -1056,13 +1082,10 @@ fn gate_command(parsed: &Parsed) -> Result<ExitCode, String> {
     }
 }
 
-fn gate_help(action: &str) -> Result<&'static str, String> {
-    match action {
-        "open" => Ok("mutastic gate open [dir] [--hook=claude]\n\nStart gating a coding agent's task: keep where it starts. Keeps the commit the task starts from, its ignores, and how many tests run and are ignored, in target/mutastic, so gate check can say whether the task is done. With --hook, once for each of the agent's sessions.\n\nExit status: 0 once it has kept where the task starts; 2 outside a git repository with a commit."),
-        "check" => Ok("mutastic gate check [dir] [--hook=claude] [--tries=<n>]\n\nSay whether a gated task is done: its changed lines' mutants caught. Runs the mutants on the lines changed since gate open. The task is done when each is caught or proposed for a person to ignore, no ignore was made by the task, and no test was taken away or ignored; until then it says what's left, as the agent format does. With --hook it answers as the agent's hook, and lets the agent stop, saying what's left, when it changed nothing since it was sent back, or after --tries (default 3).\n\nExit status: 0 when the task is done, 1 when it isn't, 2 when no task is open. With --hook, 0 either way."),
-        "close" => Ok("mutastic gate close [dir]\n\nStop gating a task: forget where it started. The next gate open starts a new task.\n\nExit status: 0 whether a task was open or not."),
-        other => Err(format!("gate: {other} isn't one of open, check or close")),
-    }
+fn gate_help(action: &str) -> Result<String, String> {
+    commands::command(&format!("gate {action}"))
+        .map(commands::help)
+        .ok_or_else(|| format!("gate: {action} isn't one of open, check or close"))
 }
 
 /// Keeps where the task starts; with a hook, once for each session. A hook's output is the
@@ -1444,4 +1467,103 @@ fn build(parsed: &Parsed) -> Result<ExitCode, String> {
         })
     );
     Ok(ExitCode::SUCCESS)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A command line's words, `mutastic` left off, as a shell gives them: split at spaces, except
+    /// inside double quotes, which are taken away.
+    fn words(line: &str) -> Vec<String> {
+        let mut words = vec![String::new()];
+        let mut quoted = false;
+        for character in line.trim_start_matches("mutastic ").chars() {
+            match character {
+                '"' => quoted = !quoted,
+                ' ' if !quoted => words.push(String::new()),
+                _ => words.last_mut().unwrap().push(character),
+            }
+        }
+        words
+    }
+
+    #[test]
+    fn every_example_declared_parses() {
+        for command in commands::COMMANDS {
+            for example in command.examples {
+                assert_eq!(check(&words(example)), Ok(()), "{example}");
+            }
+            for option in commands::options_for(command.name) {
+                let example = option.example_for(command);
+                assert!(example.starts_with(&format!("mutastic {}", command.name)));
+                assert!(example.contains(&format!("--{}", option.name)), "{example}");
+                assert_eq!(check(&words(&example)), Ok(()), "{example}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_command_refuses_an_option_it_does_not_declare() {
+        let refused = check(&words("verify mb2f8ae57 --threshold=70")).unwrap_err();
+        assert!(
+            refused.starts_with("verify doesn't take --threshold"),
+            "{refused}"
+        );
+        let refused = check(&words("gate open --tries=5")).unwrap_err();
+        assert!(
+            refused.starts_with("gate open doesn't take --tries"),
+            "{refused}"
+        );
+        assert!(check(&words("run --thresold=70"))
+            .unwrap_err()
+            .starts_with("unknown option --thresold"));
+        assert!(check(&words("ignore --prune=yes")).is_err());
+    }
+
+    #[test]
+    fn each_choice_declared_is_taken_and_no_other() {
+        for option in commands::OPTIONS.iter().filter(|o| !o.choices.is_empty()) {
+            let command = commands::command(option.commands[0]).unwrap();
+            let line = |value: &str| {
+                let mut line = option.example_for(command);
+                let given = line
+                    .split(' ')
+                    .find(|word| word.starts_with(&format!("--{}=", option.name)))
+                    .unwrap()
+                    .to_string();
+                line = line.replace(&given, &format!("--{}={value}", option.name));
+                words(&line)
+            };
+            for choice in option.choices {
+                assert_eq!(check(&line(choice)), Ok(()), "--{}={choice}", option.name);
+            }
+            assert!(check(&line("nonsense")).is_err(), "--{}", option.name);
+        }
+    }
+
+    #[test]
+    fn the_defaults_are_the_ones_declared() {
+        let parsed = parse("run", &[]).unwrap();
+        let help = |name: &str| commands::option(name).unwrap().help;
+        assert_eq!(parsed.threshold, 80.0);
+        assert!(help("threshold").ends_with("; 80 unless set"));
+        assert_eq!(parsed.tries, 3);
+        assert!(help("tries").ends_with("; 3 unless set"));
+        assert_eq!(parsed.unsafe_mode, UnsafeMode::Skip);
+        assert!(help("unsafe").ends_with("; skip unless set"));
+    }
+
+    /// The help lists every option declared, and only those.
+    #[test]
+    fn the_usage_lists_the_options_declared() {
+        let listed: std::collections::BTreeSet<&str> = USAGE
+            .split(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
+            .filter_map(|word| word.strip_prefix("--"))
+            .filter(|name| *name != "help")
+            .collect();
+        let declared: std::collections::BTreeSet<&str> =
+            commands::OPTIONS.iter().map(|option| option.name).collect();
+        assert_eq!(listed, declared);
+    }
 }
