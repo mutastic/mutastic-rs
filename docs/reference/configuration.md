@@ -107,6 +107,10 @@ Rust edition yet.
 The order for the format is `--format`, then `MUTASTIC_FORMAT`, then `MUTASTIC_AGENT`, then
 whether stdout is a terminal.
 
+In a Maven or Gradle project, `MUTASTIC_VERSION`, `MUTASTIC_HOME`, `MUTASTIC_JAVA_ENGINE` and
+`MUTASTIC_JAVA_RELEASES` say which Java edition runs, and where it's kept: see
+[One command, two editions](../editions.md#the-java-edition).
+
 ## What your tests see
 
 mutastic runs your test binaries itself. In each run it sets:

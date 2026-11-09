@@ -13,6 +13,10 @@ page stands alone and links to the others by relative path.
 
 - [Getting started](getting-started.md): build mutastic, run it on a crate, read the first card,
   write the test, and prove it.
+- [Installing mutastic](install.md): the installer, building from source, and how a release is
+  laid out.
+- [One command, two editions](editions.md): which edition runs a project, a Rust crate inside a
+  Gradle build, and the Java edition, fetched the first time it's needed.
 
 ## Concepts
 

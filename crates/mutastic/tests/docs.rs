@@ -436,6 +436,20 @@ fn reference(work: &Path, shown: &mut BTreeMap<String, String>) {
         ran(work, &["mutants", "fixtures/pricing"]).stdout,
     );
     shown.insert("reference/help".into(), ran(work, &["--help"]).stdout);
+    // Before the Java edition is fetched: a home with nothing kept in it.
+    let home = scratch("no-java-edition");
+    std::fs::create_dir_all(&home).unwrap();
+    let version = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+        .arg("--version")
+        .env("MUTASTIC_HOME", &home)
+        .env_remove("MUTASTIC_JAVA_ENGINE")
+        .env_remove("MUTASTIC_VERSION")
+        .output()
+        .unwrap();
+    shown.insert(
+        "reference/version".into(),
+        String::from_utf8_lossy(&version.stdout).into_owned(),
+    );
     // mutastic.yaml's rules file adds an operator, whose card says its own words.
     let listed = ran(work, &["mutants", "fixtures/configured"]).stdout;
     let ids: BTreeSet<String> = listed
@@ -989,4 +1003,54 @@ fn every_missed_card_on_the_operators_fixture_is_true() {
         "{stdout}{}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+/// The table of build files on the editions page is how mutastic routes: each row's file, alone in
+/// a directory, picks that row's edition, and every build file mutastic reads has a row.
+#[test]
+fn the_editions_table_is_how_mutastic_routes() {
+    use mutastic::edition::{self, Edition};
+    let page = std::fs::read_to_string(docs().join("editions.md")).unwrap();
+    let row = regex::Regex::new(r"(?m)^\| `(?<file>[^`]+)` \| (?<edition>Rust|Java) \|$").unwrap();
+    let mut listed = BTreeSet::new();
+    for found in row.captures_iter(&page) {
+        let file = found["file"].to_string();
+        let dir = scratch("routing").join(file.replace('.', "-"));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(&file), "").unwrap();
+        let routed = edition::route(&dir).unwrap().edition;
+        let expected = if &found["edition"] == "Rust" {
+            Edition::Rust
+        } else {
+            Edition::Java
+        };
+        assert_eq!(routed, expected, "{file}");
+        listed.insert(file);
+    }
+    let read: BTreeSet<String> = edition::JVM_BUILDS
+        .iter()
+        .chain(&[edition::CARGO_BUILD])
+        .map(|file| file.to_string())
+        .collect();
+    assert_eq!(listed, read);
+}
+
+/// Every setting the installer and the Java edition's fetch read is on their page.
+#[test]
+fn every_setting_read_is_documented() {
+    let setting = regex::Regex::new(r"MUTASTIC_[A-Z_]+").unwrap();
+    for (source, page) in [
+        ("scripts/install.sh", "install.md"),
+        ("crates/mutastic/src/java.rs", "editions.md"),
+    ] {
+        let read = std::fs::read_to_string(root().join(source)).unwrap();
+        let shown = std::fs::read_to_string(docs().join(page)).unwrap();
+        for name in setting.find_iter(&read) {
+            assert!(
+                shown.contains(&format!("`{}`", name.as_str())),
+                "{source} reads {}, which {page} doesn't name",
+                name.as_str()
+            );
+        }
+    }
 }

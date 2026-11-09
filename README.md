@@ -80,7 +80,10 @@ cargo install --path crates/mutastic
 ```
 
 That installs `mutastic`, and `cargo-mutastic`, which Cargo runs as `cargo mutastic`. They do the
-same thing.
+same thing. [Installing mutastic](docs/install.md) has the installer for a published release.
+
+`mutastic` is the command for Maven and Gradle projects too: in one, it fetches the Java edition
+the first time, and hands it the command. See [One command, two editions](docs/editions.md).
 
 ## Quick start
 

@@ -1,0 +1,83 @@
+# The native `mutastic` command for each target, on a version tag (`v0.1.0`), as a draft release for
+# a person to read and publish. Each target is `mutastic-<version>-<target>.tar.gz`, holding
+# `mutastic-<version>-<target>/` with `mutastic`, `cargo-mutastic`, the licence and the README; and
+# `SHA256SUMS` lists them all. `scripts/install.sh` installs from that layout. Run by hand, it builds
+# the archives and keeps them as the run's artifacts, with no release. Linux builds are static
+# (musl), so one archive runs on any distribution. Actions are pinned to a commit: a tag can be
+# moved.
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin, os: macos-latest }
+          - { target: x86_64-apple-darwin, os: macos-latest }
+          - { target: x86_64-unknown-linux-musl, os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 16 Oct 2026
+        with:
+          targets: ${{ matrix.target }}
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      # The version the archives are named for: Cargo's, which a tag must match.
+      - id: version
+        shell: bash
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          if [[ "$GITHUB_REF" == refs/tags/v* && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "the tag is $GITHUB_REF_NAME, but Cargo.toml's version is $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - run: cargo build --release --locked -p mutastic --target ${{ matrix.target }}
+      - name: Package
+        shell: bash
+        run: |
+          name="mutastic-${{ steps.version.outputs.version }}-${{ matrix.target }}"
+          mkdir "$name"
+          cp target/${{ matrix.target }}/release/mutastic target/${{ matrix.target }}/release/cargo-mutastic LICENSE README.md "$name/"
+          tar -czf "$name.tar.gz" "$name"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.target }}
+          path: mutastic-*.tar.gz
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: archives
+          merge-multiple: true
+      - name: Checksums
+        working-directory: archives
+        run: sha256sum mutastic-*.tar.gz > SHA256SUMS && cat SHA256SUMS
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag
+          --title "$GITHUB_REF_NAME" archives/mutastic-*.tar.gz archives/SHA256SUMS

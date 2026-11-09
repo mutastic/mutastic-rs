@@ -1,0 +1,3 @@
+mutastic 0.0.1
+Rust edition 0.0.1, built in
+Java edition: not fetched yet, which happens the first time mutastic runs in a Maven or Gradle project

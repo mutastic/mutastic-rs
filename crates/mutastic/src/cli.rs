@@ -4,11 +4,12 @@ use std::ffi::OsString;
 use std::io::IsTerminal;
 use std::process::ExitCode;
 
+use crate::edition::{self, Edition, Route};
 use crate::engine::{self, Options, Status};
 use crate::report::files::Kind;
 use crate::report::{self, Format, Style};
 use crate::sites::UnsafeMode;
-use crate::{gate, ignores, sites, testrun, workspace, wrapper};
+use crate::{gate, ignores, java, sites, testrun, workspace, wrapper};
 
 const USAGE: &str = "\
 mutastic: find the tests that run your code but don't check it
@@ -44,6 +45,9 @@ Options:
                         A full run writes both by default
   --progress=<mode>     auto (default): a line redrawn in place at a terminal, none for agent
                         and jsonl; bar, counter (a line every so often) or none
+  --edition=<edition>   rust or java: which edition runs. Unless given, the build file in dir, or
+                        the nearest above it, decides: Cargo.toml for rust; pom.xml, build.gradle
+                        or settings.gradle for java, which is fetched the first time it's needed
 
 Exit status: 0 when the run passes, or verify's mutants are caught; 1 when it doesn't; 2 when
 mutastic couldn't run.";
@@ -61,6 +65,16 @@ pub fn main(args: Vec<OsString>) -> ExitCode {
     if args.first().is_some_and(|arg| arg == "mutastic") {
         args.remove(0);
     }
+    let args = match edition::chosen(&args)
+        .and_then(|(chosen, args)| front_door(chosen, &args).map(|forwarded| (forwarded, args)))
+    {
+        Ok((Some(code), _)) => return code,
+        Ok((None, args)) => args,
+        Err(message) => {
+            eprintln!("mutastic: {message}");
+            return ExitCode::from(2);
+        }
+    };
     match dispatch(&args) {
         Ok(code) => code,
         Err(message) => {
@@ -68,6 +82,51 @@ pub fn main(args: Vec<OsString>) -> ExitCode {
             ExitCode::from(2)
         }
     }
+}
+
+/// Hands the command to the Java edition when the project it points at is a Maven or Gradle
+/// project, or `--edition=java` says, and returns its exit status. `None` when this edition runs it.
+fn front_door(chosen: Option<Edition>, args: &[String]) -> Result<Option<ExitCode>, String> {
+    let Some(command) = args.first() else {
+        return Ok(None);
+    };
+    if matches!(
+        command.as_str(),
+        "--help" | "-h" | "help" | "--version" | "-V"
+    ) {
+        return Ok(None);
+    }
+    let given = edition::pointed_at(args);
+    let route = match chosen {
+        Some(edition) => Route {
+            edition,
+            project: None,
+            build: None,
+        },
+        None => edition::route(std::path::Path::new(&given))?,
+    };
+    if command == "run" {
+        if let Some(note) = edition::nested_note(&given, &route) {
+            eprintln!("{note}");
+        }
+    }
+    if route.edition == Edition::Rust {
+        return Ok(None);
+    }
+    Ok(Some(java::forward(&java::engine()?, args)))
+}
+
+/// This command's version, and each edition's: the Rust edition is this one, and the Java
+/// edition is there once it's been fetched.
+fn versions() -> String {
+    let own = env!("CARGO_PKG_VERSION");
+    let java = match java::present() {
+        Some((version, command)) => format!("Java edition {version}, at {}", command.display()),
+        None => "Java edition: not fetched yet, which happens the first time mutastic runs in a \
+                 Maven or Gradle project"
+            .to_string(),
+    };
+    format!("mutastic {own}\nRust edition {own}, built in\n{java}")
 }
 
 struct Parsed {
@@ -210,6 +269,11 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
                     }
                 }
             }
+            // Which edition runs is decided before this one reads its options.
+            "edition" => {
+                Edition::parse(value)
+                    .ok_or_else(|| format!("--edition: {value} isn't one of java or rust"))?;
+            }
             "fraction" => {
                 parsed.fraction = value
                     .parse()
@@ -305,7 +369,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, String> {
             Ok(ExitCode::SUCCESS)
         }
         "--version" | "-V" => {
-            println!("mutastic {} (Rust edition)", env!("CARGO_PKG_VERSION"));
+            println!("{}", versions());
             Ok(ExitCode::SUCCESS)
         }
         other => Err(format!("unknown command {other}\n\n{USAGE}")),

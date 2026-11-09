@@ -38,13 +38,18 @@ Options:
                         A full run writes both by default
   --progress=<mode>     auto (default): a line redrawn in place at a terminal, none for agent
                         and jsonl; bar, counter (a line every so often) or none
+  --edition=<edition>   rust or java: which edition runs. Unless given, the build file in dir, or
+                        the nearest above it, decides: Cargo.toml for rust; pom.xml, build.gradle
+                        or settings.gradle for java, which is fetched the first time it's needed
 
 Exit status: 0 when the run passes, or verify's mutants are caught; 1 when it doesn't; 2 when
 mutastic couldn't run.
 ```
 
 Each command takes the package's directory, `.` when it's left out. In a workspace, give the
-member's directory: see [Troubleshooting](../troubleshooting.md#a-workspace).
+member's directory: see [Troubleshooting](../troubleshooting.md#a-workspace). In a Maven or Gradle
+project, the same command runs the Java edition, with everything given to it as it was typed: see
+[One command, two editions](../editions.md).
 
 ## `mutastic run`
 
