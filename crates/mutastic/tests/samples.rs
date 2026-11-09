@@ -144,6 +144,41 @@ fn a_field_a_pattern_binds_into_stays_a_place() {
     assert_eq!(finished["reason"], "run-finished", "{finished}");
 }
 
+/// A word a command doesn't take stops it, exit 2, naming the word and the command's usage, rather
+/// than being dropped for a run nobody asked for; and where a mutant's id goes, a directory or any
+/// other word is told apart from an id. Nothing is built: the words are checked first.
+#[test]
+fn a_word_a_command_doesnt_take_stops_it() {
+    let dir = fixture("pricing");
+    let stopped = |args: &[&str]| {
+        let output = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+            .args(args)
+            .env("NO_COLOR", "1")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        String::from_utf8_lossy(&output.stderr).into_owned()
+    };
+    assert_eq!(
+        stopped(&["run", &dir, "--operators=stronger", "explain", "md3a59003"]),
+        "mutastic: run doesn't take explain md3a59003: mutastic run [dir] [options]\n"
+    );
+    assert_eq!(
+        stopped(&["explain", &dir]),
+        format!(
+            "mutastic: explain needs a mutant's id, m and eight hex digits as a card shows it, \
+             and {dir} is a directory: mutastic explain <id> [dir], as in mutastic explain \
+             m1a2b3c4d {dir}\n"
+        )
+    );
+    assert_eq!(
+        stopped(&["verify", "m1a2b3c4d,total", &dir]),
+        "mutastic: verify needs a mutant's id, m and eight hex digits as a card shows it, and \
+         m1a2b3c4d,total isn't one: mutastic verify <id>[,<id>…] [dir], as in mutastic verify \
+         m1a2b3c4d\n"
+    );
+}
+
 /// Unsafe code is left alone, code near it is marked and runs isolated, and a crash counts as caught
 /// only where it can't be undefined behaviour, and then not as a test's catch. The fixture turns
 /// overflow checks and debug assertions off for tests, and mutastic turns them back on.

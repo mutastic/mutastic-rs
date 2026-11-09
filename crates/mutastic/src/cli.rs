@@ -295,6 +295,7 @@ pub fn check(args: &[String]) -> Result<(), String> {
         "run" | "verify" | "explain" | "ignore" | "gate" | "mutants" | "help" | "--help" | "-h"
         | "--version" | "-V" => {
             let parsed = parse(&args[1..])?;
+            arguments(command, &parsed)?;
             match &parsed.operators_given {
                 Some(given) => operators(given).map(|_| ()),
                 None => Ok(()),
@@ -302,6 +303,69 @@ pub fn check(args: &[String]) -> Result<(), String> {
         }
         other => Err(format!("unknown command {other}")),
     }
+}
+
+/// Whether the words that aren't options are ones `command` takes: a mutant's id where it needs
+/// one, then a directory, and nothing after. A word it doesn't take would otherwise be dropped
+/// without a word, and the run would be one nobody asked for.
+fn arguments(command: &str, parsed: &Parsed) -> Result<(), String> {
+    let (usage, takes_id, most) = match command {
+        "run" => ("mutastic run [dir] [options]", false, 1),
+        "mutants" => ("mutastic mutants [dir]", false, 1),
+        "build" => ("mutastic build [dir] --fraction=<share>", false, 1),
+        "verify" => ("mutastic verify <id>[,<id>…] [dir]", true, 2),
+        "explain" => ("mutastic explain <id> [dir]", true, 2),
+        "ignore" if parsed.prune => ("mutastic ignore --prune [dir]", false, 1),
+        "ignore" => ("mutastic ignore <id> [dir] --reason=<why>", true, 2),
+        "gate" => ("mutastic gate open|check|close [dir]", false, 2),
+        _ => return Ok(()),
+    };
+    if takes_id {
+        if let Some(given) = parsed.positional.first() {
+            let mut named = ids(given).peekable();
+            if named.peek().is_none() || !named.all(|id| is_mutant_id(&id)) {
+                return Err(needs_id(command, given, usage));
+            }
+        }
+    }
+    match parsed.positional.get(most..) {
+        Some(extra) if !extra.is_empty() => Err(format!(
+            "{command} doesn't take {}: {usage}",
+            extra.join(" ")
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// A mutant's id, as cards and `mutastic mutants` show it: `m` and eight hex digits.
+fn is_mutant_id(word: &str) -> bool {
+    word.strip_prefix('m')
+        .is_some_and(|hex| hex.len() == 8 && hex.bytes().all(|digit| digit.is_ascii_hexdigit()))
+}
+
+/// What's wrong with the word where `command` needs a mutant's id, with an example: one that keeps
+/// the directory, when that's what was given.
+fn needs_id(command: &str, given: &str, usage: &str) -> String {
+    let directory = std::path::Path::new(given).is_dir();
+    let what = if directory {
+        format!("{given} is a directory")
+    } else {
+        format!("{given} isn't one")
+    };
+    let dir = if directory {
+        format!(" {given}")
+    } else {
+        String::new()
+    };
+    let reason = if command == "ignore" {
+        " --reason=\"…\""
+    } else {
+        ""
+    };
+    format!(
+        "{command} needs a mutant's id, m and eight hex digits as a card shows it, and {what}: \
+         {usage}, as in mutastic {command} m1a2b3c4d{dir}{reason}"
+    )
 }
 
 fn ids(value: &str) -> impl Iterator<Item = String> + '_ {
@@ -349,6 +413,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, String> {
         return Ok(ExitCode::from(2));
     };
     let mut parsed = parse(&args[1..])?;
+    arguments(command, &parsed)?;
     if matches!(
         command.as_str(),
         "run" | "verify" | "explain" | "ignore" | "mutants" | "gate"

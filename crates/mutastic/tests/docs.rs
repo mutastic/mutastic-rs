@@ -828,6 +828,29 @@ fn every_link_between_pages_resolves() {
     assert!(broken.is_empty(), "{}", broken.join("\n"));
 }
 
+/// A command line's words as the shell gives them: split at spaces, except inside double quotes,
+/// which are taken away. Enough for the commands the docs show.
+fn shell_words(line: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut word = String::new();
+    let mut quoted = false;
+    for character in line.chars() {
+        match character {
+            '"' => quoted = !quoted,
+            ' ' if !quoted => {
+                if !word.is_empty() {
+                    words.push(std::mem::take(&mut word));
+                }
+            }
+            _ => word.push(character),
+        }
+    }
+    if !word.is_empty() {
+        words.push(word);
+    }
+    words
+}
+
 #[test]
 fn every_command_shown_parses_and_names_real_mutants() {
     let mut wrong = Vec::new();
@@ -840,7 +863,7 @@ fn every_command_shown_parses_and_names_real_mutants() {
             }
             for line in text[block.text.clone()].lines() {
                 let line = line.split(" #").next().unwrap().trim();
-                let words: Vec<String> = line.split_whitespace().map(str::to_string).collect();
+                let words = shell_words(line);
                 let args = match words.first().map(String::as_str) {
                     Some("mutastic") => &words[1..],
                     Some("cargo") if words.get(1).is_some_and(|w| w == "mutastic") => &words[2..],

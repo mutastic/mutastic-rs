@@ -353,4 +353,4 @@ only the events. See [Events](events.md).
 |---|---|
 | 0 | `run` passed; every mutant `verify` named is settled (caught, skipped, or crashed where a crash proves nothing); `mutants` listed them |
 | 1 | `run`'s score is under the threshold; a mutant `verify` named is missed or not covered |
-| 2 | mutastic couldn't run: an unknown option, not a Cargo package, a workspace's root, a test that fails with no mutant in, an id that isn't a mutant of the package |
+| 2 | mutastic couldn't run: an unknown option, a word the command doesn't take, not a Cargo package, a workspace's root, a test that fails with no mutant in, an id that isn't a mutant of the package |
