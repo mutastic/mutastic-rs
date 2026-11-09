@@ -44,6 +44,18 @@ cargo install --path crates/mutastic
 
 That installs the same two commands into Cargo's `bin` directory.
 
+## Check it
+
+`mutastic --version` says which version you have, and each edition's. Before the Java edition is
+fetched:
+
+<!-- output: reference/version -->
+```text
+mutastic 0.1.0
+Rust edition 0.1.0, built in
+Java edition: not fetched yet, which happens the first time mutastic runs in a Maven or Gradle project
+```
+
 ## How a release is laid out
 
 Each release, tagged `v<version>`, holds an archive for each target, named for it, and
@@ -59,3 +71,6 @@ SHA256SUMS
 
 Each archive holds one directory, `mutastic-<version>-<target>/`, with `mutastic`,
 `cargo-mutastic`, the licence and the README. The release workflow builds them from the tag.
+
+Next: [Getting started](getting-started.md) runs mutastic on a small crate, and closes the gap it
+finds.
