@@ -41,7 +41,8 @@ The copy keeps your line numbers: the rewritten code never adds a line, so a pan
 card's line are your file's. The copy is written only where its bytes change, so Cargo's own
 freshness checks keep the next run's build short.
 
-mutastic builds the copy with your own `cargo` and `rustc`, whatever toolchain they are. Flags reach
+mutastic builds the copy with your own `cargo` and `rustc`, stable or not, from Rust 1.79 on: the
+code it adds to your crate uses inline `const` blocks, which came then. Flags reach
 only your crate, through `RUSTC_WORKSPACE_WRAPPER`, never `RUSTFLAGS`, so your own rustflags still
 apply and no dependency is built again. The one flag added caps lints, so a `#![deny(warnings)]`
 in your crate doesn't fail a build on code it was never meant to judge. The build uses a profile

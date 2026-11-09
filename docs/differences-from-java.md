@@ -10,8 +10,8 @@ score. This page is only where you'd do something different in Rust. For the res
   See [Getting started](getting-started.md#1-install-it).
 - **No build plugin.** There's no Maven or Gradle plugin to add: run `mutastic run` in a package, or
   `cargo mutastic run`.
-- **Your own toolchain.** mutastic builds with the `cargo` and `rustc` you have, stable or not, and
-  needs no JDK.
+- **Your own toolchain.** mutastic builds with the `cargo` and `rustc` you have, stable or not, from
+  Rust 1.79 on, as the code it adds to your crate needs, and needs no JDK.
 
 ## One package at a time
 
