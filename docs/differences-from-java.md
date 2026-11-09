@@ -107,5 +107,5 @@ instead:
 |---|---|
 | Compiled plugins, and `filters:` in `mutastic.yaml` | A rules file, for call operators: [Configuration](reference/configuration.md#rules-files) |
 | `@DoNotMutate` | `mutastic ignore`, one mutant at a time: [Configuration](reference/configuration.md#ignoring-one-mutant) |
-| Suggested tests on cards | The card's `help` line |
+| A suggested starting point for code no test reaches | The `Not covered` list, which names each function and its lines |
 | `--vocabulary=classic` | The standard words only |

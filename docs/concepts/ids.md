@@ -66,6 +66,6 @@ mutastic: m00000000 isn't a mutant of pricing: run `mutastic run fixtures/pricin
 
 ## The Java edition's ids
 
-The two editions make ids the same way, from what the mutant is, and each hashes its own name in
-first, so a Rust id never names a Java mutant, or the other way round. The operator ids are shared:
+The two editions make ids the same way, from what the mutant is. The Rust edition hashes its own
+name in first, so a Rust id never names a Java mutant. The operator ids are shared:
 `mutastic/boundary` means the same change in both. See [Operators](../operators.md).
