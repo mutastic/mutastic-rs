@@ -120,7 +120,7 @@ members:
 
 <!-- output: troubleshooting/workspace -->
 ```text
-mutastic 0.0.1 · reading the Cargo package…
+mutastic 0.1.0 · reading the Cargo package…
 mutastic: fixtures/workspace is a workspace: run mutastic in one of its packages (billing, shop)
 ```
 

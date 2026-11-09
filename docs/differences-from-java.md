@@ -6,8 +6,8 @@ score. This page is only where you'd do something different in Rust. For the res
 
 ## Installing and running
 
-- **Install from source,** with `cargo install --path crates/mutastic`: nothing is on crates.io yet.
-  See [Getting started](getting-started.md#1-install-it).
+- **Install from a release or from source:** nothing is on crates.io yet. See
+  [Installing mutastic](install.md).
 - **No build plugin.** There's no Maven or Gradle plugin to add: run `mutastic run` in a package, or
   `cargo mutastic run`.
 - **Your own toolchain.** mutastic builds with the `cargo` and `rustc` you have, stable or not, from

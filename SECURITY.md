@@ -2,8 +2,8 @@
 
 ## Supported versions
 
-mutastic for Rust has no releases yet, so fixes go into `main`. Once there are releases, fixes go
-into the latest: mutastic is before 1.0, so older releases won't be patched.
+Fixes go into the latest release: mutastic for Rust is before 1.0, so older releases won't be
+patched.
 
 ## Reporting a vulnerability
 

@@ -77,9 +77,10 @@ mutastic: mb2f8ae57 is caught by tests::discount_with_total_100
 
 ## Install
 
-mutastic for Rust isn't on crates.io yet, so build it from this repository. It needs a stable Rust
-toolchain, and nothing else: `rust-version` in [Cargo.toml](Cargo.toml) is the oldest that builds
-it.
+Each [release](https://github.com/mutastic/mutastic-rs/releases) has mutastic built for macOS and
+Linux, and [Installing mutastic](docs/install.md) has the installer for one. It isn't on
+crates.io yet. To build it yourself, you need a stable Rust toolchain and nothing else:
+`rust-version` in [Cargo.toml](Cargo.toml) is the oldest that builds it.
 
 ```sh
 git clone https://github.com/mutastic/mutastic-rs.git
@@ -88,7 +89,7 @@ cargo install --path crates/mutastic
 ```
 
 That installs `mutastic`, and `cargo-mutastic`, which Cargo runs as `cargo mutastic`. They do the
-same thing. [Installing mutastic](docs/install.md) has the installer for a published release.
+same thing.
 
 `mutastic` is the command for Maven and Gradle projects too: in one, it fetches the Java edition
 the first time, and hands it the command. See [One command, two editions](docs/editions.md).
@@ -126,12 +127,11 @@ Every output those pages and this one show comes from a run on the repository's 
 
 ## Status
 
-Early, and private for now. The operators and their names, the cards' words and the
+Early: mutastic for Rust is before 1.0. The operators and their names, the cards' words and the
 `mutastic.events/v1` stream are the Java edition's. It runs one Cargo package at a time, with that
 package's own tests, and leaves unsafe code alone unless asked. Some of the Java edition's commands
 and options aren't here yet: [Differences from the Java edition](docs/differences-from-java.md#not-in-the-rust-edition-yet)
-says which. Expect the output and the ids to change before a first release. Nothing is published to
-crates.io yet; the names are reserved.
+says which. Releases are on GitHub; nothing is published to crates.io yet, where the names are reserved.
 
 ## Contributing
 

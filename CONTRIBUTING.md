@@ -81,9 +81,11 @@ crates the tests run mutastic on.
 
 ## Releases
 
-There are none yet. The crate names `mutastic`, `cargo-mutastic` and `mutastic-rs` are reserved on
-crates.io, and every crate here is `publish = false` until the first release. Until then, install
-from source.
+A release is a version tag, `v<version>`, matching the version in `Cargo.toml`: the release
+workflow builds mutastic for each target from it, as a draft to read and publish. See
+[How a release is laid out](docs/install.md#how-a-release-is-laid-out). Nothing is on crates.io
+yet: the crate names `mutastic`, `cargo-mutastic` and `mutastic-rs` are reserved there, and every
+crate here is `publish = false`.
 
 ## Licence
 

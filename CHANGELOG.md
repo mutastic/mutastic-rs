@@ -5,6 +5,11 @@ newest come first.
 
 ## Unreleased
 
+## 0.1.0 (2026-11-09)
+
+The first release of mutastic for Rust, the Rust edition of mutastic. These are the changes made
+while it was built, before this release.
+
 ### Scoring changes
 
 Expect your score to move, for these reasons, not because your tests changed:
