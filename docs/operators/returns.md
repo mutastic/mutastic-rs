@@ -6,7 +6,7 @@ tests look at a function's result at all, and at its failures as well as its suc
 | Operator | Changes | Set |
 |---|---|---|
 | [`mutastic/return-value`](#return-value) | a returned value to another of its type: `0`, the other `bool`, `None`, an empty one | defaults |
-| [`mutastic/unwrap-try`](#unwrap-try) | `f()?` to `f().unwrap()` | stronger |
+| [`mutastic/unwrap-try`](#unwrap-try) | `f()?` to `f().unwrap()` | defaults |
 | [`mutastic/replace-body`](#replace-body) | a function's whole body to one value, or to nothing | extended |
 | [`mutastic/remove-throw`](#remove-throw) | `return Err(e);` or `panic!(..);` removed, so the code carries on | extended |
 
@@ -78,7 +78,7 @@ The only test spends too little to earn a point, so a function that always retur
 
 ## Unwrap try
 
-`mutastic/unwrap-try`, in the `stronger` set, and only in Rust. `f()?` becomes `f().unwrap()`: the
+`mutastic/unwrap-try`, in the defaults, and only in Rust. `f()?` becomes `f().unwrap()`: the
 error that `?` would hand back to the caller panics instead. It goes unnoticed when no test makes
 that call fail, so the error path is never run. Line coverage can't see that: the line runs either
 way.

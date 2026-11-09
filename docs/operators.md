@@ -49,6 +49,7 @@ reason.
 | `library/swap-math` | `a.min(b)` ↔ `a.max(b)`, `cmp::min` ↔ `cmp::max`, `min_by(_key)` ↔ `max_by(_key)`, `floor` ↔ `ceil` | defaults | `library/swap-math` | implemented |
 | `stream/swap-match` | `it.any(p)` ↔ `it.all(p)` | defaults | `stream/swap-match` | implemented |
 | `stream/remove-stage` | `.filter(p)`, `.skip(n)`, `.take(n)`, `.skip_while(p)`, `.take_while(p)`, `.step_by(n)`, `.rev()` left out of a chain that visibly starts as an iterator, up to its consumer or the `for` it feeds | defaults | `stream/remove-stage` | implemented |
+| `mutastic/unwrap-try` | `f()?` → `f().unwrap()`; not a `?` on a formatter's write, which no test can make fail | defaults | Rust only | implemented |
 | `mutastic/comparison` | `<` → `!=`, `<=` → `==`, `>` → `!=`, `>=` → `==`; `==` → `<=`, `>=` and `!=` → `<`, `>` beside a number, a character, a length or a cast | stronger | `mutastic/comparison` | implemented |
 | `mutastic/other-comparison` | a comparison → each of the others boundary and comparison don't make (`<` → `>`, `>=`, `==`); `if c` → `if !c`; `matches!(..)` → `!matches!(..)` | stronger | `mutastic/other-comparison` | implemented |
 | `mutastic/arithmetic-replacement` | `a + b` → `a * b`, `+=` → `*=` (not `+= 1`) | stronger | `mutastic/arithmetic-replacement` | implemented |
@@ -59,7 +60,6 @@ reason.
 | `library/swap-index-of` | `find` ↔ `rfind`, `position` ↔ `rposition`, `split_once` ↔ `rsplit_once`, `match_indices` ↔ `rmatch_indices` | stronger | `library/swap-index-of` | implemented |
 | `library/reverse-ordering` | `a.cmp(&b)` → `b.cmp(&a)` (and `partial_cmp`); `.reverse()` on an ordering left out | stronger | Rust only | implemented |
 | `mutastic/remove-switch-arm` | `P => e` stops matching (a guard the switch decides), so its values go to the next arm that matches; only before a later unguarded catch-all | stronger | `mutastic/remove-switch-arm` (extended there) | implemented |
-| `mutastic/unwrap-try` | `f()?` → `f().unwrap()` | stronger | Rust only | implemented |
 | `mutastic/remove-field-write` | `self.status = s;`, `*p = v;`, `v[i] = x;` → `let _ = s;` | stronger | `mutastic/remove-field-write` | implemented |
 | `mutastic/remove-negation` | `-x` → `x` | stronger | `mutastic/remove-negation` | implemented |
 | `mutastic/constant-value` | a whole number → the ones next to it, `0`, `1`, and `-1` where it's visibly signed; never past its type's range, never a size, capacity, wait, or a counter's first `0` or `1` | stronger | `mutastic/constant-value` | implemented |
@@ -126,3 +126,5 @@ own**, and implements one of the Java edition's plugin operators.
 Some ids sit in another set than in Java: the four `optional/*` ids and `remove-switch-arm` are in
 `stronger`, because `Option`, `Result` and `match` are core Rust, not a modern API; `drop-vararg`
 is in `extended`, as an array's length is part of its type, and more of its mutants are withdrawn.
+`mutastic/unwrap-try`, Rust's own, is in the defaults: a `?` whose error no test makes happen is an
+error path never run, and on real crates most of its missed mutants are just that.

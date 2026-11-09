@@ -76,7 +76,8 @@ pub const REMOVE_THROW: &str = "mutastic/remove-throw";
 /// elsewhere.
 pub const RETURN_VALUE_EXTENDED: &str = "mutastic/return-value(extended)";
 
-/// The operators a run uses when none are named: the Java edition's `defaults`.
+/// The operators a run uses when none are named: the Java edition's `defaults`, and `?` to
+/// `.unwrap()`, which Java has no form of: an error path no test drives is a gap worth seeing.
 pub const DEFAULTS: &[&str] = &[
     BOUNDARY,
     REMOVE_CONDITIONAL,
@@ -90,6 +91,7 @@ pub const DEFAULTS: &[&str] = &[
     SWAP_MATH,
     SWAP_MATCH,
     REMOVE_STAGE,
+    UNWRAP_TRY,
 ];
 /// `stronger` adds changes a test that catches the defaults' mostly catches too, and changes
 /// that are more often noise: the condition reversed (`==` to `!=`, `<` to `>=`), `%` to `*`,
@@ -2050,6 +2052,27 @@ mod tests {
             ids(&here).is_subset(&ids(&everything)),
             "ids don't depend on what's built"
         );
+    }
+
+    #[test]
+    fn the_defaults_ask_whether_a_question_marks_error_path_is_tested() {
+        let source = "pub fn parse(text: &str) -> Result<u8, std::num::ParseIntError> {\n\
+             let n: u8 = text.trim().parse()?;\n\
+             Ok(n)\n\
+             }\n";
+        let dir = std::env::temp_dir().join(format!("mutastic-try-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(dir.join("src/lib.rs"), source).unwrap();
+        let found = find(&dir, "sample", &[PathBuf::from("src/lib.rs")], DEFAULTS);
+        std::fs::remove_dir_all(&dir).ok();
+        let tries: Vec<&str> = found
+            .mutants
+            .iter()
+            .filter(|m| m.operator == UNWRAP_TRY)
+            .map(|m| m.replacement.as_str())
+            .collect();
+        assert_eq!(tries, ["text.trim().parse().unwrap()"]);
+        assert!(DEFAULTS.iter().all(|id| STRONGER.contains(id)));
     }
 
     #[test]

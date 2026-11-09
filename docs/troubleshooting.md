@@ -46,7 +46,8 @@ the function returns a `String`:
 
 Unviable mutants cost a round of the build each time some are found, never a test run. If a run
 has many, they come from the operators that lean on the compiler, which are in `stronger` and
-`extended`; the defaults only make changes that compile.
+`extended`. The defaults make changes that compile, but for a `?` turned into `.unwrap()` where the
+error has no `Debug` or the type isn't an `Option` or a `Result`, which is rare.
 
 **When the build fails and no mutant explains it,** mutastic stops with the compiler's error:
 `the build fails, and not because of a mutant`. Check that `cargo build --tests` passes in the
