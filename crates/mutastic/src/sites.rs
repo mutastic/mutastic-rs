@@ -944,6 +944,8 @@ impl Finder<'_> {
             tier: self.tier(function, &name, &body),
         };
         self.returned.clear();
+        // Before any return is mutated, so a returned `Err` comes from this function's own.
+        self.harvest_errors(body.syntax());
         if let Some(returns) = context.returns {
             if let Some(tail) = body.tail_expr() {
                 self.returned(&tail, returns, context);
@@ -952,7 +954,6 @@ impl Finder<'_> {
         }
         self.parameters(function, context);
         self.default_parameters(function, context);
-        self.harvest_errors(body.syntax());
         self.replace_body(function, &body, context.returns.unwrap_or("()"), context);
         self.walk(body.syntax(), context);
     }
@@ -2104,6 +2105,38 @@ mod tests {
         .map(|(a, b)| (a.to_string(), b.to_string()))
         .collect();
         assert_eq!(skipped, expected);
+    }
+
+    #[test]
+    fn a_returned_err_comes_from_its_own_function() {
+        let source = "pub fn a(n: u8) -> Result<u8, &'static str> { if n > 1 { return Err(\"big\"); } Ok(n) }\n\
+             pub fn b(n: u8) -> Result<u8, &'static str> { if n == 0 { return Err(\"zero\"); } Ok(n) }\n";
+        let dir = std::env::temp_dir().join(format!("mutastic-errs-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(dir.join("src/lib.rs"), source).unwrap();
+        let found = find(
+            &dir,
+            "sample",
+            &[PathBuf::from("src/lib.rs")],
+            &[RETURN_VALUE, RETURN_VALUE_EXTENDED],
+        );
+        std::fs::remove_dir_all(&dir).ok();
+        let errs: Vec<(String, String)> = found
+            .mutants
+            .iter()
+            .filter(|m| m.replacement.starts_with("Err("))
+            .map(|m| {
+                (
+                    found.functions[m.function].name.clone(),
+                    m.replacement.clone(),
+                )
+            })
+            .collect();
+        let expected: Vec<(String, String)> = [("a", "Err(\"big\")"), ("b", "Err(\"zero\")")]
+            .iter()
+            .map(|(f, e)| (f.to_string(), e.to_string()))
+            .collect();
+        assert_eq!(errs, expected);
     }
 
     #[test]

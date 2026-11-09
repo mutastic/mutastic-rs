@@ -465,6 +465,7 @@ m35b56b5d	truth	overflowing	optional/no-default	(x as u8).checked_sub(3).unwrap_
 m35b91563	truth	matches_any	mutastic/constant-value	2 → 0
 m35df271d	truth	range_ends	mutastic/constant-value	1 → 2
 m35ec7f4f	operators	conditions::free_delivery	mutastic/return-value	total >= 50 → false
+m3610505d	operators	returns::quantity	mutastic/return-value	text.parse().map_err(|_| format!("{text} isn't a number")) → Err("no quantity given".into())
 m36108846	suggestions	window::Window::open_on	optional/swap-present	self.start.is_none() → self.start.is_some()
 m3614b68a	operators	conditions::needs_restock	mutastic/return-value	stock < low → true
 m3617e9ae	operators	arguments::price_with	mutastic/other-arithmetic	base - coupon.unwrap_or(0) → (base) * (coupon.unwrap_or(0))
@@ -882,6 +883,7 @@ m63b5e509	operators	returns::is_valid_code	mutastic/constant-value	6 → 0
 m63be56bf	truth	in_while	mutastic/other-comparison	n + x < 3 → (n + x) >= (3)
 m641ee31e	operators	calls::Order::pay	mutastic/return-value	self.total → 0
 m642aa26a	truth	compound	mutastic/constant-value	2 → 1
+m6430752f	truth	checked	mutastic/return-value	Ok(x * 3) → Err(Problem::Negative)
 m6444c9cf	truth	stages	mutastic/comparison	v % 3 == 0 → (v % 3) <= (0)
 m647513cd	unsafety	plain::total	mutastic/other-arithmetic	a + b → (a) % (b)
 m64845ed8	truth	arithmetic	mutastic/math	c += x → c -= (x)
@@ -1109,7 +1111,6 @@ m7fc90176	truth	in_while	mutastic/constant-value	3 → 2
 m7fe95652	truth	optional	mutastic/constant-value	10 → 0
 m801c2eec	truth	in_else_if	mutastic/remove-conditional	x < 0 → true
 m80251aa4	suggestions	rates::late_fee	mutastic/other-arithmetic	5 + (days_late - 7) * 2 → (5) / ((days_late - 7) * 2)
-m80489fb3	operators	returns::<Pieces as std::fmt::Display>::fmt	mutastic/return-value	f.write_str(" pcs") → Err("no quantity given".into())
 m805932a5	truth	is_even	mutastic/return-value	v % 2 == 0 → true
 m806e397c	truth	total_of	mutastic/replace-body	{ values.iter().sum() } → 0
 m80e8a955	truth	between	mutastic/return-value	lo <= x && x < hi → true
@@ -1237,6 +1238,7 @@ m90a66ab8	truth	pipelines	mutastic/other-arithmetic	sum * 100 → (sum) - (100)
 m90a762dd	truth	conditions	mutastic/other-arithmetic	out += 1 → out %= (1)
 m90b13871	truth	overflowing	mutastic/constant-value	4 → 0
 m911091d9	truth	compound	mutastic/constant-value	2 → 3
+m911b15f4	truth	wider_returns	mutastic/return-value	Ok(x.unsigned_abs() as u8 + 1) → Err("big".into())
 m917107dd	truth	Builder::scale	mutastic/other-arithmetic	(self.v + 1) * by → ((self.v + 1)) % (by)
 m91b8c351	operators	conditions::can_ship	mutastic/default-parameter	 → let in_stock: bool = Default::default();
 m91db754d	truth	stage_in_for	mutastic/constant-value	2 → 1
@@ -1251,6 +1253,7 @@ m9373bff1	truth	matches_any	mutastic/constant-value	2 → 3
 m93ab79e0	truth	record	mutastic/constant-value	4 → 0
 m93bc256a	truth	conditions	mutastic/constant-value	1 → 0
 m93f8e4fb	truth	tries	mutastic/other-arithmetic	y - 1 → (y) / (1)
+m940c3ce6	truth	checked	mutastic/return-value	Ok(x * 3) → Err(Problem::TooBig)
 m9411d456	truth	in_else_if	mutastic/other-comparison	x == 0 → (x) > (0)
 m942d70ee	truth	returns_vec	mutastic/replace-body	{ vec![x; 2] } → Vec::new()
 m94716eb2	operators	conditions::free_delivery	mutastic/constant-value	50 → 1
