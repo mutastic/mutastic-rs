@@ -173,8 +173,37 @@ jobs:
       - run: mutastic run --from-shards=shares --threshold=70
 ```
 
-The last job fails when the whole score is below the threshold, and when a share is missing because
-its job failed. It builds nothing but mutastic itself, so cache Cargo's `bin` directory, or install
-a release, to make it quick. For a member of a workspace, name its directory in both commands
-(`mutastic run crates/core --shard=…`) and upload the share from the workspace's
-`target/mutastic/shares/…`.
+In GitLab CI, `parallel` runs a job as that many jobs, each told which it is in `CI_NODE_INDEX`,
+counting from 1, and how many there are in `CI_NODE_TOTAL`. A job that `needs` it waits for all of
+them, and gets each one's artifacts at the paths they were uploaded from, so every share's folder
+lands under `target/mutastic/shares/`. The image is pinned by its version tag:
+
+```yaml
+mutants:
+  image: rust:1.99.1
+  parallel: 4
+  before_script:
+    - cargo install --locked --git https://github.com/mutastic/mutastic-rs.git mutastic
+  script:
+    - mutastic run --shard=$CI_NODE_INDEX/$CI_NODE_TOTAL --threshold=0
+  artifacts:
+    when: always
+    paths:
+      - target/mutastic/shares/
+
+mutation-score:
+  image: rust:1.99.1
+  needs:
+    - job: mutants
+      artifacts: true
+  before_script:
+    - cargo install --locked --git https://github.com/mutastic/mutastic-rs.git mutastic
+  script:
+    - mutastic run --from-shards=target/mutastic/shares --threshold=70
+```
+
+When a share's job fails, the pipeline fails, and the last job doesn't run; when they all pass, the
+last job fails if the whole score is below the threshold. The last job builds nothing but mutastic
+itself, so cache Cargo's `bin` directory, or install a release, to make it quick. For a member of a
+workspace, name its directory in both commands (`mutastic run crates/core --shard=…`) and upload the
+share from the workspace's `target/mutastic/shares/…`.
