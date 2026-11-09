@@ -16,7 +16,8 @@ mutastic: find the tests that run your code but don't check it
 
 Usage:
   mutastic run [dir] [options]       Mutate the package in dir (default .) and run its tests
-  mutastic verify <id>[,<id>…] [dir] Pass when a test catches each mutant named
+  mutastic verify <id>… [dir]        Pass when a test catches each mutant named, the ids split
+                                     by commas or spaces
   mutastic explain <id> [dir]        Everything known of one mutant, with its tests run
   mutastic ignore <id> [dir] --reason=<why>
                                      Record a decision not to test one mutant, in
@@ -320,7 +321,11 @@ fn arguments(command: &str, parsed: &Parsed) -> Result<(), String> {
         "run" => ("mutastic run [dir] [options]", false, 1),
         "mutants" => ("mutastic mutants [dir]", false, 1),
         "build" => ("mutastic build [dir] --fraction=<share>", false, 1),
-        "verify" => ("mutastic verify <id>[,<id>…] [dir]", true, 2),
+        "verify" => (
+            "mutastic verify <id>[,<id>…] [<id>…] [dir]",
+            true,
+            1 + verify_ids(&parsed.positional).1,
+        ),
         "explain" => ("mutastic explain <id> [dir]", true, 2),
         "ignore" if parsed.prune => ("mutastic ignore --prune [dir]", false, 1),
         "ignore" => ("mutastic ignore <id> [dir] --reason=<why>", true, 2),
@@ -342,6 +347,22 @@ fn arguments(command: &str, parsed: &Parsed) -> Result<(), String> {
         )),
         _ => Ok(()),
     }
+}
+
+/// `verify`'s ids, as the Java edition takes them: the first word, split at its commas as a card's
+/// `done when` writes them, then each word after it that's an id; and how many words they took.
+/// The directory, if any, comes after them.
+fn verify_ids(positional: &[String]) -> (Vec<String>, usize) {
+    let Some(first) = positional.first() else {
+        return (Vec::new(), 0);
+    };
+    let mut named: Vec<String> = ids(first).collect();
+    let more = positional[1..]
+        .iter()
+        .take_while(|word| is_mutant_id(word))
+        .count();
+    named.extend(positional[1..=more].iter().cloned());
+    (named, 1 + more)
 }
 
 /// A mutant's id, as cards and `mutastic mutants` show it: `m` and eight hex digits.
@@ -394,6 +415,7 @@ fn configure(command: &str, parsed: &mut Parsed) -> Result<(), String> {
     let at = match command {
         "run" | "mutants" => 0,
         "ignore" if parsed.prune => 0,
+        "verify" => verify_ids(&parsed.positional).1,
         _ => 1,
     };
     let dir = std::path::PathBuf::from(parsed.positional.get(at).map_or(".", String::as_str));
@@ -697,13 +719,13 @@ fn run(parsed: &Parsed) -> Result<ExitCode, String> {
 }
 
 fn verify(parsed: &Parsed) -> Result<ExitCode, String> {
-    let Some(named) = parsed.positional.first() else {
+    let (only, taken) = verify_ids(&parsed.positional);
+    if only.is_empty() {
         return Err("verify needs a mutant's id: mutastic verify <id> [dir]".into());
-    };
-    let dir = parsed.positional.get(1).map_or(".", String::as_str);
+    }
+    let dir = parsed.positional.get(taken).map_or(".", String::as_str);
     started(false);
     let project = workspace::read(dir)?;
-    let only: Vec<String> = ids(named).collect();
     let progress = Progress::new(&project.package, false, false, parsed.progress);
     let report = engine::run(&project, &options(parsed, only), &|step| {
         progress.step(step)

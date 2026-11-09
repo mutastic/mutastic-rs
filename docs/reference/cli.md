@@ -9,7 +9,8 @@ mutastic: find the tests that run your code but don't check it
 
 Usage:
   mutastic run [dir] [options]       Mutate the package in dir (default .) and run its tests
-  mutastic verify <id>[,<id>…] [dir] Pass when a test catches each mutant named
+  mutastic verify <id>… [dir]        Pass when a test catches each mutant named, the ids split
+                                     by commas or spaces
   mutastic explain <id> [dir]        Everything known of one mutant, with its tests run
   mutastic ignore <id> [dir] --reason=<why>
                                      Record a decision not to test one mutant, in
@@ -77,8 +78,10 @@ offers: run it after writing the test.
 mutastic verify mb2f8ae57 fixtures/pricing
 ```
 
-Name several, separated by commas, and it passes only when every one is caught. One line each says
-how it went:
+Name several, separated by commas as a card's `done when` writes them (`verify mb2f8ae57,m0b3873d0`)
+or by spaces (`verify mb2f8ae57 m0b3873d0 fixtures/pricing`), as the Java edition takes them, and
+it passes only when every one is caught. The directory comes after the ids. One line each says how
+it went:
 
 | It prints | Means | Passes |
 |---|---|---|

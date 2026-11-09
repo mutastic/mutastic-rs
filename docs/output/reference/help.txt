@@ -2,7 +2,8 @@ mutastic: find the tests that run your code but don't check it
 
 Usage:
   mutastic run [dir] [options]       Mutate the package in dir (default .) and run its tests
-  mutastic verify <id>[,<id>…] [dir] Pass when a test catches each mutant named
+  mutastic verify <id>… [dir]        Pass when a test catches each mutant named, the ids split
+                                     by commas or spaces
   mutastic explain <id> [dir]        Everything known of one mutant, with its tests run
   mutastic ignore <id> [dir] --reason=<why>
                                      Record a decision not to test one mutant, in

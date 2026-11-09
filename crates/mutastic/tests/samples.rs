@@ -181,9 +181,21 @@ fn a_word_a_command_doesnt_take_stops_it() {
     assert_eq!(
         stopped(&["verify", "m1a2b3c4d,total", &dir]),
         "mutastic: verify needs a mutant's id, m and eight hex digits as a card shows it, and \
-         m1a2b3c4d,total isn't one: mutastic verify <id>[,<id>…] [dir], as in mutastic verify \
+         m1a2b3c4d,total isn't one: mutastic verify <id>[,<id>…] [<id>…] [dir], as in mutastic verify \
          m1a2b3c4d\n"
     );
+    assert_eq!(
+        stopped(&["verify", "mb2f8ae57", "m0b3873d0", &dir, "extra"]),
+        "mutastic: verify doesn't take extra: mutastic verify <id>[,<id>…] [<id>…] [dir]\n"
+    );
+    // Ids split by spaces, as the Java edition takes them, then the directory.
+    let (code, out) = mutastic(&["verify", "mb2f8ae57", "m0b3873d0", &dir]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("mutastic: mb2f8ae57 is still missed\n"),
+        "{out}"
+    );
+    assert!(out.contains("mutastic: m0b3873d0 is caught by "), "{out}");
 }
 
 /// Unsafe code is left alone, code near it is marked and runs isolated, and a crash counts as caught
