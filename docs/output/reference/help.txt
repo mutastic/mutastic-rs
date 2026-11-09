@@ -9,6 +9,11 @@ Usage:
                                      .mutastic/ignores.yaml; --as=<kind> says what sort; --propose
                                      proposes it for a person to accept (--accept <id>);
                                      --remove <id> takes one back; --prune those whose line changed
+  mutastic gate open|check|close [dir]
+                                     Gate a coding agent's task on its changed lines' mutants:
+                                     open keeps where it starts, check says whether it's done
+                                     (--hook=claude answers as Claude Code's hooks, --tries=<n>),
+                                     close forgets it; gate <action> --help says more
   mutastic mutants [dir]             List the mutants, without running anything
 
 Options:

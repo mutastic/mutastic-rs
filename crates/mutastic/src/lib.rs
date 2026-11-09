@@ -12,6 +12,7 @@ pub mod cli;
 pub mod compile;
 pub mod config;
 pub mod engine;
+pub mod gate;
 pub mod id;
 pub mod ignores;
 pub mod report;

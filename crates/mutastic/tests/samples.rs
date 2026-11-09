@@ -710,3 +710,161 @@ fn mutastic_yaml_is_read_as_the_java_editions() {
         .contains("mutastic.yaml line 2: the rule `skip: x::**` needs a `reason:` under it"));
     std::fs::remove_dir_all(&copy).ok();
 }
+
+fn mutastic_with_input(dir: &Path, args: &[&str], input: &str) -> (i32, String) {
+    use std::io::Write as _;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+        .args(args)
+        .current_dir(dir)
+        .env_remove("MUTASTIC_FORMAT")
+        .env_remove("MUTASTIC_AGENT")
+        .env("NO_COLOR", "1")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(input.as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    (
+        output.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+    )
+}
+
+/// `gate` holds a task to its changed lines' mutants, as the Java edition's does: it sends the
+/// agent back with the cards while one is missed, won't pass a task that took a test away or
+/// ignored a mutant itself, lets the agent stop when it changed nothing since it was sent back,
+/// and answers a Claude Code hook as one reads it.
+#[test]
+fn the_gate_holds_a_task_to_its_changed_lines() {
+    let dir = copy_of("pricing", "gate");
+    let git = |args: &[&str]| {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(&dir)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "git {args:?}");
+    };
+    let (code, out) = mutastic_in(&dir, &["gate", "open"]);
+    assert_eq!(code, 2, "outside git: {out}");
+    assert!(
+        out.contains("the gate needs a git repository with a commit"),
+        "{out}"
+    );
+    git(&["init", "-q"]);
+    std::fs::write(dir.join(".gitignore"), "target\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "start"]);
+    let (code, out) = mutastic_in(&dir, &["gate", "check"]);
+    assert_eq!(code, 2, "none open: {out}");
+    let (code, out) = mutastic_with_input(
+        &dir,
+        &["gate", "open", ".", "--hook=claude"],
+        r#"{"session_id": "s1"}"#,
+    );
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains("mutastic gate: this task is gated from "),
+        "{out}"
+    );
+    let (_, again) = mutastic_with_input(
+        &dir,
+        &["gate", "open", ".", "--hook=claude"],
+        r#"{"session_id": "s1"}"#,
+    );
+    assert_eq!(again, "", "once for each session");
+
+    let (code, out) = mutastic_in(&dir, &["gate", "check"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains("mutastic gate: passed: the task changed no lines mutastic mutates\n"),
+        "{out}"
+    );
+
+    // A change no test checks: the hook sends the agent back.
+    let lib = dir.join("src/lib.rs");
+    let text = std::fs::read_to_string(&lib).unwrap();
+    std::fs::write(
+        &lib,
+        format!("{text}\npub fn double(x: u32) -> u32 {{\n    x * 2\n}}\n"),
+    )
+    .unwrap();
+    let (_, hooked) = mutastic_with_input(&dir, &["gate", "check", ".", "--hook=claude"], "{}");
+    let answer: Value = serde_json::from_str(hooked.trim()).unwrap();
+    assert_eq!(answer["decision"], "block", "{hooked}");
+    // Sent back, the agent changed nothing: it may stop, and the person is told what's left.
+    let (_, hooked) = mutastic_with_input(&dir, &["gate", "check", ".", "--hook=claude"], "{}");
+    let answer: Value = serde_json::from_str(hooked.trim()).unwrap();
+    assert!(
+        answer["systemMessage"]
+            .as_str()
+            .unwrap()
+            .starts_with("mutastic gate: nothing changed since the agent was sent back"),
+        "{hooked}"
+    );
+    // Run by a person, it says what's left, and fails.
+    let (code, out) = mutastic_in(&dir, &["gate", "check"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.contains("on the lines the task changed"), "{out}");
+    assert!(out.contains("so it isn't done"), "{out}");
+    assert!(
+        out.contains("not covered (no test reaches these lines):\n- src/lib.rs:"),
+        "{out}"
+    );
+
+    // A test ignored holds the gate.
+    let tests = dir.join("tests/pricing.rs");
+    let kept = std::fs::read_to_string(&tests).unwrap();
+    std::fs::write(&tests, kept.replacen("#[test]", "#[test]\n#[ignore]", 1)).unwrap();
+    let (code, out) = mutastic_in(&dir, &["gate", "check"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("mutastic gate: fewer tests run than when the task started"),
+        "{out}"
+    );
+    std::fs::write(&tests, kept).unwrap();
+
+    // An ignore the task made itself is a person's call.
+    let (_, ids) = mutastic_in(&dir, &["mutants"]);
+    let id = ids
+        .lines()
+        .find(|line| line.contains(" in double"))
+        .and_then(|line| line.split_whitespace().next())
+        .unwrap()
+        .to_string();
+    mutastic_in(&dir, &["ignore", &id, "--reason=doubling is obvious"]);
+    let (code, out) = mutastic_in(&dir, &["gate", "check"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("itself, and whether a mutant is worth a test is a person's call"),
+        "{out}"
+    );
+    mutastic_in(&dir, &["ignore", "--remove", &id]);
+
+    // The test written: done.
+    std::fs::write(
+        dir.join("tests/double.rs"),
+        "#[test]\nfn doubles() {\n    assert_eq!(pricing::double(3), 6);\n}\n",
+    )
+    .unwrap();
+    let (code, out) = mutastic_in(&dir, &["gate", "check"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains("mutastic gate: passed: the tests catch "),
+        "{out}"
+    );
+    let (_, out) = mutastic_in(&dir, &["gate", "close"]);
+    assert!(out.contains("mutastic gate: closed\n"), "{out}");
+    std::fs::remove_dir_all(&dir).ok();
+}

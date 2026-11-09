@@ -8,7 +8,7 @@ use crate::engine::{self, Options, Status};
 use crate::report::files::Kind;
 use crate::report::{self, Format, Style};
 use crate::sites::UnsafeMode;
-use crate::{ignores, sites, testrun, workspace, wrapper};
+use crate::{gate, ignores, sites, testrun, workspace, wrapper};
 
 const USAGE: &str = "\
 mutastic: find the tests that run your code but don't check it
@@ -22,6 +22,11 @@ Usage:
                                      .mutastic/ignores.yaml; --as=<kind> says what sort; --propose
                                      proposes it for a person to accept (--accept <id>);
                                      --remove <id> takes one back; --prune those whose line changed
+  mutastic gate open|check|close [dir]
+                                     Gate a coding agent's task on its changed lines' mutants:
+                                     open keeps where it starts, check says whether it's done
+                                     (--hook=claude answers as Claude Code's hooks, --tries=<n>),
+                                     close forgets it; gate <action> --help says more
   mutastic mutants [dir]             List the mutants, without running anything
 
 Options:
@@ -90,6 +95,10 @@ struct Parsed {
     operators_given: Option<String>,
     /// `mutastic.yaml`'s rules, once read.
     rules: Vec<crate::config::Rule>,
+    /// `gate`'s: `--help` for a subcommand, `--hook=claude`, and `--tries`.
+    help: bool,
+    hook: String,
+    tries: usize,
 }
 
 fn parse(args: &[String]) -> Result<Parsed, String> {
@@ -113,6 +122,9 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
         since: None,
         operators_given: None,
         rules: Vec::new(),
+        help: false,
+        hook: String::new(),
+        tries: 3,
     };
     for arg in args {
         let Some(option) = arg.strip_prefix("--") else {
@@ -158,6 +170,20 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
             "remove" => parsed.remove = true,
             "prune" => parsed.prune = true,
             "since" => parsed.since = Some(value.to_string()),
+            "help" => parsed.help = true,
+            "hook" => {
+                if value != "claude" {
+                    return Err(format!("--hook: {value} isn't claude"));
+                }
+                parsed.hook = value.to_string();
+            }
+            "tries" => {
+                parsed.tries = value
+                    .parse()
+                    .ok()
+                    .filter(|n: &usize| (1..=100).contains(n))
+                    .ok_or_else(|| format!("--tries: {value} isn't a number from 1 to 100"))?
+            }
             "report" => {
                 let reports = parsed.reports.get_or_insert_with(Vec::new);
                 let (kind, path) = match value.split_once(':') {
@@ -202,7 +228,7 @@ pub fn check(args: &[String]) -> Result<(), String> {
         return Err("no command".into());
     };
     match command.as_str() {
-        "run" | "verify" | "explain" | "ignore" | "mutants" | "help" | "--help" | "-h"
+        "run" | "verify" | "explain" | "ignore" | "gate" | "mutants" | "help" | "--help" | "-h"
         | "--version" | "-V" => {
             let parsed = parse(&args[1..])?;
             match &parsed.operators_given {
@@ -270,6 +296,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, String> {
         "verify" => verify(&parsed),
         "explain" => explain(&parsed),
         "ignore" => ignore(&parsed),
+        "gate" => gate_command(&parsed),
         "mutants" => mutants(&parsed),
         // For measuring the schema itself: build with a share of the mutants, and say how it went.
         "build" => build(&parsed),
@@ -813,6 +840,320 @@ fn shell(word: &str) -> String {
         }
         _ => word.to_string(),
     }
+}
+
+/// `gate open`, `gate check` or `gate close`, as the Java edition's: see [`gate`].
+fn gate_command(parsed: &Parsed) -> Result<ExitCode, String> {
+    let Some(action) = parsed.positional.first().cloned() else {
+        return Err("gate needs open, check or close: mutastic gate open [dir]".into());
+    };
+    if parsed.help {
+        println!("{}", gate_help(&action)?);
+        return Ok(ExitCode::SUCCESS);
+    }
+    let dir = parsed.positional.get(1).map_or(".", String::as_str);
+    let hooked = !parsed.hook.is_empty();
+    // A hook runs in whatever project the agent is in: where mutastic reads no Cargo package,
+    // there's nothing to gate, and it says nothing.
+    let project = match workspace::read(dir) {
+        Ok(project) => project,
+        Err(_) if hooked => return Ok(ExitCode::SUCCESS),
+        Err(error) => return Err(error),
+    };
+    let session = if hooked {
+        let mut input = String::new();
+        let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut input);
+        gate::session(&input)
+    } else {
+        String::new()
+    };
+    let work = project.mutastic_dir();
+    let here = std::path::Path::new(dir);
+    match action.as_str() {
+        "open" => gate_open(hooked, here, &work, &session),
+        "close" => {
+            let closed = gate::State::close(&work);
+            if !hooked {
+                println!(
+                    "{}",
+                    if closed {
+                        "mutastic gate: closed"
+                    } else {
+                        "mutastic gate: none open here"
+                    }
+                );
+            }
+            Ok(ExitCode::SUCCESS)
+        }
+        "check" => gate_check(parsed, &project, here, &work),
+        other => Err(format!("gate: {other} isn't one of open, check or close")),
+    }
+}
+
+fn gate_help(action: &str) -> Result<&'static str, String> {
+    match action {
+        "open" => Ok("mutastic gate open [dir] [--hook=claude]\n\nStart gating a coding agent's task: keep where it starts. Keeps the commit the task starts from, its ignores, and how many tests run and are ignored, in target/mutastic, so gate check can say whether the task is done. With --hook, once for each of the agent's sessions.\n\nExit status: 0 once it has kept where the task starts; 2 outside a git repository with a commit."),
+        "check" => Ok("mutastic gate check [dir] [--hook=claude] [--tries=<n>]\n\nSay whether a gated task is done: its changed lines' mutants caught. Runs the mutants on the lines changed since gate open. The task is done when each is caught or proposed for a person to ignore, no ignore was made by the task, and no test was taken away or ignored; until then it says what's left, as the agent format does. With --hook it answers as the agent's hook, and lets the agent stop, saying what's left, when it changed nothing since it was sent back, or after --tries (default 3).\n\nExit status: 0 when the task is done, 1 when it isn't, 2 when no task is open. With --hook, 0 either way."),
+        "close" => Ok("mutastic gate close [dir]\n\nStop gating a task: forget where it started. The next gate open starts a new task.\n\nExit status: 0 whether a task was open or not."),
+        other => Err(format!("gate: {other} isn't one of open, check or close")),
+    }
+}
+
+/// Keeps where the task starts; with a hook, once for each session. A hook's output is the
+/// agent's to read: it's told the task is gated, and how to check its work as it goes.
+fn gate_open(
+    hooked: bool,
+    here: &std::path::Path,
+    work: &std::path::Path,
+    session: &str,
+) -> Result<ExitCode, String> {
+    let open_for_session = !session.is_empty()
+        && gate::State::read(work).is_some_and(|state| state.session == session);
+    if hooked && open_for_session {
+        return Ok(ExitCode::SUCCESS);
+    }
+    let Some(base) = crate::since::git(here, &["rev-parse", "HEAD"]) else {
+        return Err("the gate needs a git repository with a commit".into());
+    };
+    let base = base.trim().to_string();
+    let state = gate::State {
+        session: session.to_string(),
+        base: base.clone(),
+        ignored: ignored_ids(here)?,
+        shape: gate::Shape::of(here),
+        ..gate::State::default()
+    };
+    state.write(work)?;
+    println!(
+        "mutastic gate: this task is gated from {}: before you finish, check the lines it changes with `mutastic run --since={base} --format=agent`; {}",
+        &base[..base.len().min(7)],
+        if hooked {
+            "the gate checks them when you finish, so you needn't run `mutastic gate check` yourself"
+        } else {
+            "`mutastic gate check` says when it's done"
+        }
+    );
+    Ok(ExitCode::SUCCESS)
+}
+
+fn ignored_ids(here: &std::path::Path) -> Result<std::collections::BTreeSet<String>, String> {
+    Ok(ignores::read(here)?
+        .into_iter()
+        .map(|entry| entry.id)
+        .collect())
+}
+
+/// Whether the task is done: as a hook's answer, or as the exit status, with what's left.
+fn gate_check(
+    parsed: &Parsed,
+    project: &workspace::Project,
+    here: &std::path::Path,
+    work: &std::path::Path,
+) -> Result<ExitCode, String> {
+    let hooked = !parsed.hook.is_empty();
+    let Some(open) = gate::State::read(work) else {
+        if !hooked {
+            println!("mutastic gate: none open here: `mutastic gate open` starts one");
+        }
+        // Nothing gated: a hooked agent may stop.
+        return Ok(ExitCode::from(if hooked { 0 } else { 2 }));
+    };
+    let verdict = gate_verdict(parsed, project, here, &open)?;
+    let mut state = open.clone();
+    state.red.extend(verdict.red.clone());
+    if verdict.passes {
+        state.blocks = 0;
+        state.tree.clear();
+        state.write(work)?;
+        return Ok(gate_answer(hooked, &for_the_person(here, &state, verdict)));
+    }
+    // Sent back, unless, as a hook, it changed nothing since it last was, or it has had its tries:
+    // then it's let stop, and the person told what's left.
+    let tree = gate::tree(here);
+    let unchanged = open.unchanged_since_blocked(&tree);
+    state.blocks += 1;
+    state.tree = tree;
+    let handed_over = if hooked && unchanged {
+        Some(format!(
+            "mutastic gate: nothing changed since the agent was sent back, so it's over to you. {}",
+            verdict.text
+        ))
+    } else if hooked && state.blocks > parsed.tries {
+        Some(format!(
+            "mutastic gate: the agent was sent back {} times, so it's over to you. {}",
+            parsed.tries, verdict.text
+        ))
+    } else {
+        None
+    };
+    let Some(text) = handed_over else {
+        state.write(work)?;
+        return Ok(gate_answer(hooked, &verdict));
+    };
+    state.blocks = 0;
+    state.tree.clear();
+    state.write(work)?;
+    let answer = for_the_person(here, &open, gate::Verdict::pass(text));
+    Ok(gate_answer(hooked, &answer))
+}
+
+/// A pass or a hand-over, with the tests there when the task started that it changed what they
+/// expect: the person's to check, since the score can't.
+fn for_the_person(
+    here: &std::path::Path,
+    state: &gate::State,
+    verdict: gate::Verdict,
+) -> gate::Verdict {
+    let changed = gate::changed_expectations(here, &state.base);
+    if changed.is_empty() {
+        return verdict;
+    }
+    gate::Verdict {
+        text: format!(
+            "{}\n\nThe task changed what tests that were there when it started expect, in {}: check that's what you asked for",
+            verdict.text,
+            changed.into_iter().collect::<Vec<_>>().join(", ")
+        ),
+        ..verdict
+    }
+}
+
+/// The verdict, as the hook's answer, or printed, with the exit status.
+fn gate_answer(hooked: bool, verdict: &gate::Verdict) -> ExitCode {
+    if hooked {
+        println!("{}", gate::claude_hook(verdict));
+        return ExitCode::SUCCESS;
+    }
+    println!("{}", verdict.text);
+    if verdict.passes {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// What the gate says of the task: done, or what's left.
+fn gate_verdict(
+    parsed: &Parsed,
+    project: &workspace::Project,
+    here: &std::path::Path,
+    state: &gate::State,
+) -> Result<gate::Verdict, String> {
+    // First: taking the test away may leave no line changed.
+    let gone = gate::gone(&state.red, here);
+    if !gone.is_empty() {
+        let one = gone.len() == 1;
+        return Ok(gate::Verdict::block(format!(
+            "mutastic gate: {} failed at an earlier check, and {} gone now. Put {} back: the gate doesn't pass a task by taking a failing test away. Leave a failing test in place and make the code pass it, unless the spec or plan is what's wrong, in which case say so and stop",
+            gone.join(", "),
+            if one { "it's" } else { "they're" },
+            if one { "it" } else { "them" }
+        )));
+    }
+    let changed = crate::since::changed_since(here, &state.base)?;
+    let found = engine::find_all(project);
+    let ours = found.files.iter().any(|file| {
+        std::fs::canonicalize(project.workspace.join(&file.path))
+            .is_ok_and(|path| changed.lines.contains_key(&path))
+    });
+    if !ours {
+        return Ok(gate::Verdict::pass(
+            "mutastic gate: passed: the task changed no lines mutastic mutates".into(),
+        ));
+    }
+    let added: Vec<String> = ignored_ids(here)?
+        .difference(&state.ignored)
+        .cloned()
+        .collect();
+    if !added.is_empty() {
+        return Ok(gate::Verdict::block(format!(
+            "mutastic gate: the task ignored {} itself, and whether a mutant is worth a test is a person's call. Take it back with `mutastic ignore --remove ID`, and propose it instead: `mutastic ignore ID --propose --as=KIND --reason=\"…\"`",
+            added.join(", ")
+        )));
+    }
+    let (before, now) = (state.shape, gate::Shape::of(here));
+    if now.fewer_than(&before) {
+        return Ok(gate::Verdict::block(format!(
+            "mutastic gate: fewer tests run than when the task started ({}, {} ignored; now {}, {} ignored). Put them back: the gate doesn't pass a change by taking tests away",
+            before.tests, before.disabled, now.tests, now.disabled
+        )));
+    }
+    let mut options = options(parsed, Vec::new());
+    options.since = Some(changed);
+    let progress = Progress::new(&project.package, true, false, Some(Shown::None));
+    let report = match engine::run(project, &options, &|step| progress.step(step)) {
+        Ok(report) => report,
+        Err(error) => return red_verdict(here, state, &error),
+    };
+    let proposed: std::collections::BTreeSet<String> = ignores::proposed(here)?
+        .into_iter()
+        .map(|entry| entry.id)
+        .collect();
+    let missed: Vec<String> = report
+        .results
+        .iter()
+        .filter(|r| matches!(r.status, Status::Survived | Status::NoCoverage))
+        .map(|r| report.found.mutants[r.mutant].id.clone())
+        .collect();
+    let open: Vec<&String> = missed.iter().filter(|id| !proposed.contains(*id)).collect();
+    if open.is_empty() {
+        let caught = report.count(Status::Killed) + report.count(Status::Timeout);
+        let scored = report.results.len() - report.count(Status::Ignored);
+        let waiting = if missed.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "; the rest wait for a person, proposed in .mutastic/proposals.yaml: {}",
+                missed.join(", ")
+            )
+        };
+        return Ok(gate::Verdict::pass(format!(
+            "mutastic gate: passed: the tests catch {caught} of the {scored} mutants on the lines the task changed{waiting}"
+        )));
+    }
+    let cards: String = report::render(&report, Format::Agent, Style { color: false })
+        .lines()
+        .skip_while(|line| line.starts_with("mutastic: "))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let one = open.len() == 1;
+    Ok(gate::Verdict::block(format!(
+        "mutastic gate: {} mutant{} on the lines the task changed {} missed, so it isn't done. For each card: write the test, and run its `done when` before you move on; if a case can't happen, propose ignoring it, for a person to accept.\n\n{cards}",
+        open.len(),
+        if one { "" } else { "s" },
+        if one { "is" } else { "are" }
+    )))
+}
+
+/// A test that fails before any mutant. One that was there when the task started is most likely
+/// broken by the change, and rewriting what it expects would pass a wrong change: the agent is
+/// told to find out which is wrong, and to ask. The gate remembers it, so taking it away later
+/// holds the gate.
+fn red_verdict(
+    here: &std::path::Path,
+    state: &gate::State,
+    error: &str,
+) -> Result<gate::Verdict, String> {
+    let Some((test, _)) = error.split_once(" fails without any mutant") else {
+        return Err(error.to_string());
+    };
+    let failed = format!("{test} fails without any mutant");
+    let name = test.rsplit("::").next().unwrap_or(test);
+    let was_there =
+        crate::since::git(here, &["grep", "-q", "-w", name, &state.base, "--", "."]).is_some();
+    let text = if was_there {
+        format!(
+            "mutastic gate: {failed}.\n\n{test} was there when the task started: if it passed then, the task's change broke it. Find out whether the change or the test is wrong. Don't change what a test expects, or take it away, to make it pass unless the task asked for that behaviour, and if you're not sure, ask"
+        )
+    } else {
+        format!(
+            "mutastic gate: {failed}. Make it pass first, unless the spec or plan is what's wrong, in which case say so and stop. Either way, leave a failing test in place: the gate doesn't pass a task by taking it away"
+        )
+    };
+    Ok(gate::Verdict {
+        red: gate::remember(&[test.to_string()], here),
+        ..gate::Verdict::block(text)
+    })
 }
 
 fn caught(result: &engine::MutantResult) -> String {

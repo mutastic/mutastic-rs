@@ -81,6 +81,9 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
   (`shop::generated::**`) and Rust types as owners. A rules file's operator matches a call by its
   method's name, since mutastic reads source without types; a rewrite that doesn't fit doesn't
   compile, and is withdrawn. See [Configuration](reference/configuration.md).
+- **The gate** is the Java edition's, so the coding agents' plugins run it unchanged. A test it
+  counts is a `#[test]`-like function in `src` or `tests`, and one turned off is `#[ignore]`, where
+  Java counts `@Test` and `@Disabled`.
 - **Skipped as equivalent:** a `?` that only passes on a formatter's error, inside the `fmt` of
   `Display` and the other formatting traits, or on a write to a `Formatter`: no test can make that
   error happen.
@@ -95,5 +98,4 @@ instead:
 | Compiled plugins, and `filters:` in `mutastic.yaml` | A rules file, for call operators: [Configuration](reference/configuration.md#rules-files) |
 | `@DoNotMutate` | `mutastic ignore`, one mutant at a time: [Commands](reference/cli.md#mutastic-ignore) |
 | Suggested tests on cards | The card's `help` line |
-| The gate and the coding agents' plugins | `--format=agent`, or `MUTASTIC_AGENT=1`, and `verify` as the check |
 | `--vocabulary=classic` | The standard words only |

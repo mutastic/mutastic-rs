@@ -16,6 +16,11 @@ Usage:
                                      .mutastic/ignores.yaml; --as=<kind> says what sort; --propose
                                      proposes it for a person to accept (--accept <id>);
                                      --remove <id> takes one back; --prune those whose line changed
+  mutastic gate open|check|close [dir]
+                                     Gate a coding agent's task on its changed lines' mutants:
+                                     open keeps where it starts, check says whether it's done
+                                     (--hook=claude answers as Claude Code's hooks, --tries=<n>),
+                                     close forgets it; gate <action> --help says more
   mutastic mutants [dir]             List the mutants, without running anything
 
 Options:
@@ -179,6 +184,26 @@ mutastic ignore mb2f8ae57 --reason="totals are rounded to tens" --as=unreachable
 
 The files are the Java edition's, in the same shape, with the function's path in `at`
 (`pricing::Pricing::discount, line 26`).
+
+## `mutastic gate`
+
+Holds a coding agent's task to its changed lines' mutants, as the Java edition's gate does, so the
+agents' plugins work with either edition. `gate open` keeps where the task starts: the commit, the
+ignores, and how many tests there are and how many are `#[ignore]`d, in `target/mutastic`.
+`gate check` runs the mutants on the lines changed since, and passes when each is caught or
+proposed for a person to ignore; until then it prints what's left as the agent format's cards. It
+doesn't pass a task that ignored a mutant itself, that has fewer tests running than when it
+started, or that took away a test which failed at an earlier check. `gate close` forgets the task.
+
+```sh
+mutastic gate open fixtures/pricing
+mutastic gate check fixtures/pricing
+```
+
+With `--hook=claude`, each reads a Claude Code hook's input on stdin and answers as a hook does:
+`open` once per session, `check` with a block and its reason or a message for the person. A hooked
+`check` lets the agent stop, and tells the person what's left, when the agent changed nothing since
+it was sent back, or after `--tries` times. `mutastic gate <action> --help` says how each exits.
 
 ## `mutastic mutants`
 

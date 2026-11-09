@@ -573,7 +573,9 @@ const NOT_COVERED_SHOWN: usize = 50;
 
 /// `Not covered (no test reaches these lines)`, then each function with mutants no test reaches:
 /// `○ src/lib.rs:18-20 tier() (4 mutants)`, in the order found, as the Java edition shows them.
-fn not_covered(out: &mut String, view: &View, style: Style) {
+/// The functions with mutants no test reaches, in the order found: where (`src/lib.rs:18-20
+/// tier()`) and how many mutants, as the Java edition counts them.
+fn not_covered_places(view: &View) -> Vec<(String, usize)> {
     let mut by_function: Vec<(usize, Vec<usize>)> = Vec::new();
     for result in &view.report.results {
         if result.status == Status::NoCoverage {
@@ -584,7 +586,32 @@ fn not_covered(out: &mut String, view: &View, style: Style) {
             }
         }
     }
-    if by_function.is_empty() {
+    by_function
+        .into_iter()
+        .map(|(function, lines)| {
+            let (from, to) = (
+                lines.iter().min().copied().unwrap_or(0),
+                lines.iter().max().copied().unwrap_or(0),
+            );
+            let f = &view.report.found.functions[function];
+            let place = if from == to {
+                from.to_string()
+            } else {
+                format!("{from}-{to}")
+            };
+            (
+                format!("{}:{place} {}()", f.file.display(), f.name),
+                lines.len(),
+            )
+        })
+        .collect()
+}
+
+/// `Not covered (no test reaches these lines)`, then each function with mutants no test reaches:
+/// `○ src/lib.rs:18-20 tier() (4 mutants)`, in the order found, as the Java edition shows them.
+fn not_covered(out: &mut String, view: &View, style: Style) {
+    let places = not_covered_places(view);
+    if places.is_empty() {
         return;
     }
     let _ = writeln!(
@@ -593,37 +620,24 @@ fn not_covered(out: &mut String, view: &View, style: Style) {
         style.amber(&style.bold(" Not covered ")),
         style.dim("(no test reaches these lines)")
     );
-    for (function, lines) in by_function.iter().take(NOT_COVERED_SHOWN) {
-        let count = lines.len();
-        let (from, to) = (
-            lines.iter().min().copied().unwrap_or(0),
-            lines.iter().max().copied().unwrap_or(0),
-        );
-        let f = &view.report.found.functions[*function];
-        let place = if from == to {
-            from.to_string()
-        } else {
-            format!("{from}-{to}")
-        };
+    for (place, count) in places.iter().take(NOT_COVERED_SHOWN) {
         let _ = writeln!(
             out,
-            "   {} {}:{place} {}() {}",
+            "   {} {place} {}",
             style.amber("○"),
-            f.file.display(),
-            f.name,
             style.dim(&format!(
                 "({count} mutant{})",
-                if count == 1 { "" } else { "s" }
+                if *count == 1 { "" } else { "s" }
             ))
         );
     }
-    if by_function.len() > NOT_COVERED_SHOWN {
+    if places.len() > NOT_COVERED_SHOWN {
         let _ = writeln!(
             out,
             "{}",
             style.dim(&format!(
                 "   … and {} more functions",
-                by_function.len() - NOT_COVERED_SHOWN
+                places.len() - NOT_COVERED_SHOWN
             ))
         );
     }
@@ -993,6 +1007,26 @@ fn agent(report: &Report) -> String {
             "\n…and {} more: run with --format=jsonl for them all",
             entries.len() - 10
         );
+    }
+    // As the Java edition's agent text: what no test reaches, after the misses.
+    let places = not_covered_places(&view);
+    if !places.is_empty() {
+        let _ = writeln!(
+            out,
+            "\nnot covered (no test reaches these lines{}):",
+            if entries.is_empty() {
+                ""
+            } else {
+                "; fix the missed mutants first"
+            }
+        );
+        for (place, count) in places {
+            let _ = writeln!(
+                out,
+                "- {place} ({count} mutant{})",
+                if count == 1 { "" } else { "s" }
+            );
+        }
     }
     out
 }
