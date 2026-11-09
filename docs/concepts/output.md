@@ -1,7 +1,10 @@
 # Output
 
-mutastic prints its result on stdout and its progress on stderr. How the result looks is
-`--format`'s choice.
+The same run is read by a person at a terminal, by a CI log, by a coding agent and by a tool, and
+each needs something different from it: a person wants the code with the change marked, a log one
+line per gap, an agent the verdict first and plain text it can act on, a tool fields it can parse.
+So mutastic prints one result in several formats, and picks the one that fits where it's running.
+Its result goes to stdout and its progress to stderr.
 
 ## Formats
 
@@ -11,8 +14,59 @@ terminal, such as in CI or a pipe, it's `concise`; with `MUTASTIC_AGENT=1` it's 
 
 ### `full`
 
-A card for each line with a missed mutant, for a person reading at a terminal. See
-[Getting started](../getting-started.md#3-read-the-card) for how to read one.
+A card for each line with a missed mutant, for a person reading at a terminal: the gap, the code
+with the change marked, the evidence, the test to add, and the commands that prove it, then the
+summary. On the pricing fixture:
+
+<!-- output: getting-started/run -->
+```text
+
+ Missed ────────────────────────────────────────────────────────────
+
+ ❯ src/lib.rs  1 missed in 1 function
+
+ [✗ MISSED] no test checks discount() at total == 100
+    ┌─ src/lib.rs:26
+    │
+ 25 │     pub fn discount(&self, total: u32) -> u32 {
+ 26 │         if total >= 100 {
+    │                  ^^ changed to >
+ 27 │             return total / 10;
+    │
+    = mutant  - if total >= 100 {
+              + if total > 100 {
+    = note: every test calls discount() away from the boundary
+            inputs seen: 50, 250 (none is 100)
+            covered by pricing::big_orders_get_ten_percent_off, tests::small_orders_pay_full_price (all 2 covering tests still pass)
+    = help: test discount() with total = 100 and assert the result
+
+            // in mod tests
+            #[test]
+            fn discount_with_total_100() {
+                assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
+            }
+            check today's value is the one you intend: the test pins what the code does now
+
+    done when  mutastic verify mb2f8ae57 fixtures/pricing passes
+    reproduce  mutastic run --only=mb2f8ae57 fixtures/pricing
+    or ignore  mutastic ignore mb2f8ae57 --reason="<why>" fixtures/pricing
+
+     Files  0 clean | 1 with misses (1)
+   Mutants  ✓ 10 caught · ✗ 1 missed (11)
+  Worst at  Pricing::discount() 1 ✗
+     Build  one build of every mutant, 2 rounds (check and build)
+ Test runs  13 (33 without coverage selection)
+  Start at  13:21:31
+  Duration  2.2s (setup 2.1s, coverage 5ms, mutants 32ms)
+     Tests  3 on rustc 1.98.0 · 4 workers
+   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
+     Score  90.9%  threshold 80
+
+ [PASS] 1 missed, above the threshold.
+ Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+```
+
+See [Getting started](../getting-started.md#3-read-the-card) for how to read a card.
 
 ### `concise`
 
