@@ -134,6 +134,16 @@ fn every_shape_gets_a_card() {
     );
 }
 
+/// A pattern that binds by `ref mut` into a field changes the field, so the copy keeps the field a
+/// place, not a value in a switch: its test passes there as under `cargo test`, as url's do.
+#[test]
+fn a_field_a_pattern_binds_into_stays_a_place() {
+    let dir = fixture("places");
+    let (_, stdout) = mutastic(&["run", &dir, "--format=jsonl"]);
+    let finished = events(&stdout).pop().unwrap();
+    assert_eq!(finished["reason"], "run-finished", "{finished}");
+}
+
 /// Unsafe code is left alone, code near it is marked and runs isolated, and a crash counts as caught
 /// only where it can't be undefined behaviour, and then not as a test's catch. The fixture turns
 /// overflow checks and debug assertions off for tests, and mutastic turns them back on.

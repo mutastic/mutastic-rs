@@ -365,6 +365,11 @@ impl Finder<'_> {
         if matches!(value, ast::Expr::RefExpr(_)) {
             return;
         }
+        // `Some(ref mut x) = self.field` binds into the field itself. Inside the switch's `match`
+        // the field is a value, a copy, so a change through `x` would be lost with no mutant live.
+        if is_place(value) && binds_by_reference(pat) {
+            return;
+        }
         let range = value.syntax().text_range();
         // Still worked out, and typed as it was: a bare `None` can leave its type unknown.
         let never = format!("{}.filter(|_| false)", receiver_text(value));
@@ -595,6 +600,25 @@ impl Finder<'_> {
 }
 
 /// An expression as the receiver of a method call: in parentheses unless it binds tighter.
+/// Whether `expr` names a place, memory a pattern can bind into, rather than a value: a variable,
+/// a field, an element or a dereference, in parentheses or not.
+fn is_place(expr: &ast::Expr) -> bool {
+    match expr {
+        ast::Expr::PathExpr(_) | ast::Expr::FieldExpr(_) | ast::Expr::IndexExpr(_) => true,
+        ast::Expr::PrefixExpr(prefix) => prefix.op_kind() == Some(ast::UnaryOp::Deref),
+        ast::Expr::ParenExpr(paren) => paren.expr().is_some_and(|inner| is_place(&inner)),
+        _ => false,
+    }
+}
+
+/// Whether `pat` binds anything by `ref` or `ref mut`, at any depth.
+fn binds_by_reference(pat: &ast::Pat) -> bool {
+    pat.syntax()
+        .descendants()
+        .filter_map(ast::IdentPat::cast)
+        .any(|binding| binding.ref_token().is_some())
+}
+
 pub(super) fn receiver_text(expr: &ast::Expr) -> String {
     let text = plain(expr.syntax());
     match expr {
