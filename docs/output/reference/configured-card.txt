@@ -1,0 +1,15 @@
+ [✗ MISSED] no test passes clean() text with spaces for .trim() to remove
+   ┌─ src/lib.rs:6
+   │
+ 5 │ pub fn clean(name: &str) -> String {
+ 6 │     name.trim().to_lowercase()
+   │          ^^^^ .trim() removed
+ 7 │ }
+   │
+   = mutant  - name.trim().to_lowercase()
+             + name.to_lowercase()
+   = note: covered by tests::names_are_lower_case (its 1 covering test still passes)
+   = help: add a test whose input has spaces around it, and assert they're gone
+
+   done when  mutastic verify m06d09770 fixtures/configured passes
+   reproduce  mutastic run --only=m06d09770 fixtures/configured

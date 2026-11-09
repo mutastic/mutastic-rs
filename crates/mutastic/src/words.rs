@@ -21,13 +21,45 @@ pub struct Advice {
 
 /// The advice for `mutant`, in function `name`, given the inputs its tests passed.
 pub fn advise(mutant: &Mutant, name: &str, seen: &BTreeMap<String, Vec<i128>>) -> Advice {
-    let mut advice = advise_change(mutant, name, seen);
+    let mut advice = match crate::callrules::find(mutant.operator) {
+        Some(rule) => rule_advice(rule, mutant, name, seen),
+        None => advise_change(mutant, name, seen),
+    };
     if let Some(near) = mutant.near_unsafe {
         advice.notes.push(format!(
             "this code is near unsafe code ({near}): a change no test notices here can break what the unsafe code relies on, so check that code with Miri too"
         ));
     }
     advice
+}
+
+/// A rules file's operator says its own words: `changed`, `headline` and `help`, with the method
+/// called, what a rename calls instead, and the function the call is in filled in.
+fn rule_advice(
+    rule: &crate::callrules::CallRule,
+    mutant: &Mutant,
+    name: &str,
+    seen: &BTreeMap<String, Vec<i128>>,
+) -> Advice {
+    let called = match &mutant.change {
+        Change::Swapped { before, .. } => before.clone(),
+        Change::Replaced { before, .. } => before
+            .trim_start_matches('.')
+            .split(['(', ':'])
+            .next()
+            .unwrap_or_default()
+            .to_string(),
+        _ => String::new(),
+    };
+    let method = format!("`{name}()`");
+    let changed = rule.fill(&rule.changed, &called, &method);
+    Advice {
+        change: changed.clone(),
+        caret: plain(&changed),
+        headline: rule.fill(&rule.headline, &called, &method),
+        notes: inputs_seen(seen),
+        help: rule.fill(&rule.help, &called, &method),
+    }
 }
 
 fn advise_change(mutant: &Mutant, name: &str, seen: &BTreeMap<String, Vec<i128>>) -> Advice {

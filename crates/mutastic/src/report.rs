@@ -1409,7 +1409,14 @@ fn about(
     row(
         out,
         "operator",
-        format!("{}: {}", mutant.operator, view.advice(result).change),
+        format!(
+            "{}: {}",
+            mutant.operator,
+            crate::callrules::find(mutant.operator).map_or_else(
+                || view.advice(result).change,
+                |rule| rule.explanation.clone()
+            )
+        ),
         Vec::new(),
     );
     row(

@@ -136,6 +136,8 @@ pub struct Options {
     pub unsafe_mode: UnsafeMode,
     /// `--since`: only the mutants on these lines run.
     pub since: Option<crate::since::ChangedLines>,
+    /// `mutastic.yaml`'s rules.
+    pub rules: Vec<crate::config::Rule>,
 }
 
 /// The change a run was scoped to: what it's since, and the crate's lines and files it touched.
@@ -172,7 +174,12 @@ pub fn find_with(project: &Project, operators: &[&str], mode: UnsafeMode) -> Cra
 
 /// Every mutant, under every operator mutastic has, unsafe code included: what an id can name.
 pub fn find_all(project: &Project) -> Crate {
-    find_with(project, sites::ALL, UnsafeMode::All)
+    let all: Vec<&str> = sites::ALL
+        .iter()
+        .copied()
+        .chain(crate::callrules::loaded().iter().map(|rule| rule.id))
+        .collect();
+    find_with(project, &all, UnsafeMode::All)
 }
 
 /// What a run tells the person watching, as it goes.
@@ -210,6 +217,7 @@ pub fn run(
         find_all(project)
     };
     let stale_ignores = apply_ignores(project, &mut found)?;
+    apply_rules(&options.rules, &project.crate_name, &mut found);
     let selected: BTreeSet<usize> = found
         .mutants
         .iter()
@@ -330,6 +338,27 @@ fn apply_ignores(project: &Project, found: &mut Crate) -> Result<Vec<String>, St
         }
     }
     Ok(stale)
+}
+
+/// Skips the mutants in code a `skip:` rule of `mutastic.yaml` covers, with its reason. A mutant
+/// something else already skips keeps that reason. A rule names a function by its path in the
+/// crate, as `generated::checksum`, `crate::generated::checksum` or, with the crate's name,
+/// `shop::generated::checksum`.
+fn apply_rules(rules: &[crate::config::Rule], crate_name: &str, found: &mut Crate) {
+    for index in 0..found.mutants.len() {
+        let path = &found.functions[found.mutants[index].function].path;
+        let named = [
+            path.clone(),
+            format!("crate::{path}"),
+            format!("{crate_name}::{path}"),
+        ];
+        let rule = rules
+            .iter()
+            .find(|rule| !rule.mutate && named.iter().any(|path| rule.covers(path)));
+        if let (Some(rule), None) = (rule, &found.mutants[index].skipped) {
+            found.mutants[index].skipped = Some(rule.skip_reason());
+        }
+    }
 }
 
 /// The source line a mutant is on, as written.

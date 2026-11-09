@@ -6,9 +6,11 @@
 //! withdrawing mutants that don't compile; [`engine`] records what each test reaches and runs
 //! each mutant against those tests; [`report`] prints the result.
 
+pub mod callrules;
 pub mod cfg;
 pub mod cli;
 pub mod compile;
+pub mod config;
 pub mod engine;
 pub mod id;
 pub mod ignores;

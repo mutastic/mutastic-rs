@@ -1,7 +1,96 @@
 # Configuration
 
-The Rust edition has no configuration file yet: a run is set by its options (see
-[Commands](cli.md)) and by a few environment variables. Nothing goes in `Cargo.toml`.
+A run is set by its options (see [Commands](cli.md)), by `mutastic.yaml` in the package's directory,
+and by a few environment variables. Nothing goes in `Cargo.toml`.
+
+## `mutastic.yaml`
+
+The project's own say over which mutants run, in the package's directory, in the Java edition's
+format: the same keys, read as strictly, with Rust paths where the Java edition names classes. A
+line mutastic doesn't understand is an error that names it, never a guess.
+
+<!-- from: fixtures/configured/mutastic.yaml -->
+```yaml
+rules:
+  - skip: configured::generated::**
+    reason: written by a code generator
+plugins:
+  - rules/trims.yaml
+operators:
+  - defaults
+  - -mutastic/return-value
+```
+
+| Key | What it does |
+|---|---|
+| `rules:` | Code to skip, each `- skip: <pattern>` with a `reason:` under it. Its mutants are skipped as ``user: <reason> (rule `skip: <pattern>`)``, out of the score |
+| `plugins:` | Rules files of call operators, by their path from the package's directory |
+| `operators:` | Which operators run, as `--operators` chooses, which replaces this for one run: a set (`defaults`, `stronger`, `extended`, `all`), a namespace (`stream`) or an operator's id, or one of those after `-` to leave it out |
+| `filters:` | A compiled plugin's filters: the Rust edition has no compiled plugins yet, so naming one is an error |
+
+A pattern is a path: `**` matches any depth, `*` one name, and a function is its path in the crate,
+with the crate's name or `crate::` before it or not: `shop::Money::add`, `crate::Money::add` or
+`Money::add`, where the Java edition writes `com.acme.Money#add`. A rule covers a function by
+its path, or by the item that holds it (`shop::Money`), as a Java rule covers a method or its
+class. `mutate:` rules are read, as in the Java edition, where they take back an arid skip; the Rust
+edition has no arid skips, so they change nothing yet.
+
+## Rules files
+
+A rules file is call operators as data, in the Java edition's format. Each list item is one
+operator:
+
+<!-- from: fixtures/configured/rules/trims.yaml -->
+```yaml
+- id: acme/remove-trim
+  explanation: A call that trims a string is removed. It goes unnoticed when no test passes text with spaces around it.
+  owners: str, String
+  methods: trim, trim_start, trim_end
+  rewrite: remove
+  changed: `.{name}()` removed
+  headline: no test passes {method} text with spaces for `.{name}()` to remove
+  help: add a test whose input has spaces around it, and assert they're gone
+```
+
+| Field | What it says |
+|---|---|
+| `id` | `namespace/name`, lower case: how reports, `--operators` and ignores name it |
+| `explanation` | What it changes, and when a test misses that: `mutastic explain` shows it |
+| `tier` | `defaults` (unless it says), `stronger` or `extended` |
+| `owners` | The types it's for, as Rust names them: `str`, `String` |
+| `methods` | The method names it matches |
+| `rewrite` | `remove`, so `name.trim()` becomes `name`, or `rename a->b, c->d` |
+| `changed` | What the line now does, beside the caret. `{name}` is the method called, `{to}` what a rename calls instead |
+| `headline` | A missed mutant's headline. `{method}` is the function the call is in |
+| `help` | The test to write, with the same placeholders |
+
+On the fixture, the rules file's operator finds the `trim()` no test gives spaces to, in its own
+words:
+
+<!-- output: reference/configured-card -->
+```text
+ [✗ MISSED] no test passes clean() text with spaces for .trim() to remove
+   ┌─ src/lib.rs:6
+   │
+ 5 │ pub fn clean(name: &str) -> String {
+ 6 │     name.trim().to_lowercase()
+   │          ^^^^ .trim() removed
+ 7 │ }
+   │
+   = mutant  - name.trim().to_lowercase()
+             + name.to_lowercase()
+   = note: covered by tests::names_are_lower_case (its 1 covering test still passes)
+   = help: add a test whose input has spaces around it, and assert they're gone
+
+   done when  mutastic verify m06d09770 fixtures/configured passes
+   reproduce  mutastic run --only=m06d09770 fixtures/configured
+```
+
+What differs from the Java edition: mutastic reads source without types, so a rule matches a call
+by its method's name, and `owners` isn't checked. A rewrite that doesn't fit the receiver's type
+doesn't compile, so the build withdraws it as unviable, at the cost of a build round. `descriptors`
+and `since` are the JVM's, and an error here; of the rewrites, only `remove` and `rename` are in the
+Rust edition yet.
 
 ## What mutastic reads
 

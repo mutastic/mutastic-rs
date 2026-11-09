@@ -650,3 +650,63 @@ fn since_runs_the_changed_lines_mutants() {
         .all(|e| e["location"]["line"] == 26));
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// `mutastic.yaml` chooses the operators, adds a rules file's, and skips what its rules cover, with
+/// their reasons; the rules file's operator says its own words on the card.
+#[test]
+fn mutastic_yaml_is_read_as_the_java_editions() {
+    let copy = copy_of("configured", "configured");
+    let dir = copy.display().to_string();
+    let (_, jsonl) = mutastic(&["run", &dir, "--format=jsonl", "--report=none"]);
+    let found = events(&jsonl);
+    let mutants: Vec<&Value> = found
+        .iter()
+        .filter(|e| e["reason"] == "mutant-finished")
+        .collect();
+    assert!(
+        mutants
+            .iter()
+            .all(|e| e["operator"] != "mutastic/return-value"),
+        "operators: takes return-value away: {jsonl}"
+    );
+    let trim = mutants
+        .iter()
+        .find(|e| e["operator"] == "acme/remove-trim")
+        .expect("the rules file's operator");
+    assert_eq!(trim["status"], "Survived");
+    assert!(
+        trim["rendered"]
+            .as_str()
+            .unwrap()
+            .contains("no test passes `clean()` text with spaces for `.trim()` to remove"),
+        "{trim}"
+    );
+    let generated: Vec<&&Value> = mutants
+        .iter()
+        .filter(|e| e["location"]["method"] == "checksum")
+        .collect();
+    assert!(!generated.is_empty(), "{jsonl}");
+    for mutant in generated {
+        assert_eq!(mutant["status"], "Ignored");
+        assert_eq!(
+            mutant["statusReason"],
+            "user: written by a code generator (rule `skip: configured::generated::**`)"
+        );
+    }
+    // --operators replaces operators:, and can name the rules file's.
+    let (_, only) = mutastic(&["mutants", &dir, "--operators=acme/remove-trim"]);
+    assert!(
+        only.contains("acme/remove-trim") && only.contains("\n1 mutants\n"),
+        "{only}"
+    );
+    // What mutastic doesn't understand is an error that names the line.
+    std::fs::write(copy.join("mutastic.yaml"), "rules:\n  - skip: x::**\n").unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+        .args(["mutants", &dir])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("mutastic.yaml line 2: the rule `skip: x::**` needs a `reason:` under it"));
+    std::fs::remove_dir_all(&copy).ok();
+}

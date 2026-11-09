@@ -392,6 +392,7 @@ impl Finder<'_> {
             return;
         };
         let text = name.text().to_string();
+        self.call_rules(call, &text, context);
         for (operator, pairs) in SWAPS {
             if let Some(after) = counterpart(pairs, &text) {
                 self.swap_name(
@@ -708,5 +709,31 @@ fn consumer_of(stage: &SyntaxNode) -> Option<(SyntaxNode, String)> {
         let each = ast::ForExpr::cast(parent.clone())?;
         return (each.iterable().map(|it| it.syntax().clone()) == Some(chain))
             .then(|| (parent, "for".to_string()));
+    }
+}
+
+impl Finder<'_> {
+    /// A rules file's operators on a call to a method they name: by name only, as the source has no
+    /// types; a rewrite that doesn't fit the receiver doesn't compile, and is withdrawn.
+    fn call_rules(&mut self, call: &ast::MethodCallExpr, name: &str, context: Context<'_>) {
+        let (Some(receiver), Some(name_ref)) = (call.receiver(), call.name_ref()) else {
+            return;
+        };
+        for rule in crate::callrules::loaded() {
+            if !rule.methods.iter().any(|method| method == name) {
+                continue;
+            }
+            match rule.to(name) {
+                None => self.omit_method(call, &receiver, rule.id, context),
+                Some(to) => self.swap_name(
+                    rule.id,
+                    call.syntax(),
+                    name_ref.syntax().text_range(),
+                    name,
+                    to,
+                    context,
+                ),
+            }
+        }
     }
 }

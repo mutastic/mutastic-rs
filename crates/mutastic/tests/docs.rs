@@ -91,6 +91,7 @@ const BUILT: &[&str] = &[
     "loops",
     "truth",
     "platforms",
+    "configured",
 ];
 
 fn root() -> PathBuf {
@@ -435,6 +436,21 @@ fn reference(work: &Path, shown: &mut BTreeMap<String, String>) {
         ran(work, &["mutants", "fixtures/pricing"]).stdout,
     );
     shown.insert("reference/help".into(), ran(work, &["--help"]).stdout);
+    // mutastic.yaml's rules file adds an operator, whose card says its own words.
+    let listed = ran(work, &["mutants", "fixtures/configured"]).stdout;
+    let ids: BTreeSet<String> = listed
+        .lines()
+        .filter(|line| line.contains(" acme/remove-trim "))
+        .filter_map(|line| line.split_whitespace().next().map(str::to_string))
+        .collect();
+    assert_eq!(ids.len(), 1, "{listed}");
+    let configured = ran(work, &["run", "fixtures/configured", "--format=full"]);
+    let found = card(&configured.stdout, &ids).expect("the rules file's card");
+    assert!(
+        found.contains("no test passes clean() text with spaces for .trim() to remove"),
+        "{found}"
+    );
+    shown.insert("reference/configured-card".into(), found);
     // After the full runs above, so the last run is known.
     for (name, id) in [("missed", "mb2f8ae57"), ("caught", "m95f96847")] {
         let explained = ran(work, &["explain", id, "fixtures/pricing"]);

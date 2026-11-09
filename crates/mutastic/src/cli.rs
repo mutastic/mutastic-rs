@@ -86,6 +86,10 @@ struct Parsed {
     prune: bool,
     /// `--since`: the commit the change is measured from, `""` for the default branch.
     since: Option<String>,
+    /// `--operators`, as given, which replaces `mutastic.yaml`'s `operators:`.
+    operators_given: Option<String>,
+    /// `mutastic.yaml`'s rules, once read.
+    rules: Vec<crate::config::Rule>,
 }
 
 fn parse(args: &[String]) -> Result<Parsed, String> {
@@ -107,6 +111,8 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
         remove: false,
         prune: false,
         since: None,
+        operators_given: None,
+        rules: Vec::new(),
     };
     for arg in args {
         let Some(option) = arg.strip_prefix("--") else {
@@ -133,7 +139,13 @@ fn parse(args: &[String]) -> Result<Parsed, String> {
                     .filter(|&n: &usize| n > 0)
                     .ok_or_else(|| format!("--workers: {value} isn't a positive number"))?
             }
-            "operators" => parsed.operators = operators(value)?,
+            "operators" => {
+                // A name only a rules file has is checked once the rules files are read.
+                if let Ok(chosen) = operators(value) {
+                    parsed.operators = chosen;
+                }
+                parsed.operators_given = Some(value.to_string());
+            }
             "unsafe" => {
                 parsed.unsafe_mode = UnsafeMode::parse(value).ok_or_else(|| {
                     format!("--unsafe: {value} isn't one of skip, enclosing or all")
@@ -191,7 +203,13 @@ pub fn check(args: &[String]) -> Result<(), String> {
     };
     match command.as_str() {
         "run" | "verify" | "explain" | "ignore" | "mutants" | "help" | "--help" | "-h"
-        | "--version" | "-V" => parse(&args[1..]).map(|_| ()),
+        | "--version" | "-V" => {
+            let parsed = parse(&args[1..])?;
+            match &parsed.operators_given {
+                Some(given) => operators(given).map(|_| ()),
+                None => Ok(()),
+            }
+        }
         other => Err(format!("unknown command {other}")),
     }
 }
@@ -205,22 +223,34 @@ fn ids(value: &str) -> impl Iterator<Item = String> + '_ {
 }
 
 fn operators(value: &str) -> Result<Vec<&'static str>, String> {
-    match value {
-        "defaults" => return Ok(sites::DEFAULTS.to_vec()),
-        "stronger" => return Ok(sites::STRONGER.to_vec()),
-        "extended" => return Ok(sites::EXTENDED.to_vec()),
-        _ => {}
+    let entries: Vec<String> = value.split(',').map(|e| e.trim().to_string()).collect();
+    crate::config::resolve(&entries, "--operators")
+}
+
+/// Reads `mutastic.yaml` in the package's directory, if there is one: its rules, its rules files'
+/// operators, and the operators it chooses, unless `--operators` chose.
+fn configure(command: &str, parsed: &mut Parsed) -> Result<(), String> {
+    let at = match command {
+        "run" | "mutants" => 0,
+        "ignore" if parsed.prune => 0,
+        _ => 1,
+    };
+    let dir = std::path::PathBuf::from(parsed.positional.get(at).map_or(".", String::as_str));
+    let config = crate::config::Configuration::read(&dir)?;
+    let mut rules = Vec::new();
+    for plugin in &config.plugins {
+        rules.extend(crate::callrules::read(&dir.join(plugin))?);
     }
-    value
-        .split(',')
-        .map(|name| {
-            sites::ALL
-                .iter()
-                .copied()
-                .find(|known| *known == name)
-                .ok_or_else(|| format!("--operators: {name} isn't an operator mutastic has"))
-        })
-        .collect()
+    crate::callrules::load(rules);
+    parsed.rules = config.rules;
+    match &parsed.operators_given {
+        Some(given) => parsed.operators = operators(given)?,
+        None if !config.operators.is_empty() => {
+            parsed.operators = crate::config::resolve(&config.operators, crate::config::FILE)?;
+        }
+        None => {}
+    }
+    Ok(())
 }
 
 fn dispatch(args: &[String]) -> Result<ExitCode, String> {
@@ -228,7 +258,13 @@ fn dispatch(args: &[String]) -> Result<ExitCode, String> {
         println!("{USAGE}");
         return Ok(ExitCode::from(2));
     };
-    let parsed = parse(&args[1..])?;
+    let mut parsed = parse(&args[1..])?;
+    if matches!(
+        command.as_str(),
+        "run" | "verify" | "explain" | "ignore" | "mutants" | "gate"
+    ) {
+        configure(command, &mut parsed)?;
+    }
     match command.as_str() {
         "run" => run(&parsed),
         "verify" => verify(&parsed),
@@ -454,6 +490,7 @@ fn options(parsed: &Parsed, only: Vec<String>) -> Options {
         workers: parsed.workers,
         unsafe_mode: parsed.unsafe_mode,
         since: None,
+        rules: parsed.rules.clone(),
     }
 }
 
