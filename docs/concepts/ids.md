@@ -45,6 +45,15 @@ hash, longer.
 - **The same change made earlier in the function.** A second `total >= 100` added above the first
   takes the first one's place in the count: the new one gets the old one's ids, and the old one
   gets new ones.
+- **The same change deleted earlier in the function.** Identical lines are told apart by their
+  place in the count, not by their line number. With four `i = i + 1;` lines in one function,
+  deleting the second moves the third and fourth up the count: the third takes the second's ids,
+  the fourth takes the third's, and the fourth's old ids name nothing. An id you kept for one of
+  them may now name the line below it, so run again to see which is which.
+
+Each of the identical lines still has ids of its own, its own card, and its own `verify`: a test
+that catches the third line's change verifies the third line's ids, and no other's. Only deleting
+or adding one of them earlier in the function moves the count.
 
 When an id you kept stops working, `verify` says so, and names the command that shows the mutants
 as they are now:

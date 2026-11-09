@@ -224,6 +224,19 @@ A test that passes in `cargo test` but fails here usually depends on another tes
 first, or on running in parallel with others: mutastic runs each one alone, in a process of its
 own. Make it stand alone, or mark it `#[ignore]` so mutastic leaves it out.
 
+## A kept id names another line, or nothing
+
+A mutant's id comes from what it is and its place in its function, counted from the top among
+identical changes, not from its line. So lines added or removed above it never move it. But when a
+function has the same line more than once, four `i = i + 1;` say, deleting one of them moves the
+ones below it up the count: each takes the ids of the one that was above it, and the last one's ids
+are gone. An id kept in a script, a baseline or an ignore then names the next identical line, or
+nothing, and `verify` says so for an id that's gone.
+
+This is by design: an id that followed line numbers would change whenever anything above it moved.
+After deleting one of several identical lines, run again to see their ids as they are now. See
+[Mutant ids](concepts/ids.md#what-changes-an-id).
+
 ## Doc tests
 
 Doc tests don't run under mutastic: it runs your test binaries, and rustdoc builds doc tests apart.

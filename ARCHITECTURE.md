@@ -87,6 +87,7 @@ check the events mutastic prints against it. Every event says `"edition": "rust"
 `fixtures/` holds the crates they run on, each a package of its own outside mutastic's workspace:
 `pricing` (the Java edition's sample, ported), `operators` (an example of each operator), `truth`
 (each shape a mutated expression can take), `unsafety`, `loops`, `places`, `platforms`, `ranking`,
-`suggestions` and `workspace`. `samples.rs` and `truth.rs` run mutastic on them in place, so its
-copy goes in each fixture's own `target/`; `docs.rs` copies them to the system's temporary
-directory first, so the commands it captures read as a person types them at the repository's root.
+`suggestions`, `repeats` (identical lines in one function) and `workspace`. `samples.rs` and
+`truth.rs` run mutastic on them in place, so its copy goes in each fixture's own `target/`;
+`docs.rs` copies them to the system's temporary directory first, so the commands it captures read
+as a person types them at the repository's root.

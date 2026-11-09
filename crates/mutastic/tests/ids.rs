@@ -19,6 +19,7 @@ const FIXTURES: &[&str] = &[
     "loops",
     "operators",
     "pricing",
+    "repeats",
     "suggestions",
     "truth",
     "unsafety",

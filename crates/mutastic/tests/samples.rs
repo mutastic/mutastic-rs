@@ -913,3 +913,153 @@ fn the_gate_holds_a_task_to_its_changed_lines() {
     assert!(out.contains("mutastic gate: closed\n"), "{out}");
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// The mutants of one line, from `mutastic mutants`: id, then where it is, as `src/lib.rs:6:5`.
+fn mutants_where(dir: &Path) -> Vec<(String, String)> {
+    let (code, out) = mutastic_in(dir, &["mutants"]);
+    assert_eq!(code, 0, "{out}");
+    out.lines()
+        .filter(|line| line.starts_with('m') && line.contains(" in four_steps"))
+        .map(|line| {
+            let mut words = line.split_whitespace();
+            let id = words.next().unwrap().to_string();
+            (id, words.next().unwrap().to_string())
+        })
+        .collect()
+}
+
+/// Four identical `i = i + 1;` lines: each has ids of its own, its own card in every format, and
+/// `verify` asks only of its own line. Ids come from a site's place in its function, counted from
+/// the top, so lines added above move none, while deleting one passes its ids to the lines below.
+#[test]
+fn identical_lines_have_ids_of_their_own() {
+    let dir = copy_of("repeats", "repeats");
+    let steps = [6, 8, 10, 12];
+    let found = mutants_where(&dir);
+    let ids: std::collections::BTreeSet<&String> = found.iter().map(|(id, _)| id).collect();
+    assert_eq!(ids.len(), found.len(), "every id is distinct: {found:?}");
+    let on = |line: u32| -> Vec<String> {
+        let at = [
+            format!("src/lib.rs:{line}:5"),
+            format!("src/lib.rs:{line}:11"),
+        ];
+        let here: Vec<String> = found
+            .iter()
+            .filter(|(_, place)| at.contains(place))
+            .map(|(id, _)| id.clone())
+            .collect();
+        assert_eq!(
+            here.len(),
+            2,
+            "removed, and + becomes -, on line {line}: {found:?}"
+        );
+        here
+    };
+    let by_step: Vec<Vec<String>> = steps.iter().map(|&line| on(line)).collect();
+
+    // One card per line, in each format, naming that line's ids and no other's.
+    let (_, full) = mutastic_in(&dir, &["run", "--format=full", "--report=none"]);
+    let (_, agent) = mutastic_in(&dir, &["run", "--format=agent", "--report=none"]);
+    for (line, here) in steps.iter().zip(&by_step) {
+        let done = format!("verify {}", here.join(","));
+        assert_eq!(
+            full.matches(&format!("─ src/lib.rs:{line}\n")).count(),
+            1,
+            "{full}"
+        );
+        assert_eq!(full.matches(&done).count(), 1, "{full}");
+        assert_eq!(
+            agent.matches(&format!("   at src/lib.rs:{line}\n")).count(),
+            1,
+            "{agent}"
+        );
+        assert_eq!(agent.matches(&done).count(), 1, "{agent}");
+    }
+    let (_, jsonl) = mutastic_in(&dir, &["run", "--format=jsonl", "--report=none"]);
+    let finished = events(&jsonl);
+    for (line, here) in steps.iter().zip(&by_step) {
+        let mut missed: Vec<&str> = finished
+            .iter()
+            .filter(|e| e["reason"] == "mutant-finished" && e["location"]["line"] == *line)
+            .inspect(|e| assert_eq!(e["status"], "Survived", "{e}"))
+            .map(|e| e["id"].as_str().unwrap())
+            .collect();
+        missed.sort_unstable();
+        let mut expected: Vec<&str> = here.iter().map(String::as_str).collect();
+        expected.sort_unstable();
+        assert_eq!(missed, expected, "line {line}: {jsonl}");
+    }
+
+    // A test that tells only the third step's change verifies its ids, and no other line's.
+    let lib = dir.join("src/lib.rs");
+    let text = std::fs::read_to_string(&lib).unwrap();
+    let third_step_test = "    #[test]\n    fn the_third_step_is_one() {\n        let mut seen = Vec::new();\n        four_steps(0, &mut seen);\n        assert_eq!(seen[2] - seen[1], 1);\n    }\n}\n";
+    let tested = format!(
+        "{}{third_step_test}",
+        text.trim_end().strip_suffix('}').unwrap()
+    );
+    std::fs::write(&lib, &tested).unwrap();
+    let (code, out) = mutastic_in(&dir, &["verify", &by_step[2].join(",")]);
+    assert_eq!(code, 0, "{out}");
+    for (step, here) in by_step.iter().enumerate().filter(|(step, _)| *step != 2) {
+        let (code, out) = mutastic_in(&dir, &["verify", &here.join(",")]);
+        assert_eq!(code, 1, "step {}: {out}", step + 1);
+        assert!(
+            out.contains(&format!("{} is still missed", here[0])),
+            "{out}"
+        );
+    }
+    std::fs::write(&lib, &text).unwrap();
+
+    // Lines added above move no id.
+    std::fs::write(
+        &lib,
+        text.replacen(
+            "    let mut i = start;\n",
+            "    // a comment\n\n    let mut i = start;\n",
+            1,
+        )
+        .replacen("pub fn four_steps", "/// More words.\npub fn four_steps", 1),
+    )
+    .unwrap();
+    let moved: Vec<(String, String)> = mutants_where(&dir);
+    let unmoved: Vec<&String> = moved.iter().map(|(id, _)| id).collect();
+    assert_eq!(unmoved, found.iter().map(|(id, _)| id).collect::<Vec<_>>());
+    assert!(
+        moved.iter().any(|(_, place)| place == "src/lib.rs:9:5"),
+        "{moved:?}"
+    );
+
+    // Deleting the second step: the steps below take the earlier ids, and the last ids go.
+    let deleted = text.replacen(
+        "    seen.push(i);\n    i = i + 1;\n",
+        "    seen.push(i);\n",
+        1,
+    );
+    assert_eq!(deleted.matches("i = i + 1;").count(), 3, "{deleted}");
+    std::fs::write(&lib, &deleted).unwrap();
+    let shifted = mutants_where(&dir);
+    let ids_on = |line: u32| -> Vec<&String> {
+        shifted
+            .iter()
+            .filter(|(_, place)| place.starts_with(&format!("src/lib.rs:{line}:")))
+            .map(|(id, _)| id)
+            .collect()
+    };
+    assert_eq!(ids_on(6), by_step[0].iter().collect::<Vec<_>>());
+    assert_eq!(
+        ids_on(9),
+        by_step[1].iter().collect::<Vec<_>>(),
+        "the third step takes the second's ids"
+    );
+    assert_eq!(
+        ids_on(11),
+        by_step[2].iter().collect::<Vec<_>>(),
+        "the fourth takes the third's"
+    );
+    assert!(
+        shifted.iter().all(|(id, _)| !by_step[3].contains(id)),
+        "the last step's ids are gone: {shifted:?}"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
