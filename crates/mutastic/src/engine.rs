@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use crate::compile::{self, Binary, Round};
+use crate::compile::{self, Binary};
 use crate::sites::{self, Crate, UnsafeMode};
 use crate::testrun::{self, Outcome, Test};
 use crate::workspace::Project;
@@ -48,6 +48,20 @@ impl Status {
         }
     }
 
+    /// The status a schema name stands for: `Killed` → [`Status::Killed`].
+    pub fn from_schema_name(name: &str) -> Option<Status> {
+        [
+            Status::Killed,
+            Status::Survived,
+            Status::Timeout,
+            Status::NoCoverage,
+            Status::Ignored,
+            Status::RuntimeError,
+        ]
+        .into_iter()
+        .find(|status| status.schema_name() == name)
+    }
+
     pub fn detected(self) -> bool {
         matches!(self, Status::Killed | Status::Timeout)
     }
@@ -78,7 +92,8 @@ pub struct Report {
     pub results: Vec<MutantResult>,
     pub tests: usize,
     pub test_runs: usize,
-    pub rounds: Vec<Round>,
+    /// How many times the crate was compiled with mutants in.
+    pub rounds: usize,
     pub workers: usize,
     pub rustc: String,
     pub threshold: f64,
@@ -100,6 +115,8 @@ pub struct Report {
     pub scope: Option<Scope>,
     /// The tests that failed in the coverage pass and passed when run again: left out of the run.
     pub flaky: Vec<crate::flaky::Flaky>,
+    /// Which share of a split run this is (`--shard`), and what it ran on.
+    pub share: Option<crate::shares::Tag>,
 }
 
 impl Report {
@@ -144,6 +161,8 @@ pub struct Options {
     pub rules: Vec<crate::config::Rule>,
     /// Look for a test that catches each missed mutant, by running its function.
     pub suggestions: bool,
+    /// `--shard`: only this share of the mutants runs.
+    pub shard: Option<crate::shares::Shard>,
 }
 
 /// The change a run was scoped to: what it's since, and the crate's lines and files it touched.
@@ -201,6 +220,8 @@ pub enum Progress<'a> {
         /// The tests left out because they failed, then passed when run again.
         flaky: usize,
     },
+    /// The results are the shares' (`--from-shards`): none run here.
+    FromShares { summary: &'a str, mutants: usize },
     /// One mutant has its result.
     MutantFinished { status: Status },
     /// Every mutant of one source file has its result, in the order found.
@@ -217,20 +238,13 @@ pub fn run(
 ) -> Result<Report, String> {
     let started = Instant::now();
     let started_at = clock();
-    // An id names its mutant whatever was chosen when it was shown, so `--only` and `verify`
-    // look among them all.
-    let mut found = if options.only.is_empty() {
-        find_with(project, &options.operators, options.unsafe_mode)
-    } else {
-        find_all(project)
-    };
-    let stale_ignores = apply_ignores(project, &mut found)?;
-    apply_rules(&options.rules, &project.crate_name, &mut found);
+    let (found, stale_ignores) = find_for_run(project, options)?;
     let selected: BTreeSet<usize> = found
         .mutants
         .iter()
         .enumerate()
         .filter(|(_, m)| options.only.is_empty() || options.only.contains(&m.id))
+        .filter(|(_, m)| options.shard.is_none_or(|shard| shard.holds(&m.id)))
         .filter(|(_, m)| {
             options
                 .since
@@ -337,7 +351,7 @@ pub fn run(
         results,
         tests: tests.len(),
         test_runs,
-        rounds: built.rounds,
+        rounds: built.rounds.len(),
         workers: options.workers,
         rustc,
         threshold: options.threshold,
@@ -352,7 +366,22 @@ pub fn run(
         stale_ignores,
         scope,
         flaky,
+        share: None,
     })
+}
+
+/// The mutants a run finds, with what the project decided not to test skipped, and the ids of
+/// the ignores that no longer hold. An id names its mutant whatever was chosen when it was shown,
+/// so `--only` and `verify` look among them all.
+pub fn find_for_run(project: &Project, options: &Options) -> Result<(Crate, Vec<String>), String> {
+    let mut found = if options.only.is_empty() {
+        find_with(project, &options.operators, options.unsafe_mode)
+    } else {
+        find_all(project)
+    };
+    let stale_ignores = apply_ignores(project, &mut found)?;
+    apply_rules(&options.rules, &project.crate_name, &mut found);
+    Ok((found, stale_ignores))
 }
 
 /// What a flaky test reaches that varies from run to run: in the functions with mutants it ran,
@@ -459,12 +488,12 @@ pub fn source_line(found: &Crate, index: usize) -> String {
 
 /// Each source file's mutants still running, and the results of those done, so a file's line can
 /// be shown the moment its last mutant finishes.
-struct Files {
+pub(crate) struct Files {
     state: std::sync::Mutex<BTreeMap<PathBuf, (usize, Vec<MutantResult>)>>,
 }
 
 impl Files {
-    fn new(found: &Crate, order: &[usize]) -> Files {
+    pub(crate) fn new(found: &Crate, order: &[usize]) -> Files {
         let mut state: BTreeMap<PathBuf, (usize, Vec<MutantResult>)> = BTreeMap::new();
         for &index in order {
             state
@@ -479,7 +508,12 @@ impl Files {
 
     /// Records `result`, and tells `progress` when it was its file's last. The lock is held while
     /// it's told, so two files' lines never interleave.
-    fn finished(&self, found: &Crate, result: &MutantResult, progress: &(dyn Fn(Progress) + Sync)) {
+    pub(crate) fn finished(
+        &self,
+        found: &Crate,
+        result: &MutantResult,
+        progress: &(dyn Fn(Progress) + Sync),
+    ) {
         let Ok(mut state) = self.state.lock() else {
             return;
         };
@@ -503,7 +537,7 @@ impl Files {
 
 /// The local time of day, `15:04:05`, from `date`: reading the local clock otherwise takes either
 /// unsafe code, which this crate forbids, or a dependency for one line of the summary.
-fn clock() -> Option<String> {
+pub fn clock() -> Option<String> {
     let output = std::process::Command::new("date")
         .arg("+%H:%M:%S")
         .output()

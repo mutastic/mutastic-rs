@@ -20,8 +20,8 @@ page stands alone and links to the others by relative path.
 
 ## Concepts
 
-- [How a run works](concepts/how-a-run-works.md): one build for every mutant, switches, and what
-  happens to a mutant that doesn't compile.
+- [How a run works](concepts/how-a-run-works.md): one build for every mutant, switches, what
+  happens to a mutant that doesn't compile, and one run split across CI jobs.
 - [Results and the score](concepts/results.md): caught, missed, timed out, not covered, skipped,
   and the crashes that prove nothing.
 - [Unsafe code](concepts/unsafe.md): what's left alone, what's marked, and when to reach for Miri.

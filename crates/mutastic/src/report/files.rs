@@ -41,16 +41,20 @@ impl Kind {
 /// The reports a run writes when `--report` doesn't say: both.
 pub const DEFAULT: &[(Kind, Option<&str>)] = &[(Kind::Json, None), (Kind::Html, None)];
 
-/// Writes each report, to its path (against the directory mutastic was pointed at) or to
-/// `target/mutastic`, and gives the paths written, as the summary and `run-finished` show them:
-/// from that directory when they're inside it, whole otherwise.
-pub fn write(report: &Report, reports: &[(Kind, Option<String>)]) -> Result<Vec<String>, String> {
+/// Writes each report, to its path (against the directory mutastic was pointed at) or to `folder`,
+/// `target/mutastic` or a share's own, and gives the paths written, as the summary and
+/// `run-finished` show them: from that directory when they're inside it, whole otherwise.
+pub fn write(
+    report: &Report,
+    reports: &[(Kind, Option<String>)],
+    folder: &Path,
+) -> Result<Vec<String>, String> {
     let given = Path::new(&report.project.given);
     let mut written = Vec::new();
     for (kind, path) in reports {
         let file = match path {
             Some(path) => given.join(path),
-            None => report.project.mutastic_dir().join(kind.default_name()),
+            None => folder.join(kind.default_name()),
         };
         let text = match kind {
             Kind::Json => format!("{:#}\n", json(report)),
@@ -68,7 +72,7 @@ pub fn write(report: &Report, reports: &[(Kind, Option<String>)]) -> Result<Vec<
 }
 
 /// `target/mutastic/mutation.json`, from `given`, or the whole path when it's outside.
-fn shown(given: &Path, file: &Path) -> String {
+pub fn shown(given: &Path, file: &Path) -> String {
     let real = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     real(file)
         .strip_prefix(real(given))

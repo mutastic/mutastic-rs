@@ -10,7 +10,7 @@
     "edition": { "$ref": "#/$defs/edition" },
     "reason": {
       "type": "string",
-      "description": "What the event is: `run-started`, `mutant-finished`, `mutant-revised` or `run-finished`. Ignore an event whose reason you don't know: a later v1 may add one."
+      "description": "What the event is: `run-started`, `mutant-finished`, `mutant-revised` or `run-finished`; from `mutastic next`, `next-item` and `next-finished`. Ignore an event whose reason you don't know: a later v1 may add one."
     }
   },
   "allOf": [
@@ -29,6 +29,14 @@
     {
       "if": { "properties": { "reason": { "const": "run-finished" } }, "required": ["reason"] },
       "then": { "$ref": "#/$defs/runFinished" }
+    },
+    {
+      "if": { "properties": { "reason": { "const": "next-item" } }, "required": ["reason"] },
+      "then": { "$ref": "#/$defs/mutantFinished", "required": ["ids", "rank"] }
+    },
+    {
+      "if": { "properties": { "reason": { "const": "next-finished" } }, "required": ["reason"] },
+      "then": { "$ref": "#/$defs/nextFinished" }
     }
   ],
   "$defs": {
@@ -111,6 +119,17 @@
             "debugAssertions": { "type": "boolean", "description": "Whether `debug_assert!` runs." }
           }
         },
+        "share": {
+          "type": "object",
+          "description": "In a run of one share of the mutants (`--shard=N/M`): which share, and what it ran on, so `run --from-shards` puts together only the shares of one run. Written from 0.6.0.",
+          "required": ["number", "of", "version", "code"],
+          "properties": {
+            "number": { "type": "integer", "minimum": 1, "description": "Which share: N." },
+            "of": { "type": "integer", "minimum": 1, "description": "How many shares the run's mutants were dealt into: M." },
+            "version": { "type": "string", "description": "The mutastic that ran it." },
+            "code": { "type": "string", "description": "A hash of the module's compiled code and tests: the same in every share of one run." }
+          }
+        },
         "unsafe": {
           "enum": ["skip", "enclosing", "all"],
           "description": "The Rust edition only: which code near `unsafe` was mutated. `skip`: neither unsafe code nor a safe function holding an `unsafe` block; `enclosing`: those functions too, but not the code inside the block; `all`: everything. See `nearUnsafe`, and `run-finished`'s `notMutated`."
@@ -135,7 +154,7 @@
       ],
       "properties": {
         "schema": { "$ref": "#/$defs/schema" },
-        "reason": { "enum": ["mutant-finished", "mutant-revised"] },
+        "reason": { "enum": ["mutant-finished", "mutant-revised", "next-item"] },
         "edition": { "$ref": "#/$defs/edition" },
         "id": { "$ref": "#/$defs/mutantId" },
         "fingerprint": {
@@ -231,6 +250,11 @@
           "type": "string",
           "description": "What the test that caught it failed with: in the Java edition the exception's class, `org.opentest4j.AssertionFailedError`. Written from 0.6.0."
         },
+        "caughtByAll": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/test" },
+          "description": "Every covering test that catches it, in the order they ran, the first being `caughtBy`: only with `--kill-matrix`, and only when one did. Written from 0.6.0."
+        },
         "nearUnsafe": {
           "type": "string",
           "description": "The Rust edition only: why the mutant is near unsafe code, when it is (`called from unsafe code`, `in a module with unsafe code`, `in a function with an unsafe block`, `inside unsafe code`). It ran on its own, and a crash isn't counted as caught (`RuntimeError`)."
@@ -286,6 +310,30 @@
             }
           }
         },
+        "suggestion": {
+          "type": "object",
+          "description": "The call `suggestedTest` was found by, whole, or for a mutant no test reaches the call a first test could start from: what a card is written from. Only when one was found. Written from 0.6.0.",
+          "required": ["call", "parameters", "arguments", "receiver", "today", "withMutant"],
+          "properties": {
+            "call": { "type": "string", "description": "The call, in the mutated class's language: `new Pricing().discount(100)`." },
+            "parameters": { "type": "array", "items": { "type": "string" }, "description": "The method's parameter names, in order." },
+            "arguments": { "type": "array", "items": { "type": "integer" }, "description": "The arguments, one for each parameter." },
+            "receiver": {
+              "type": "array",
+              "description": "The instances made to call the method on, outermost first; empty for a static method.",
+              "items": {
+                "type": "object",
+                "required": ["type", "arguments"],
+                "properties": {
+                  "type": { "type": "string", "description": "The class's simple name: `Pricing`." },
+                  "arguments": { "type": "array", "items": { "type": "integer" }, "description": "Its constructor's arguments." }
+                }
+              }
+            },
+            "today": { "type": "string", "description": "What the call gives today, as `suggestedTest` has it." },
+            "withMutant": { "type": "string", "description": "What it gives with the mutant in, as `suggestedTest` has it." }
+          }
+        },
         "testsRun": {
           "$ref": "#/$defs/count",
           "description": "How many covering tests ran before the result was known."
@@ -313,6 +361,42 @@
         "rendered": {
           "type": "string",
           "description": "The mutant's entry as `--format=agent` writes it. Only for a missed mutant. Its words are for reading, and change between releases."
+        },
+        "ids": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/mutantId" },
+          "description": "Only in `next-item`: every mutant on the item's line, the lead (this event's mutant) first. One test usually catches them all."
+        },
+        "rank": {
+          "type": "object",
+          "description": "Only in `next-item`: where the item stands in `mutastic next`'s queue, and what the order went by.",
+          "required": ["position", "order", "factors"],
+          "properties": {
+            "position": { "type": "integer", "minimum": 1, "description": "1 for the head of the queue." },
+            "order": {
+              "type": "string",
+              "description": "Which order ranked it. `run-1` is the run's own: new misses before a baseline's, then a condition or removal before other changes, then the line more tests reach, then source order. It changes only with a release."
+            },
+            "factors": {
+              "type": "array",
+              "description": "What the order went by, in the order it's applied.",
+              "items": {
+                "type": "object",
+                "required": ["signal", "value", "why"],
+                "properties": {
+                  "signal": {
+                    "type": "string",
+                    "description": "`baseline` (only where there's a baseline), `operator` or `coveringTests`. A later v1 may add signals."
+                  },
+                  "value": {
+                    "type": ["string", "integer"],
+                    "description": "What it was ranked on: `new` or `legacy`; `condition-or-removal` or `other`; how many tests reach the line."
+                  },
+                  "why": { "type": "string", "description": "The factor in words, as the human format prints it." }
+                }
+              }
+            }
+          }
         }
       },
       "allOf": [
@@ -466,7 +550,8 @@
           "type": "object",
           "description": "The Rust edition only: places mutastic found and chose not to mutate, by why.",
           "properties": {
-            "unsafe": { "$ref": "#/$defs/count", "description": "Mutants not made because their code is near `unsafe` and `run-started`'s `unsafe` setting leaves it out." }
+            "unsafe": { "$ref": "#/$defs/count", "description": "Mutants not made because their code is near `unsafe` and `run-started`'s `unsafe` setting leaves it out." },
+            "cfg": { "$ref": "#/$defs/count", "description": "Mutants not made because their code is under a `cfg` that's off in this build (another platform, or a feature not enabled), so it's never compiled: not counted as not covered. Optional." }
           }
         },
         "build": {
@@ -498,6 +583,9 @@
           "description": "The score of the code some test reaches: how well the tests check what they run."
         },
         "tests": { "$ref": "#/$defs/count", "description": "How many tests the project has." },
+        "workers": { "$ref": "#/$defs/count", "description": "The Java edition: how many test workers ran side by side. Written from 0.6.0." },
+        "workersStarted": { "$ref": "#/$defs/count", "description": "The Java edition: how many test workers started in all: one for each worker, and one more after each was stopped for taking too long. Written from 0.6.0." },
+        "coverageMs": { "$ref": "#/$defs/count", "description": "The Java edition: how long the coverage pass took, in milliseconds, of `durationMs`. Written from 0.6.0." },
         "flaky": {
           "type": "array",
           "items": { "$ref": "#/$defs/test" },
@@ -648,6 +736,21 @@
           "then": { "required": ["jdk"] }
         }
       ]
+    },
+    "nextFinished": {
+      "type": "object",
+      "description": "The end of `mutastic next`'s answer: how many items are queued, and how many were shown.",
+      "required": ["schema", "reason", "queued", "mutants", "shown", "legacy"],
+      "properties": {
+        "schema": { "$ref": "#/$defs/schema" },
+        "reason": { "const": "next-finished" },
+        "edition": { "$ref": "#/$defs/edition" },
+        "queued": { "type": "integer", "minimum": 0, "description": "How many items (lines with missed mutants) are queued: 0 when nothing missed is left." },
+        "mutants": { "type": "integer", "minimum": 0, "description": "How many missed mutants are on them." },
+        "shown": { "type": "integer", "minimum": 0, "description": "How many items were shown, as `--top` asked, spread over the code." },
+        "legacy": { "type": "integer", "minimum": 0, "description": "How many of the queued items a committed baseline already has." },
+        "waiting": { "type": "integer", "minimum": 0, "description": "How many missed mutants are left out of the queue because they are proposed for ignoring (`ignore --propose`), waiting on a person to accept them. Optional: absent means none." }
+      }
     }
   }
 }

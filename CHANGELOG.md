@@ -5,6 +5,21 @@ newest come first.
 
 ## Unreleased
 
+### Changes
+
+- **One run across CI jobs.** `mutastic run --shard=N/M` runs only the Nth of M shares of the
+  mutants, dealt by each mutant's id, and keeps its events and report files in
+  `target/mutastic/shares/N-of-M/`; `mutastic run --from-shards=DIR` runs no mutants, and puts every
+  share found under DIR back together as the whole run: the same summary, cards, reports, threshold
+  and exit status, and the `mutation.json` `explain` reads. Shares that aren't every share of one
+  run (one missing or there twice, unfinished, split differently, a mutant in two, another
+  mutastic, other code, another package, or `--since`) are refused with exit status 2. As in the
+  Java edition. See [One run across CI jobs](docs/concepts/how-a-run-works.md#one-run-across-ci-jobs).
+- **The events say more,** as the Java edition's do: `run-started`'s `share` in a share's run, a
+  missed mutant's `suggestion`, the call its suggested test was found by, and `run-finished`'s
+  `workers`, `workersStarted`, `coverageMs` and `build.setupMs`. An input above `i64`'s largest,
+  which a `u64` can hold, is written as it is, where it used to wrap.
+
 ## 0.1.0 (2026-11-09)
 
 The first release of mutastic for Rust, the Rust edition of mutastic. These are the changes made

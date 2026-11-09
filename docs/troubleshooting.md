@@ -109,6 +109,9 @@ far less than one suite run per mutant. When it's still slow:
   mutants you name, such as the ones a card listed.
 - **Keep `target/mutastic`.** The copy's build is kept warm between runs; in CI, cache it with the
   rest of `target/`.
+- **Split it across CI jobs.** `--shard` runs a share of the mutants in each job, and
+  `--from-shards` puts them back together as the whole run: see
+  [One run across CI jobs](concepts/how-a-run-works.md#one-run-across-ci-jobs).
 
 A test that starts its own threads still has its work credited to it: mutastic records what each
 test reaches by running it alone.

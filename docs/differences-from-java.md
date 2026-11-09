@@ -85,6 +85,12 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
   run record yet.
 - **Report files** are `mutation.json` and `mutation.html` in `target/mutastic`; there's no
   `mutations.xml`, whose consumers key on JVM mutator names.
+- **One run across CI jobs,** `--shard` and `--from-shards`, works as in the Java edition: the same
+  deal by id, the same folder for each share, the same refusals, and the whole run put back
+  together. The one difference follows from `mutation.json` being the last run's record here: a
+  share writes its report files in its own folder, `target/mutastic/shares/N-of-M/`, beside its
+  events, so `explain` never reads a share as the whole run. Each share makes the one build. See
+  [One run across CI jobs](concepts/how-a-run-works.md#one-run-across-ci-jobs).
 - **`mutastic.yaml` and rules files** are the Java edition's, with Rust paths for classes
   (`shop::generated::**`) and Rust types as owners. A rules file's operator matches a call by its
   method's name, since mutastic reads source without types; a rewrite that doesn't fit doesn't

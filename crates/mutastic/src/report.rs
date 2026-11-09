@@ -823,7 +823,7 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
             )),
         ));
     }
-    let rounds = report.rounds.len();
+    let rounds = report.rounds;
     rows.push((
         "Build",
         format!(
@@ -1224,6 +1224,9 @@ fn jsonl(report: &Report) -> String {
         },
         "unsafe": report.unsafe_mode.name(),
     })];
+    if let Some(share) = &report.share {
+        lines[0]["share"] = share.json();
+    }
     for result in &report.results {
         lines.push(mutant_event(&view, result));
     }
@@ -1270,6 +1273,10 @@ fn jsonl(report: &Report) -> String {
         .covered_score()
         .map_or(Value::Null, |s| json!(round1(s)));
     finished["tests"] = json!(report.tests);
+    finished["workers"] = json!(report.workers);
+    // A Rust worker is a thread, never stopped and started again: as many start as run.
+    finished["workersStarted"] = json!(report.workers);
+    finished["coverageMs"] = json!(report.coverage.as_millis() as u64);
     finished["flaky"] = json!(report.flaky.iter().map(|f| &f.test).collect::<Vec<_>>());
     // A Rust test fails with a panic, not a chain of exceptions, so `failure` is empty and
     // nothing came from outside the code.
@@ -1300,12 +1307,15 @@ fn jsonl(report: &Report) -> String {
     finished["reports"] = json!(report.reports);
     finished["staleIgnores"] = json!(report.stale_ignores);
     finished["build"] = json!({
-        "rounds": report.rounds.len(),
+        "rounds": report.rounds,
         "unviable": report
             .results
             .iter()
             .filter(|r| r.status == Status::Ignored && skip_kind(r) == "unviable")
             .count(),
+        // How long reading, finding and building took, before the coverage pass: what a run put
+        // together from shares shows as its setup.
+        "setupMs": report.setup.as_millis() as u64,
     });
     finished["durationMs"] = json!(report.took.as_millis() as u64);
     lines.push(finished);
@@ -1406,7 +1416,10 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
             .iter()
             .map(|(name, values)| (
                 name.clone(),
-                json!(values.iter().map(|v| *v as i64).collect::<Vec<_>>())
+                json!(values
+                    .iter()
+                    .map(|v| crate::shares::whole(*v))
+                    .collect::<Vec<_>>())
             ))
             .collect::<serde_json::Map<_, _>>());
     }
@@ -1426,6 +1439,9 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
                 "today": test.today,
                 "withMutant": test.mutated,
             });
+            if let Some(found) = &result.suggestion {
+                event["suggestion"] = suggestion(view, mutant, found, &test.call);
+            }
         }
         let entry = Entry {
             main: result,
@@ -1434,6 +1450,36 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
         event["rendered"] = json!(agent_entry(view, &entry));
     }
     event
+}
+
+/// The call a suggested test was found by, whole, as the Java edition writes it: what a share's
+/// events need for the card to be written again from them. The receiver's numbers come first in
+/// what the probe found, then the function's own.
+fn suggestion(view: &View, mutant: &Mutant, found: &suggest::Suggestion, call: &str) -> Value {
+    let callable = view.report.found.functions[mutant.function]
+        .callable
+        .as_ref();
+    let receiver = callable.and_then(|callable| callable.receiver.as_ref());
+    let taken = receiver.map_or(0, |receiver| receiver.parameters.len());
+    let (made, own) = found.values.split_at(taken.min(found.values.len()));
+    let numbers = |values: &[i128]| -> Vec<Value> {
+        values.iter().map(|v| crate::shares::whole(*v)).collect()
+    };
+    json!({
+        "call": call,
+        "parameters": callable.map_or_else(Vec::new, |callable| callable
+            .parameters
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect()),
+        "arguments": numbers(own),
+        "receiver": receiver.map_or_else(Vec::new, |receiver| vec![json!({
+            "type": receiver.type_name,
+            "arguments": numbers(made),
+        })]),
+        "today": found.today,
+        "withMutant": found.mutated,
+    })
 }
 
 /// Source text on one line, whitespace collapsed.

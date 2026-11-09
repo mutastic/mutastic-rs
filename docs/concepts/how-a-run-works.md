@@ -102,3 +102,79 @@ time to see how it died. What that means depends on where the mutant is: see
 
 The copy and its build stay in `target/mutastic`, so the next run, or a `verify`, rebuilds only what
 changed. `cargo clean` removes them with the rest of `target/`.
+
+## One run across CI jobs
+
+A crate's run can take longer than one CI job should. `--shard=N/M` runs only the Nth of M shares of
+its mutants, so M jobs side by side each run one share, and `--from-shards` puts their results back
+together as the whole run:
+
+```sh
+mutastic run --shard=2/4 --threshold=0
+mutastic run --from-shards=shares --threshold=70
+```
+
+Each mutant is dealt to a share by its id alone, so every mutant is in exactly one share, whichever
+job runs it, and the shares come out about the same size, each with mutants from across the crate.
+Each job still makes the one build, with only its share's mutants in, and runs every test in the
+coverage pass, so a mutant's result is the one a whole run would give it. That build is each share's
+setup, so splitting a run shares out the mutants' time, not the build's.
+
+A share's score is only that share's, so give each share `--threshold=0` and the threshold you mean
+to the run that puts them together. A share keeps everything that run needs in one folder,
+`target/mutastic/shares/N-of-M/`: its results, as the [events](../reference/events.md)
+`--format=jsonl` writes, whatever format it shows, and its own report files, so neither `explain`
+nor the next run takes a share for the whole run.
+
+`--from-shards=DIR` runs no mutants. It reads the package, finds the mutants as a whole run would,
+takes each one's result from the share that ran it, wherever the share's folder is under `DIR`, and
+then is that whole run: the same summary and cards in every format, the same report files, the
+threshold checked on the whole score, and the whole run's `mutation.json`, which `explain` reads. A
+share's folder name doesn't matter, so each job can upload its own and the last job download them
+all into one directory.
+
+It refuses, with exit status 2 and what's wrong, shares that aren't every share of one run: a share
+missing or there twice, one that didn't finish, shares split into a different number, a mutant in
+two shares, shares run by another mutastic or on other code than each other or than the package it
+reads, shares of another package, or a share that ran only a change's lines with `--since`. Put them
+together on the same commit, with the same options and `mutastic.yaml`. A share also fails on its
+own, even with `--threshold=0`, when a test fails with no mutant in, as the whole run would.
+
+In GitHub Actions, a matrix of shares, then one job that puts them together:
+
+```yaml
+jobs:
+  mutants:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        share: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v5
+      - run: cargo install --locked --git https://github.com/mutastic/mutastic-rs.git mutastic
+      - run: mutastic run --shard=${{ matrix.share }}/4 --threshold=0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: share-${{ matrix.share }}
+          path: target/mutastic/shares/${{ matrix.share }}-of-4/
+
+  mutation-score:
+    needs: mutants
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: cargo install --locked --git https://github.com/mutastic/mutastic-rs.git mutastic
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: share-*
+          path: shares
+      - run: mutastic run --from-shards=shares --threshold=70
+```
+
+The last job fails when the whole score is below the threshold, and when a share is missing because
+its job failed. It builds nothing but mutastic itself, so cache Cargo's `bin` directory, or install
+a release, to make it quick. For a member of a workspace, name its directory in both commands
+(`mutastic run crates/core --shard=…`) and upload the share from the workspace's
+`target/mutastic/shares/…`.

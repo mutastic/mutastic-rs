@@ -18,16 +18,18 @@ Every command `mutastic` takes, with its options, the environment it reads and t
 
 `mutastic run [dir] [options]`
 
-Mutate the package and run its tests against each mutant. dir is the package's directory, here unless given; in a workspace, a member's. The run passes when the score reaches the threshold. A full run, one without --only, writes report files, and offers the commands to work on each missed mutant. Its progress goes to stderr, so stdout holds only the result.
+Mutate the package and run its tests against each mutant. dir is the package's directory, here unless given; in a workspace, a member's. The run passes when the score reaches the threshold. A full run, one without --only, writes report files, and offers the commands to work on each missed mutant. Its progress goes to stderr, so stdout holds only the result. --shard runs one share of the mutants, for splitting a run across CI jobs, and --from-shards puts the shares back together as the whole run.
 
 ```sh
 mutastic run
 mutastic run fixtures/pricing --threshold=70
 mutastic run --since=main
 mutastic run fixtures/pricing --operators=stronger
+mutastic run --shard=2/4 --threshold=0
+mutastic run --from-shards=shares --threshold=70
 ```
 
-**Options:** [`--threshold=N`](#--threshold), [`--since[=REF]`](#--since), [`--only=ID`](#--only), [`--workers=N`](#--workers), [`--no-suggestions`](#--no-suggestions), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--report=KIND[:PATH]`](#--report), [`--format=FORMAT`](#--format), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
+**Options:** [`--threshold=N`](#--threshold), [`--since[=REF]`](#--since), [`--only=ID`](#--only), [`--workers=N`](#--workers), [`--no-suggestions`](#--no-suggestions), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--report=KIND[:PATH]`](#--report), [`--shard=N/M`](#--shard), [`--from-shards=DIR`](#--from-shards), [`--format=FORMAT`](#--format), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
 
 **Exit status:** 0 when the score reaches the threshold, 1 when it doesn't.
 
@@ -210,6 +212,22 @@ mutastic run --unsafe=enclosing
 mutastic run --report=json
 ```
 
+### `--shard`
+
+`--shard=N/M`, for [`run`](#run). Run only the Nth of M shares of the mutants, to split one run across machines. It keeps its results in shares/N-of-M in target/mutastic for --from-shards.
+
+```sh
+mutastic run --shard=2/4 --threshold=0
+```
+
+### `--from-shards`
+
+`--from-shards=DIR`, for [`run`](#run). Run no mutants: put together the results every share of a split run kept, found anywhere in DIR, as the whole run, with its reports and threshold.
+
+```sh
+mutastic run --from-shards=shares --threshold=70
+```
+
 ### `--format`
 
 `--format=FORMAT`, for [`run`](#run). How the result is shown; full on a terminal, concise elsewhere, agent for coding agents. One of `full`, `concise`, `agent`, `jsonl`. Also set by `MUTASTIC_FORMAT` or `MUTASTIC_AGENT`.
@@ -328,4 +346,4 @@ mutastic verify mb2f8ae57 --edition=rust
 
 - **0**: The score reaches the threshold; for verify, each mutant named is caught, skipped, or crashed where a crash proves nothing; for gate check, the task is done.
 - **1**: The score is below the threshold; for verify, a mutant named is still missed or not covered; for gate check, the task isn't done; for ignore --accept, the mutant isn't proposed.
-- **2**: mutastic couldn't run: an unknown option, a word the command doesn't take, not a Cargo package, a workspace's root, a test that fails with no mutant in, an id that isn't a mutant of the package, or no task open for gate check.
+- **2**: mutastic couldn't run: an unknown option, a word the command doesn't take, not a Cargo package, a workspace's root, a test that fails with no mutant in, an id that isn't a mutant of the package, shares --from-shards can't put together as one run, or no task open for gate check.

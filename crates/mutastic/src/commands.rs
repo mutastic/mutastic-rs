@@ -123,7 +123,9 @@ pub const COMMANDS: &[Command] = &[
         detail: "dir is the package's directory, here unless given; in a workspace, a member's. The \
                  run passes when the score reaches the threshold. A full run, one without --only, \
                  writes report files, and offers the commands to work on each missed mutant. Its \
-                 progress goes to stderr, so stdout holds only the result.",
+                 progress goes to stderr, so stdout holds only the result. --shard runs one share \
+                 of the mutants, for splitting a run across CI jobs, and --from-shards puts the \
+                 shares back together as the whole run.",
         exits: "0 when the score reaches the threshold, 1 when it doesn't.",
         takes_mutant_id: false,
         examples: &[
@@ -131,6 +133,8 @@ pub const COMMANDS: &[Command] = &[
             "mutastic run fixtures/pricing --threshold=70",
             "mutastic run --since=main",
             "mutastic run fixtures/pricing --operators=stronger",
+            "mutastic run --shard=2/4 --threshold=0",
+            "mutastic run --from-shards=shares --threshold=70",
         ],
     },
     Command {
@@ -341,6 +345,30 @@ pub const OPTIONS: &[CliOption] = &[
         commands: &["run"],
         environment: "",
         example: "--report=json",
+    },
+    CliOption {
+        name: "shard",
+        value: "N/M",
+        kind: Kind::Value,
+        group: "Running",
+        choices: &[],
+        help: "Run only the Nth of M shares of the mutants, to split one run across machines. It \
+               keeps its results in shares/N-of-M in target/mutastic for --from-shards",
+        commands: &["run"],
+        environment: "",
+        example: "--shard=2/4 --threshold=0",
+    },
+    CliOption {
+        name: "from-shards",
+        value: "DIR",
+        kind: Kind::Value,
+        group: "Running",
+        choices: &[],
+        help: "Run no mutants: put together the results every share of a split run kept, found \
+               anywhere in DIR, as the whole run, with its reports and threshold",
+        commands: &["run"],
+        environment: "",
+        example: "--from-shards=shares --threshold=70",
     },
     CliOption {
         name: "format",
@@ -554,7 +582,8 @@ pub const EXIT_CODES: &[Entry] = &[
         name: "2",
         meaning: "mutastic couldn't run: an unknown option, a word the command doesn't take, not \
                   a Cargo package, a workspace's root, a test that fails with no mutant in, an id \
-                  that isn't a mutant of the package, or no task open for gate check",
+                  that isn't a mutant of the package, shares --from-shards can't put together as one \
+                  run, or no task open for gate check",
         detail: "",
     },
 ];

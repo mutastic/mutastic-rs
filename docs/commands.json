@@ -7,7 +7,7 @@
       "page": "run",
       "synopsis": "mutastic run [dir] [options]",
       "summary": "Mutate the package and run its tests against each mutant",
-      "detail": "dir is the package's directory, here unless given; in a workspace, a member's. The run passes when the score reaches the threshold. A full run, one without --only, writes report files, and offers the commands to work on each missed mutant. Its progress goes to stderr, so stdout holds only the result.",
+      "detail": "dir is the package's directory, here unless given; in a workspace, a member's. The run passes when the score reaches the threshold. A full run, one without --only, writes report files, and offers the commands to work on each missed mutant. Its progress goes to stderr, so stdout holds only the result. --shard runs one share of the mutants, for splitting a run across CI jobs, and --from-shards puts the shares back together as the whole run.",
       "exits": "0 when the score reaches the threshold, 1 when it doesn't.",
       "takesMutantId": false,
       "examples": [
@@ -26,6 +26,14 @@
         {
           "commandLine": "mutastic run fixtures/pricing --operators=stronger",
           "cargo": "cargo mutastic run fixtures/pricing --operators=stronger"
+        },
+        {
+          "commandLine": "mutastic run --shard=2/4 --threshold=0",
+          "cargo": "cargo mutastic run --shard=2/4 --threshold=0"
+        },
+        {
+          "commandLine": "mutastic run --from-shards=shares --threshold=70",
+          "cargo": "cargo mutastic run --from-shards=shares --threshold=70"
         }
       ],
       "options": [
@@ -37,6 +45,8 @@
         "--operators",
         "--unsafe",
         "--report",
+        "--shard",
+        "--from-shards",
         "--format",
         "--progress",
         "--edition"
@@ -413,6 +423,44 @@
       }
     },
     {
+      "name": "--shard",
+      "synopsis": "--shard=N/M",
+      "kind": "value",
+      "group": "Running",
+      "value": "N/M",
+      "choices": [],
+      "help": "Run only the Nth of M shares of the mutants, to split one run across machines. It keeps its results in shares/N-of-M in target/mutastic for --from-shards",
+      "commands": [
+        "run"
+      ],
+      "environment": "",
+      "examples": {
+        "run": {
+          "commandLine": "mutastic run --shard=2/4 --threshold=0",
+          "cargo": "cargo mutastic run --shard=2/4 --threshold=0"
+        }
+      }
+    },
+    {
+      "name": "--from-shards",
+      "synopsis": "--from-shards=DIR",
+      "kind": "value",
+      "group": "Running",
+      "value": "DIR",
+      "choices": [],
+      "help": "Run no mutants: put together the results every share of a split run kept, found anywhere in DIR, as the whole run, with its reports and threshold",
+      "commands": [
+        "run"
+      ],
+      "environment": "",
+      "examples": {
+        "run": {
+          "commandLine": "mutastic run --from-shards=shares --threshold=70",
+          "cargo": "cargo mutastic run --from-shards=shares --threshold=70"
+        }
+      }
+    },
+    {
       "name": "--format",
       "synopsis": "--format=FORMAT",
       "kind": "value",
@@ -773,7 +821,7 @@
     },
     {
       "name": "2",
-      "meaning": "mutastic couldn't run: an unknown option, a word the command doesn't take, not a Cargo package, a workspace's root, a test that fails with no mutant in, an id that isn't a mutant of the package, or no task open for gate check",
+      "meaning": "mutastic couldn't run: an unknown option, a word the command doesn't take, not a Cargo package, a workspace's root, a test that fails with no mutant in, an id that isn't a mutant of the package, shares --from-shards can't put together as one run, or no task open for gate check",
       "detail": ""
     }
   ]

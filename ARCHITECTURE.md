@@ -72,6 +72,7 @@ All the code is in `crates/mutastic/src`:
 | `words` | What a card says: the gap, the change, the inputs seen and the help |
 | `suggest` | Suggested tests: candidate inputs, running the probes, and the test written out |
 | `report` | The formats: `full`, `concise`, `agent` and `jsonl` |
+| `shares` | A run split across machines: which share a mutant is in (`--shard`), a share's events, and the whole run put back together from them (`--from-shards`) |
 
 `crates/cargo-mutastic` and `crates/mutastic-rs` hold the other two names reserved on crates.io.
 They're empty, and `publish = false`.
@@ -91,6 +92,7 @@ check the events mutastic prints against it. Every event says `"edition": "rust"
 | `#[cfg(test)]` modules in `src/` | Unit tests, beside the code |
 | `tests/samples.rs` | `mutastic run` on the fixtures, through the binary, as a person runs it |
 | `tests/truth.rs` | A card says what its mutant does: each claim written into the source behaves as the mutant does |
+| `tests/shares.rs` | Two shares of the pricing fixture, put back together, are the whole run, in every format; shares that aren't one run's are refused |
 | `tests/ids.rs` | Every mutant of every fixture, under every operator, held to `tests/ids/ids.tsv` |
 | `tests/docs.rs` | Every output block in the docs and the README is what mutastic prints; every link, command, id and Rust example in them is checked; every missed card on the operators fixture is true |
 

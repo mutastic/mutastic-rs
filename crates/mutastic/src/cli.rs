@@ -8,6 +8,7 @@ use crate::edition::{self, Edition, Route};
 use crate::engine::{self, Options, Status};
 use crate::report::files::Kind;
 use crate::report::{self, Format, Style};
+use crate::shares::EVENTS;
 use crate::sites::UnsafeMode;
 use crate::{commands, gate, ignores, java, sites, testrun, workspace, wrapper};
 
@@ -44,6 +45,10 @@ Options:
   --report=<kind>[:<path>]  Write a report file: json (mutation.json) or html (mutation.html), in
                         target/mutastic unless a path is given; repeat it for more, or none.
                         A full run writes both by default
+  --shard=<n>/<m>       Run only the nth of m shares of the mutants, to split one run across
+                        machines; it keeps its results in target/mutastic/shares/<n>-of-<m>
+  --from-shards=<dir>   Run no mutants: put together the results every share of a split run
+                        kept, found anywhere in dir, as the whole run
   --no-suggestions      Don't look for a test that catches each missed mutant, which runs the
                         missed mutant's function outside the tests
   --progress=<mode>     auto (default): a line redrawn in place at a terminal, none for agent
@@ -164,6 +169,10 @@ struct Parsed {
     /// `--no-suggestions`: no test is looked for, so none of the project's code runs outside its
     /// tests.
     no_suggestions: bool,
+    /// `--shard`: the share of the mutants this run runs.
+    shard: Option<crate::shares::Shard>,
+    /// `--from-shards`: the directory of the shares this run is made of.
+    from_shards: Option<String>,
 }
 
 /// The command as it's declared: `gate open` for `gate` and its action. `None` for one that isn't,
@@ -204,6 +213,8 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
         hook: String::new(),
         tries: 3,
         no_suggestions: false,
+        shard: None,
+        from_shards: None,
     };
     for arg in args {
         let Some(option) = arg.strip_prefix("--") else {
@@ -271,6 +282,11 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
             "since" => parsed.since = Some(value.to_string()),
             "help" => parsed.help = true,
             "no-suggestions" => parsed.no_suggestions = true,
+            "shard" => parsed.shard = Some(crate::shares::Shard::parse(value)?),
+            "from-shards" if value.is_empty() => {
+                return Err("--from-shards needs the shares' directory: --from-shards=DIR".into())
+            }
+            "from-shards" => parsed.from_shards = Some(value.to_string()),
             "hook" => {
                 if value != "claude" {
                     return Err(format!("--hook: {value} isn't claude"));
@@ -365,6 +381,9 @@ fn arguments(command: &str, parsed: &Parsed) -> Result<(), String> {
         "gate" => ("mutastic gate open|check|close [dir]", false, 2),
         _ => return Ok(()),
     };
+    if command == "run" {
+        sharing(parsed)?;
+    }
     if takes_id {
         if let Some(given) = parsed.positional.first() {
             let mut named = ids(given).peekable();
@@ -379,6 +398,26 @@ fn arguments(command: &str, parsed: &Parsed) -> Result<(), String> {
             extra.join(" ")
         )),
         _ => Ok(()),
+    }
+}
+
+/// A run is a share or made of them, not both; made of them, it runs no mutants itself, so the
+/// options for what runs are the shares'.
+fn sharing(parsed: &Parsed) -> Result<(), String> {
+    if parsed.from_shards.is_none() {
+        return Ok(());
+    }
+    let given = [
+        ("--shard", parsed.shard.is_some()),
+        ("--only", !parsed.only.is_empty()),
+        ("--since", parsed.since.is_some()),
+    ];
+    match given.iter().find(|(_, given)| *given) {
+        Some((option, _)) => Err(format!(
+            "--from-shards puts the shares' results together as the whole run, and runs no mutant \
+             itself: not with {option}, which the shares run with"
+        )),
+        None => Ok(()),
     }
 }
 
@@ -639,6 +678,10 @@ impl<'a> Progress<'a> {
                     count(mutants, "mutant")
                 )
             }
+            engine::Progress::FromShares { summary, mutants } => {
+                counter.total = mutants;
+                eprintln!("{summary}");
+            }
             engine::Progress::MutantFinished { status } => {
                 counter.done += 1;
                 match status {
@@ -716,18 +759,38 @@ fn options(parsed: &Parsed, only: Vec<String>) -> Options {
         since: None,
         rules: parsed.rules.clone(),
         suggestions: false,
+        shard: None,
     }
 }
 
 fn run(parsed: &Parsed) -> Result<ExitCode, String> {
+    if let Some(shares) = &parsed.from_shards {
+        return from_shards(parsed, shares);
+    }
     let dir = parsed.positional.first().map_or(".", String::as_str);
     let format = format(parsed);
     let quiet = matches!(format, Format::Agent | Format::Jsonl);
     started(quiet);
     let project = workspace::read(dir)?;
+    // A share's events and report files go in a folder of its own: its report is only its share's,
+    // so `explain` and the next whole run never take it for the whole run's.
+    let folder = parsed
+        .shard
+        .map(|shard| shard.folder(&project.mutastic_dir()));
+    let share = match (parsed.shard, &folder) {
+        (Some(shard), Some(folder)) => {
+            crate::shares::forget(&folder.join(EVENTS))?;
+            Some(crate::shares::Tag::new(
+                shard,
+                crate::shares::code(&project)?,
+            ))
+        }
+        _ => None,
+    };
     let progress = Progress::new(&project.package, quiet, true, parsed.progress);
     let mut options = options(parsed, parsed.only.clone());
     options.suggestions = !parsed.no_suggestions;
+    options.shard = parsed.shard;
     if let Some(since) = &parsed.since {
         options.since = Some(crate::since::changed_since(
             std::path::Path::new(dir),
@@ -735,7 +798,43 @@ fn run(parsed: &Parsed) -> Result<ExitCode, String> {
         )?);
     }
     let mut report = engine::run(&project, &options, &|step| progress.step(step))?;
+    report.share = share;
     progress.finished();
+    finish(parsed, report, format, folder.as_deref())
+}
+
+/// `run --from-shards`: no mutant runs; the shares' results, put together, are the whole run's,
+/// with its summary, cards, reports and threshold. Shares that can't be put together are refused
+/// before the package is read.
+fn from_shards(parsed: &Parsed, shares: &str) -> Result<ExitCode, String> {
+    let shares =
+        crate::shares::Shares::read(std::path::Path::new(shares), env!("CARGO_PKG_VERSION"))?;
+    let dir = parsed.positional.first().map_or(".", String::as_str);
+    let format = format(parsed);
+    let quiet = matches!(format, Format::Agent | Format::Jsonl);
+    started(quiet);
+    let project = workspace::read(dir)?;
+    let progress = Progress::new(&project.package, quiet, true, parsed.progress);
+    let code = crate::shares::code(&project)?;
+    let report = shares.whole(&project, &code, &options(parsed, Vec::new()), &|step| {
+        progress.step(step)
+    })?;
+    progress.finished();
+    finish(parsed, report, format, None)
+}
+
+/// A run's end: its report files, a share's events in its folder, then the result, and whether it
+/// passed.
+fn finish(
+    parsed: &Parsed,
+    mut report: engine::Report,
+    format: Format,
+    folder: Option<&std::path::Path>,
+) -> Result<ExitCode, String> {
+    let folder = folder.map_or_else(
+        || report.project.mutastic_dir(),
+        std::path::Path::to_path_buf,
+    );
     // Only a full run writes reports: a run of some mutants would leave out the rest.
     if parsed.only.is_empty() {
         let reports = parsed.reports.clone().unwrap_or_else(|| {
@@ -744,7 +843,20 @@ fn run(parsed: &Parsed) -> Result<ExitCode, String> {
                 .map(|(kind, path)| (*kind, path.map(str::to_string)))
                 .collect()
         });
-        report.reports = report::files::write(&report, &reports)?;
+        report.reports = report::files::write(&report, &reports, &folder)?;
+    }
+    // A share's events, kept for `--from-shards`: as `--format=jsonl` writes them, whatever the
+    // format shown.
+    if report.share.is_some() {
+        let events = folder.join(EVENTS);
+        let given = std::path::Path::new(&report.project.given);
+        // Written empty first, so its path is shown as the reports' are.
+        crate::shares::keep(&events, "")?;
+        report.reports.push(report::files::shown(given, &events));
+        crate::shares::keep(
+            &events,
+            &report::render(&report, Format::Jsonl, Style { color: false }),
+        )?;
     }
     print!(
         "{}",

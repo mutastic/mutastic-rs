@@ -21,6 +21,7 @@ pub mod ignores;
 pub mod java;
 pub mod report;
 pub mod schema;
+pub mod shares;
 pub mod since;
 pub mod sites;
 pub mod suggest;
