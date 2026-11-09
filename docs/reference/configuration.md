@@ -1,5 +1,10 @@
 # Configuration
 
+Some mutants are never worth a test: a function a code generator wrote, a `println!` that only
+writes output. mutastic leaves some out on its own, and a project says which others to skip, always
+with a reason, so the score is about the code you mean to test, and a person reviewing the skip can
+see why it's there.
+
 A run is set by its options (see [`mutastic run`](commands.md#run)), by `mutastic.yaml` in the package's directory,
 and by a few environment variables. Nothing goes in `Cargo.toml`.
 

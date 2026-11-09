@@ -1,5 +1,10 @@
 # Troubleshooting
 
+What to do when a run doesn't go as you expect: a mutant skipped, a run slower than it should be, a
+package mutastic won't run, code it doesn't mutate. Each section starts from what you see, shows it
+on one of the repository's fixtures where it can, then says what to do. What each exit status
+means is on [Environment and exit codes](reference/commands.md#exit-codes).
+
 ## A mutant is skipped as unviable
 
 A few operators make changes the compiler may reject: a call left out whose result is another type,
