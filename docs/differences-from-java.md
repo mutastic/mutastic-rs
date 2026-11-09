@@ -68,7 +68,7 @@ one of them:
   its type.
 - **Not in Rust:** `mutastic/flip-increment` (no `++`), `library/omit-argument` (no overloading),
   the three `predicate/*` ids, and `mutastic/drop-catch-type` (no multi-catch).
-- **Only in Rust:** `mutastic/bitwise`, `mutastic/remove-struct-field`, `library/reverse-ordering`,
+- **Only in Rust:** `mutastic/remove-struct-field`, `library/reverse-ordering`,
   `mutastic/unwrap-try`, `mutastic/default-parameter` and `mutastic/swap-break`. Of these,
   `mutastic/unwrap-try` is in the defaults, so a Rust run's defaults are the Java edition's and one
   more.

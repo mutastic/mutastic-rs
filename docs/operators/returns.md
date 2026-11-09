@@ -99,8 +99,8 @@ fn a_point_for_every_10() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, with Java's empty values (`0`, `""`,
-`List.of()`, `Optional.empty()`) and `null` for anything else.
+**Edition notes:** the Java edition has this operator too, `mutastic/return-value`, with Java's
+empty values (`0`, `""`, `List.of()`, `Optional.empty()`) and `null` for anything else.
 
 ## Unwrap try
 
@@ -206,7 +206,7 @@ impl std::fmt::Display for Pieces {
 }
 ```
 
-**Edition notes:** the Java edition has no such operator, as Java has no `?`.
+**Edition notes:** Rust only: Java has no `?`.
 
 ## Replace body
 
@@ -267,8 +267,8 @@ fn a_letter_spoils_a_code() {
 It's in `extended` because it overlaps return value: a test that catches one mostly catches the
 other.
 
-**Edition notes:** the Java edition has the same id, and leaves alone constructors and trivial
-getters and setters.
+**Edition notes:** the Java edition has this operator too, `mutastic/replace-body`, and leaves alone
+constructors and trivial getters and setters.
 
 ## Remove throw
 
@@ -330,4 +330,5 @@ fn no_quantity_is_refused_as_such() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, for `throw`, in `extended` and experimental.
+**Edition notes:** the Java edition has this operator too, `mutastic/remove-throw`, for `throw`, in
+`extended` and experimental.

@@ -86,8 +86,8 @@ fn delivery_is_free_from_exactly_50() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, for `<`, `<=`, `>` and `>=`; it has no ranges
-to move.
+**Edition notes:** the Java edition has this operator too, `mutastic/boundary`, for `<`, `<=`, `>`
+and `>=`; it has no ranges to move.
 
 ## Remove conditional
 
@@ -154,8 +154,8 @@ fn others_are_welcomed() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, for every condition the bytecode jumps on, `&&`
-and `||`'s sides among them.
+**Edition notes:** the Java edition has this operator too, `mutastic/remove-conditional`, for every
+condition the bytecode jumps on, `&&` and `||`'s sides among them.
 
 ## Logical connector
 
@@ -214,8 +214,9 @@ fn neither_alone_is_enough() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id. It reads `&&` from the bytecode's jumps, so it
-leaves alone a condition of three or more tests, which this edition, reading the source, doesn't.
+**Edition notes:** the Java edition has this operator too, `mutastic/logical-connector`. It reads
+`&&` from the bytecode's jumps, so it leaves alone a condition of three or more tests, which this
+edition, reading the source, doesn't.
 
 ## Comparison
 
@@ -302,8 +303,8 @@ fn plenty_in_stock_needs_no_restock() {
 It's in `stronger` because on real code much of what it misses is noise: a loop counter that counts
 up to its end, where `i < n` and `i != n` stop at the same place.
 
-**Edition notes:** the Java edition has the same id and the same changes, and makes them only
-between numbers, as only numbers have an order in its bytecode.
+**Edition notes:** the Java edition has this operator too, `mutastic/comparison`, with the same
+changes, and makes them only between numbers, as only numbers have an order in its bytecode.
 
 ## Other comparison
 
@@ -376,6 +377,6 @@ fn saturday_is_the_weekend_and_wednesday_isnt() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, and turns a `Predicate`'s `and` and `or`,
-`negate()` and `Predicate.not` round with `predicate/*` operators of its own; here, `&&` and `!`
-inside a closure are logical connector's and this one's.
+**Edition notes:** the Java edition has this operator too, `mutastic/other-comparison`, and turns a
+`Predicate`'s `and` and `or`, `negate()` and `Predicate.not` round with `predicate/*` operators of
+its own; here, `&&` and `!` inside a closure are logical connector's and this one's.

@@ -84,8 +84,8 @@ fn zone_two_takes_three_days() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id in `extended`, for a `switch`, whose arm's
-values go to the default.
+**Edition notes:** the Java edition has this operator too, `mutastic/remove-switch-arm`, in
+`extended`, for a `switch`, whose arm's values go to the default.
 
 ## Swap break
 
@@ -150,4 +150,4 @@ fn the_first_negative_of_two() {
 }
 ```
 
-**Edition notes:** the Java edition has no such operator.
+**Edition notes:** Rust only.

@@ -85,7 +85,8 @@ fn adding_an_item_is_recorded() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, for a method that returns `void`.
+**Edition notes:** the Java edition has this operator too, `mutastic/remove-void-call`, for a method
+that returns `void`.
 
 ## Remove discarded call
 
@@ -149,7 +150,8 @@ fn a_second_visit() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, for `add`, `put`, `append` and the like.
+**Edition notes:** the Java edition has this operator too, `mutastic/remove-discarded-call`, for
+`add`, `put`, `append` and the like.
 
 ## Remove assignment
 
@@ -216,7 +218,8 @@ fn a_tip_is_added() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, for a local variable that already has a value.
+**Edition notes:** the Java edition has this operator too, `mutastic/remove-assignment`, for a local
+variable that already has a value.
 
 ## Remove field write
 
@@ -284,7 +287,8 @@ fn paying_marks_the_order_paid() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, for a write to a field.
+**Edition notes:** the Java edition has this operator too, `mutastic/remove-field-write`, for a
+write to a field.
 
 ## Remove struct field
 
@@ -352,4 +356,4 @@ fn muting_mutes() {
 }
 ```
 
-**Edition notes:** the Java edition has no such operator, as Java has no struct update syntax.
+**Edition notes:** Rust only: Java has no struct update syntax.

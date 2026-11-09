@@ -76,8 +76,8 @@ fn a_nickname_is_shown() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id in `extended`, for `Optional`'s `isPresent` and
-`isEmpty`.
+**Edition notes:** the Java edition has this operator too, `optional/swap-present`, in `extended`,
+for `Optional`'s `isPresent` and `isEmpty`.
 
 ## Empty
 
@@ -143,8 +143,8 @@ fn a_page_of_fifty() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id in `extended`, for `Optional.of` and
-`ofNullable`.
+**Edition notes:** the Java edition has this operator too, `optional/empty`, in `extended`, for
+`Optional.of` and `ofNullable`.
 
 ## Always default
 
@@ -202,7 +202,8 @@ fn a_port_of_ones_own() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id in `extended`, for `Optional.orElse`.
+**Edition notes:** the Java edition has this operator too, `optional/always-default`, in `extended`,
+for `Optional.orElse`.
 
 ## No default
 
@@ -252,8 +253,8 @@ fn nothing_to_compare() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id in `extended`, for `Optional.orElse` and
-`orElseGet`, which become `get()`.
+**Edition notes:** the Java edition has this operator too, `optional/no-default`, in `extended`, for
+`Optional.orElse` and `orElseGet`, which become `get()`.
 
 ## Remove filter
 
@@ -308,4 +309,5 @@ fn an_age_too_great_is_refused() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, for `Optional.filter`.
+**Edition notes:** the Java edition has this operator too, `optional/remove-filter`, for
+`Optional.filter`.

@@ -73,8 +73,8 @@ fn spaces_are_not_part_of_a_username() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, for `String`'s methods, `Math.abs` and your
-own.
+**Edition notes:** the Java edition has this operator too, `mutastic/omit-call`, for `String`'s
+methods, `Math.abs` and your own.
 
 ## Swap arguments
 
@@ -146,7 +146,8 @@ fn fifty_is_a_percent() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, for any call's last two arguments of one type.
+**Edition notes:** the Java edition has this operator too, `mutastic/swap-arguments`, for any call's
+last two arguments of one type.
 
 ## Null parameter
 
@@ -201,8 +202,8 @@ fn a_coupon_comes_off() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, for any parameter holding an object, which
-becomes `null`.
+**Edition notes:** the Java edition has this operator too, `mutastic/null-parameter`, for any
+parameter holding an object, which becomes `null`.
 
 ## Drop vararg
 
@@ -271,8 +272,8 @@ fn the_best_comes_last() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id in `stronger`, for an array built for a varargs
-call.
+**Edition notes:** the Java edition has this operator too, `mutastic/drop-vararg`, in `stronger`,
+for an array built for a varargs call.
 
 ## Default parameter
 
@@ -334,5 +335,4 @@ fn an_excited_greeting() {
 }
 ```
 
-**Edition notes:** the Java edition has no such operator; its [null parameter](#null-parameter) is
-the nearest.
+**Edition notes:** Rust only. The Java edition's nearest is [null parameter](#null-parameter).

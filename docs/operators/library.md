@@ -71,7 +71,8 @@ fn a_comment_starts_with_the_hash() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, for `startsWith` and `endsWith` and the like.
+**Edition notes:** the Java edition has this operator too, `library/swap-string`, for `startsWith`
+and `endsWith` and the like.
 
 ## Swap math
 
@@ -137,8 +138,8 @@ fn more_than_half_is_capped() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, for `Math.min` and `Math.max`, `floor` and
-`ceil`.
+**Edition notes:** the Java edition has this operator too, `library/swap-math`, for `Math.min` and
+`Math.max`, `floor` and `ceil`.
 
 ## Swap index of
 
@@ -197,7 +198,8 @@ fn an_archive() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, for `indexOf` and `lastIndexOf`.
+**Edition notes:** the Java edition has this operator too, `library/swap-index-of`, for `indexOf`
+and `lastIndexOf`.
 
 ## Reverse ordering
 
@@ -256,7 +258,7 @@ fn names_come_out_in_order() {
 }
 ```
 
-**Edition notes:** the Java edition has no such operator.
+**Edition notes:** Rust only.
 
 ## String constant
 
@@ -314,8 +316,8 @@ fn columns_are_separated_by_commas() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, and skips as arid what goes into a log or an
-exception's message.
+**Edition notes:** the Java edition has this operator too, `mutastic/string-constant`, and skips as
+arid what goes into a log or an exception's message.
 
 ## Regex constant
 
@@ -347,8 +349,8 @@ mf617b484 src/lib.rs:535:25 mutastic/regex-constant r"^\d+$" becomes r"^\D+$" in
 **The test that catches it:** text that only one of the two matches, at each end: `abc123` and
 `123abc` as well as `123`.
 
-**Edition notes:** the Java edition has the same id, for `Pattern.compile`, `matches`, `split` and
-the `replace` methods.
+**Edition notes:** the Java edition has this operator too, `mutastic/regex-constant`, for
+`Pattern.compile`, `matches`, `split` and the `replace` methods.
 
 ## Remove step
 
@@ -376,5 +378,6 @@ ma0a93565 src/lib.rs:536:41 bigdecimal/remove-step .round_dp(1) is left out in p
 **The test that catches it:** an amount with more places than the step keeps, asserting what comes
 out.
 
-**Edition notes:** the Java edition has the same id in its `BigDecimal` plugin, for `BigDecimal`'s
-`setScale`, `round`, `stripTrailingZeros`, `abs` and `negate`.
+**Edition notes:** the Java edition has this operator too, `bigdecimal/remove-step`, in its
+`BigDecimal` plugin, for `BigDecimal`'s `setScale`, `round`, `stripTrailingZeros`, `abs` and
+`negate`.

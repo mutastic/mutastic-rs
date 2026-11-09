@@ -67,8 +67,8 @@ fn one_late_invoice_among_others() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, for a stream's `anyMatch`, `allMatch` and
-`noneMatch`.
+**Edition notes:** the Java edition has this operator too, `stream/swap-match`, for a stream's
+`anyMatch`, `allMatch` and `noneMatch`.
 
 ## Remove stage
 
@@ -134,8 +134,8 @@ fn unpaid_orders_dont_count() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, for a stream's `filter`, `distinct`, `sorted`,
-`limit`, `skip`, `dropWhile` and `takeWhile`.
+**Edition notes:** the Java edition has this operator too, `stream/remove-stage`, for a stream's
+`filter`, `distinct`, `sorted`, `limit`, `skip`, `dropWhile` and `takeWhile`.
 
 ## Remove other stage
 
@@ -195,5 +195,5 @@ fn each_value_is_logged() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, for a stream's `peek` and a primitive stream's
-`map`.
+**Edition notes:** the Java edition has this operator too, `stream/remove-other-stage`, for a
+stream's `peek` and a primitive stream's `map`.

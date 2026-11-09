@@ -89,7 +89,7 @@ fn two_of_each() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, on `int` and `long`.
+**Edition notes:** the Java edition has this operator too, `mutastic/math`, on `int` and `long`.
 
 ## Arithmetic replacement
 
@@ -152,7 +152,7 @@ fn a_fee_of_three() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id.
+**Edition notes:** the Java edition has this operator too, `mutastic/arithmetic-replacement`.
 
 ## Other arithmetic
 
@@ -221,7 +221,8 @@ fn twelve_shared_by_four() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, on `float` and `double` too.
+**Edition notes:** the Java edition has this operator too, `mutastic/other-arithmetic`, on `float`
+and `double` too.
 
 ## Keep operand
 
@@ -290,7 +291,7 @@ fn a_refund_is_taken_off() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id.
+**Edition notes:** the Java edition has this operator too, `mutastic/keep-operand`.
 
 ## Remove negation
 
@@ -352,7 +353,7 @@ fn a_balance_reversed() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id.
+**Edition notes:** the Java edition has this operator too, `mutastic/remove-negation`.
 
 ## Constant value
 
@@ -432,14 +433,14 @@ fn two_kilos_cost_eight() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, and reaches a `static final` number through the
-value javac writes where it's used.
+**Edition notes:** the Java edition has this operator too, `mutastic/constant-value`, and reaches a
+`static final` number through the value javac writes where it's used.
 
 ## Bitwise
 
-`mutastic/bitwise`, in the `stronger` set, and only in Rust. `&` becomes `|` and `^`, `|` becomes
-`&` and `^`, `^` becomes `&` and `|`, and `<<` and `>>` swap. Compound assignments too, except that
-`&=` and `|=` never become `^=`.
+`mutastic/bitwise`, in the `stronger` set. `&` becomes `|` and `^`, `|` becomes `&` and `^`, `^`
+becomes `&` and `|`, and `<<` and `>>` swap. Compound assignments too, except that `&=` and `|=`
+never become `^=`.
 
 **The bug it stands for:** the wrong bit operation: setting a flag where it should be tested,
 toggling where it should be set. It costs in permissions, flags and packed fields, where tests use
@@ -499,7 +500,7 @@ fn a_flag_that_is_not_set() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, for `>>>` too.
+**Edition notes:** the Java edition has this operator too, `mutastic/bitwise`, for `>>>` too.
 
 ## Unchecked arithmetic
 
@@ -558,4 +559,5 @@ fn too_many_points() {
 }
 ```
 
-**Edition notes:** the Java edition has the same id, for `Math.addExact` and the like, which throw.
+**Edition notes:** the Java edition has this operator too, `library/unchecked-arithmetic`, for
+`Math.addExact` and the like, which throw.
