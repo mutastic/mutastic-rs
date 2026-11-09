@@ -16,7 +16,10 @@
   "mutation": {
     "replacement": "false",
     "description": "returns `false` instead",
-    "bytecode": "x > 0 -> false"
+    "applied": {
+      "level": "source",
+      "text": "x > 0 -> false"
+    }
   },
   "statusReason": "crash: std's debug check of an unsafe precondition stopped it (SIGABRT), not a test",
   "nearUnsafe": "called from unsafe code",
@@ -29,5 +32,5 @@
     ]
   },
   "testsRun": 1,
-  "durationMs": 87
+  "durationMs": 47
 }

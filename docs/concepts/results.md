@@ -66,7 +66,10 @@ crashed, not by a test's check`), and in the event stream the mutant has `caught
   "mutation": {
     "replacement": "true",
     "description": "`x < 0` is always true",
-    "bytecode": "x < 0 -> true"
+    "applied": {
+      "level": "source",
+      "text": "x < 0 -> true"
+    }
   },
   "coveredBy": [
     "run::guards"
@@ -79,7 +82,7 @@ crashed, not by a test's check`), and in the event stream the mutant has `caught
     ]
   },
   "testsRun": 1,
-  "durationMs": 89
+  "durationMs": 69
 }
 ```
 

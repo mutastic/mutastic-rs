@@ -34,7 +34,10 @@ the function returns a `String`:
     "original": ".to_lowercase()",
     "replacement": "",
     "description": "`.to_lowercase()` is left out",
-    "bytecode": "input.trim().to_lowercase() -> input.trim()"
+    "applied": {
+      "level": "source",
+      "text": "input.trim().to_lowercase() -> input.trim()"
+    }
   },
   "statusReason": "unviable: doesn't compile (E0308: mismatched types)",
   "skipKind": "unviable",

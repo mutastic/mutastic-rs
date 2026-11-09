@@ -1365,14 +1365,14 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
         Change::Always { truth, .. } => mutation["replacement"] = json!(truth.to_string()),
     }
     mutation["description"] = json!(advice.change);
-    // The schema's `bytecode` is the change as the engine makes it, optional outside Java. Kept:
-    // in Rust it's the whole site before and after, which no other field has for every change.
+    // `applied` is the change as the engine makes it, and at what level: here, to the source, the
+    // whole site before and after, which no other field has for every change. Java's deprecated
+    // `bytecode` is Java's alone, and isn't written.
     let text = view.text(mutant);
-    mutation["bytecode"] = json!(format!(
-        "{} -> {}",
-        sites_plain(&text[mutant.site.clone()]),
-        mutant.replacement
-    ));
+    mutation["applied"] = json!({
+        "level": "source",
+        "text": format!("{} -> {}", sites_plain(&text[mutant.site.clone()]), mutant.replacement),
+    });
     let mut event = json!({
         "schema": SCHEMA,
         "edition": EDITION,

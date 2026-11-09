@@ -16,7 +16,10 @@
   "mutation": {
     "replacement": "true",
     "description": "`x < 0` is always true",
-    "bytecode": "x < 0 -> true"
+    "applied": {
+      "level": "source",
+      "text": "x < 0 -> true"
+    }
   },
   "statusReason": "crash: SIGABRT in a module with unsafe code, which may be undefined behaviour",
   "nearUnsafe": "in a module with unsafe code",
@@ -29,5 +32,5 @@
     ]
   },
   "testsRun": 1,
-  "durationMs": 108
+  "durationMs": 70
 }

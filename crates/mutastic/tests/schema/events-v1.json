@@ -213,9 +213,25 @@
               "type": "string",
               "description": "The change in words: \"`>=` becomes `>`\"."
             },
+            "applied": {
+              "type": "object",
+              "description": "The change as the engine makes it, and at what level: in the Java edition to the compiled instruction, `{\"level\": \"bytecode\", \"text\": \"IF_ICMPLT -> IF_ICMPLE\"}`; in Rust's to the source, the whole site before and after, `{\"level\": \"source\", \"text\": \"x < 0 -> true\"}`. Written from 0.6.0, for every mutant, by both editions.",
+              "required": ["level", "text"],
+              "properties": {
+                "level": {
+                  "type": "string",
+                  "description": "What the engine changes: `bytecode`, the compiled instructions (the Java edition), or `source`, the code before it's compiled (the Rust edition). `llvm-ir` is kept for an engine that changes the compiler's intermediate code. A later v1 may add a level, so it's a string rather than a closed list: accept a level you don't know, and treat its `text` as opaque."
+                },
+                "text": {
+                  "type": "string",
+                  "description": "The change at that level, before and after: `IF_ICMPLT -> IF_ICMPLE`, `x < 0 -> true`. Its form depends on the level: read it as opaque text, for people."
+                }
+              }
+            },
             "bytecode": {
               "type": "string",
-              "description": "The change as the engine makes it. In the Java edition, to the instruction, and always there: `IF_ICMPLT -> IF_ICMPLE`."
+              "deprecated": true,
+              "description": "The change as the engine makes it, to the instruction: `IF_ICMPLT -> IF_ICMPLE`. The Java edition only, and always there in it. Deprecated: removed in 1.0. Read `applied`, whose `text` has the same value."
             }
           }
         },
@@ -230,7 +246,7 @@
         "coveredBy": {
           "type": "array",
           "items": { "$ref": "#/$defs/test" },
-          "description": "The tests that reach the mutant's line, fastest first. Empty when none does, or when it was skipped."
+          "description": "The tests that reach the mutant's line: its own test class's first (PricingTest's, for Pricing), then the rest, each by name, whatever order they ran in. Empty when none does, or when it was skipped."
         },
         "killedBy": {
           "$ref": "#/$defs/test",

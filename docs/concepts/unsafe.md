@@ -136,7 +136,10 @@ Near-unsafe mutants run differently:
   "mutation": {
     "replacement": "true",
     "description": "`x < 0` is always true",
-    "bytecode": "x < 0 -> true"
+    "applied": {
+      "level": "source",
+      "text": "x < 0 -> true"
+    }
   },
   "statusReason": "crash: SIGABRT in a module with unsafe code, which may be undefined behaviour",
   "nearUnsafe": "in a module with unsafe code",
@@ -149,7 +152,7 @@ Near-unsafe mutants run differently:
     ]
   },
   "testsRun": 1,
-  "durationMs": 108
+  "durationMs": 70
 }
 ```
 
@@ -183,7 +186,10 @@ stops it. That's std's catch, not a test's, so it's a `RuntimeError` too, wherev
   "mutation": {
     "replacement": "false",
     "description": "returns `false` instead",
-    "bytecode": "x > 0 -> false"
+    "applied": {
+      "level": "source",
+      "text": "x > 0 -> false"
+    }
   },
   "statusReason": "crash: std's debug check of an unsafe precondition stopped it (SIGABRT), not a test",
   "nearUnsafe": "called from unsafe code",
@@ -196,7 +202,7 @@ stops it. That's std's catch, not a test's, so it's a `RuntimeError` too, wherev
     ]
   },
   "testsRun": 1,
-  "durationMs": 87
+  "durationMs": 47
 }
 ```
 

@@ -73,6 +73,19 @@ fn pricing_misses_only_the_edge_of_the_discount() {
         let errors: Vec<String> = schema().iter_errors(event).map(|e| e.to_string()).collect();
         assert!(errors.is_empty(), "{event}\n{}", errors.join("\n"));
     }
+    // The change as the engine made it, to the source, as the schema describes `applied`; and no
+    // `bytecode`, which is the Java edition's.
+    let applied = common::applied_schema();
+    for mutant in &mutants {
+        let mutation = &mutant["mutation"];
+        assert!(applied.is_valid(&mutation["applied"]), "{mutant}");
+        assert_eq!(mutation["applied"]["level"], "source", "{mutant}");
+        assert!(mutation.get("bytecode").is_none(), "{mutant}");
+    }
+    assert_eq!(
+        missed["mutation"]["applied"]["text"],
+        "total >= 100 -> (total) > (100)"
+    );
     let finished = events.last().unwrap();
     assert_eq!(finished["reason"], "run-finished");
     assert_eq!(finished["score"], 90.9);

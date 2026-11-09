@@ -16,7 +16,10 @@
   "mutation": {
     "replacement": "true",
     "description": "`x < 0` is always true",
-    "bytecode": "x < 0 -> true"
+    "applied": {
+      "level": "source",
+      "text": "x < 0 -> true"
+    }
   },
   "coveredBy": [
     "run::guards"
@@ -29,5 +32,5 @@
     ]
   },
   "testsRun": 1,
-  "durationMs": 89
+  "durationMs": 69
 }

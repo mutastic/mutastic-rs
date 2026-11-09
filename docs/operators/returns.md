@@ -196,7 +196,10 @@ impl std::fmt::Display for Pieces {
     "original": "?",
     "replacement": ".unwrap()",
     "description": "`?` becomes `.unwrap()`",
-    "bytecode": "write!(f, \"{}\", self.0)? -> (write!(f, \"{}\", self.0)).unwrap()"
+    "applied": {
+      "level": "source",
+      "text": "write!(f, \"{}\", self.0)? -> (write!(f, \"{}\", self.0)).unwrap()"
+    }
   },
   "statusReason": "equivalent: inside `fmt`, a `?` passes on a formatter's error, which no test can cause",
   "skipKind": "equivalent",
