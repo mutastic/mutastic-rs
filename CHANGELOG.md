@@ -5,6 +5,16 @@ newest come first.
 
 ## Unreleased
 
+### Fixes
+
+- **Windows: output reads as it does elsewhere.** mutastic built from source on Windows wrote its
+  places and report paths with `\` (`src\lib.rs:15`, `target\mutastic\mutation.json`), so the
+  report's files, cards and the gate's lines differed from Linux and macOS, and the command for a
+  crate inside a Java build did too. Paths are now written with `/` on every platform. A test
+  process that crashes is named by the signal the same crash raises elsewhere (Rust's abort is
+  `SIGABRT`), where it said "an abnormal exit". Ids were already the same on every platform. The
+  tests now run on Windows on every change.
+
 ## 0.2.0 (2026-11-09)
 
 The first release of mutastic for Rust, the Rust edition of mutastic. These are the changes made

@@ -1,6 +1,7 @@
 //! A flaky test, made so on purpose and the same way every run: it fails the first time it runs
-//! under each mutastic process, and passes after, as a test that fails now and then does when
-//! mutastic runs it again.
+//! in each of mutastic's runs, and passes after, as a test that fails now and then does when
+//! mutastic runs it again. The test that runs mutastic names each run in `RAFFLE_RUN`, which
+//! mutastic's test processes inherit.
 
 use raffle::{draw, ticket};
 
@@ -17,13 +18,12 @@ fn a_draw_is_a_place_in_the_raffle() {
     first_try_fails();
 }
 
-/// Panics the first time it's called under a given parent process, and passes after: a marker in
-/// the temporary directory, named for the process that ran the test, says it already failed once.
+/// Panics the first time it's called in a run, and passes after: a marker in the temporary
+/// directory, named for the run, says it already failed once. A run's own name, rather than the
+/// parent process's id, works the same on every platform.
 fn first_try_fails() {
-    let marker = std::env::temp_dir().join(format!(
-        "mutastic-flaky-fixture-{}",
-        std::os::unix::process::parent_id()
-    ));
+    let run = std::env::var("RAFFLE_RUN").unwrap_or_default();
+    let marker = std::env::temp_dir().join(format!("mutastic-flaky-fixture-{run}"));
     if std::fs::remove_file(&marker).is_err() {
         std::fs::write(&marker, "failed once").unwrap();
         panic!("failed on its first try");

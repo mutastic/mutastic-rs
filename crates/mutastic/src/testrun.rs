@@ -211,7 +211,29 @@ fn signal_of(status: &std::process::ExitStatus) -> Option<i32> {
     std::os::unix::process::ExitStatusExt::signal(status)
 }
 
-#[cfg(not(unix))]
+/// Windows has no signals: a crash ends the process with an exception's status instead. Each is
+/// named as the signal the same crash raises elsewhere, so the card reads the same on every
+/// platform: Rust's abort (a failed `unsafe` precondition, a panic in a panic, a stack overflow)
+/// ends it with `STATUS_STACK_BUFFER_OVERRUN`, which is `SIGABRT` elsewhere.
+#[cfg(windows)]
+fn signal_of(status: &std::process::ExitStatus) -> Option<i32> {
+    windows_signal(status.code()?)
+}
+
+#[cfg(any(windows, test))]
+fn windows_signal(code: i32) -> Option<i32> {
+    // The status is an NTSTATUS, an unsigned code that `code()` gives as an `i32`.
+    match code.cast_unsigned() {
+        0xC000_0409 | 0xC000_00FD => Some(6), // fast fail (abort), stack overflow
+        0xC000_0005 => Some(11),              // access violation
+        0xC000_001D | 0xC000_0096 => Some(4), // illegal and privileged instruction
+        0xC000_0094 | 0xC000_0095 => Some(8), // integer divide by zero and overflow
+        0x8000_0003 => Some(5),               // breakpoint
+        _ => None,
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
 fn signal_of(_: &std::process::ExitStatus) -> Option<i32> {
     None
 }
@@ -285,4 +307,22 @@ pub fn default_workers() -> usize {
     std::thread::available_parallelism()
         .map(|cores| (cores.get() / 2).clamp(1, 4))
         .unwrap_or(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A Windows crash is named as the same crash is elsewhere: Rust's abort as `SIGABRT`.
+    #[test]
+    fn a_windows_crash_is_named_as_its_signal_elsewhere() {
+        let named = |code: u32| windows_signal(code.cast_signed()).map(signal_name);
+        assert_eq!(named(0xC000_0409).as_deref(), Some("SIGABRT"));
+        assert_eq!(named(0xC000_00FD).as_deref(), Some("SIGABRT"));
+        assert_eq!(named(0xC000_0005).as_deref(), Some("SIGSEGV"));
+        assert_eq!(named(0xC000_001D).as_deref(), Some("SIGILL"));
+        assert_eq!(named(0xC000_0094).as_deref(), Some("SIGFPE"));
+        assert_eq!(named(0x8000_0003).as_deref(), Some("SIGTRAP"));
+        assert_eq!(named(101), None, "a test harness's own exit isn't a crash");
+    }
 }

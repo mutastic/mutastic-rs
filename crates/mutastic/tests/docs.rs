@@ -660,9 +660,11 @@ fn troubleshooting(work: &Path, shown: &mut BTreeMap<String, String>) {
     shown.insert("troubleshooting/loops".into(), summary(&loops.stdout));
     // Code for another platform, and behind a feature that's off, is counted, not mutated.
     let platforms = ran(work, &["run", "fixtures/platforms"]);
+    let other = if cfg!(windows) { "unix" } else { "windows" };
     assert!(
-        plain(&platforms.stdout)
-            .contains("not built here: `cfg(feature = \"simd\")` (2), `cfg(windows)`"),
+        plain(&platforms.stdout).contains(&format!(
+            "not built here: `cfg(feature = \"simd\")` (2), `cfg({other})`"
+        )),
         "{}",
         platforms.stdout
     );
@@ -687,6 +689,14 @@ fn suggested(work: &Path, shown: &mut BTreeMap<String, String>) {
     shown.insert("concepts/suggested-test".into(), card);
 }
 
+/// Runs the pages show as a Unix build makes them: code and tests under `cfg(unix)` are in it, and
+/// a Windows build leaves them out, so there they're run but the pages' copies are kept.
+const UNIX_BUILDS: &[&str] = &[
+    "concepts/unsafe-run",
+    "concepts/unsafe-summary",
+    "troubleshooting/platforms",
+];
+
 #[test]
 fn the_docs_show_what_mutastic_prints() {
     let work = work();
@@ -701,6 +711,9 @@ fn the_docs_show_what_mutastic_prints() {
     let output = docs().join("output");
     let mut stale = Vec::new();
     for (name, text) in &shown {
+        if cfg!(windows) && UNIX_BUILDS.contains(&name.as_str()) {
+            continue;
+        }
         let file = output.join(format!("{name}.ansi"));
         let kept = std::fs::read_to_string(&file).unwrap_or_default();
         if steady(&kept) != steady(text) {

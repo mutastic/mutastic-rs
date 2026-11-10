@@ -586,9 +586,19 @@ fn copy_of(name: &str, label: &str) -> std::path::PathBuf {
 }
 
 fn mutastic_in(dir: &Path, args: &[&str]) -> (i32, String) {
+    // Each run's own name, for the flaky fixture's test, which fails once in each run.
+    static RUNS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let run = RUNS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_nanos());
     let output = Command::new(env!("CARGO_BIN_EXE_mutastic"))
         .args(args)
         .current_dir(dir)
+        .env(
+            "RAFFLE_RUN",
+            format!("{}-{run}-{nanos}", std::process::id()),
+        )
         .env_remove("MUTASTIC_FORMAT")
         .env_remove("MUTASTIC_AGENT")
         .env("NO_COLOR", "1")

@@ -1,0 +1,3 @@
+# The same text on every platform: the docs test and the fixtures compare files byte for byte,
+# and Git for Windows would otherwise check them out with CRLF line endings.
+* text=auto eol=lf

@@ -617,8 +617,11 @@ fn coverage(
             .iter()
             .map(|&index| (tests[index].display.clone(), reached[index].0.timed_out))
             .collect();
-        let shown = log.strip_prefix(&project.workspace).unwrap_or(&log);
-        return Err(crate::flaky::failed_message(&named, shown));
+        let shown = crate::report::files::shown(&project.workspace, &log);
+        return Err(crate::flaky::failed_message(
+            &named,
+            std::path::Path::new(&shown),
+        ));
     }
     let reach = reached
         .into_iter()

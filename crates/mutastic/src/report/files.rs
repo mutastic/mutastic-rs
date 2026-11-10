@@ -74,12 +74,10 @@ pub fn write(
 /// `target/mutastic/mutation.json`, from `given`, or the whole path when it's outside.
 pub fn shown(given: &Path, file: &Path) -> String {
     let real = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    real(file)
-        .strip_prefix(real(given))
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|_| file.to_path_buf())
-        .display()
-        .to_string()
+    match real(file).strip_prefix(real(given)) {
+        Ok(inside) => crate::workspace::slashed(inside),
+        Err(_) => file.display().to_string(),
+    }
 }
 
 /// The report-schema document. Statuses are the schema's (`Killed`, `Survived`, …); locations are

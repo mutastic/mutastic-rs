@@ -214,6 +214,18 @@ fn remove_stale(
     Ok(())
 }
 
+/// A relative path as mutastic shows it and keys it, `src/lib.rs`, with `/` between its parts on
+/// every platform: cards, places and reports read the same on Windows as elsewhere, and Windows
+/// takes `/` in a path as it takes `\\`. Elsewhere `\\` can be part of a name, so it's left as it is.
+pub fn slashed(path: &Path) -> String {
+    let text = path.display().to_string();
+    if cfg!(windows) {
+        text.replace('\\', "/")
+    } else {
+        text
+    }
+}
+
 pub fn write_if_changed(path: &Path, text: &str) -> std::io::Result<()> {
     if std::fs::read_to_string(path).ok().as_deref() != Some(text) {
         if let Some(parent) = path.parent() {

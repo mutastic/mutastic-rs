@@ -193,12 +193,15 @@ pub fn nested_note(given: &str, route: &Route) -> Option<String> {
     let commands: Vec<String> = inner
         .iter()
         .map(|dir| {
-            let path = if given == "." {
-                dir.clone()
+            let dir = crate::workspace::slashed(dir);
+            if given == "." {
+                format!("  mutastic run {dir}")
             } else {
-                Path::new(given).join(dir)
-            };
-            format!("  mutastic run {}", path.display())
+                format!(
+                    "  mutastic run {}/{dir}",
+                    given.trim_end_matches(['/', '\\'])
+                )
+            }
         })
         .collect();
     let name = project.file_name().map_or_else(

@@ -589,6 +589,7 @@ pub fn find_with(
         .map(|root| (root.clone(), String::new(), true, None))
         .collect();
     while let Some((file, module, is_root, off)) = queue.pop() {
+        let file = PathBuf::from(crate::workspace::slashed(&file));
         if !seen.insert(file.clone()) {
             continue;
         }
