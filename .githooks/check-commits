@@ -4,8 +4,10 @@
 #   .githooks/check-commits <base> <head>
 #
 # Only commits from the one that added the hook onwards are checked. Earlier ones kept the older
-# style and are never rewritten, so they never fail. A missing or all-zero base (a new branch)
-# checks everything from that commit to <head>.
+# style and are never rewritten, so they never fail. So does a commit written before then that
+# arrives later, through a branch merged since: one whose author date is before the hook's commit
+# is noted, not checked. A missing or all-zero base (a new branch) checks everything from that
+# commit to <head>.
 
 set -eu
 cd "$(git rev-parse --show-toplevel)"
@@ -31,12 +33,21 @@ for parent in $(git rev-parse "$boundary^@"); do
   range="$range ^$parent"
 done
 
+# Written before the convention, on a branch merged since: the older style too.
+convention=$(git log -1 --format=%at "$boundary")
+
 message=$(mktemp)
 trap 'rm -f "$message" "$message.err"' EXIT
 failed=0
 checked=0
+older=0
 # shellcheck disable=SC2086 # $range is a list of revisions
 for commit in $(git rev-list --reverse $range); do
+  if [ "$(git log -1 --format=%at "$commit")" -lt "$convention" ]; then
+    git log -1 --format='check-commits: %h not checked, written %as, before the convention: %s' "$commit"
+    older=$((older + 1))
+    continue
+  fi
   checked=$((checked + 1))
   git log -1 --format=%B "$commit" > "$message"
   if ! sh .githooks/commit-msg "$message" 2> "$message.err"; then
@@ -45,5 +56,5 @@ for commit in $(git rev-list --reverse $range); do
     failed=$((failed + 1))
   fi
 done
-echo "check-commits: $checked commit(s) since $(git rev-parse --short "$boundary") checked, $failed failed"
+echo "check-commits: $checked commit(s) since $(git rev-parse --short "$boundary") checked, $failed failed, $older older not checked"
 [ "$failed" -eq 0 ]
