@@ -18,7 +18,10 @@ pub const SCHEMA: &str = "mutastic.events/v1";
 /// The events format's name for this edition, on every event.
 pub const EDITION: &str = "rust";
 pub const RULE: &str = "add or change tests only, never production code";
-pub const DECLINE: &str = "if a mutant's case can't happen in practice, or the change is one no caller can see, don't contrive a test: say why";
+pub const DECLINE: &str = "if a mutant's case can't happen in practice, or the change is one no caller can see, don't contrive a test: propose ignoring it, for a person to accept, as the kind it is (equivalent, unreachable, telemetry, deprecated or accepted-risk), with the reason in two sentences: the one case where it differs, and why that can't happen";
+/// The reason a proposal gives, as the Java edition's: the one case where the mutant differs, and
+/// why that can't happen, for a person to check in place of a test.
+pub const REASON: &str = "Differs only when <case>. That can't happen because <why>.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Format {
@@ -241,14 +244,18 @@ impl<'a> View<'a> {
             "verify" => format!("mutastic verify {ids} {dir}"),
             "explain" => format!("mutastic explain {ids} {dir}"),
             "ignore" | "propose" => {
-                let propose = if verb == "propose" { " --propose" } else { "" };
+                let how = if verb == "propose" {
+                    format!(" --propose --as=<equivalent|unreachable|…> --reason=\"{REASON}\"")
+                } else {
+                    " --reason=\"<why>\"".to_string()
+                };
                 match ids.split_once(',') {
                     // One decision each: a card with several mutants names them all.
                     Some(_) => format!(
-                        "mutastic ignore <id>{propose} --reason=\"<why>\" {dir} for each of {}",
+                        "mutastic ignore <id>{how} {dir} for each of {}",
                         ids.replace(',', ", ")
                     ),
-                    None => format!("mutastic ignore {ids}{propose} --reason=\"<why>\" {dir}"),
+                    None => format!("mutastic ignore {ids}{how} {dir}"),
                 }
             }
             _ => format!("mutastic run --only={ids} {dir}"),
@@ -845,23 +852,26 @@ const NOT_COVERED_SHOWN: usize = 50;
 /// `○ src/lib.rs:18-20 tier() (4 mutants)`, in the order found, as the Java edition shows them.
 /// The functions with mutants no test reaches, in the order found: where (`src/lib.rs:18-20
 /// tier()`) and how many mutants, as the Java edition counts them.
-fn not_covered_places(view: &View) -> Vec<(String, usize)> {
-    let mut by_function: Vec<(usize, Vec<usize>)> = Vec::new();
+/// Each function with mutants no test reaches, `src/lib.rs:18-20 tier()`, with each of those
+/// mutants' line and id, in the order found.
+fn not_covered_places(view: &View) -> Vec<(String, Vec<(usize, String)>)> {
+    let mut by_function: Vec<(usize, Vec<(usize, String)>)> = Vec::new();
     for result in &view.report.results {
         if result.status == Status::NoCoverage {
             let mutant = view.mutant(result);
+            let found = (mutant.line, mutant.id.clone());
             match by_function.iter_mut().find(|(f, _)| *f == mutant.function) {
-                Some((_, lines)) => lines.push(mutant.line),
-                None => by_function.push((mutant.function, vec![mutant.line])),
+                Some((_, mutants)) => mutants.push(found),
+                None => by_function.push((mutant.function, vec![found])),
             }
         }
     }
     by_function
         .into_iter()
-        .map(|(function, lines)| {
+        .map(|(function, mutants)| {
             let (from, to) = (
-                lines.iter().min().copied().unwrap_or(0),
-                lines.iter().max().copied().unwrap_or(0),
+                mutants.iter().map(|(line, _)| *line).min().unwrap_or(0),
+                mutants.iter().map(|(line, _)| *line).max().unwrap_or(0),
             );
             let f = &view.report.found.functions[function];
             let place = if from == to {
@@ -871,7 +881,7 @@ fn not_covered_places(view: &View) -> Vec<(String, usize)> {
             };
             (
                 format!("{}:{place} {}()", f.file.display(), f.name),
-                lines.len(),
+                mutants,
             )
         })
         .collect()
@@ -893,14 +903,15 @@ fn not_covered(out: &mut String, view: &View, style: Style) {
             or_only_flaky(view.report)
         ))
     );
-    for (place, count) in places.iter().take(NOT_COVERED_SHOWN) {
+    for (place, mutants) in places.iter().take(NOT_COVERED_SHOWN) {
+        let count = mutants.len();
         let _ = writeln!(
             out,
             "   {} {place} {}",
             style.amber("○"),
             style.dim(&format!(
                 "({count} mutant{})",
-                if *count == 1 { "" } else { "s" }
+                if count == 1 { "" } else { "s" }
             ))
         );
     }
@@ -1281,7 +1292,11 @@ fn agent(report: &Report) -> String {
         out,
         "rules: {RULE}; a fix counts when `mutastic verify <id> {dir}` passes"
     );
-    let _ = writeln!(out, "decline: {DECLINE}");
+    let _ = writeln!(
+        out,
+        "decline: {DECLINE} (`{}`)",
+        view.command("propose", "<id>")
+    );
     for line in not_mutated(report) {
         let _ = writeln!(out, "{line}");
     }
@@ -1309,12 +1324,35 @@ fn agent(report: &Report) -> String {
                 "; fix the missed mutants first"
             }
         );
-        for (place, count) in places {
+        for (place, mutants) in places {
+            let count = mutants.len();
             let _ = writeln!(
                 out,
                 "- {place} ({count} mutant{})",
                 if count == 1 { "" } else { "s" }
             );
+            // An agent decides a line no test reaches can't be reached as it decides a missed
+            // mutant's case can't happen: so each id, by line, with how to propose it.
+            let mut lines: Vec<usize> = mutants.iter().map(|(line, _)| *line).collect();
+            lines.sort_unstable();
+            lines.dedup();
+            for line in &lines {
+                let ids: Vec<&str> = mutants
+                    .iter()
+                    .filter(|(at, _)| at == line)
+                    .map(|(_, id)| id.as_str())
+                    .collect();
+                let _ = writeln!(
+                    out,
+                    "  or propose{}: {}",
+                    if lines.len() == 1 {
+                        String::new()
+                    } else {
+                        format!(" (line {line})")
+                    },
+                    view.command("propose", &ids.join(","))
+                );
+            }
         }
     }
     out

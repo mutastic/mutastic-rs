@@ -946,6 +946,11 @@ fn the_gate_holds_a_task_to_its_changed_lines() {
         out.contains("not covered (no test reaches these lines):\n- src/lib.rs:"),
         "{out}"
     );
+    // Each mutant no test reaches can be proposed from what's shown: its id is there.
+    assert!(
+        out.contains("  or propose: mutastic ignore ") || out.contains("  or propose (line "),
+        "{out}"
+    );
 
     // A test ignored holds the gate.
     let tests = dir.join("tests/pricing.rs");

@@ -22,6 +22,16 @@ events format only gains.
 
 ### Changes
 
+- **An agent's proposal carries its kind and a reduction.** The agent format's `or propose` line
+  is `mutastic ignore <id> --propose --as=<equivalent|unreachable|…> --reason="Differs only when
+  <case>. That can't happen because <why>."`, and the `decline:` line says so, with the command.
+  `ignore --propose --as=equivalent` (or `unreachable`) refuses a reason without a "because", and
+  any proposal that still has the template's `<case>` or `<why>`; other kinds keep a free reason.
+  The formatter equivalents say their reason the same way.
+- **Mutants no test reaches list their ids in the agent format,** by line, each with its `or
+  propose` command, so an agent can propose one from what it's shown.
+- **An empty `--only` id is refused** (`--only=`, `--only=a,,b`), where it ran every mutant.
+
 - **From 1.0.0, `mutastic` runs the newest Java edition of its own minor version.** The two
   editions release each minor version together, and either may ship a patch alone, so in a Maven or
   Gradle project `mutastic 1.2.0` runs the newest Java edition 1.2.x, fetching it if it isn't kept.

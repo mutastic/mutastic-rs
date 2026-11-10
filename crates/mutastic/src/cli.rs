@@ -235,7 +235,17 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
         }
         let value = value.unwrap_or("");
         match name {
-            "only" => parsed.only.extend(ids(value)),
+            "only" => {
+                if value.trim().is_empty() {
+                    return Err("--only needs a mutant's id: --only=ID, as a card shows it".into());
+                }
+                if value.split(',').any(|id| id.trim().is_empty()) {
+                    return Err(format!(
+                        "--only={value} has an empty id between its commas: --only=ID,ID"
+                    ));
+                }
+                parsed.only.extend(ids(value))
+            }
             "format" => {
                 parsed.format = Some(Format::parse(value).ok_or_else(|| {
                     format!("--format: {value} isn't one of full, concise, agent or jsonl")
@@ -970,6 +980,9 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, String> {
             "ignore needs a reason, for whoever reviews it: mutastic ignore {id} --reason=\"<why>\" {dir}"
         ));
     };
+    if parsed.propose {
+        argued(&reason, &parsed.kind)?;
+    }
     let project = workspace::read(&dir)?;
     let found = engine::find_all(&project);
     let Some(index) = found.mutants.iter().position(|m| m.id == id) else {
@@ -1022,6 +1035,30 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, String> {
         command(&["--remove", &id])
     );
     Ok(ExitCode::SUCCESS)
+}
+
+/// A proposal's reason, which a person checks in place of a test: filled in, and for a mutant said
+/// to be equivalent or unreachable, saying why its case can't happen, as the Java edition asks.
+fn argued(reason: &str, kind: &str) -> Result<(), String> {
+    if reason.contains("<case>") || reason.contains("<why>") {
+        return Err(
+            "the reason still has the template's <case> or <why>: fill them in, as \
+             --reason=\"Differs only when count is negative. That can't happen because count is a \
+             length.\""
+                .into(),
+        );
+    }
+    let because = reason
+        .split(|c: char| !c.is_alphanumeric())
+        .any(|word| word.eq_ignore_ascii_case("because"));
+    if ["equivalent", "unreachable"].contains(&kind) && !because {
+        return Err(format!(
+            "a proposal that a mutant is {kind} needs a reason a person can check: the one case \
+             where it differs, and why that can't happen, with a because: --reason=\"{}\"",
+            crate::report::REASON
+        ));
+    }
+    Ok(())
 }
 
 /// A proposal accepted: it moves into the ignores, with its reason and sort as proposed.
@@ -1613,6 +1650,39 @@ mod tests {
                 assert_eq!(check(&words(&example)), Ok(()), "{example}");
             }
         }
+    }
+
+    /// An empty id is said to be one, not taken as no `--only` at all, which would run them all.
+    #[test]
+    fn an_empty_only_id_is_refused() {
+        assert_eq!(
+            check(&words("run --only=")).unwrap_err(),
+            "--only needs a mutant's id: --only=ID, as a card shows it"
+        );
+        assert_eq!(
+            check(&words("run --only=mb2f8ae57,,m1a2b3c4d")).unwrap_err(),
+            "--only=mb2f8ae57,,m1a2b3c4d has an empty id between its commas: --only=ID,ID"
+        );
+    }
+
+    /// A proposal says why in a form a person can check: an equivalent or unreachable mutant's
+    /// reason has a because, and no proposal keeps the template's parts unfilled.
+    #[test]
+    fn a_proposal_that_a_mutant_cant_matter_says_why() {
+        let argued_reason =
+            "Differs only when total is 100. That can't happen because prices end in 9.";
+        assert_eq!(argued(argued_reason, "equivalent"), Ok(()));
+        assert_eq!(argued("logs only", "telemetry"), Ok(()));
+        assert_eq!(argued("logs only", ""), Ok(()));
+        let refused = argued("never", "unreachable").unwrap_err();
+        assert!(
+            refused.starts_with("a proposal that a mutant is unreachable needs a reason"),
+            "{refused}"
+        );
+        assert!(refused.ends_with(&format!("--reason=\"{}\"", report::REASON)));
+        assert!(argued(report::REASON, "telemetry")
+            .unwrap_err()
+            .starts_with("the reason still has the template's <case> or <why>"));
     }
 
     #[test]

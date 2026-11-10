@@ -498,7 +498,8 @@ fn formatter_error(expr: &ast::TryExpr) -> Option<&'static str> {
     let function = expr.syntax().ancestors().find_map(ast::Fn::cast)?;
     if is_fmt_method(&function) {
         return Some(
-            "equivalent: inside `fmt`, a `?` passes on a formatter's error, which no test can cause",
+            "equivalent: differs only when the formatter fails. That can't happen because inside \
+             `fmt` its error comes from the writer under it, which no test can make fail.",
         );
     }
     let formatters = formatter_parameters(&function);
@@ -509,7 +510,8 @@ fn formatter_error(expr: &ast::TryExpr) -> Option<&'static str> {
         .filter_map(|element| element.into_token())
         .any(|token| token.kind() == SyntaxKind::IDENT && formatters.contains(token.text()));
     writes.then_some(
-        "equivalent: it passes on a formatter's error, which only its writer can cause and no test can",
+        "equivalent: differs only when the formatter fails. That can't happen because its error \
+         comes from the writer under it, which no test can make fail.",
     )
 }
 

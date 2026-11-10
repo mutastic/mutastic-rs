@@ -181,13 +181,15 @@ pub const COMMANDS: &[Command] = &[
                  ignore --prune takes away every one that has lapsed. --propose records it in \
                  .mutastic/proposals.yaml instead, for a person to accept with --accept: how a \
                  coding agent says a mutant isn't worth a test, since until then it still counts \
-                 as missed. It runs no tests, and each step says how to undo it.",
+                 as missed. A proposal that a mutant is equivalent or unreachable says the one case \
+                 where it differs, and why that can't happen. It runs no tests, and each step says \
+                 how to undo it.",
         exits: "0 when the decision is recorded, proposed, accepted or removed; 1 when --accept \
                 names a mutant that isn't proposed.",
         takes_mutant_id: true,
         examples: &[
             "mutastic ignore mb2f8ae57 --reason=\"totals are rounded to tens\"",
-            "mutastic ignore mb2f8ae57 --propose --as=unreachable --reason=\"totals are rounded to tens\"",
+            "mutastic ignore mb2f8ae57 --propose --as=unreachable --reason=\"Differs only when total is 100. That can't happen because prices end in 9.\"",
             "mutastic ignore --accept mb2f8ae57",
             "mutastic ignore --remove mb2f8ae57",
             "mutastic ignore --prune",
@@ -433,10 +435,13 @@ pub const OPTIONS: &[CliOption] = &[
         group: "Ignoring",
         choices: &[],
         help: "Propose the ignore for a person to accept, rather than make it: a coding agent's \
-               way",
+               way. An equivalent or unreachable mutant's reason says the one case where it \
+               differs and why that can't happen",
         commands: &["ignore"],
         environment: "",
-        example: "--propose --as=unreachable --reason=\"totals are rounded to tens\"",
+        example:
+            "--propose --as=unreachable --reason=\"Differs only when total is 100. That can't \
+                  happen because prices end in 9.\"",
     },
     CliOption {
         name: "accept",
