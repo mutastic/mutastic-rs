@@ -1,10 +1,14 @@
 # The native `mutastic` command for each target, on a version tag (`v0.2.1`), as a draft release for
-# a person to read and publish. Each target is `mutastic-<version>-<target>.tar.gz`, holding
-# `mutastic-<version>-<target>/` with `mutastic`, `cargo-mutastic`, the licence and the README; and
-# `SHA256SUMS` lists them all. `scripts/install.sh` installs from that layout. Run by hand, it builds
-# the archives and keeps them as the run's artifacts, with no release. Linux builds are static
-# (musl), so one archive runs on any distribution. Actions are pinned to a commit: a tag can be
-# moved.
+# a person to read and publish. Each target is `mutastic-<version>-<target>.tar.gz`, or `.zip` on
+# Windows, holding `mutastic-<version>-<target>/` with `mutastic` and `cargo-mutastic` (`.exe` on
+# Windows), the licence and the README; and `SHA256SUMS` lists them all. `scripts/install.sh` and
+# `scripts/install.ps1` install from that layout, as does cargo-binstall; `mutastic.json` is Scoop's
+# manifest for the release, from `scoop/mutastic.json`. Before the release is drafted, both
+# installers install the Windows builds on Windows, and the installed command runs a crate and
+# fetches and runs the Java edition on a Gradle project. Run by hand, it builds the archives, checks
+# them the same way and keeps them as the run's artifacts, with no release. Linux builds are static
+# (musl), and Windows builds link the C runtime statically, so nothing else needs installing.
+# Actions are pinned to a commit: a tag can be moved.
 name: Release
 
 on:
@@ -29,6 +33,9 @@ jobs:
           - { target: x86_64-apple-darwin, os: macos-latest }
           - { target: x86_64-unknown-linux-musl, os: ubuntu-latest }
           - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
+          - { target: x86_64-pc-windows-msvc, os: windows-latest }
+          # Cross-compiled with the MSVC Arm64 tools the runner has.
+          - { target: aarch64-pc-windows-msvc, os: windows-latest }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 16 Oct 2026
@@ -47,22 +54,169 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
       - run: cargo build --release --locked -p mutastic --target ${{ matrix.target }}
+        env:
+          # Windows: the C runtime in the executable, so it runs without the Visual C++
+          # redistributable installed.
+          RUSTFLAGS: ${{ runner.os == 'Windows' && '-C target-feature=+crt-static' || '' }}
       - name: Package
         shell: bash
         run: |
           name="mutastic-${{ steps.version.outputs.version }}-${{ matrix.target }}"
+          built="target/${{ matrix.target }}/release"
           mkdir "$name"
-          cp target/${{ matrix.target }}/release/mutastic target/${{ matrix.target }}/release/cargo-mutastic LICENSE README.md "$name/"
-          tar -czf "$name.tar.gz" "$name"
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            cp "$built/mutastic.exe" "$built/cargo-mutastic.exe" LICENSE README.md "$name/"
+            7z a -tzip "$name.zip" "$name"
+          else
+            cp "$built/mutastic" "$built/cargo-mutastic" LICENSE README.md "$name/"
+            tar -czf "$name.tar.gz" "$name"
+          fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.target }}
-          path: mutastic-*.tar.gz
+          path: |
+            mutastic-*.tar.gz
+            mutastic-*.zip
           if-no-files-found: error
+
+  # `SHA256SUMS`, on a tag or by hand, so the installers are checked against it before a release;
+  # and Scoop's manifest for the release, `mutastic.json`, with its hashes.
+  checksums:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: archives
+          merge-multiple: true
+      - name: Checksums
+        working-directory: archives
+        run: sha256sum mutastic-*.tar.gz mutastic-*.zip > SHA256SUMS && cat SHA256SUMS
+      - name: Scoop manifest
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          sh scripts/scoop-manifest.sh "$version" archives/SHA256SUMS > archives/mutastic.json
+          cat archives/mutastic.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: SHA256SUMS
+          path: |
+            archives/SHA256SUMS
+            archives/mutastic.json
+          if-no-files-found: error
+
+  # The Windows builds as a person gets them: each installer, from the archives laid out as a
+  # release is, then the installed command on a crate and, through its Java edition, on a Gradle
+  # project. Windows PowerShell 5.1 installs as `irm ... | iex` runs it, and Git Bash runs
+  # install.sh, each into a place of its own.
+  install-windows:
+    needs: checksums
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, jdk: temurin }
+          # Temurin has no JDK 17 or 25 for Windows on Arm64; Microsoft's build has both.
+          - { os: windows-11-arm, jdk: microsoft }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Cargo, for `mutastic run` on a crate.
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 16 Oct 2026
+      - id: version
+        shell: bash
+        run: echo "version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: releases/download/v${{ steps.version.outputs.version }}
+          merge-multiple: true
+      - name: Install with install.ps1
+        shell: powershell
+        env:
+          MUTASTIC_NATIVE_RELEASES: ${{ github.workspace }}\releases
+          MUTASTIC_NATIVE_VERSION: ${{ steps.version.outputs.version }}
+        run: Get-Content scripts\install.ps1 -Raw | Invoke-Expression
+      - name: It's on the user PATH
+        shell: pwsh
+        run: |
+          $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+          $bin = "$env:USERPROFILE\.mutastic\bin"
+          if (($userPath -split ';') -notcontains $bin) { throw "the user PATH lacks ${bin}: $userPath" }
+          Add-Content $env:GITHUB_PATH $bin
+      - name: Install with install.ps1 in PowerShell 7, and refuse a bad checksum
+        shell: pwsh
+        env:
+          MUTASTIC_NATIVE_VERSION: ${{ steps.version.outputs.version }}
+          MUTASTIC_HOME: ${{ runner.temp }}\pwsh-home
+        run: |
+          $env:MUTASTIC_NATIVE_RELEASES = "$env:GITHUB_WORKSPACE\releases"
+          Get-Content scripts\install.ps1 -Raw | Invoke-Expression
+          & "$env:MUTASTIC_HOME\bin\mutastic.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw "mutastic --version exited $LASTEXITCODE" }
+
+          $tampered = "$env:RUNNER_TEMP\tampered"
+          Copy-Item -Recurse releases $tampered
+          $sums = "$tampered\download\v$env:MUTASTIC_NATIVE_VERSION\SHA256SUMS"
+          (Get-Content $sums) -replace '^[0-9a-f]{8}', '00000000' | Set-Content $sums
+          $env:MUTASTIC_NATIVE_RELEASES = $tampered
+          $env:MUTASTIC_HOME = "$env:RUNNER_TEMP\tampered-home"
+          try {
+            Get-Content scripts\install.ps1 -Raw | Invoke-Expression
+            $refused = $false
+          } catch {
+            "refused: $_"
+            $refused = $true
+          }
+          if (-not $refused) { throw 'install.ps1 installed a download that doesn''t match its checksum' }
+          if (Test-Path "$env:MUTASTIC_HOME\bin\mutastic.exe") { throw 'install.ps1 left a command behind' }
+      - name: Install with install.sh in Git Bash
+        shell: bash
+        env:
+          MUTASTIC_NATIVE_VERSION: ${{ steps.version.outputs.version }}
+          MUTASTIC_HOME: ${{ runner.temp }}/sh-home
+          MUTASTIC_BIN_DIR: ${{ runner.temp }}/sh-bin
+        run: |
+          export MUTASTIC_NATIVE_RELEASES="file:///$(cygpath -m "$GITHUB_WORKSPACE")/releases"
+          sh scripts/install.sh
+          "$MUTASTIC_BIN_DIR/mutastic" --version
+      - run: mutastic --version
+      - name: Run on a crate
+        shell: pwsh
+        run: |
+          mutastic run fixtures\pricing --threshold=0
+          if ($LASTEXITCODE -ne 0) { throw "mutastic run exited $LASTEXITCODE" }
+          cargo mutastic run fixtures\pricing --threshold=0
+          if ($LASTEXITCODE -ne 0) { throw "cargo mutastic run exited $LASTEXITCODE" }
+      # The Java edition's Gradle sample, with its gradlew.bat, which compiles on JDK 17 while the
+      # edition runs on JDK 25 (the last listed is JAVA_HOME). The edition is its latest release.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: mutastic/mutastic
+          ref: f3718cfdabea42f3b53873de56dcf8539d94751f # main, 10 Nov 2026
+          path: java
+          sparse-checkout: samples/pricing
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: ${{ matrix.jdk }}
+          java-version: |
+            17
+            25
+      - name: Fetch the Java edition and run it on a Gradle project
+        shell: pwsh
+        run: |
+          mutastic run java\samples\pricing --threshold=0
+          if ($LASTEXITCODE -ne 0) { throw "mutastic run exited $LASTEXITCODE" }
+          mutastic --version
+          if (-not (Test-Path "$env:USERPROFILE\.mutastic\mutastic-*\bin\mutastic.bat")) {
+            throw "the Java edition wasn't kept in $env:USERPROFILE\.mutastic"
+          }
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [checksums, install-windows]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -72,12 +226,10 @@ jobs:
         with:
           path: archives
           merge-multiple: true
-      - name: Checksums
-        working-directory: archives
-        run: sha256sum mutastic-*.tar.gz > SHA256SUMS && cat SHA256SUMS
       - name: Draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: >
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag
-          --title "$GITHUB_REF_NAME" archives/mutastic-*.tar.gz archives/SHA256SUMS
+          --title "$GITHUB_REF_NAME" archives/mutastic-*.tar.gz archives/mutastic-*.zip
+          archives/SHA256SUMS archives/mutastic.json
