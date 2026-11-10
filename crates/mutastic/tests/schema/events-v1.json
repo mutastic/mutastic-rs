@@ -322,12 +322,24 @@
                 "required": ["type", "arguments"],
                 "properties": {
                   "type": { "type": "string", "description": "The class's simple name: `Pricing`." },
-                  "arguments": { "type": "array", "items": { "type": "integer" }, "description": "Its constructor's arguments." }
+                  "arguments": { "type": "array", "items": { "type": "integer" }, "description": "Its constructor's arguments." },
+                  "parameters": { "type": "array", "items": { "type": "string" }, "description": "The constructor's names for its arguments, in order; empty when they aren't known. Written from 1.0.0." }
                 }
               }
             },
             "today": { "type": "string", "description": "What the call gives today, as `suggestedTest` has it." },
             "withMutant": { "type": "string", "description": "What it gives with the mutant in, as `suggestedTest` has it." },
+            "named": {
+              "type": "object",
+              "description": "The value the call is at the edge of, when the source names it, which the test is named after. Only then. Written from 1.0.0.",
+              "required": ["name", "note"],
+              "properties": {
+                "name": { "type": "string", "description": "A constant's or a field's name, as the source has it: `FREE_FROM`, `freeFrom`." },
+                "note": { "type": "string", "description": "What the test's comment says of it: `FREE_FROM = 100`, or `100 is Pricing's FREE_FROM` for a constant the test can't use; empty if nothing." },
+                "local": { "type": "string", "description": "The line the test declares the value in, when it passes it twice: `int freeFrom = 20;`." },
+                "meaning": { "type": "string", "description": "What the name is, and its value where it's known: `FREE_FROM (Discounts.FREE_FROM = 100)`, `freeFrom = 50 (Delivery's field, from new Delivery(50))`. Optional." }
+              }
+            },
             "builtBy": { "type": "string", "description": "The covering test the call makes its receiver as, `DeliveryTest#smallOrders`, when it makes it the same way. Optional." }
           }
         },
@@ -556,11 +568,11 @@
         },
         "passed": {
           "type": "boolean",
-          "description": "Whether the score reached the threshold. For a run of one mutant (`--only`), whether that mutant was caught."
+          "description": "Whether the score reached the threshold. For a run of mutants asked for by id (`--only`), whether every one was caught."
         },
         "only": {
           "type": ["string", "null"],
-          "description": "For a run of one mutant, its id; null when it wasn't found. Only for such a run."
+          "description": "For a run of mutants asked for by id (`--only`), the first one found; null when none was. Only for such a run."
         },
         "coveredScore": {
           "$ref": "#/$defs/score",
@@ -634,7 +646,7 @@
         },
         "ghosts": {
           "type": "array",
-          "description": "Experimental, with `--experimental=ghosts`: each ghost, the call most writes like this one make inserted where this one doesn't, and what its tests did. Never in the score or the counts. Only in such a run, and only when a ghost was found.",
+          "description": "Experimental, with `--experimental=ghosts`: each ghost, the call most writes like this one make inserted where this one doesn't, and what its tests did. Never in the score or the counts. Only in such a run, and empty when it found none.",
           "items": {
             "type": "object",
             "required": ["id", "experimental", "status", "file", "line", "class", "method", "field", "inserted", "rule", "writes", "peers", "coveredBy", "rendered"],
