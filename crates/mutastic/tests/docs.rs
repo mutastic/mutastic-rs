@@ -1227,6 +1227,7 @@ fn every_setting_read_is_documented() {
     let setting = regex::Regex::new(r"MUTASTIC_[A-Z_]+").unwrap();
     for (source, page) in [
         ("scripts/install.sh", "install.md"),
+        ("scripts/install.ps1", "install.md"),
         ("crates/mutastic/src/java.rs", "editions.md"),
     ] {
         let read = std::fs::read_to_string(root().join(source)).unwrap();
