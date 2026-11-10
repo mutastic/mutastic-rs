@@ -70,8 +70,8 @@ version. From 1.0.0 the two editions release each minor version together, and ei
 patch alone, so `mutastic 1.2.0` runs the newest Java edition 1.2.x: 1.2.3 once that's released,
 fetching it if it isn't kept. It looks up the Java edition's releases (their feed,
 `releases.atom`) at most once a day, writing down what it found in `~/.mutastic/.java-releases`,
-and looks sooner only when none it knows of matches. When the releases can't be reached, it uses
-the newest matching release it has kept. Before 1.0.0 the editions' versions don't match, so it
+and looks sooner only when none it knows of matches. When the releases can't be reached, or the newest
+can't be fetched yet, it uses the newest matching release it has kept. Before 1.0.0 the editions' versions don't match, so it
 uses the newest release it has kept, and fetches the latest when it has none.
 
 | Variable | Effect |

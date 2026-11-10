@@ -314,8 +314,28 @@ pub fn engine() -> Result<PathBuf, String> {
         return Ok(command);
     }
     jdk()?;
-    fetch(&home, &version, &releases)?;
-    Ok(command)
+    match fetch(&home, &version, &releases) {
+        Ok(()) => Ok(command),
+        Err(error) => {
+            match meanwhile(OWN, wanted().is_some(), &kept(&home)) {
+                Some(kept) => {
+                    eprintln!("mutastic: {error}\nmutastic: running the Java edition {kept}, kept, meanwhile");
+                    Ok(launcher(&home, &kept))
+                }
+                None => Err(error),
+            }
+        }
+    }
+}
+
+/// What runs when the release chosen can't be fetched: from 1.0.0, unless `MUTASTIC_VERSION` asked
+/// for it, the newest kept of the same minor version, as a patch just published may not have its
+/// files attached yet, or the download may have failed. Otherwise nothing, and the error stands.
+fn meanwhile(own: &str, asked: bool, kept: &[String]) -> Option<String> {
+    if asked {
+        return None;
+    }
+    newest_patch(own, kept)
 }
 
 /// Runs the Java edition with `args`, as they were given: its output and exit status are the
@@ -529,6 +549,16 @@ mod tests {
         // Before 1.0.0 the versions don't match.
         assert_eq!(newest_patch("0.2.1", &versions(&["0.2.1", "0.5.0"])), None);
         assert_eq!(line("1.0.0-dev"), None);
+    }
+
+    #[test]
+    fn a_patch_that_cant_be_fetched_leaves_the_kept_one_running() {
+        let kept = versions(&["1.0.1", "1.1.0"]);
+        assert_eq!(meanwhile("1.0.0", false, &kept).as_deref(), Some("1.0.1"));
+        // Asked for exactly, or none kept of the same minor, or before 1.0.0: the error stands.
+        assert_eq!(meanwhile("1.0.0", true, &kept), None);
+        assert_eq!(meanwhile("1.2.0", false, &kept), None);
+        assert_eq!(meanwhile("0.2.1", false, &versions(&["0.5.0"])), None);
     }
 
     #[test]
