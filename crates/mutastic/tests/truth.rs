@@ -125,7 +125,7 @@ fn every_card_claim_behaves_as_its_mutant_does() {
             mutant.ordinal
         ));
     }
-    let dir = project.mutastic_dir().join("claims");
+    let dir = claims_dir();
     workspace::write_if_changed(
         &dir.join("Cargo.toml"),
         "[package]\nname = \"claims\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n[workspace]\n",
@@ -136,6 +136,8 @@ fn every_card_claim_behaves_as_its_mutant_does() {
         .args(["test", "--no-run", "--lib", "--message-format=json"])
         .current_dir(&dir)
         .env("CARGO_TARGET_DIR", dir.join("target"))
+        // Incremental builds of a crate this size keep gigabytes, more with each change.
+        .env("CARGO_INCREMENTAL", "0")
         .output()
         .unwrap();
     assert!(
@@ -205,6 +207,12 @@ fn every_card_claim_behaves_as_its_mutant_does() {
         "{changed} of {}",
         compared.len()
     );
+}
+
+/// Where the claims crate is built: one place under the workspace's own `target`, written over
+/// by each run, so repeated runs don't grow it and `cargo clean` removes it.
+fn claims_dir() -> PathBuf {
+    Path::new(env!("CARGO_TARGET_TMPDIR")).join("truth-claims")
 }
 
 /// A copy of a fixture in a directory of its own, without its `target`, to paste tests into.
