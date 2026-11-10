@@ -30,14 +30,28 @@ pub fn home() -> Result<PathBuf, String> {
     if let Some(home) = std::env::var_os("MUTASTIC_HOME").filter(|home| !home.is_empty()) {
         return Ok(PathBuf::from(home));
     }
-    std::env::var_os("HOME")
-        .filter(|home| !home.is_empty())
-        .map(|home| Path::new(&home).join(".mutastic"))
+    user_home()
+        .map(|home| home.join(".mutastic"))
         .ok_or_else(|| {
-            "neither MUTASTIC_HOME nor HOME is set, so there's nowhere to keep the Java edition"
-                .into()
+            format!(
+                "neither MUTASTIC_HOME nor {USER_HOME} is set, so there's nowhere to keep the \
+                 Java edition"
+            )
         })
 }
+
+/// The variable naming the person's home directory: Windows' own, where `HOME` is usually unset
+/// (Git Bash sets it, PowerShell doesn't), so `.mutastic` is the same folder from either.
+const USER_HOME: &str = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+
+fn user_home() -> Option<PathBuf> {
+    std::env::var_os(USER_HOME)
+        .filter(|home| !home.is_empty())
+        .map(PathBuf::from)
+}
+
+/// Where output that isn't wanted goes, as curl's `-o` takes it.
+const NULL_DEVICE: &str = if cfg!(windows) { "NUL" } else { "/dev/null" };
 
 fn releases() -> String {
     std::env::var("MUTASTIC_JAVA_RELEASES")
@@ -65,12 +79,19 @@ fn release_numbers(version: &str) -> Option<(u64, u64, u64)> {
     parts.next().is_none().then_some(numbers)
 }
 
-/// The command of the release `version` kept in `home`.
+/// The command of the release `version` kept in `home`: on Windows its `.bat`, as the release's
+/// `bin/mutastic` is a shell script.
 pub fn launcher(home: &Path, version: &str) -> PathBuf {
     home.join(format!("mutastic-{version}"))
         .join("bin")
-        .join("mutastic")
+        .join(LAUNCHER)
 }
+
+const LAUNCHER: &str = if cfg!(windows) {
+    "mutastic.bat"
+} else {
+    "mutastic"
+};
 
 /// The newest release kept in `home`, by version.
 pub fn newest(home: &Path) -> Option<String> {
@@ -207,7 +228,7 @@ fn jdk() -> Result<(), String> {
 /// The latest release's version, from where the releases' `latest` page redirects to.
 fn latest(releases: &str) -> Result<String, String> {
     let output = Command::new("curl")
-        .args(["-fsSLI", "-o", "/dev/null", "-w", "%{url_effective}"])
+        .args(["-fsSLI", "-o", NULL_DEVICE, "-w", "%{url_effective}"])
         .arg(format!("{releases}/latest"))
         .output()
         .map_err(|_| "fetching the Java edition needs curl, which isn't on the PATH".to_string())?;
@@ -286,15 +307,16 @@ fn unpack(work: &Path, home: &Path, version: &str, releases: &str) -> Result<(),
         ));
     }
     verify(&tar, &name, version, releases)?;
+    // Unpacked from inside `work`, by the archive's bare name: a tar given `C:\...` can take it
+    // for a remote host, as Git Bash's does.
     let unpacked = Command::new("tar")
         .arg("-xf")
-        .arg(&tar)
-        .arg("-C")
-        .arg(work)
+        .arg(&name)
+        .current_dir(work)
         .status()
         .map_err(|_| "fetching the Java edition needs tar, which isn't on the PATH".to_string())?;
     let release = work.join(format!("mutastic-{version}"));
-    if !unpacked.success() || !release.join("bin").join("mutastic").is_file() {
+    if !unpacked.success() || !release.join("bin").join(LAUNCHER).is_file() {
         return Err(format!(
             "the Java edition's download, {name}, had no mutastic command in it"
         ));
