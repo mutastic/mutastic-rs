@@ -40,6 +40,12 @@ day.
    ```sh
    git tag vX.Y.Z && git push origin vX.Y.Z
    ```
-4. Read the draft release the workflow makes (each target's archive and `SHA256SUMS`), then
-   publish it.
-5. Move the docs site's pin (`docs/rust-edition.json` in the Java repository) to the new tag.
+4. **Move the docs site's pin** (`docs/rust-edition.json` in the Java repository) to the new tag,
+   while the release is still a draft: the docs a Java tag deploys keep the pin as it is at that
+   tag, so for `X.Y.0` the pin moves before the Java edition's `vX.Y.0` is tagged (its
+   `RELEASING.md` says how, with the shared pages' stamps). For a Rust patch alone, the pin
+   reaches docs.mutastic.io with the next Java release.
+5. **Read the draft release the workflow makes** (each target's archive, `SHA256SUMS` and Scoop's
+   `mutastic.json`), then publish it. For `X.Y.0`, publish it only once the Java edition's
+   `vX.Y.0` GitHub release has its CLI attached: until then the native `mutastic X.Y.0` finds no
+   Java edition to run in a Maven or Gradle project.

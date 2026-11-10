@@ -142,11 +142,13 @@ Every output those pages and this one show comes from a run on the repository's 
 
 ## Status
 
-Early: mutastic for Rust is before 1.0. The operators and their names, the cards' words and the
+The operators and their names, the cards' words and the
 `mutastic.events/v1` stream are the Java edition's. It runs one Cargo package at a time, with that
 package's own tests, and leaves unsafe code alone unless asked. Some of the Java edition's commands
 and options aren't here yet: [Differences from the Java edition](docs/differences-from-java.md#not-in-the-rust-edition-yet)
-says which. Releases are on GitHub; nothing is published to crates.io yet, where the names are reserved.
+says which. What stays the same from one release to the next is on the
+[Compatibility](docs/reference/compatibility.md) page. Releases are on GitHub; nothing is published
+to crates.io yet, where the names are reserved.
 
 ## Contributing
 

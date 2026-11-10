@@ -22,6 +22,21 @@ events format only gains.
 
 ### Changes
 
+- **Windows has release builds and a one-line installer.** Each release now has x64 and Arm64
+  Windows zips, which need nothing else installed. In PowerShell, `irm
+  https://mutastic.io/install.ps1 | iex` installs one, checked against `SHA256SUMS`, and puts it on
+  the user `Path`; in Git Bash, MSYS2 or Cygwin, `install.sh` installs the same build into the same
+  folders, where it stopped with "no release for MINGW64_NT". Each release also has a Scoop
+  manifest, `mutastic.json` (`scoop install
+  https://github.com/mutastic/mutastic-rs/releases/latest/download/mutastic.json`), and `cargo
+  binstall --git https://github.com/mutastic/mutastic-rs mutastic` installs a release's build. In a
+  Maven or Gradle project on Windows, `mutastic` now fetches and runs the Java edition, where it
+  tried to start its shell script. WSL is no longer needed. See [Installing](docs/install.md#on-windows).
+- **What 1.0.0 promises is written down, and held.** A [Compatibility](docs/reference/compatibility.md)
+  page says what stays the same between releases: mutant ids, scores (a patch never moves one),
+  commands and configuration, the events format, and the agent format's structure. From 1.0.0 the
+  tests fail on a command, option, choice, variable or exit status the last 1.0+ release took and
+  this one doesn't, and on a `mutastic.yaml` or rules file it reads differently.
 - **An agent's proposal carries its kind and a reduction.** The agent format's `or propose` line
   is `mutastic ignore <id> --propose --as=<equivalent|unreachable|…> --reason="Differs only when
   <case>. That can't happen because <why>."`, and the `decline:` line says so, with the command.
