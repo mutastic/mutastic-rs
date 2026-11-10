@@ -1,0 +1,43 @@
+{
+    "##": "Scoop's manifest for mutastic. The release workflow writes each release's version and hashes into a copy of this, the release's mutastic.json, for a bucket; checkver and autoupdate keep a bucket's copy on the latest release.",
+    "version": "0.0.0",
+    "description": "Mutation testing for Rust, Maven and Gradle projects: find the tests that run your code but don't check it",
+    "homepage": "https://mutastic.io",
+    "license": "Apache-2.0",
+    "notes": "In a Maven or Gradle project, mutastic fetches its Java edition the first time it runs there, which needs JDK 25.",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/mutastic/mutastic-rs/releases/download/v0.0.0/mutastic-0.0.0-x86_64-pc-windows-msvc.zip",
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "extract_dir": "mutastic-0.0.0-x86_64-pc-windows-msvc"
+        },
+        "arm64": {
+            "url": "https://github.com/mutastic/mutastic-rs/releases/download/v0.0.0/mutastic-0.0.0-aarch64-pc-windows-msvc.zip",
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "extract_dir": "mutastic-0.0.0-aarch64-pc-windows-msvc"
+        }
+    },
+    "bin": [
+        "mutastic.exe",
+        "cargo-mutastic.exe"
+    ],
+    "checkver": {
+        "github": "https://github.com/mutastic/mutastic-rs"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/mutastic/mutastic-rs/releases/download/v$version/mutastic-$version-x86_64-pc-windows-msvc.zip",
+                "extract_dir": "mutastic-$version-x86_64-pc-windows-msvc"
+            },
+            "arm64": {
+                "url": "https://github.com/mutastic/mutastic-rs/releases/download/v$version/mutastic-$version-aarch64-pc-windows-msvc.zip",
+                "extract_dir": "mutastic-$version-aarch64-pc-windows-msvc"
+            }
+        },
+        "hash": {
+            "url": "$baseurl/SHA256SUMS",
+            "regex": "$sha256\\s+\\*?$basename"
+        }
+    }
+}
