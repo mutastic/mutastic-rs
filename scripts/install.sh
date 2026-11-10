@@ -10,10 +10,16 @@
 # or Gradle project, it fetches its Java edition into ~/.mutastic too, which needs JDK 25. Nothing
 # is installed outside those two directories, so removing them uninstalls it.
 #
+# In Git Bash, MSYS2 or Cygwin, which run on Windows, it installs the Windows build, as
+# scripts/install.ps1 does from PowerShell: the same release and folders, so either updates the
+# other's install. The commands are copied into ~/.mutastic/bin, as Windows has no links every
+# program follows.
+#
 # Settings, each optional:
 #   MUTASTIC_NATIVE_VERSION  the release of the native command to install; the latest unless set
 #   MUTASTIC_HOME            where releases go, ~/.mutastic unless set
-#   MUTASTIC_BIN_DIR         where the commands are linked, ~/.local/bin unless set
+#   MUTASTIC_BIN_DIR         where the commands are linked, ~/.local/bin (on Windows, the bin
+#                            folder in MUTASTIC_HOME) unless set
 #   MUTASTIC_NATIVE_RELEASES where releases are downloaded from, for a mirror
 #
 # Everything is in functions, called on the last line, so a download cut short runs nothing.
@@ -35,8 +41,26 @@ need() {
   command -v "$1" > /dev/null 2>&1 || fail "the installer needs $1, which isn't on the PATH"
 }
 
-# The release target for this machine, as Rust names it.
+# Whether this is Windows underneath: Git Bash and MSYS2 say MINGW64_NT-10.0 or MSYS_NT-10.0, and
+# Cygwin CYGWIN_NT-10.0.
+windows() {
+  case $(uname -s) in
+    MINGW* | MSYS* | CYGWIN*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# The release target for this machine, as Rust names it. On Windows, the processor is Windows' own
+# word for it: a shell built for x86-64 runs on Arm64 too, and says x86_64.
 target() {
+  if windows; then
+    case "${PROCESSOR_ARCHITEW6432:-${PROCESSOR_ARCHITECTURE:-}}" in
+      ARM64) echo aarch64-pc-windows-msvc ;;
+      AMD64) echo x86_64-pc-windows-msvc ;;
+      *) fail "there's no mutastic release for Windows on ${PROCESSOR_ARCHITECTURE:-this processor}: build it from source, as the install page says" ;;
+    esac
+    return
+  fi
   os=$(uname -s)
   arch=$(uname -m)
   case "$os/$arch" in
@@ -75,29 +99,72 @@ verify() {
   [ "$actual" = "$expected" ] || fail "the download doesn't match its checksum: not installed"
 }
 
+# Unpacks a Windows release's zip into a directory: with unzip, as Git Bash has, or else with
+# PowerShell, which every Windows has.
+unzip_into() {
+  if command -v unzip > /dev/null 2>&1; then
+    unzip -q "$1" -d "$2"
+  else
+    need powershell.exe
+    powershell.exe -NoProfile -Command "Expand-Archive -LiteralPath '$(windows_path "$1")' -DestinationPath '$(windows_path "$2")'" ||
+      fail "couldn't unpack $1"
+  fi
+}
+
+# A path as Windows programs take it, C:\Users\...: cygpath is in Git Bash, MSYS2 and Cygwin.
+windows_path() {
+  cygpath -w "$1"
+}
+
+# The person's home: on Windows, Windows' own, where mutastic keeps its Java edition too (Cygwin's
+# HOME is a folder of its own).
+user_home() {
+  if windows && [ -n "${USERPROFILE:-}" ]; then
+    cygpath -u "$USERPROFILE"
+  else
+    printf '%s\n' "$HOME"
+  fi
+}
+
 main() {
   need curl
-  need tar
   TARGET=$(target)
   VERSION=${MUTASTIC_NATIVE_VERSION:-$(latest)}
-  home=${MUTASTIC_HOME:-$HOME/.mutastic}
-  bin=${MUTASTIC_BIN_DIR:-$HOME/.local/bin}
+  home=${MUTASTIC_HOME:-$(user_home)/.mutastic}
   name="mutastic-$VERSION-$TARGET"
+  if windows; then
+    bin=${MUTASTIC_BIN_DIR:-$home/bin}
+    archive="$name.zip" exe=.exe
+  else
+    need tar
+    bin=${MUTASTIC_BIN_DIR:-$HOME/.local/bin}
+    archive="$name.tar.gz" exe=
+  fi
 
   work=$(mktemp -d)
   trap 'rm -rf "$work"' EXIT
   say "downloading $VERSION for $TARGET"
-  curl -fsSL -o "$work/$name.tar.gz" "$RELEASES/download/v$VERSION/$name.tar.gz" ||
+  curl -fsSL -o "$work/$archive" "$RELEASES/download/v$VERSION/$archive" ||
     fail "couldn't download $VERSION for $TARGET: is it a release? ($RELEASES)"
-  verify "$work/$name.tar.gz" "$name.tar.gz" "$work/SHA256SUMS"
+  verify "$work/$archive" "$archive" "$work/SHA256SUMS"
 
-  tar -xzf "$work/$name.tar.gz" -C "$work"
-  [ -x "$work/$name/mutastic" ] || fail "the download had no mutastic command in it"
+  if windows; then
+    unzip_into "$work/$archive" "$work"
+  else
+    tar -xzf "$work/$archive" -C "$work"
+  fi
+  [ -x "$work/$name/mutastic$exe" ] || fail "the download had no mutastic command in it"
   mkdir -p "$home" "$bin"
   rm -rf "$home/native-$VERSION"
   mv "$work/$name" "$home/native-$VERSION"
-  ln -sf "$home/native-$VERSION/mutastic" "$bin/mutastic"
-  ln -sf "$home/native-$VERSION/cargo-mutastic" "$bin/cargo-mutastic"
+  for command in mutastic cargo-mutastic; do
+    if windows; then
+      cp -f "$home/native-$VERSION/$command.exe" "$bin/$command.exe" ||
+        fail "couldn't copy $command.exe into $bin: is it running?"
+    else
+      ln -sf "$home/native-$VERSION/$command" "$bin/$command"
+    fi
+  done
 
   say "installed $VERSION: $bin/mutastic"
   say "in a Maven or Gradle project, it fetches its Java edition the first time, which runs on JDK 25"
@@ -109,6 +176,10 @@ main() {
       say "then, in a Cargo, Maven or Gradle project: mutastic run"
       ;;
   esac
+  if windows; then
+    say "for PowerShell and cmd as well, this puts it on your Windows PATH:"
+    say "  powershell -c \"irm https://mutastic.io/install.ps1 | iex\""
+  fi
 }
 
 # The line that puts `bin` on the PATH, for the shell the person uses: zsh, as macOS starts with,
