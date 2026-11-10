@@ -34,3 +34,16 @@ workspace = true
 [dev-dependencies]
 jsonschema = { version = "0.30", default-features = false }
 regex = "1"
+
+# Where cargo-binstall finds a release's build of `mutastic` and `cargo-mutastic`, as the release
+# workflow names them: a `.tar.gz` on macOS and Linux, a `.zip` on Windows.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/mutastic-{ version }-{ target }{ archive-suffix }"
+bin-dir = "mutastic-{ version }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
+
+[package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
+pkg-fmt = "zip"
