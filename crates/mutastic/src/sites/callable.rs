@@ -113,7 +113,7 @@ impl Callable {
 pub const PROBE: &str = "__mutastic_probe_";
 
 impl Receiver {
-    fn make(&self, values: &[String], prefix: &str) -> String {
+    pub fn make(&self, values: &[String], prefix: &str) -> String {
         let ty = format!("{prefix}{}", self.type_name);
         match &self.made {
             Made::New => format!("{ty}::new({})", values.join(", ")),

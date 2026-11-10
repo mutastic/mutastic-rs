@@ -25,6 +25,103 @@ pub struct Suggestion {
     pub values: Vec<i128>,
     pub today: String,
     pub mutated: String,
+    /// The covering test the receiver is made as, `tests::small_orders`, when the call makes it
+    /// the same way: its reader knows that one, and a field it keeps has the tests' value.
+    pub built_by: Option<String>,
+}
+
+/// How a covering test makes the receiver a call needs, read from its source: `Delivery::new(50)`
+/// or `Pair(1, 2)`, with whole numbers written out.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Built {
+    /// The test, as the run names it.
+    pub test: String,
+    pub values: Vec<i128>,
+}
+
+/// The first of `covered_by` whose function, in the test module beside `callable`, makes its
+/// receiver with whole numbers alone.
+pub fn built(callable: &Callable, covered_by: &[String]) -> Option<Built> {
+    let receiver = callable.receiver.as_ref()?;
+    let opener = match receiver.made {
+        crate::sites::callable::Made::New => format!("{}::new(", receiver.type_name),
+        crate::sites::callable::Made::Tuple => format!("{}(", receiver.type_name),
+        _ => return None,
+    };
+    let tests = &callable.tests.as_ref()?.text;
+    let arity = receiver.parameters.len();
+    if arity == 0 {
+        return None;
+    }
+    covered_by.iter().find_map(|test| {
+        let name = test.rsplit("::").next()?;
+        let values = first_made(fn_body(tests, name)?, &opener, arity)?;
+        Some(Built {
+            test: test.clone(),
+            values,
+        })
+    })
+}
+
+/// The body of `fn name(..) { .. }` in `text`.
+fn fn_body<'t>(text: &'t str, name: &str) -> Option<&'t str> {
+    let at = text.find(&format!("fn {name}("))?;
+    let open = at + text[at..].find('{')?;
+    let mut depth = 0;
+    for (index, c) in text[open..].char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(&text[open..open + index]);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The values of the first `opener(..)` in `body` made of `arity` whole numbers alone.
+fn first_made(body: &str, opener: &str, arity: usize) -> Option<Vec<i128>> {
+    let mut from = 0;
+    while let Some(found) = body[from..].find(opener) {
+        let at = from + found;
+        let whole = !body[..at]
+            .chars()
+            .last()
+            .is_some_and(|c| c.is_alphanumeric() || c == '_');
+        let after = &body[at + opener.len()..];
+        if let (true, Some(close)) = (whole, after.find(')')) {
+            let values: Option<Vec<i128>> = after[..close]
+                .split(',')
+                .map(|word| crate::sites::integer_literal(word).map(|(value, _)| value))
+                .collect();
+            if let Some(values) = values.filter(|values| values.len() == arity) {
+                return Some(values);
+            }
+        }
+        from = at + opener.len();
+    }
+    None
+}
+
+/// The inputs to try with the receiver made as `made`, first: as [`candidates`], its values first.
+pub fn candidates_made(
+    types: &[&str],
+    constants: &[i128],
+    inputs: &BTreeMap<String, Vec<i128>>,
+    made: &[i128],
+) -> Vec<Vec<i128>> {
+    let mut first: Vec<i128> = made.to_vec();
+    let rest: Vec<i128> = constants.to_vec();
+    first.extend(rest);
+    let own = &types[made.len().min(types.len())..];
+    candidates(own, &first, inputs)
+        .into_iter()
+        .map(|values| [made, values.as_slice()].concat())
+        .collect()
 }
 
 /// A suggested test as code to paste: where it goes, its name and lines, and what it calls.
@@ -202,6 +299,7 @@ fn first_difference(
             values: values.clone(),
             today: value.to_string(),
             mutated: with_mutant,
+            built_by: None,
         });
     }
     None
@@ -243,6 +341,7 @@ pub fn test(
         }
     }
     let call = callable.call(&values, prefix);
+    let (made_as, call) = made_as_a_test(callable, suggestion, &values, prefix, call);
     let name = match named {
         Some(named) => format!("{}_at_{}", callable.name, named.name.to_lowercase()),
         None => name(callable, &suggestion.values),
@@ -271,6 +370,7 @@ pub fn test(
                 .and_then(|named| named.local.clone())
                 .map(|local| format!("    {local}"))
                 .into_iter()
+                .chain(made_as.map(|line| format!("    {line}")))
                 .collect(),
             vec![format!("    {assertion} // {outcomes}"), "}".to_string()],
         ]
@@ -279,6 +379,45 @@ pub fn test(
         today: suggestion.today.clone(),
         mutated: suggestion.mutated.clone(),
     }
+}
+
+/// A receiver made as a covering test makes it, declared as that test does, `let delivery =
+/// Delivery::new(50); // as tests::small_orders builds it`, and the call on it; else the call as
+/// it is.
+fn made_as_a_test(
+    callable: &Callable,
+    suggestion: &Suggestion,
+    values: &[String],
+    prefix: &str,
+    call: String,
+) -> (Option<String>, String) {
+    let (Some(test), Some(receiver)) = (&suggestion.built_by, &callable.receiver) else {
+        return (None, call);
+    };
+    let made = receiver.make(
+        &values[..receiver.parameters.len().min(values.len())],
+        prefix,
+    );
+    let Some(rest) = call.strip_prefix(&made) else {
+        return (None, call);
+    };
+    let local = snake(&receiver.type_name);
+    (
+        Some(format!("let {local} = {made}; // as {test} builds it")),
+        format!("{local}{rest}"),
+    )
+}
+
+/// `free_shipping` for `FreeShipping`.
+fn snake(type_name: &str) -> String {
+    let mut out = String::new();
+    for (index, c) in type_name.chars().enumerate() {
+        if c.is_ascii_uppercase() && index > 0 {
+            out.push('_');
+        }
+        out.push(c.to_ascii_lowercase());
+    }
+    out
 }
 
 fn joined(scope: &str, name: &str) -> String {
@@ -336,6 +475,9 @@ pub struct Named {
     /// The call's values written otherwise, by index (the receiver's first), `{prefix}` where a
     /// path from the test module goes.
     pub arguments: BTreeMap<usize, String>,
+    /// What the name is, and its value where it's known, for a card's evidence: `FREE_FROM
+    /// (FREE_FROM = 100)`, `free_from = 50 (Delivery's field, from Delivery::new(50))`.
+    pub meaning: String,
 }
 
 /// How a call says the value the comparison `operands` is at, if the source names it: a `const`
@@ -346,6 +488,7 @@ pub fn named(
     operands: &[String],
     text: &str,
     values: &[i128],
+    built_by: Option<&str>,
 ) -> Option<Named> {
     let [left, right] = operands else {
         return None;
@@ -366,7 +509,7 @@ pub fn named(
             continue;
         };
         let found = match other.strip_prefix("self.") {
-            Some(field) => tied(callable, field, values, taken + at),
+            Some(field) => tied(callable, field, values, taken + at, built_by),
             None => constant(callable, other, text, value, taken + at),
         };
         if found.is_some() {
@@ -378,7 +521,13 @@ pub fn named(
 
 /// A field the receiver is made with the same value as the argument at `at`: one local, passed
 /// to both.
-fn tied(callable: &Callable, field: &str, values: &[i128], at: usize) -> Option<Named> {
+fn tied(
+    callable: &Callable,
+    field: &str,
+    values: &[i128],
+    at: usize,
+    built_by: Option<&str>,
+) -> Option<Named> {
     let receiver = callable.receiver.as_ref()?;
     let made = receiver
         .parameters
@@ -389,11 +538,31 @@ fn tied(callable: &Callable, field: &str, values: &[i128], at: usize) -> Option<
     if values.get(made) != values.get(at) || receiver.parameters[made].1 != parameter.1 {
         return None;
     }
+    let owner = &receiver.type_name;
+    if built_by.is_some() {
+        // Made as a covering test makes it: its value is the test's, said, not a local's.
+        let taken = receiver.parameters.len();
+        let made_as = receiver.make(
+            &values[..taken]
+                .iter()
+                .map(i128::to_string)
+                .collect::<Vec<_>>(),
+            "",
+        );
+        return Some(Named {
+            name: field.to_string(),
+            note: format!("{} == {field}", parameter.0),
+            local: None,
+            arguments: BTreeMap::new(),
+            meaning: format!("{field} = {} ({owner}'s field, from {made_as})", values[at]),
+        });
+    }
     Some(Named {
         name: field.to_string(),
         note: String::new(),
         local: Some(format!("let {field} = {};", values[at])),
         arguments: BTreeMap::from([(made, field.to_string()), (at, field.to_string())]),
+        meaning: format!("{field} ({owner}'s field, set when it's made)"),
     })
 }
 
@@ -427,11 +596,13 @@ fn constant(
         None if written.contains("::") => written.to_string(),
         None => format!("{{prefix}}{written}"),
     };
+    let meaning = format!("{name} ({} = {value})", path.replace("{prefix}", ""));
     Some(Named {
         name: name.to_string(),
         note: format!("{name} = {value}"),
         local: None,
         arguments: BTreeMap::from([(at, path)]),
+        meaning,
     })
 }
 
@@ -495,6 +666,97 @@ mod tests {
         }
     }
 
+    fn delivery() -> Callable {
+        Callable {
+            name: "is_free".into(),
+            receiver: Some(Receiver {
+                type_name: "Delivery".into(),
+                made: Made::New,
+                parameters: vec![("free_from".into(), "u32".into())],
+            }),
+            parameters: vec![("total".into(), "u32".into())],
+            returns: "bool".into(),
+            tests: Some(TestModule {
+                name: "tests".into(),
+                glob: true,
+                text: "#[test]\nfn other() { let d = Delivery::new(70); }\n\
+                       #[test]\nfn small_orders() {\n    let delivery = Delivery::new(50);\n    \
+                       assert!(!delivery.is_free(20));\n}\n"
+                    .into(),
+            }),
+            ..late_fee()
+        }
+    }
+
+    /// A covering test's own function says how it makes the receiver, with whole numbers alone.
+    #[test]
+    fn a_covering_test_makes_the_receiver() {
+        let callable = delivery();
+        assert_eq!(
+            built(&callable, &["tests::small_orders".to_string()]),
+            Some(Built {
+                test: "tests::small_orders".into(),
+                values: vec![50]
+            })
+        );
+        assert_eq!(built(&callable, &["tests::gone".to_string()]), None);
+        assert_eq!(
+            built(&late_fee(), &["tests::small_orders".to_string()]),
+            None
+        );
+        let made = candidates_made(&["u32", "u32"], &[], &BTreeMap::new(), &[50]);
+        assert_eq!(made[0], [50, 50]);
+        assert!(made.iter().all(|values| values[0] == 50));
+    }
+
+    /// Made as a covering test makes it, the receiver is declared as that test does, and the value
+    /// the call is at is the test's, said.
+    #[test]
+    fn a_receiver_made_as_a_test_makes_it_says_which_test() {
+        let callable = delivery();
+        let found = Suggestion {
+            values: vec![50, 50],
+            today: "true".into(),
+            mutated: "false".into(),
+            built_by: Some("tests::small_orders".into()),
+        };
+        let operands = ["total".to_string(), "self.free_from".to_string()];
+        let named = named(
+            &callable,
+            &operands,
+            "",
+            &found.values,
+            found.built_by.as_deref(),
+        )
+        .unwrap();
+        assert_eq!(
+            named.meaning,
+            "free_from = 50 (Delivery's field, from Delivery::new(50))"
+        );
+        let written = test(
+            &callable,
+            Path::new("src/lib.rs"),
+            &found,
+            None,
+            Some(&named),
+        );
+        assert_eq!(
+            written.lines,
+            [
+                "#[test]",
+                "fn is_free_at_free_from() {",
+                "    let delivery = Delivery::new(50); // as tests::small_orders builds it",
+                "    assert!(delivery.is_free(50)); // total == free_from · today true · with this mutant false",
+                "}"
+            ]
+        );
+        let unbuilt = named(&callable, &operands, "", &found.values, None).unwrap();
+        assert_eq!(
+            unbuilt.meaning,
+            "free_from (Delivery's field, set when it's made)"
+        );
+    }
+
     #[test]
     fn candidates_start_near_the_change_and_fit_their_types() {
         let inputs = BTreeMap::from([("total".to_string(), vec![50, 250])]);
@@ -517,7 +779,8 @@ mod tests {
             Some(Suggestion {
                 values: vec![7],
                 today: "0".into(),
-                mutated: "5".into()
+                mutated: "5".into(),
+                built_by: None,
             })
         );
         let stuck: Vec<String> = ["r 0"].map(String::from).to_vec();
@@ -539,6 +802,7 @@ mod tests {
             values: vec![7],
             today: "0".into(),
             mutated: "5".into(),
+            built_by: None,
         };
         let written = test(&late_fee(), Path::new("src/lib.rs"), &found, None, None);
         assert_eq!(written.place, "mod rates::tests");
@@ -569,6 +833,7 @@ mod tests {
             values: vec![5, -1, 5],
             today: "false".into(),
             mutated: "true".into(),
+            built_by: None,
         };
         let written = test(
             &window,

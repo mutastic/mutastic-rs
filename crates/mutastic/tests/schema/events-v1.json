@@ -327,7 +327,8 @@
               }
             },
             "today": { "type": "string", "description": "What the call gives today, as `suggestedTest` has it." },
-            "withMutant": { "type": "string", "description": "What it gives with the mutant in, as `suggestedTest` has it." }
+            "withMutant": { "type": "string", "description": "What it gives with the mutant in, as `suggestedTest` has it." },
+            "builtBy": { "type": "string", "description": "The covering test the call makes its receiver as, `DeliveryTest#smallOrders`, when it makes it the same way. Optional." }
           }
         },
         "testsRun": {

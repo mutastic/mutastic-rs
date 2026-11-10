@@ -849,13 +849,32 @@ fn suggest_all(
             .map_or("", |file| file.text.as_str());
         let mut constants = crate::suggest::constants(&line);
         constants.extend(crate::suggest::named_constants(&line, text));
-        let candidates = crate::suggest::candidates(&callable.types(), &constants, &result.inputs);
+        // First with the receiver made as a covering test makes it, when one does.
+        let made = crate::suggest::built(callable, &result.covered_by);
+        let mut candidates = made.as_ref().map_or_else(Vec::new, |made| {
+            crate::suggest::candidates_made(
+                &callable.types(),
+                &constants,
+                &result.inputs,
+                &made.values,
+            )
+        });
+        candidates.extend(crate::suggest::candidates(
+            &callable.types(),
+            &constants,
+            &result.inputs,
+        ));
         let probe = crate::suggest::Probe {
             binary: &built.binaries[binary],
             cwd: &cwd,
             name: &name,
         };
-        crate::suggest::find(&probe, &dir, mutant.ordinal, &candidates)
+        crate::suggest::find(&probe, &dir, mutant.ordinal, &candidates).map(|mut found| {
+            found.built_by = made
+                .filter(|made| found.values.starts_with(&made.values))
+                .map(|made| made.test);
+            found
+        })
     });
     for (index, suggestion) in missed.into_iter().zip(found_tests) {
         results[index].suggestion = suggestion;

@@ -122,7 +122,27 @@ impl<'a> View<'a> {
     fn advice(&self, result: &MutantResult) -> Advice {
         let mutant = self.mutant(result);
         let name = &self.report.found.functions[mutant.function].name;
-        words::advise(mutant, name, &result.inputs)
+        let mut advice = words::advise(mutant, name, &result.inputs);
+        if let Some(named) = self.named(result).filter(|named| !named.meaning.is_empty()) {
+            named_notes(&mut advice.notes, &named, result);
+        }
+        advice
+    }
+
+    /// The value the suggested call is at, when the source names it.
+    fn named(&self, result: &MutantResult) -> Option<suggest::Named> {
+        let suggestion = result.suggestion.as_ref()?;
+        let mutant = self.mutant(result);
+        let callable = self.report.found.functions[mutant.function]
+            .callable
+            .as_ref()?;
+        suggest::named(
+            callable,
+            &mutant.operands,
+            self.text(mutant),
+            &suggestion.values,
+            suggestion.built_by.as_deref(),
+        )
     }
 
     fn text(&self, mutant: &Mutant) -> &'a str {
@@ -165,12 +185,7 @@ impl<'a> View<'a> {
         let callable = self.report.found.functions[mutant.function]
             .callable
             .as_ref()?;
-        let at = suggest::named(
-            callable,
-            &mutant.operands,
-            self.text(mutant),
-            &suggestion.values,
-        );
+        let at = self.named(result);
         Some(suggest::test(
             callable,
             &mutant.file,
@@ -260,6 +275,39 @@ impl<'a> View<'a> {
             }
             _ => format!("mutastic run --only={ids} {dir}"),
         }
+    }
+}
+
+/// What the name a card's call is at is, beside the inputs seen, as the Java edition says it:
+/// `inputs seen: total = 20, 80, with free_from = 50 (Delivery's field, from Delivery::new(50))`
+/// and `none has total == free_from` when the receiver is made as a covering test makes it, or
+/// `the edge is FREE_FROM (FREE_FROM = 100)`.
+fn named_notes(notes: &mut Vec<String>, named: &suggest::Named, result: &MutantResult) {
+    let built = result
+        .suggestion
+        .as_ref()
+        .is_some_and(|found| found.built_by.is_some());
+    let seen = notes
+        .iter()
+        .position(|note| note.starts_with("inputs seen: "));
+    match (built, seen) {
+        (true, Some(at)) => {
+            notes[at] = format!("{}, with {}", notes[at], named.meaning);
+            let parameter = named.note.split(" == ").next().unwrap_or_default();
+            let value = named
+                .meaning
+                .split(" = ")
+                .nth(1)
+                .and_then(|rest| rest.split(' ').next())
+                .and_then(|value| value.parse::<i128>().ok());
+            let inputs = result.inputs.get(parameter);
+            if let (Some(value), Some(inputs)) = (value, inputs) {
+                if !inputs.is_empty() && !inputs.contains(&value) {
+                    notes.push(format!("none has {}", named.note));
+                }
+            }
+        }
+        _ => notes.push(format!("the edge is {}", named.meaning)),
     }
 }
 
@@ -1658,7 +1706,7 @@ fn suggestion(view: &View, mutant: &Mutant, found: &suggest::Suggestion, call: &
     let numbers = |values: &[i128]| -> Vec<Value> {
         values.iter().map(|v| crate::shares::whole(*v)).collect()
     };
-    json!({
+    let mut value = json!({
         "call": call,
         "parameters": callable.map_or_else(Vec::new, |callable| callable
             .parameters
@@ -1672,7 +1720,11 @@ fn suggestion(view: &View, mutant: &Mutant, found: &suggest::Suggestion, call: &
         })]),
         "today": found.today,
         "withMutant": found.mutated,
-    })
+    });
+    if let Some(test) = &found.built_by {
+        value["builtBy"] = json!(test);
+    }
+    value
 }
 
 /// Source text on one line, whitespace collapsed.

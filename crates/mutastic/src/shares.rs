@@ -634,6 +634,7 @@ fn suggestion_of(suggestion: &Value) -> Option<crate::suggest::Suggestion> {
         values,
         today: suggestion["today"].as_str()?.to_string(),
         mutated: suggestion["withMutant"].as_str()?.to_string(),
+        built_by: suggestion["builtBy"].as_str().map(str::to_string),
     })
 }
 
