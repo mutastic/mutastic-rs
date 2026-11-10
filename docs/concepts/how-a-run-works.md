@@ -153,7 +153,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: |
-          curl -fsSL https://raw.githubusercontent.com/mutastic/mutastic-rs/main/scripts/install.sh | sh
+          curl -fsSL https://mutastic.io/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - run: mutastic run --shard=${{ matrix.share }}/4 --threshold=0
       - uses: actions/upload-artifact@v4
@@ -168,7 +168,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: |
-          curl -fsSL https://raw.githubusercontent.com/mutastic/mutastic-rs/main/scripts/install.sh | sh
+          curl -fsSL https://mutastic.io/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - uses: actions/download-artifact@v4
         with:
@@ -188,7 +188,7 @@ mutants:
   image: rust:1.99.1
   parallel: 4
   before_script:
-    - curl -fsSL https://raw.githubusercontent.com/mutastic/mutastic-rs/main/scripts/install.sh | sh
+    - curl -fsSL https://mutastic.io/install.sh | sh
     - export PATH="$HOME/.local/bin:$PATH"
   script:
     - mutastic run --shard=$CI_NODE_INDEX/$CI_NODE_TOTAL --threshold=0
@@ -203,7 +203,7 @@ mutation-score:
     - job: mutants
       artifacts: true
   before_script:
-    - curl -fsSL https://raw.githubusercontent.com/mutastic/mutastic-rs/main/scripts/install.sh | sh
+    - curl -fsSL https://mutastic.io/install.sh | sh
     - export PATH="$HOME/.local/bin:$PATH"
   script:
     - mutastic run --from-shards=target/mutastic/shares --threshold=70

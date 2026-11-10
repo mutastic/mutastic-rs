@@ -8,7 +8,7 @@ reach every line, and still miss something. Then it closes the gap and proves it
 The installer puts the latest release in `~/.local/bin`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/mutastic/mutastic-rs/main/scripts/install.sh | sh
+curl -fsSL https://mutastic.io/install.sh | sh
 ```
 
 That installs two commands: `mutastic`, and `cargo-mutastic`, which Cargo runs as `cargo mutastic`.

@@ -81,7 +81,7 @@ On macOS or Linux, the installer puts the latest
 [release](https://github.com/mutastic/mutastic-rs/releases) in `~/.local/bin`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/mutastic/mutastic-rs/main/scripts/install.sh | sh
+curl -fsSL https://mutastic.io/install.sh | sh
 ```
 
 That installs `mutastic`, and `cargo-mutastic`, which Cargo runs as `cargo mutastic`. They do the

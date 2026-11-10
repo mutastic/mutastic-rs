@@ -1,6 +1,6 @@
 #!/bin/sh
 # Installs the `mutastic` command, for Rust, Maven and Gradle projects alike:
-#   curl -fsSL https://raw.githubusercontent.com/mutastic/mutastic-rs/main/scripts/install.sh | sh
+#   curl -fsSL https://mutastic.io/install.sh | sh
 # or, from a clone of mutastic's repository:
 #   sh scripts/install.sh
 #

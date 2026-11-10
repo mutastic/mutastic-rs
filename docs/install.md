@@ -1,29 +1,29 @@
 # Installing mutastic
 
-mutastic is one command, `mutastic`, for Rust, Maven and Gradle projects. It's a native program
+mutastic is one command, `mutastic`, for Rust, Maven and Gradle projects. It's a native program,
 with nothing else to install for Rust. In a Maven or Gradle project, it fetches its Java edition the
 first time it runs there: see [One command, two editions](editions.md).
 
 ## With the installer
 
-The installer installs the latest release:
-
 ```sh
-curl -fsSL https://raw.githubusercontent.com/mutastic/mutastic-rs/main/scripts/install.sh | sh
+curl -fsSL https://mutastic.io/install.sh | sh
 ```
 
-It's `scripts/install.sh` in mutastic's repository, so from a clone, `sh scripts/install.sh` does
-the same.
+That installs the latest release for this machine: macOS on Apple silicon or Intel, or Linux on
+x86-64 or Arm64. The Linux builds are static, so one archive runs on any distribution. It needs
+`curl` and `tar`. Run it again to update.
 
-It finds this machine's target, downloads that release's archive, checks it against the release's
+It downloads the release's archive for this machine, checks it against the release's
 `SHA256SUMS`, and refuses one that doesn't match. It keeps the release in
-`~/.mutastic/native-<version>`, and links `mutastic` and `cargo-mutastic` into `~/.local/bin`. Run
-it again to update. If `~/.local/bin` isn't on your `PATH`, it says the line to add for your shell.
-Nothing goes anywhere else, so removing those two directories uninstalls it.
+`~/.mutastic/native-<version>` and links `mutastic` and `cargo-mutastic` into `~/.local/bin`. If
+`~/.local/bin` isn't on your `PATH`, it prints the line to add for your shell. It writes nowhere
+else, so removing those two directories uninstalls it.
 
-It needs `curl` and `tar`, which macOS and most Linux images have. Releases are built for macOS on
-Apple silicon and Intel, and for Linux on x86-64 and Arm64, static, so one archive runs on any
-distribution. Elsewhere, Windows among them, build it from source.
+If an earlier installer linked `~/.local/bin/mutastic` to the Java edition, this one replaces that
+link. The Java edition's releases stay in `~/.mutastic`, where `mutastic` finds and uses them.
+
+These variables change what it does:
 
 | Variable | Effect |
 |---|---|
@@ -31,22 +31,6 @@ distribution. Elsewhere, Windows among them, build it from source.
 | `MUTASTIC_HOME` | Where releases are kept: `~/.mutastic` unless set |
 | `MUTASTIC_BIN_DIR` | Where the commands are linked: `~/.local/bin` unless set |
 | `MUTASTIC_NATIVE_RELEASES` | Where releases are downloaded from, for a mirror: GitHub's releases of `mutastic/mutastic-rs` unless set |
-
-An earlier installer linked `~/.local/bin/mutastic` to the Java edition. This one replaces that
-link, and keeps the Java edition's releases in `~/.mutastic`, where `mutastic` finds and uses them.
-
-## From source
-
-On a platform without a release, or to work on mutastic itself, build it with a Rust toolchain,
-stable is fine:
-
-```sh
-git clone https://github.com/mutastic/mutastic-rs.git
-cd mutastic-rs
-cargo install --path crates/mutastic
-```
-
-That installs the same two commands into Cargo's `bin` directory.
 
 ## Check it
 
@@ -59,6 +43,24 @@ mutastic 0.2.0
 Rust edition 0.2.0, built in
 Java edition: not fetched yet, which happens the first time mutastic runs in a Maven or Gradle project
 ```
+
+Next: [Getting started](getting-started.md) runs mutastic on a small crate, and closes the gap it
+finds.
+
+## From source
+
+There's no release for Windows yet. There, use WSL, where the installer works as on Linux, or build
+mutastic with a Rust toolchain. Stable is fine. The same applies to any other platform without a
+release, and to working on mutastic itself:
+
+```sh
+git clone https://github.com/mutastic/mutastic-rs.git
+cd mutastic-rs
+cargo install --path crates/mutastic
+```
+
+That installs the same two commands into Cargo's `bin` directory. From a clone, `sh
+scripts/install.sh` runs the installer itself.
 
 ## How a release is laid out
 
@@ -75,6 +77,3 @@ SHA256SUMS
 
 Each archive holds one directory, `mutastic-<version>-<target>/`, with `mutastic`,
 `cargo-mutastic`, the licence and the README. The release workflow builds them from the tag.
-
-Next: [Getting started](getting-started.md) runs mutastic on a small crate, and closes the gap it
-finds.
