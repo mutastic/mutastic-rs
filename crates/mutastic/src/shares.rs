@@ -604,8 +604,8 @@ fn result_of(index: usize, event: &Value) -> Option<MutantResult> {
         status: Status::from_schema_name(event["status"].as_str()?)?,
         reason: text("statusReason"),
         covered_by: strings(&event["coveredBy"]),
-        killed_by: text("killedBy"),
-        killed_with: text("killedWith"),
+        killed_by: text("caughtBy"),
+        killed_with: text("caughtWith"),
         tests_run: event["testsRun"].as_u64().unwrap_or(0) as usize,
         took: Duration::from_millis(event["durationMs"].as_u64().unwrap_or(0)),
         inputs: event["inputs"]

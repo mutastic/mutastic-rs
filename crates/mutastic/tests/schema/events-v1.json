@@ -2,9 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://docs.mutastic.io/schemas/events/v1.json",
   "title": "mutastic events, v1",
-  "description": "One event of `mutastic run --format=jsonl`: each line of its output is one JSON object, keyed on its `reason`. A run writes `run-started` first, then `mutant-finished` for each mutant, `mutant-revised` for each mutant run again once a test turned out to fail on its own, then `run-finished`. Within v1, events only gain fields, event reasons and enum values: read what you know, and ignore a field or an event you don't. See https://docs.mutastic.io/reference/schemas/.",
+  "description": "One event of `mutastic run --format=jsonl`: each line of its output is one JSON object, keyed on its `reason`. A run writes `run-started` first, then `mutant-finished` for each mutant, `mutant-revised` for each mutant run again once a test turned out to fail on its own, then `run-finished`. From 1.0.0, within v1, events only gain fields, event reasons and enum values: read what you know, and ignore a field or an event you don't. See https://docs.mutastic.io/reference/schemas/.",
   "type": "object",
-  "required": ["schema", "reason"],
+  "required": ["schema", "edition", "reason"],
   "properties": {
     "schema": { "$ref": "#/$defs/schema" },
     "edition": { "$ref": "#/$defs/edition" },
@@ -46,7 +46,7 @@
     },
     "edition": {
       "enum": ["java", "rust"],
-      "description": "Which mutastic wrote the event: `java` (for Java and Kotlin, on the JVM) or `rust`. An event without one is the Java edition's, as every event was before editions: what this schema requires only of the Java edition (`jdk`, a mutation's `bytecode`, a missed mutant's `ignore` and `propose`) every such event has. The Rust edition writes it on every event."
+      "description": "Which mutastic wrote the event: `java` (for Java and Kotlin, on the JVM) or `rust`. Every event has it. What this schema requires only of the Java edition, `run-finished`'s `jdk`, every Java event has."
     },
     "status": {
       "enum": ["Killed", "Survived", "Timeout", "NoCoverage", "Ignored", "RuntimeError"],
@@ -87,7 +87,7 @@
     "runStarted": {
       "type": "object",
       "description": "The first event: the run has started.",
-      "required": ["schema", "reason", "project", "rules", "decline"],
+      "required": ["schema", "reason", "project", "rule", "decline"],
       "properties": {
         "schema": { "$ref": "#/$defs/schema" },
         "reason": { "const": "run-started" },
@@ -95,14 +95,9 @@
           "type": "string",
           "description": "The project's name."
         },
-        "rules": {
-          "type": "string",
-          "deprecated": true,
-          "description": "The rule a fix follows, for an agent: change tests only. Deprecated: removed in 1.0. Read `rule`, which has the same value."
-        },
         "rule": {
           "type": "string",
-          "description": "The rule a fix follows, for an agent: change tests only. Written from 0.6.0."
+          "description": "The rule a fix follows, for an agent: change tests only."
         },
         "decline": {
           "type": "string",
@@ -121,7 +116,7 @@
         },
         "share": {
           "type": "object",
-          "description": "In a run of one share of the mutants (`--shard=N/M`): which share, and what it ran on, so `run --from-shards` puts together only the shares of one run. Written from 0.6.0.",
+          "description": "In a run of one share of the mutants (`--shard=N/M`): which share, and what it ran on, so `run --from-shards` puts together only the shares of one run.",
           "required": ["number", "of", "version", "code"],
           "properties": {
             "number": { "type": "integer", "minimum": 1, "description": "Which share: N." },
@@ -199,7 +194,7 @@
         "mutation": {
           "type": "object",
           "description": "What the mutant changes.",
-          "required": ["description"],
+          "required": ["description", "applied"],
           "properties": {
             "original": {
               "type": "string",
@@ -215,7 +210,7 @@
             },
             "applied": {
               "type": "object",
-              "description": "The change as the engine makes it, and at what level: in the Java edition to the compiled instruction, `{\"level\": \"bytecode\", \"text\": \"IF_ICMPLT -> IF_ICMPLE\"}`; in Rust's to the source, the whole site before and after, `{\"level\": \"source\", \"text\": \"x < 0 -> true\"}`. Written from 0.6.0, for every mutant, by both editions.",
+              "description": "The change as the engine makes it, and at what level: in the Java edition to the compiled instruction, `{\"level\": \"bytecode\", \"text\": \"IF_ICMPLT -> IF_ICMPLE\"}`; in Rust's to the source, the whole site before and after, `{\"level\": \"source\", \"text\": \"x < 0 -> true\"}`. Every mutant has it, in both editions.",
               "required": ["level", "text"],
               "properties": {
                 "level": {
@@ -227,11 +222,6 @@
                   "description": "The change at that level, before and after: `IF_ICMPLT -> IF_ICMPLE`, `x < 0 -> true`. Its form depends on the level: read it as opaque text, for people."
                 }
               }
-            },
-            "bytecode": {
-              "type": "string",
-              "deprecated": true,
-              "description": "The change as the engine makes it, to the instruction: `IF_ICMPLT -> IF_ICMPLE`. The Java edition only, and always there in it. Deprecated: removed in 1.0. Read `applied`, whose `text` has the same value."
             }
           }
         },
@@ -248,28 +238,18 @@
           "items": { "$ref": "#/$defs/test" },
           "description": "The tests that reach the mutant's line: its own test class's first (PricingTest's, for Pricing), then the rest, each by name, whatever order they ran in. Empty when none does, or when it was skipped."
         },
-        "killedBy": {
-          "$ref": "#/$defs/test",
-          "deprecated": true,
-          "description": "The test that caught it. Only when one did. Deprecated: removed in 1.0. Read `caughtBy`, which has the same value."
-        },
         "caughtBy": {
           "$ref": "#/$defs/test",
-          "description": "The test that caught it, in the word `changedSinceLastRun` uses. Only when one did. Written from 0.6.0."
-        },
-        "killedWith": {
-          "type": "string",
-          "deprecated": true,
-          "description": "What that test failed with. Deprecated: removed in 1.0. Read `caughtWith`, which has the same value."
+          "description": "The test that caught it, in the word `changedSinceLastRun` uses. Only when a test did: a timeout names none, and nor does a crash the Rust edition counts as caught, which `caughtWith` describes."
         },
         "caughtWith": {
           "type": "string",
-          "description": "What the test that caught it failed with: in the Java edition the exception's class, `org.opentest4j.AssertionFailedError`. Written from 0.6.0."
+          "description": "What caught it failed with: in the Java edition the exception's class, `org.opentest4j.AssertionFailedError`; in Rust's the panic or the crash, `crash: SIGABRT`."
         },
         "caughtByAll": {
           "type": "array",
           "items": { "$ref": "#/$defs/test" },
-          "description": "Every covering test that catches it, in the order they ran, the first being `caughtBy`: only with `--kill-matrix`, and only when one did. Written from 0.6.0."
+          "description": "Every covering test that catches it, in the order they ran, the first being `caughtBy`: only with `--kill-matrix`, and only when one did."
         },
         "nearUnsafe": {
           "type": "string",
@@ -328,7 +308,7 @@
         },
         "suggestion": {
           "type": "object",
-          "description": "The call `suggestedTest` was found by, whole, or for a mutant no test reaches the call a first test could start from: what a card is written from. Only when one was found. Written from 0.6.0.",
+          "description": "The call `suggestedTest` was found by, whole, or for a mutant no test reaches the call a first test could start from: what a card is written from. Only when one was found.",
           "required": ["call", "parameters", "arguments", "receiver", "today", "withMutant"],
           "properties": {
             "call": { "type": "string", "description": "The call, in the mutated class's language: `new Pricing().discount(100)`." },
@@ -368,11 +348,11 @@
         },
         "ignore": {
           "type": "string",
-          "description": "The command that ignores it, with a reason. Only for a missed mutant, and always there for one in the Java edition."
+          "description": "The command that ignores it, with a reason. Only for a missed mutant, and always there for one."
         },
         "propose": {
           "type": "string",
-          "description": "The command that proposes ignoring it, for a person to accept: what an agent runs instead of `ignore`. Only for a missed mutant, and always there for one in the Java edition."
+          "description": "The command that proposes ignoring it, for a person to accept: what an agent runs instead of `ignore`. Only for a missed mutant, and always there for one."
         },
         "rendered": {
           "type": "string",
@@ -418,19 +398,7 @@
       "allOf": [
         {
           "if": { "properties": { "status": { "const": "Survived" } }, "required": ["status"] },
-          "then": { "required": ["doneWhen", "reproduce", "rendered"] }
-        },
-        {
-          "if": { "properties": { "edition": { "const": "java" } } },
-          "then": {
-            "properties": { "mutation": { "required": ["bytecode"] } },
-            "allOf": [
-              {
-                "if": { "properties": { "status": { "const": "Survived" } }, "required": ["status"] },
-                "then": { "required": ["ignore", "propose"] }
-              }
-            ]
-          }
+          "then": { "required": ["doneWhen", "reproduce", "ignore", "propose", "rendered"] }
         }
       ]
     },
@@ -519,16 +487,20 @@
         "schema",
         "reason",
         "mutants",
-        "Killed",
-        "Survived",
-        "Timeout",
-        "NoCoverage",
-        "Ignored",
+        "killed",
+        "survived",
+        "timeout",
+        "noCoverage",
+        "ignored",
+        "toolchain",
         "score",
         "threshold",
         "passed",
         "coveredScore",
         "tests",
+        "workers",
+        "workersStarted",
+        "coverageMs",
         "flaky",
         "flakyEvidence",
         "likelyFlaky",
@@ -547,20 +519,14 @@
         },
         "toolchain": {
           "$ref": "#/$defs/toolchain",
-          "description": "What compiled and ran the code under test: `{\"name\": \"jdk\", \"version\": \"17\"}`. Written from 0.6.0."
+          "description": "What compiled and ran the code under test: `{\"name\": \"jdk\", \"version\": \"17\"}`."
         },
         "mutants": { "$ref": "#/$defs/count", "description": "How many mutants there were, skipped ones too." },
-        "Killed": { "$ref": "#/$defs/count", "deprecated": true, "description": "How many were caught. Deprecated: removed in 1.0. Read `killed`, which has the same value." },
-        "Survived": { "$ref": "#/$defs/count", "deprecated": true, "description": "How many were missed. Deprecated: removed in 1.0. Read `survived`, which has the same value." },
-        "Timeout": { "$ref": "#/$defs/count", "deprecated": true, "description": "How many timed out, which counts as caught. Deprecated: removed in 1.0. Read `timeout`, which has the same value." },
-        "NoCoverage": { "$ref": "#/$defs/count", "deprecated": true, "description": "How many no test reaches. Deprecated: removed in 1.0. Read `noCoverage`, which has the same value." },
-        "Ignored": { "$ref": "#/$defs/count", "deprecated": true, "description": "How many were skipped. Deprecated: removed in 1.0. Read `ignored`, which has the same value." },
-        "killed": { "$ref": "#/$defs/count", "description": "How many were caught. Written from 0.6.0." },
-        "survived": { "$ref": "#/$defs/count", "description": "How many were missed. Written from 0.6.0." },
-        "timeout": { "$ref": "#/$defs/count", "description": "How many timed out, which counts as caught. Written from 0.6.0." },
-        "noCoverage": { "$ref": "#/$defs/count", "description": "How many no test reaches. Written from 0.6.0." },
-        "ignored": { "$ref": "#/$defs/count", "description": "How many were skipped. Written from 0.6.0." },
-        "RuntimeError": { "$ref": "#/$defs/count", "deprecated": true, "description": "The Rust edition only: how many crashed in a way no test can be said to have caught, out of the score. Deprecated: removed in 1.0. Read `runtimeError`, which has the same value." },
+        "killed": { "$ref": "#/$defs/count", "description": "How many were caught." },
+        "survived": { "$ref": "#/$defs/count", "description": "How many were missed." },
+        "timeout": { "$ref": "#/$defs/count", "description": "How many timed out, which counts as caught." },
+        "noCoverage": { "$ref": "#/$defs/count", "description": "How many no test reaches." },
+        "ignored": { "$ref": "#/$defs/count", "description": "How many were skipped." },
         "runtimeError": { "$ref": "#/$defs/count", "description": "The Rust edition only: how many crashed in a way no test can be said to have caught, out of the score (`RuntimeError`)." },
         "notMutated": {
           "type": "object",
@@ -600,9 +566,9 @@
           "description": "The score of the code some test reaches: how well the tests check what they run."
         },
         "tests": { "$ref": "#/$defs/count", "description": "How many tests the project has." },
-        "workers": { "$ref": "#/$defs/count", "description": "How many test workers ran side by side: in the Java edition each is a JVM, in Rust's a thread. Written from 0.6.0." },
-        "workersStarted": { "$ref": "#/$defs/count", "description": "How many test workers started in all: one for each worker, and one more after each was stopped for taking too long. The Rust edition never stops one, so it's `workers` there. Written from 0.6.0." },
-        "coverageMs": { "$ref": "#/$defs/count", "description": "How long the coverage pass took, in milliseconds, of `durationMs`. Written from 0.6.0." },
+        "workers": { "$ref": "#/$defs/count", "description": "How many test workers ran side by side: in the Java edition each is a JVM, in Rust's a thread." },
+        "workersStarted": { "$ref": "#/$defs/count", "description": "How many test workers started in all: one for each worker, and one more after each was stopped for taking too long. The Rust edition never stops one, so it's `workers` there." },
+        "coverageMs": { "$ref": "#/$defs/count", "description": "How long the coverage pass took, in milliseconds, of `durationMs`." },
         "flaky": {
           "type": "array",
           "items": { "$ref": "#/$defs/test" },
@@ -711,29 +677,19 @@
         "scope": {
           "type": "object",
           "description": "The change the run was scoped to (`--since`). Only for such a run.",
-          "required": ["since", "files", "lines"],
+          "required": ["since", "fileCount", "lineCount"],
           "properties": {
             "since": {
               "type": "string",
               "description": "What the change is measured from, as given: `main`."
             },
-            "files": {
-              "$ref": "#/$defs/count",
-              "deprecated": true,
-              "description": "How many source files it touched. Deprecated: removed in 1.0. Read `fileCount`, which has the same value."
-            },
-            "lines": {
-              "$ref": "#/$defs/count",
-              "deprecated": true,
-              "description": "How many lines it touched. Deprecated: removed in 1.0. Read `lineCount`, which has the same value."
-            },
             "lineCount": {
               "$ref": "#/$defs/count",
-              "description": "How many lines it touched. Written from 0.6.0."
+              "description": "How many lines it touched."
             },
             "fileCount": {
               "$ref": "#/$defs/count",
-              "description": "How many source files it touched. Written from 0.6.0."
+              "description": "How many source files it touched."
             }
           }
         },
@@ -757,7 +713,7 @@
     "nextFinished": {
       "type": "object",
       "description": "The end of `mutastic next`'s answer: how many items are queued, and how many were shown.",
-      "required": ["schema", "reason", "queued", "mutants", "shown", "legacy"],
+      "required": ["schema", "reason", "queued", "mutants", "shown", "legacy", "waiting"],
       "properties": {
         "schema": { "$ref": "#/$defs/schema" },
         "reason": { "const": "next-finished" },
@@ -766,7 +722,7 @@
         "mutants": { "type": "integer", "minimum": 0, "description": "How many missed mutants are on them." },
         "shown": { "type": "integer", "minimum": 0, "description": "How many items were shown, as `--top` asked, spread over the code." },
         "legacy": { "type": "integer", "minimum": 0, "description": "How many of the queued items a committed baseline already has." },
-        "waiting": { "type": "integer", "minimum": 0, "description": "How many missed mutants are left out of the queue because they are proposed for ignoring (`ignore --propose`), waiting on a person to accept them. Optional: absent means none." }
+        "waiting": { "type": "integer", "minimum": 0, "description": "How many missed mutants are left out of the queue because they are proposed for ignoring (`ignore --propose`), waiting on a person to accept them." }
       }
     }
   }

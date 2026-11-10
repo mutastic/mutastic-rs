@@ -74,7 +74,6 @@ crashed, not by a test's check`), and in the event stream the mutant has `caught
   "coveredBy": [
     "run::guards"
   ],
-  "killedWith": "crash: SIGABRT",
   "caughtWith": "crash: SIGABRT",
   "inputs": {
     "x": [
@@ -82,7 +81,7 @@ crashed, not by a test's check`), and in the event stream the mutant has `caught
     ]
   },
   "testsRun": 1,
-  "durationMs": 69
+  "durationMs": 68
 }
 ```
 

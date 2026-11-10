@@ -24,7 +24,6 @@
   "coveredBy": [
     "run::guards"
   ],
-  "killedWith": "crash: SIGABRT",
   "caughtWith": "crash: SIGABRT",
   "inputs": {
     "x": [
@@ -32,5 +31,5 @@
     ]
   },
   "testsRun": 1,
-  "durationMs": 69
+  "durationMs": 68
 }

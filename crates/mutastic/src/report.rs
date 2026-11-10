@@ -1211,7 +1211,6 @@ fn jsonl(report: &Report) -> String {
         "edition": EDITION,
         "reason": "run-started",
         "project": report.project.package,
-        "rules": RULE,
         "rule": RULE,
         "decline": DECLINE,
         // What decides a mutant's meaning, so runs can be compared: the build's settings, which
@@ -1237,17 +1236,6 @@ fn jsonl(report: &Report) -> String {
         "toolchain": { "name": "rustc", "version": report.rustc },
         "mutants": report.results.len(),
     });
-    for status in [
-        Status::Killed,
-        Status::Survived,
-        Status::Timeout,
-        Status::NoCoverage,
-        Status::Ignored,
-        Status::RuntimeError,
-    ] {
-        finished[status.schema_name()] = json!(report.count(status));
-    }
-    // The schema's names from 0.6.0, beside the old ones until 1.0.
     for status in [
         Status::Killed,
         Status::Survived,
@@ -1298,8 +1286,6 @@ fn jsonl(report: &Report) -> String {
     if let Some(scope) = &report.scope {
         finished["scope"] = json!({
             "since": scope.since,
-            "files": scope.files,
-            "lines": scope.lines,
             "fileCount": scope.files,
             "lineCount": scope.lines,
         });
@@ -1366,8 +1352,7 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
     }
     mutation["description"] = json!(advice.change);
     // `applied` is the change as the engine makes it, and at what level: here, to the source, the
-    // whole site before and after, which no other field has for every change. Java's deprecated
-    // `bytecode` is Java's alone, and isn't written.
+    // whole site before and after, which no other field has for every change.
     let text = view.text(mutant);
     mutation["applied"] = json!({
         "level": "source",
@@ -1403,11 +1388,9 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
     }
     event["coveredBy"] = json!(result.covered_by);
     if let Some(test) = &result.killed_by {
-        event["killedBy"] = json!(test);
         event["caughtBy"] = json!(test);
     }
     if let Some(failure) = &result.killed_with {
-        event["killedWith"] = json!(failure);
         event["caughtWith"] = json!(failure);
     }
     if !result.inputs.is_empty() {

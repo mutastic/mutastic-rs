@@ -35,7 +35,7 @@ impl Status {
         }
     }
 
-    /// The events format's name for a count of this status in `run-finished`, from 0.6.0:
+    /// The events format's name for a count of this status in `run-finished`:
     /// `killed`, `noCoverage`.
     pub fn event_name(self) -> &'static str {
         match self {

@@ -73,14 +73,12 @@ fn pricing_misses_only_the_edge_of_the_discount() {
         let errors: Vec<String> = schema().iter_errors(event).map(|e| e.to_string()).collect();
         assert!(errors.is_empty(), "{event}\n{}", errors.join("\n"));
     }
-    // The change as the engine made it, to the source, as the schema describes `applied`; and no
-    // `bytecode`, which is the Java edition's.
+    // The change as the engine made it, to the source, as the schema describes `applied`.
     let applied = common::applied_schema();
     for mutant in &mutants {
         let mutation = &mutant["mutation"];
         assert!(applied.is_valid(&mutation["applied"]), "{mutant}");
         assert_eq!(mutation["applied"]["level"], "source", "{mutant}");
-        assert!(mutation.get("bytecode").is_none(), "{mutant}");
     }
     assert_eq!(
         missed["mutation"]["applied"]["text"],
@@ -89,12 +87,11 @@ fn pricing_misses_only_the_edge_of_the_discount() {
     let finished = events.last().unwrap();
     assert_eq!(finished["reason"], "run-finished");
     assert_eq!(finished["score"], 90.9);
-    assert_eq!(finished["Killed"], 10);
+    assert_eq!(finished["killed"], 10);
     assert_eq!(
-        finished["killed"], 10,
-        "the name from 0.6.0, beside the old"
+        events[0]["rule"],
+        "add or change tests only, never production code"
     );
-    assert_eq!(events[0]["rule"], events[0]["rules"]);
     assert!(events.iter().all(|e| e["edition"] == "rust"), "{stdout}");
     assert_eq!(finished["toolchain"]["name"], "rustc");
     assert!(
@@ -255,16 +252,15 @@ fn unsafe_code_is_fenced_off_and_crashes_are_told_apart() {
     );
     let guarded = fate("guarded", "true");
     assert_eq!(guarded["status"], "Killed", "{guarded}");
-    assert_eq!(guarded["killedWith"], "crash: SIGABRT");
+    assert_eq!(guarded["caughtWith"], "crash: SIGABRT");
     assert!(
-        guarded.get("killedBy").is_none(),
+        guarded.get("caughtBy").is_none(),
         "no test caught it: {guarded}"
     );
     let total = fate("total", "-");
-    assert_eq!(total["caughtBy"], total["killedBy"]);
-    assert_eq!(total["caughtWith"], total["killedWith"]);
+    assert!(total["caughtBy"].is_string(), "{total}");
     assert_eq!(
-        total["killedWith"], "panic: attempt to subtract with overflow",
+        total["caughtWith"], "panic: attempt to subtract with overflow",
         "{total}"
     );
     assert!(events

@@ -5,6 +5,21 @@ newest come first.
 
 ## Unreleased
 
+### Breaking changes
+
+Before 1.0.0 a change that breaks a reader is made outright, with no deprecation. From 1.0.0 the
+events format only gains.
+
+- **Events: the old names are gone.** The names kept beside their replacements are no longer
+  written: `run-started`'s `rules` (read `rule`), a mutant's `killedBy` and `killedWith` (read
+  `caughtBy` and `caughtWith`), `run-finished`'s counts keyed by status (`Killed`, `Survived`,
+  `Timeout`, `NoCoverage`, `Ignored`, `RuntimeError`; read `killed`, `survived`, `timeout`,
+  `noCoverage`, `ignored`, `runtimeError`), and a scoped run's `scope.files` and `scope.lines`
+  (read `scope.fileCount` and `scope.lineCount`). The schema now requires what every run writes:
+  `edition` on every event, `rule`, a mutation's `applied`, a missed mutant's `ignore` and
+  `propose`, the counts, `toolchain`, `workers`, `workersStarted` and `coverageMs`. See
+  [Events](docs/reference/events.md).
+
 ## 0.2.1 (2026-11-09)
 
 Windows support, and installing through mutastic.io.
