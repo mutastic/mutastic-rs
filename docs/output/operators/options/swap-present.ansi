@@ -3,7 +3,7 @@
    [2m│[0m
  [2m3[0m [2m│[0m pub fn display_name(name: &str, nickname: Option<&str>) -> String {
  [2m4[0m [2m│[0m     if nickname.is_none() {
-   [2m│[0m                 [1;31m^^^^^^^ changed to is_some[0m
+   [2m│[0m                 [1;31m^^^^^^^ is_none changed to is_some[0m
  [2m5[0m [2m│[0m         return name.to_string();
    [2m│[0m
    [2m=[0m mutant  [1;31m- [0mif nickname.is_none() {

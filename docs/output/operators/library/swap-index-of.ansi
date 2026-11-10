@@ -3,7 +3,7 @@
     [2m│[0m
  [2m12[0m [2m│[0m pub fn extension(file: &str) -> Option<&str> {
  [2m13[0m [2m│[0m     file.find('.').map(|dot| &file[dot + 1..])
-    [2m│[0m          [1;31m^^^^ changed to rfind[0m
+    [2m│[0m          [1;31m^^^^ find changed to rfind[0m
  [2m14[0m [2m│[0m }
     [2m│[0m
     [2m=[0m mutant  [1;31m- [0mfile.find('.').map(|dot| &file[dot + 1..])

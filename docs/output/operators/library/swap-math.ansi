@@ -3,7 +3,7 @@
     [2m│[0m
  [2m 8[0m [2m│[0m pub fn capped_discount(percent: u32) -> u32 {
  [2m 9[0m [2m│[0m     percent.min(50)
-    [2m│[0m             [1;31m^^^ changed to max[0m
+    [2m│[0m             [1;31m^^^ min changed to max[0m
  [2m10[0m [2m│[0m }
     [2m│[0m
     [2m=[0m mutant  [1;31m- [0mpercent.min(50)

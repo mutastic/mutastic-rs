@@ -103,6 +103,19 @@ pub fn constants(line: &str) -> Vec<i128> {
         .collect()
 }
 
+/// The values of the `const`s `line` names that `text` declares, `FREE_FROM` for `const FREE_FROM:
+/// i32 = 100;`: constants near a change, as the Java edition finds the ones javac wrote in.
+pub fn named_constants(line: &str, text: &str) -> Vec<i128> {
+    line.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .filter(|word| word.starts_with(|c: char| c.is_ascii_uppercase()))
+        .filter(|word| {
+            word.chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+        })
+        .filter_map(|word| declared_value(text, word))
+        .collect()
+}
+
 /// Where a probe runs: its binary, the directory, and its name.
 pub struct Probe<'a> {
     pub binary: &'a Binary,
@@ -201,6 +214,7 @@ pub fn test(
     file: &Path,
     suggestion: &Suggestion,
     id: Option<&str>,
+    named: Option<&Named>,
 ) -> SuggestedTest {
     let (place, module, prefix, existing) = match &callable.tests {
         Some(tests) => {
@@ -222,12 +236,24 @@ pub fn test(
             )
         }
     };
-    let values: Vec<String> = suggestion.values.iter().map(i128::to_string).collect();
+    let mut values: Vec<String> = suggestion.values.iter().map(i128::to_string).collect();
+    if let Some(named) = named {
+        for (&at, written) in &named.arguments {
+            values[at] = written.replace("{prefix}", prefix);
+        }
+    }
     let call = callable.call(&values, prefix);
-    let name = free_name(&name(callable, &suggestion.values), existing);
+    let name = match named {
+        Some(named) => format!("{}_at_{}", callable.name, named.name.to_lowercase()),
+        None => name(callable, &suggestion.values),
+    };
+    let name = free_name(&name, existing);
     let with = id.map_or("this mutant".to_string(), str::to_string);
+    let note = named
+        .filter(|named| !named.note.is_empty())
+        .map_or(String::new(), |named| format!("{} · ", named.note));
     let outcomes = format!(
-        "today {} · with {with} {}",
+        "{note}today {} · with {with} {}",
         suggestion.today, suggestion.mutated
     );
     let assertion = match suggestion.today.as_str() {
@@ -239,12 +265,16 @@ pub fn test(
         place,
         module,
         name: name.clone(),
-        lines: vec![
-            "#[test]".to_string(),
-            format!("fn {name}() {{"),
-            format!("    {assertion} // {outcomes}"),
-            "}".to_string(),
-        ],
+        lines: [
+            vec!["#[test]".to_string(), format!("fn {name}() {{")],
+            named
+                .and_then(|named| named.local.clone())
+                .map(|local| format!("    {local}"))
+                .into_iter()
+                .collect(),
+            vec![format!("    {assertion} // {outcomes}"), "}".to_string()],
+        ]
+        .concat(),
         call,
         today: suggestion.today.clone(),
         mutated: suggestion.mutated.clone(),
@@ -281,14 +311,141 @@ fn name(callable: &Callable, values: &[i128]) -> String {
         name.push_str(&format!("_with_{}", arguments.join("_and_")));
     }
     if let (Some(receiver), false) = (&callable.receiver, made.is_empty()) {
-        let arguments: Vec<String> = made.iter().map(|value| number(*value)).collect();
-        name.push_str(&format!(
-            "_for_{}_{}",
-            snake(&receiver.type_name),
-            arguments.join("_and_")
-        ));
+        let arguments: Vec<String> = receiver
+            .parameters
+            .iter()
+            .zip(made)
+            .map(|((parameter, _), value)| format!("{parameter}_{}", number(*value)))
+            .collect();
+        name.push_str(&format!("_for_{}", arguments.join("_and_")));
     }
     name
+}
+
+/// The value a suggested call is at the edge of, when the source names it, which the test uses
+/// and is named after, as the Java edition names it: a `const` the comparison reads, passed its
+/// value; or a field the receiver is made with, passed the value the function's argument is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Named {
+    /// `FREE_FROM`, or `free_from`.
+    pub name: String,
+    /// What the test's comment says of it, `FREE_FROM = 100`; empty when nothing.
+    pub note: String,
+    /// The line the test declares the value in, when it passes it twice: `let free_from = 20;`.
+    pub local: Option<String>,
+    /// The call's values written otherwise, by index (the receiver's first), `{prefix}` where a
+    /// path from the test module goes.
+    pub arguments: BTreeMap<usize, String>,
+}
+
+/// How a call says the value the comparison `operands` is at, if the source names it: a `const`
+/// declared in `text`, the function's file, which every test module under it can name; or a field
+/// of the receiver.
+pub fn named(
+    callable: &Callable,
+    operands: &[String],
+    text: &str,
+    values: &[i128],
+) -> Option<Named> {
+    let [left, right] = operands else {
+        return None;
+    };
+    let taken = callable
+        .receiver
+        .as_ref()
+        .map_or(0, |receiver| receiver.parameters.len());
+    for (parameter, other) in [(left, right), (right, left)] {
+        let Some(at) = callable
+            .parameters
+            .iter()
+            .position(|(name, _)| name == parameter)
+        else {
+            continue;
+        };
+        let Some(&value) = values.get(taken + at) else {
+            continue;
+        };
+        let found = match other.strip_prefix("self.") {
+            Some(field) => tied(callable, field, values, taken + at),
+            None => constant(callable, other, text, value, taken + at),
+        };
+        if found.is_some() {
+            return found;
+        }
+    }
+    None
+}
+
+/// A field the receiver is made with the same value as the argument at `at`: one local, passed
+/// to both.
+fn tied(callable: &Callable, field: &str, values: &[i128], at: usize) -> Option<Named> {
+    let receiver = callable.receiver.as_ref()?;
+    let made = receiver
+        .parameters
+        .iter()
+        .position(|(name, _)| name == field)?;
+    let parameter = callable.parameters.get(at - receiver.parameters.len())?;
+    // One `let` passes as both only if they're one type: Rust doesn't widen.
+    if values.get(made) != values.get(at) || receiver.parameters[made].1 != parameter.1 {
+        return None;
+    }
+    Some(Named {
+        name: field.to_string(),
+        note: String::new(),
+        local: Some(format!("let {field} = {};", values[at])),
+        arguments: BTreeMap::from([(made, field.to_string()), (at, field.to_string())]),
+    })
+}
+
+/// A `const` of `value`, declared in `text`, that `written` names: `FREE_FROM`, `Self::FREE_FROM`
+/// or `Pricing::FREE_FROM`.
+fn constant(
+    callable: &Callable,
+    written: &str,
+    text: &str,
+    value: i128,
+    at: usize,
+) -> Option<Named> {
+    let name = written.rsplit("::").next()?;
+    let is_constant = !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+        && name.starts_with(|c: char| c.is_ascii_uppercase());
+    if !is_constant || declared_value(text, name)? != value {
+        return None;
+    }
+    let path = match written.strip_prefix("Self::") {
+        Some(rest) => {
+            let owner = callable
+                .receiver
+                .as_ref()
+                .map(|receiver| receiver.type_name.clone())
+                .or_else(|| callable.owner.clone())?;
+            format!("{{prefix}}{owner}::{rest}")
+        }
+        None if written.contains("::") => written.to_string(),
+        None => format!("{{prefix}}{written}"),
+    };
+    Some(Named {
+        name: name.to_string(),
+        note: format!("{name} = {value}"),
+        local: None,
+        arguments: BTreeMap::from([(at, path)]),
+    })
+}
+
+/// The value `const NAME: T = value;` gives, when `text` declares it once, as a whole number.
+fn declared_value(text: &str, name: &str) -> Option<i128> {
+    let declaration = format!("const {name}:");
+    let mut found = text.match_indices(&declaration);
+    let (at, _) = found.next()?;
+    if found.next().is_some() {
+        return None;
+    }
+    let rest = &text[at + declaration.len()..];
+    let value = rest[rest.find('=')? + 1..rest.find(';')?].trim();
+    crate::sites::integer_literal(value).map(|(value, _)| value)
 }
 
 fn number(value: i128) -> String {
@@ -297,22 +454,6 @@ fn number(value: i128) -> String {
     } else {
         value.to_string()
     }
-}
-
-/// `http_server` for `HttpServer`.
-fn snake(name: &str) -> String {
-    let mut out = String::new();
-    for (index, c) in name.chars().enumerate() {
-        if c.is_uppercase() {
-            if index > 0 {
-                out.push('_');
-            }
-            out.extend(c.to_lowercase());
-        } else {
-            out.push(c);
-        }
-    }
-    out
 }
 
 /// `name`, or `name_2`, `name_3`… if the test module already has a function called that.
@@ -399,7 +540,7 @@ mod tests {
             today: "0".into(),
             mutated: "5".into(),
         };
-        let written = test(&late_fee(), Path::new("src/lib.rs"), &found, None);
+        let written = test(&late_fee(), Path::new("src/lib.rs"), &found, None, None);
         assert_eq!(written.place, "mod rates::tests");
         assert_eq!(
             written.lines,
@@ -429,12 +570,18 @@ mod tests {
             today: "false".into(),
             mutated: "true".into(),
         };
-        let written = test(&window, Path::new("src/lib.rs"), &open, Some("m1234abcd"));
+        let written = test(
+            &window,
+            Path::new("src/lib.rs"),
+            &open,
+            Some("m1234abcd"),
+            None,
+        );
         assert_eq!(written.place, "a new #[cfg(test)] mod tests in src/lib.rs");
         assert_eq!(
             written.lines[1..3],
             [
-                "fn open_on_with_day_5_for_open_window_5_and_minus_1() {",
+                "fn open_on_with_day_5_for_start_5_and_end_minus_1() {",
                 "    assert!(!super::OpenWindow { start: 5, end: -1 }.open_on(5)); // today false · with m1234abcd true"
             ]
         );

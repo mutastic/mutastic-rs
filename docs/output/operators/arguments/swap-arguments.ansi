@@ -3,7 +3,7 @@
     [2m│[0m
  [2m11[0m [2m│[0m pub fn is_percent(value: i32) -> bool {
  [2m12[0m [2m│[0m     between(value, 0, 100)
-    [2m│[0m                    [1;31m^^^^^^ changed to 100, 0[0m
+    [2m│[0m                    [1;31m^^^^^^ 0, 100 changed to 100, 0[0m
  [2m13[0m [2m│[0m }
     [2m│[0m
     [2m=[0m mutant  [1;31m- [0mbetween(value, 0, 100)

@@ -3,7 +3,7 @@
     [2m│[0m
  [2m 9[0m [2m│[0m pub fn needs_restock(stock: u32, low: u32) -> bool {
  [2m10[0m [2m│[0m     stock < low
-    [2m│[0m           [1;31m^ changed to !=[0m
+    [2m│[0m           [1;31m^ < changed to !=[0m
  [2m11[0m [2m│[0m }
     [2m│[0m
     [2m=[0m mutant  [1;31m- [0mstock < low

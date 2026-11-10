@@ -54,7 +54,7 @@ which way the check went:
    │
  3 │ pub fn display_name(name: &str, nickname: Option<&str>) -> String {
  4 │     if nickname.is_none() {
-   │                 ^^^^^^^ changed to is_some
+   │                 ^^^^^^^ is_none changed to is_some
  5 │         return name.to_string();
    │
    = mutant  - if nickname.is_none() {

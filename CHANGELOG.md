@@ -28,6 +28,28 @@ events format only gains.
   the latest release. `MUTASTIC_VERSION` still picks another. See
   [One command, two editions](docs/editions.md#the-java-edition).
 
+### Cards
+
+- **A card stands alone without the source.** The `-` and `+` lines show the whole statement the
+  change is in, found from the syntax tree, when it spans several lines (an `if` up to its
+  condition's end, a statement, a match arm), cut to six lines around the change with `…`. A
+  statement the mutant takes out has a `-` and no `+`, where the `+` said `(nothing: the line is
+  gone)`. A condition forced to a value reads as that value: `!true` is `false` and `!false` is
+  `true`, the rest of the line as written. The label under the caret names both sides,
+  `starts_with changed to ends_with`, as the Java edition's does.
+- **Covering tests are listed in the Java edition's order:** the function's own test module
+  first (`pricing::tests::…` for a function in `pricing`), then by name, where they were by name
+  alone, so both editions' cards, events and suggestions agree.
+- **Suggested tests say a value the way the source does.** A `const` the comparison reads, in
+  the function's file, is passed by name and its value goes in the comment
+  (`assert_eq!(discount(FREE_FROM), 10); // FREE_FROM = 100 · …`), and its value is tried among
+  the inputs; a field the receiver is made with, of the parameter's type and passed the same
+  value, is one `let`, passed to both. Either names the test (`discount_at_free_from`,
+  `is_free_at_free_from`). Otherwise the receiver's values are named by its fields or `new`'s
+  parameters (`open_on_with_day_5_for_start_5_and_end_10`), not by its type.
+- **`explain` on a skipped mutant says why once,** `SKIPPED  unviable: …`, not `skipped: unviable:
+  …`.
+
 ## 0.2.1 (2026-11-09)
 
 Windows support, and installing through mutastic.io.

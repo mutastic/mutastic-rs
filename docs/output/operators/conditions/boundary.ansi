@@ -3,7 +3,7 @@
    [2m│[0m
  [2m4[0m [2m│[0m pub fn free_delivery(total: u32) -> bool {
  [2m5[0m [2m│[0m     total >= 50
-   [2m│[0m           [1;31m^^ changed to >[0m
+   [2m│[0m           [1;31m^^ >= changed to >[0m
  [2m6[0m [2m│[0m }
    [2m│[0m
    [2m=[0m mutant  [1;31m- [0mtotal >= 50

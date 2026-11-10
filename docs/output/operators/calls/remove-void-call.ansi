@@ -7,7 +7,6 @@
  [2m15[0m [2m│[0m     }
     [2m│[0m
     [2m=[0m mutant  [1;31m- [0mself.history.push(format!("added {item}"));
-              [32m+ [0m(nothing: the line is gone)
     [2m=[0m [1;34m[1mnote[0m[0m: covered by calls::tests::adding_an_item_counts_it (its 1 covering test still passes)
     [2m=[0m [32m[1mhelp[0m[0m: assert what [1mself.history.push(format!("added {item}"));[0m changes, in a test of [1madd()[0m
 

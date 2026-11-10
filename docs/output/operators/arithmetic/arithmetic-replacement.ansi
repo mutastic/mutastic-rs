@@ -3,7 +3,7 @@
    [2m│[0m
  [2m7[0m [2m│[0m pub fn with_fee(price: u32, fee: u32) -> u32 {
  [2m8[0m [2m│[0m     price + fee
-   [2m│[0m           [1;31m^ changed to *[0m
+   [2m│[0m           [1;31m^ + changed to *[0m
  [2m9[0m [2m│[0m }
    [2m│[0m
    [2m=[0m mutant  [1;31m- [0mprice + fee

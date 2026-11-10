@@ -55,7 +55,7 @@ fn one_of_each() {
    │
  3 │ pub fn line_total(price: u32, quantity: u32) -> u32 {
  4 │     price * quantity
-   │           ^ changed to /
+   │           ^ * changed to /
  5 │ }
    │
    = mutant  - price * quantity
@@ -122,7 +122,7 @@ fn a_fee_is_added() {
    │
  7 │ pub fn with_fee(price: u32, fee: u32) -> u32 {
  8 │     price + fee
-   │           ^ changed to *
+   │           ^ + changed to *
  9 │ }
    │
    = mutant  - price + fee
@@ -188,7 +188,7 @@ fn a_bill_is_shared() {
     │
  11 │ pub fn per_person(bill: u32, people: u32) -> u32 {
  12 │     bill / people
-    │          ^ changed to -
+    │          ^ / changed to -
  13 │ }
     │
     = mutant  - bill / people
@@ -259,7 +259,7 @@ is math's, with keep operand's under it:
     │
  15 │ pub fn after_refund(paid: u32, refund: u32) -> u32 {
  16 │     paid - refund
-    │          ^ changed to +
+    │          ^ - changed to +
  17 │ }
     │
     = mutant  - paid - refund
@@ -391,7 +391,7 @@ the test: the operator's, the constant's, and keep operand's, on one card:
     │
  24 │ pub fn postage(kilos: u32) -> u32 {
  25 │     kilos * 3 + 2
-    │           ^ changed to /
+    │           ^ * changed to /
  26 │ }
     │
     = mutant  - kilos * 3 + 2
@@ -468,7 +468,7 @@ fn a_flag_that_is_set() {
     │
  28 │ pub fn has_flag(flags: u8, flag: u8) -> bool {
  29 │     flags & flag != 0
-    │           ^ changed to |
+    │           ^ & changed to |
  30 │ }
     │
     = mutant  - flags & flag != 0

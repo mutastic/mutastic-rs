@@ -8,14 +8,14 @@
     [2m│[0m
  [2m25[0m [2m│[0m     pub fn discount(&self, total: u32) -> u32 {
  [2m26[0m [2m│[0m         if total >= 100 {
-    [2m│[0m                  [1;31m^^ changed to >[0m
+    [2m│[0m                  [1;31m^^ >= changed to >[0m
  [2m27[0m [2m│[0m             return total / 10;
     [2m│[0m
     [2m=[0m mutant  [1;31m- [0mif total >= 100 {
               [32m+ [0mif total > 100 {
     [2m=[0m [1;34m[1mnote[0m[0m: every test calls [1mdiscount()[0m away from the boundary
             [2minputs seen: 50, 250 (none is 100)[0m
-            [2mcovered by pricing::big_orders_get_ten_percent_off, tests::small_orders_pay_full_price (all 2 covering tests still pass)[0m
+            [2mcovered by tests::small_orders_pay_full_price, pricing::big_orders_get_ten_percent_off (all 2 covering tests still pass)[0m
     [2m=[0m [32m[1mhelp[0m[0m: test [1mdiscount()[0m with [1mtotal = 100[0m and assert the result
 
             // in mod tests
@@ -34,8 +34,8 @@
  [2m Worst at[0m  Pricing::discount() 1 ✗
  [2m    Build[0m  one build of every mutant, 2 rounds (check and build)
  [2mTest runs[0m  13[2m (33 without coverage selection)[0m
- [2m Start at[0m  13:21:31
- [2m Duration[0m  2.2s [2m(setup 2.1s, coverage 5ms, mutants 32ms)[0m
+ [2m Start at[0m  03:00:33
+ [2m Duration[0m  2.7s [2m(setup 2.7s, coverage 4ms, mutants 30ms)[0m
  [2m    Tests[0m  3 on rustc 1.98.0 · 4 workers
  [2m  Reports[0m  target/mutastic/mutation.json[2m · [0mtarget/mutastic/mutation.html
  [2m    Score[0m  [32m[1m90.9%[0m[0m[2m  threshold 80[0m

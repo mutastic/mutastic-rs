@@ -3,7 +3,7 @@
     [2m│[0m
  [2m24[0m [2m│[0m pub fn postage(kilos: u32) -> u32 {
  [2m25[0m [2m│[0m     kilos * 3 + 2
-    [2m│[0m           [1;31m^ changed to /[0m
+    [2m│[0m           [1;31m^ * changed to /[0m
  [2m26[0m [2m│[0m }
     [2m│[0m
     [2m=[0m mutant  [1;31m- [0mkilos * 3 + 2

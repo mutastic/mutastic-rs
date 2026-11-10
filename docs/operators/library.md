@@ -49,7 +49,7 @@ fn plain_lines_are_not_comments() {
    │
  3 │ pub fn is_comment(line: &str) -> bool {
  4 │     line.starts_with('#')
-   │          ^^^^^^^^^^^ changed to ends_with
+   │          ^^^^^^^^^^^ starts_with changed to ends_with
  5 │ }
    │
    = mutant  - line.starts_with('#')
@@ -108,7 +108,7 @@ At exactly the cap, `min` and `max` agree:
     │
   8 │ pub fn capped_discount(percent: u32) -> u32 {
   9 │     percent.min(50)
-    │             ^^^ changed to max
+    │             ^^^ min changed to max
  10 │ }
     │
     = mutant  - percent.min(50)
@@ -176,7 +176,7 @@ apart:
     │
  12 │ pub fn extension(file: &str) -> Option<&str> {
  13 │     file.find('.').map(|dot| &file[dot + 1..])
-    │          ^^^^ changed to rfind
+    │          ^^^^ find changed to rfind
  14 │ }
     │
     = mutant  - file.find('.').map(|dot| &file[dot + 1..])

@@ -3,7 +3,7 @@
    [2m│[0m
  [2m3[0m [2m│[0m pub fn is_comment(line: &str) -> bool {
  [2m4[0m [2m│[0m     line.starts_with('#')
-   [2m│[0m          [1;31m^^^^^^^^^^^ changed to ends_with[0m
+   [2m│[0m          [1;31m^^^^^^^^^^^ starts_with changed to ends_with[0m
  [2m5[0m [2m│[0m }
    [2m│[0m
    [2m=[0m mutant  [1;31m- [0mline.starts_with('#')

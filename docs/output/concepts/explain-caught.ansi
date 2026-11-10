@@ -4,7 +4,7 @@
     [2m│[0m
  [2m26[0m [2m│[0m         if total >= 100 {
  [2m27[0m [2m│[0m             return total / 10;
-    [2m│[0m                          [1;31m^ changed to *[0m
+    [2m│[0m                          [1;31m^ / changed to *[0m
  [2m28[0m [2m│[0m         }
     [2m│[0m
     [2m=[0m mutant  [1;31m- [0mreturn total / 10;

@@ -115,7 +115,7 @@ With the range turned round, nothing is a percent, and 150 still isn't:
     │
  11 │ pub fn is_percent(value: i32) -> bool {
  12 │     between(value, 0, 100)
-    │                    ^^^^^^ changed to 100, 0
+    │                    ^^^^^^ 0, 100 changed to 100, 0
  13 │ }
     │
     = mutant  - between(value, 0, 100)
@@ -183,7 +183,11 @@ fn full_price_without_a_coupon() {
  24 │     base - coupon.unwrap_or(0)
     │
     = mutant  - pub fn price_with(base: u32, coupon: Option<u32>) -> u32 {
+              -     base - coupon.unwrap_or(0)
+              - }
               + pub fn price_with(base: u32, coupon: Option<u32>) -> u32 { let coupon: Option<u32> = None;
+              +     base - coupon.unwrap_or(0)
+              + }
     = note: inputs seen: base = 10
             covered by arguments::tests::full_price_without_a_coupon (its 1 covering test still passes)
     = help: add a test where the coupon given changes what price_with() does, and assert it
@@ -317,7 +321,19 @@ fn a_calm_greeting() {
  28 │     if excited {
     │
     = mutant  - pub fn greet(name: String, excited: bool) -> String {
+              -     if excited {
+              -         format!("Hi {name}!")
+              -     } else {
+              -         format!("Hi {name}")
+              -     }
+              - …
               + pub fn greet(name: String, excited: bool) -> String { let excited: bool = Default::default();
+              +     if excited {
+              +         format!("Hi {name}!")
+              +     } else {
+              +         format!("Hi {name}")
+              +     }
+              + …
     = note: covered by arguments::tests::a_calm_greeting (its 1 covering test still passes)
     = help: add a test where the excited given changes what greet() does, and assert it
 

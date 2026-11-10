@@ -346,6 +346,9 @@ fn every_suggested_test_compiles_and_catches_its_mutant() {
         let dir = copy_of(name);
         let suggested = suggested_tests_hold(&dir, operators);
         assert!(suggested.len() >= least, "{name}: {}", suggested.len());
+        if name == "suggestions" {
+            names_the_values_the_source_names(&suggested);
+        }
         assert!(
             suggested
                 .iter()
@@ -354,6 +357,33 @@ fn every_suggested_test_compiles_and_catches_its_mutant() {
         );
         std::fs::remove_dir_all(&dir).ok();
     }
+}
+
+/// A suggested test says a value the way the source does: a `const` the comparison reads is
+/// passed by name, its value in the comment, and a field the receiver is made with is one local,
+/// passed to both; each test is named for it.
+fn names_the_values_the_source_names(suggested: &[serde_json::Value]) {
+    let code = |function: &str| -> Vec<String> {
+        suggested
+            .iter()
+            .filter(|e| e["location"]["method"] == function)
+            .map(|e| e["suggestedTest"]["code"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert!(
+        code("discount").contains(
+            &"#[test]\nfn discount_at_free_from() {\n    assert_eq!(discount(FREE_FROM), 10); // FREE_FROM = 100 · today 10 · with this mutant 0\n}".to_string()
+        ),
+        "{:?}",
+        code("discount")
+    );
+    assert!(
+        code("is_free").iter().any(|test| test
+            .starts_with("#[test]\nfn is_free_at_free_from() {\n    let free_from = ")
+            && test.contains("Delivery { free_from }.is_free(free_from)")),
+        "{:?}",
+        code("is_free")
+    );
 }
 
 /// The library `cargo new --lib` makes: its test calls `add(2, 2)`, which can't tell `+` from `*`,

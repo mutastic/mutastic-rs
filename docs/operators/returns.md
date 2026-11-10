@@ -135,7 +135,7 @@ fn spaces_are_ignored() {
     │
  13 │ pub fn parse_quantity(text: &str) -> Result<u32, std::num::ParseIntError> {
  14 │     let quantity: u32 = text.trim().parse()?;
-    │                                            ^ changed to .unwrap()
+    │                                            ^ ? changed to .unwrap()
  15 │     Ok(quantity)
     │
     = mutant  - let quantity: u32 = text.trim().parse()?;
@@ -247,7 +247,11 @@ fn a_good_code() {
     │        ^^^^^^^^^^^^^ only returns true
  10 │     code.len() == 6 && code.chars().all(|c| c.is_ascii_digit())
     │
-    = mutant  - pub fn is_valid_code(code: &str) -> bool {
+    = mutant  - /// Six digits.
+              - pub fn is_valid_code(code: &str) -> bool {
+              -     code.len() == 6 && code.chars().all(|c| c.is_ascii_digit())
+              - }
+              + /// Six digits.
               + pub fn is_valid_code(code: &str) -> bool { true }
     = note: covered by returns::tests::a_good_code (its 1 covering test still passes)
     = help: add a test where is_valid_code() returns something other than true, and assert it
@@ -314,7 +318,6 @@ Without the early return, `"".parse()` fails too, and the test still gets an err
  21 │     }
     │
     = mutant  - return Err("no quantity given".into());
-              + (nothing: the line is gone)
     = note: covered by returns::tests::an_empty_quantity_is_an_error (its 1 covering test still passes)
     = help: assert what return Err("no quantity given".into()); changes, in a test of quantity()
 

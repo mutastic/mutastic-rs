@@ -3,7 +3,7 @@
     [2m│[0m
  [2m28[0m [2m│[0m pub fn has_flag(flags: u8, flag: u8) -> bool {
  [2m29[0m [2m│[0m     flags & flag != 0
-    [2m│[0m           [1;31m^ changed to |[0m
+    [2m│[0m           [1;31m^ & changed to |[0m
  [2m30[0m [2m│[0m }
     [2m│[0m
     [2m=[0m mutant  [1;31m- [0mflags & flag != 0

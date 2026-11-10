@@ -3,7 +3,7 @@
    [2m│[0m
  [2m4[0m [2m│[0m pub fn any_overdue(days_late: &[u32]) -> bool {
  [2m5[0m [2m│[0m     days_late.iter().any(|days| *days > 30)
-   [2m│[0m                      [1;31m^^^ changed to all[0m
+   [2m│[0m                      [1;31m^^^ any changed to all[0m
  [2m6[0m [2m│[0m }
    [2m│[0m
    [2m=[0m mutant  [1;31m- [0mdays_late.iter().any(|days| *days > 30)

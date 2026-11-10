@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
+use std::ops::Range;
 
 use serde_json::{json, Value};
 
@@ -161,11 +162,18 @@ impl<'a> View<'a> {
         let callable = self.report.found.functions[mutant.function]
             .callable
             .as_ref()?;
+        let at = suggest::named(
+            callable,
+            &mutant.operands,
+            self.text(mutant),
+            &suggestion.values,
+        );
         Some(suggest::test(
             callable,
             &mutant.file,
             suggestion,
             named.then_some(mutant.id.as_str()),
+            at.as_ref(),
         ))
     }
 
@@ -196,24 +204,35 @@ impl<'a> View<'a> {
             .collect()
     }
 
-    /// The source line with the change made, without its indent.
-    fn changed_line(&self, mutant: &Mutant) -> (String, String) {
+    /// The lines of the statement the mutant changes, as written and as the mutant has them (none
+    /// when it takes the statement out), without the indent they share and cut short around the
+    /// change: what every card shows in its `-` and `+` lines.
+    fn changed_lines(&self, mutant: &Mutant) -> Shown {
         let text = self.text(mutant);
-        let starts = sites::line_starts(text);
         let (range, with) = mutant.claim();
-        let line_start = starts[sites::line_of(&starts, range.start) - 1];
-        let line_end = text[line_start..]
-            .find('\n')
-            .map_or(text.len(), |end| line_start + end);
-        let line = &text[line_start..line_end];
-        let start = range.start.max(line_start) - line_start;
-        let end = range.end.min(line_end).max(range.start.max(line_start)) - line_start;
-        let changed = format!("{}{with}{}", &line[..start], &line[end..]);
-        let changed = match changed.trim() {
-            "" => "(nothing: the line is gone)".to_string(),
-            kept => kept.to_string(),
-        };
-        (line.trim().to_string(), changed)
+        let extent = statement_extent(text, &range);
+        let starts = sites::line_starts(text);
+        let first = starts[sites::line_of(&starts, extent.start.min(range.start)) - 1];
+        let end = extent.end.max(range.end);
+        let last = text[end..].find('\n').map_or(text.len(), |at| end + at);
+        let before: Vec<&str> = text[first..last].lines().collect();
+        let mut changed = format!(
+            "{}{with}{}",
+            &text[first..range.start],
+            &text[range.end..last]
+        );
+        if matches!(mutant.change, Change::Always { .. }) {
+            changed = simplified(&changed);
+        }
+        let after: Vec<&str> = changed
+            .lines()
+            .enumerate()
+            .filter(|(at, line)| {
+                !line.trim().is_empty() || before.get(*at).is_some_and(|was| was.trim().is_empty())
+            })
+            .map(|(_, line)| line)
+            .collect();
+        Shown::new(&before, &after)
     }
 
     fn command(&self, verb: &str, ids: &str) -> String {
@@ -573,6 +592,146 @@ fn frame(out: &mut String, view: &View, mutant: &Mutant, advice: &Advice, style:
     g
 }
 
+/// `= mutant  - the statement` and `+ the statement as the mutant has it`; no `+` for a statement
+/// the mutant takes out.
+fn before_and_after(out: &mut String, g: &str, shown: &Shown, style: Style) {
+    for (at, line) in shown.before.iter().enumerate() {
+        let lead = if at == 0 {
+            format!("{} mutant  ", style.dim("="))
+        } else {
+            "          ".to_string()
+        };
+        let _ = writeln!(out, "{g}{lead}{}{line}", style.red("- "));
+    }
+    for line in &shown.after {
+        let _ = writeln!(out, "{g}          {}{line}", style.green("+ "));
+    }
+}
+
+/// What a card shows of a mutant's change: its statement's lines as written, and as the mutant
+/// has them, none when it takes the statement out.
+struct Shown {
+    before: Vec<String>,
+    after: Vec<String>,
+}
+
+impl Shown {
+    /// The most of a statement a card shows; a longer one is cut short, around its change.
+    const MOST_LINES: usize = 6;
+
+    fn new(before: &[&str], after: &[&str]) -> Shown {
+        let indent = before
+            .iter()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| line.len() - line.trim_start().len())
+            .min()
+            .unwrap_or(0);
+        let changed = before
+            .iter()
+            .zip(after)
+            .take_while(|(was, now)| was == now)
+            .count();
+        Shown {
+            before: cut(before, changed.min(before.len().saturating_sub(1)), indent),
+            after: cut(after, changed.min(after.len().saturating_sub(1)), indent),
+        }
+    }
+}
+
+/// `lines` without `indent`, and only [`Shown::MOST_LINES`] of them, from just before `changed`,
+/// with `…` for what's left out.
+fn cut(lines: &[&str], changed: usize, indent: usize) -> Vec<String> {
+    let from = changed
+        .saturating_sub(1)
+        .min(lines.len().saturating_sub(Shown::MOST_LINES));
+    let to = lines.len().min(from + Shown::MOST_LINES);
+    let mut shown = Vec::new();
+    if from > 0 {
+        shown.push("…".to_string());
+    }
+    for line in &lines[from..to] {
+        let leading = line.len() - line.trim_start().len();
+        shown.push(line[leading.min(indent)..].trim_end().to_string());
+    }
+    if to < lines.len() {
+        shown.push("…".to_string());
+    }
+    shown
+}
+
+/// Where the statement a change is in starts and ends, from the syntax tree: the nearest
+/// statement, match arm or block's last expression around it, or an `if` or `while` up to the
+/// end of its condition, for a change in the condition.
+fn statement_extent(text: &str, range: &Range<usize>) -> Range<usize> {
+    use ra_ap_syntax::ast::{self, AstNode};
+    use ra_ap_syntax::{Edition, NodeOrToken, SourceFile, SyntaxKind, TextRange, TextSize};
+    let to_size = |at: usize| TextSize::from(u32::try_from(at).unwrap_or(u32::MAX));
+    let file = SourceFile::parse(text, Edition::CURRENT).tree();
+    let target = TextRange::new(to_size(range.start), to_size(range.end.max(range.start)));
+    if file.syntax().text_range().end() < target.end() {
+        return range.clone();
+    }
+    let node = match file.syntax().covering_element(target) {
+        NodeOrToken::Node(node) => node,
+        NodeOrToken::Token(token) => match token.parent() {
+            Some(parent) => parent,
+            None => return range.clone(),
+        },
+    };
+    let span = |from: TextSize, to: TextSize| usize::from(from)..usize::from(to);
+    for ancestor in node.ancestors() {
+        let Some(parent) = ancestor.parent() else {
+            break;
+        };
+        let condition = ast::IfExpr::cast(parent.clone())
+            .and_then(|found| found.condition())
+            .or_else(|| ast::WhileExpr::cast(parent.clone()).and_then(|found| found.condition()));
+        if condition.is_some_and(|found| found.syntax() == &ancestor) {
+            return span(parent.text_range().start(), ancestor.text_range().end());
+        }
+        if ast::Stmt::can_cast(ancestor.kind())
+            || ancestor.kind() == SyntaxKind::MATCH_ARM
+            || parent.kind() == SyntaxKind::STMT_LIST
+        {
+            return span(ancestor.text_range().start(), ancestor.text_range().end());
+        }
+    }
+    range.clone()
+}
+
+/// `!true` as `false` and `!false` as `true`, the rest as written: a condition forced to a value
+/// reads as that value.
+fn simplified(text: &str) -> String {
+    let mut out = text.to_string();
+    for (negated, value) in [
+        ("!(true)", "false"),
+        ("!(false)", "true"),
+        ("!true", "false"),
+        ("!false", "true"),
+    ] {
+        out = replace_words(&out, negated, value);
+    }
+    out
+}
+
+/// `text` with each `found` replaced where it isn't run on into a name: `!true` but not `!trueish`.
+fn replace_words(text: &str, found: &str, with: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(at) = rest.find(found) {
+        let after = &rest[at + found.len()..];
+        let runs_on = after
+            .chars()
+            .next()
+            .is_some_and(|next| next.is_alphanumeric() || next == '_');
+        out.push_str(&rest[..at]);
+        out.push_str(if runs_on { found } else { with });
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
 fn id_list(view: &View, entry: &Entry) -> String {
     std::iter::once(entry.main)
         .chain(entry.also.iter().copied())
@@ -599,9 +758,7 @@ fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
     );
     let g = frame(out, view, mutant, &advice, style);
     let equals = style.dim("=");
-    let (before, after) = view.changed_line(mutant);
-    let _ = writeln!(out, "{g}{equals} mutant  {}{before}", style.red("- "));
-    let _ = writeln!(out, "{g}          {}{after}", style.green("+ "));
+    before_and_after(out, &g, &view.changed_lines(mutant), style);
     for other in &entry.also {
         let other_mutant = view.mutant(other);
         let _ = writeln!(
@@ -611,12 +768,17 @@ fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
             style.code(&view.advice(other).headline),
             style.dim(&format!("· {}", other_mutant.id))
         );
-        let _ = writeln!(
-            out,
-            "{g}          {}{}",
-            style.green("+ "),
-            view.changed_line(other_mutant).1
-        );
+        let shown = view.changed_lines(other_mutant);
+        if shown.after.is_empty() {
+            let _ = writeln!(
+                out,
+                "{g}{equals} change  {}",
+                style.code(&view.advice(other).change)
+            );
+        }
+        for line in &shown.after {
+            let _ = writeln!(out, "{g}          {}{line}", style.green("+ "));
+        }
     }
     let mut notes: Vec<String> = advice.notes.clone();
     notes.push(covered_by(result));
@@ -1163,12 +1325,16 @@ fn agent_entry(view: &View, entry: &Entry) -> String {
     let mutant = view.mutant(result);
     let advice = view.advice(result);
     let ids = id_list(view, entry);
-    let (before, after) = view.changed_line(mutant);
+    let shown = view.changed_lines(mutant);
     let mut out = String::new();
     let _ = writeln!(out, "missed {}: {}", mutant.id, advice.headline);
     let _ = writeln!(out, "   at {}:{}", view.file(mutant), mutant.line);
-    let _ = writeln!(out, "   - {before}");
-    let _ = writeln!(out, "   + {after}");
+    for line in &shown.before {
+        let _ = writeln!(out, "   - {line}");
+    }
+    for line in &shown.after {
+        let _ = writeln!(out, "   + {line}");
+    }
     for other in &entry.also {
         let _ = writeln!(
             out,
@@ -1176,7 +1342,13 @@ fn agent_entry(view: &View, entry: &Entry) -> String {
             view.id(other),
             view.advice(other).headline
         );
-        let _ = writeln!(out, "     + {}", view.changed_line(view.mutant(other)).1);
+        let other_shown = view.changed_lines(view.mutant(other));
+        if other_shown.after.is_empty() {
+            let _ = writeln!(out, "     change: {}", view.advice(other).change);
+        }
+        for line in &other_shown.after {
+            let _ = writeln!(out, "     + {line}");
+        }
     }
     let _ = writeln!(
         out,
@@ -1552,19 +1724,12 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
         ),
         Status::Ignored | Status::Survived => (
             style.label("SKIPPED", CYAN),
-            format!("skipped: {}", result.reason.as_deref().unwrap_or_default()),
+            result.reason.clone().unwrap_or_default(),
         ),
     };
     let _ = writeln!(out, "\n {label} {}", style.bold(&outcome));
     let g = frame(out, view, mutant, &advice, style);
-    let (before, after) = view.changed_line(mutant);
-    let _ = writeln!(
-        out,
-        "{g}{} mutant  {}{before}",
-        style.dim("="),
-        style.red("- ")
-    );
-    let _ = writeln!(out, "{g}          {}{after}", style.green("+ "));
+    before_and_after(out, &g, &view.changed_lines(mutant), style);
     let mut notes = advice.notes.clone();
     if !result.covered_by.is_empty() {
         // Whether they still pass is a miss's to say: here, only which tests reach it.
@@ -1681,4 +1846,77 @@ fn about(
         },
     };
     row(out, "last run", last, Vec::new());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The lines a card shows for `claimed` replaced by `with` in `text`.
+    fn shown(text: &str, claimed: &str, with: &str, forced: bool) -> Shown {
+        let at = text.find(claimed).unwrap();
+        let range = at..at + claimed.len();
+        let extent = statement_extent(text, &range);
+        let starts = sites::line_starts(text);
+        let first = starts[sites::line_of(&starts, extent.start) - 1];
+        let last = text[extent.end..]
+            .find('\n')
+            .map_or(text.len(), |end| extent.end + end);
+        let before: Vec<&str> = text[first..last].lines().collect();
+        let mut changed = format!(
+            "{}{with}{}",
+            &text[first..range.start],
+            &text[range.end..last]
+        );
+        if forced {
+            changed = simplified(&changed);
+        }
+        let after: Vec<&str> = changed.lines().collect();
+        Shown::new(&before, &after)
+    }
+
+    #[test]
+    fn a_statement_over_several_lines_shows_whole() {
+        let text = "fn f(next: &[u8]) -> bool {\n    let thrown = (!next.is_empty() && next[0] == 1)\n        || next.len() > 3;\n    thrown\n}\n";
+        let card = shown(text, "next.is_empty()", "true", true);
+        assert_eq!(
+            card.before,
+            [
+                "let thrown = (!next.is_empty() && next[0] == 1)",
+                "    || next.len() > 3;"
+            ]
+        );
+        assert_eq!(
+            card.after,
+            [
+                "let thrown = (false && next[0] == 1)",
+                "    || next.len() > 3;"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_condition_shows_up_to_its_end_and_not_its_body() {
+        let text =
+            "fn f(a: u8, b: u8) {\n    if a > 1\n        && b > 2\n    {\n        g();\n    }\n}\n";
+        let card = shown(text, ">", ">=", false);
+        assert_eq!(card.before, ["if a > 1", "    && b > 2"]);
+        assert_eq!(card.after, ["if a >= 1", "    && b > 2"]);
+    }
+
+    #[test]
+    fn a_forced_value_reads_as_itself_and_a_long_statement_is_cut() {
+        assert_eq!(
+            simplified("if !true && !(false) || !trueish {"),
+            "if false && true || !trueish {"
+        );
+        let lines: Vec<String> = (1..=9).map(|n| format!("    {n},")).collect();
+        let before: Vec<&str> = lines.iter().map(String::as_str).collect();
+        let mut after = before.clone();
+        after[8] = "    10,";
+        let card = Shown::new(&before, &after);
+        assert_eq!(card.after.first().map(String::as_str), Some("…"));
+        assert_eq!(card.after.last().map(String::as_str), Some("10,"));
+        assert_eq!(card.after.len(), Shown::MOST_LINES + 1);
+    }
 }

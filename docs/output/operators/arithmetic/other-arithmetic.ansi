@@ -3,7 +3,7 @@
     [2m│[0m
  [2m11[0m [2m│[0m pub fn per_person(bill: u32, people: u32) -> u32 {
  [2m12[0m [2m│[0m     bill / people
-    [2m│[0m          [1;31m^ changed to -[0m
+    [2m│[0m          [1;31m^ / changed to -[0m
  [2m13[0m [2m│[0m }
     [2m│[0m
     [2m=[0m mutant  [1;31m- [0mbill / people

@@ -53,7 +53,7 @@ fn small_orders_pay_for_delivery() {
    │
  4 │ pub fn free_delivery(total: u32) -> bool {
  5 │     total >= 50
-   │           ^^ changed to >
+   │           ^^ >= changed to >
  6 │ }
    │
    = mutant  - total >= 50
@@ -190,7 +190,7 @@ fn ships_when_paid_and_in_stock() {
     │
  21 │ pub fn can_ship(paid: bool, in_stock: bool) -> bool {
  22 │     paid && in_stock
-    │          ^^ changed to ||
+    │          ^^ && changed to ||
  23 │ }
     │
     = mutant  - paid && in_stock
@@ -269,7 +269,7 @@ fn restock_when_low() {
     │
   9 │ pub fn needs_restock(stock: u32, low: u32) -> bool {
  10 │     stock < low
-    │           ^ changed to !=
+    │           ^ < changed to !=
  11 │ }
     │
     = mutant  - stock < low

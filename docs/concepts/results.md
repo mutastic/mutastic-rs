@@ -107,7 +107,7 @@ This is the unsafety fixture, which has one of each:
    │
  4 │ pub fn guarded(x: i32) -> i32 {
  5 │     if x < 0 {
-   │          ^ changed to <=
+   │          ^ < changed to <=
  6 │         std::process::abort();
    │
    = mutant  - if x < 0 {
@@ -130,7 +130,7 @@ This is the unsafety fixture, which has one of each:
    │
  4 │ pub fn positive(x: i32) -> bool {
  5 │     x > 0
-   │       ^ changed to >=
+   │       ^ > changed to >=
  6 │ }
    │
    = mutant  - x > 0
@@ -154,7 +154,7 @@ This is the unsafety fixture, which has one of each:
     │
  23 │ pub fn checked(x: i32) -> i32 {
  24 │     if x < 0 {
-    │          ^ changed to <=
+    │          ^ < changed to <=
  25 │         std::process::abort();
     │
     = mutant  - if x < 0 {
@@ -182,8 +182,8 @@ This is the unsafety fixture, which has one of each:
    Crashes  1 caught only because the test process crashed, not by a test's check
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  15 (90 without coverage selection)
-  Start at  13:21:41
-  Duration  1.4s (setup 1.2s, coverage 9ms, mutants 144ms)
+  Start at  03:00:47
+  Duration  1.9s (setup 1.7s, coverage 8ms, mutants 163ms)
      Tests  6 on rustc 1.98.0 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
      Score  35.7%  threshold 80  · 41.7% where tests reach

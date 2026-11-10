@@ -65,7 +65,6 @@ The test counts the items, so removing the first `push` is caught. Nothing reads
  15 │     }
     │
     = mutant  - self.history.push(format!("added {item}"));
-              + (nothing: the line is gone)
     = note: covered by calls::tests::adding_an_item_counts_it (its 1 covering test still passes)
     = help: assert what self.history.push(format!("added {item}")); changes, in a test of add()
 
@@ -130,7 +129,6 @@ No test visits twice, so nothing needs the name remembered:
  26 │     first
     │
     = mutant  - seen.insert(name.to_string(), 1);
-              + (nothing: the line is gone)
     = note: covered by calls::tests::a_first_visit (its 1 covering test still passes)
     = help: assert what seen.insert(name.to_string(), 1); changes, in a test of first_visit()
 
@@ -333,8 +331,13 @@ The test checks what muting keeps, but not that it mutes:
     │         ^^^^^^^^^^^ left out
  57 │         ..settings.clone()
     │
-    = mutant  - muted: true,
-              + (nothing: the line is gone)
+    = mutant  - Settings {
+              -     muted: true,
+              -     ..settings.clone()
+              - }
+              + Settings {
+              +     ..settings.clone()
+              + }
     = note: covered by calls::tests::muting_keeps_the_volume (its 1 covering test still passes)
     = help: use inputs that muted: true makes a difference to, and assert what muted() does
 

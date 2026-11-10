@@ -6,8 +6,13 @@
     [2m│[0m         [1;31m^^^^^^^^^^^ left out[0m
  [2m57[0m [2m│[0m         ..settings.clone()
     [2m│[0m
-    [2m=[0m mutant  [1;31m- [0mmuted: true,
-              [32m+ [0m(nothing: the line is gone)
+    [2m=[0m mutant  [1;31m- [0mSettings {
+              [1;31m- [0m    muted: true,
+              [1;31m- [0m    ..settings.clone()
+              [1;31m- [0m}
+              [32m+ [0mSettings {
+              [32m+ [0m    ..settings.clone()
+              [32m+ [0m}
     [2m=[0m [1;34m[1mnote[0m[0m: covered by calls::tests::muting_keeps_the_volume (its 1 covering test still passes)
     [2m=[0m [32m[1mhelp[0m[0m: use inputs that [1mmuted: true[0m makes a difference to, and assert what [1mmuted()[0m does
 

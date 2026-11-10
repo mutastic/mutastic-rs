@@ -743,7 +743,7 @@ fn result(
             .collect(),
         suggestion: None,
     };
-    result.covered_by.sort();
+    listed(&function.module, &mut result.covered_by);
     if let Some(error) = built.unviable.get(&index) {
         result.status = Status::Ignored;
         result.reason = Some(format!("unviable: doesn't compile ({error})"));
@@ -841,7 +841,14 @@ fn suggest_all(
         let callable = function.callable.as_ref()?;
         let name = callable.probe_name(function.ordinal);
         let &binary = probes.get(&name)?;
-        let constants = crate::suggest::constants(&source_line(found, result.mutant));
+        let line = source_line(found, result.mutant);
+        let text = found
+            .files
+            .iter()
+            .find(|file| file.path == mutant.file)
+            .map_or("", |file| file.text.as_str());
+        let mut constants = crate::suggest::constants(&line);
+        constants.extend(crate::suggest::named_constants(&line, text));
         let candidates = crate::suggest::candidates(&callable.types(), &constants, &result.inputs);
         let probe = crate::suggest::Probe {
             binary: &built.binaries[binary],
@@ -893,9 +900,44 @@ pub fn rustc_version() -> String {
         .unwrap_or_else(|| "unknown".into())
 }
 
+/// The covering tests in the order the cards list them, as the Java edition lists them: the
+/// mutant's own test module's first (`pricing::tests::…` for a function in `pricing`), then by
+/// name.
+fn listed(module: &str, tests: &mut [String]) {
+    let own = if module.is_empty() {
+        "tests::".to_string()
+    } else {
+        format!("{module}::tests::")
+    };
+    tests.sort_by(|a, b| (!a.starts_with(&own), a).cmp(&(!b.starts_with(&own), b)));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn covering_tests_are_listed_own_module_first_then_by_name() {
+        let mut tests = vec![
+            "window::tests::b".to_string(),
+            "pricing::tests::z".to_string(),
+            "integration::a".to_string(),
+            "pricing::tests::a".to_string(),
+        ];
+        listed("pricing", &mut tests);
+        assert_eq!(
+            tests,
+            [
+                "pricing::tests::a",
+                "pricing::tests::z",
+                "integration::a",
+                "window::tests::b"
+            ]
+        );
+        let mut root = vec!["other::tests::a".to_string(), "tests::b".to_string()];
+        listed("", &mut root);
+        assert_eq!(root, ["tests::b", "other::tests::a"]);
+    }
 
     /// A `mutate:` rule takes back an arid skip, and only that: a `skip:` rule still skips.
     #[test]

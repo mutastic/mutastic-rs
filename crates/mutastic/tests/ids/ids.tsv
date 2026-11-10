@@ -78,6 +78,7 @@ m08fbf1a4	truth	loops	mutastic/constant-value	10 → 11
 m09000389	truth	connector	mutastic/comparison	x == -3 → (x) <= (-3)
 m0940bbf4	truth	with_try	mutastic/constant-value	1 → 2
 m095e123f	truth	strings	mutastic/replace-body	{ let s = format!("ab{x}ba"); let mut out = String::new(); if s.starts_with("ab1") { out.push('s'); } out.push_str(&s.to_uppercase()); out.push_str(s.trim_start_matches('a')); if let Some(rest) = s.strip_prefix("ab") { out.push_str(rest); } out } → String::new()
+m097fec39	suggestions	delivery::Delivery::is_free	mutastic/other-comparison	total >= self.free_from → (total) <= (self.free_from)
 m0999a8c6	truth	removes_calls	mutastic/constant-value	2 → 1
 m099b1f9a	truth	stage_in_for	mutastic/other-arithmetic	total * 10 + v → (total * 10) / (v)
 m099ecfb2	truth	optional	mutastic/other-arithmetic	x - 3 → (x) * (3)
@@ -390,6 +391,7 @@ m2c1da8c3	truth	in_match_guard	mutastic/boundary	v > 2 → (v) >= (2)
 m2c53ca47	truth	not_condition	mutastic/other-arithmetic	x % 2 → (x) * (2)
 m2c8da720	truth	optional	mutastic/other-arithmetic	small + cap * 10 + d * 100 + e * 1000 → (small + cap * 10 + d * 100) % (e * 1000)
 m2cc9b895	truth	constants	mutastic/constant-value	2 → 1
+m2cfd5061	suggestions	delivery::Delivery::is_free	mutastic/other-comparison	total >= self.free_from → (total) != (self.free_from)
 m2d0bab72	truth	all	mutastic/replace-body	{ format!( "{} {} {} {} {} {:?} {} {} {} {} {} {} {:?} {:?} {:?} {}", in_if(x), in_else_if(x), in_while(x.clamp(-5, 5)), in_match_guard(x), in_closure(x), with_try(x), connector(x), not_condition(x), compound(x), precedence(x), returns_early(x), returns_bool(x), returns_option(x), returns_string(x), returns_vec(x), split_line(x), ) } → String::new()
 m2d113f0c	truth	bits	mutastic/constant-value	1 → 2
 m2d266c0e	truth	checked	mutastic/constant-value	3 → 2
@@ -419,6 +421,7 @@ m301478f3	loops	digits	mutastic/other-comparison	n >= 10 → (n) <= (10)
 m30436442	truth	connector	mutastic/boundary	x > 1 → (x) >= (1)
 m305e23b1	truth	with_try	mutastic/replace-body	{ let y = positive(x)?; Some(y * 2 - 1) } → None
 m30a2f286	truth	precedence	mutastic/keep-operand	2 * x + 3 → 2 * x
+m30b69b1d	suggestions	discounts::discount	mutastic/remove-conditional	total >= FREE_FROM → false
 m30c4d772	truth	tries	mutastic/keep-operand	y - 1 → y
 m30cf23e5	truth	range_ends	mutastic/constant-value	2 → 3
 m30ecbe00	truth	checked	mutastic/remove-conditional	x < 0 → false
@@ -430,6 +433,7 @@ m314bc5b0	truth	optional	mutastic/constant-value	-1 → 1
 m314ce170	truth	pipelines	mutastic/constant-value	100 → 101
 m316639bd	operators	calls::with_tip	mutastic/math	total + tip → (total) - (tip)
 m319b5783	truth	in_else_if	mutastic/other-comparison	x == 0 → (x) < (0)
+m31a34b78	suggestions	delivery::Delivery::is_free	mutastic/default-parameter	 → let total: i32 = Default::default();
 m31bad97e	operators	options::page_size	mutastic/constant-value	0 → 1
 m31cd03b0	truth	varargs	mutastic/other-arithmetic	total_of(&[x, 2, 3]) + count_of(vec![x, 4, 5]) as i32 * 100 → (total_of(&[x, 2, 3])) % (count_of(vec![x, 4, 5]) as i32 * 100)
 m31d33fed	truth	constants	mutastic/other-arithmetic	n * 2 → (n) % (2)
@@ -469,6 +473,7 @@ m3452aebc	truth	Decimal::round_dp	mutastic/constant-value	10i64 → 9i64
 m346d56dc	truth	comparisons	mutastic/default-parameter	 → let x: i32 = Default::default();
 m346f624a	truth	arithmetic	mutastic/constant-value	7 → 6
 m348aa7bb	truth	Decimal::round_dp	mutastic/default-parameter	 → let places: u32 = Default::default();
+m35056db1	suggestions	delivery::Delivery::is_free	mutastic/comparison	total >= self.free_from → (total) == (self.free_from)
 m350b942b	loops	digits	mutastic/constant-value	1 → 2
 m3568c14e	operators	options::display_name	mutastic/return-value	name.to_string() → String::new()
 m3572655a	unsafety	raw::halve	mutastic/default-parameter	 → let x: i32 = Default::default();
@@ -476,6 +481,7 @@ m35733192	truth	constants	mutastic/arithmetic-replacement	total += n * 2 → tot
 m35a0a7c8	operators	options::plausible_age	mutastic/null-parameter	 → let age: Option<u32> = None;
 m35b56b5d	truth	overflowing	optional/no-default	(x as u8).checked_sub(3).unwrap_or(0) → (x as u8).checked_sub(3).unwrap()
 m35b91563	truth	matches_any	mutastic/constant-value	2 → 0
+m35c4658c	suggestions	discounts::discount	mutastic/replace-body	{ if total >= FREE_FROM { 10 } else { 0 } } → 0
 m35df271d	truth	range_ends	mutastic/constant-value	1 → 2
 m35ec7f4f	operators	conditions::free_delivery	mutastic/return-value	total >= 50 → false
 m3610505d	operators	returns::quantity	mutastic/return-value	text.parse().map_err(|_| format!("{text} isn't a number")) → Err("no quantity given".into())
@@ -723,10 +729,12 @@ m51504fac	truth	with_try	mutastic/other-arithmetic	y * 2 - 1 → (y * 2) % (1)
 m515f6f57	truth	wider_returns	mutastic/constant-value	7 → 0
 m51719fc2	operators	arithmetic::postage	mutastic/other-arithmetic	kilos * 3 + 2 → (kilos * 3) % (2)
 m51a6699b	truth	constants	mutastic/string-constant	"" → "mutastic"
+m51a6cbfc	suggestions	delivery::Delivery::is_free	mutastic/remove-conditional	total >= self.free_from → true
 m51a8e345	truth	fields	mutastic/arithmetic-replacement	p.a * 10 + p.b → (p.a * 10) * (p.b)
 m51af2c18	operators	arithmetic::has_flag	mutastic/default-parameter	 → let flags: u8 = Default::default();
 m51be05c3	truth	comparisons	mutastic/remove-conditional	x != -2 → false
 m51ca40f3	truth	compound	mutastic/other-arithmetic	x % 3 → (x) / (3)
+m51d052fe	suggestions	delivery::Delivery::is_free	mutastic/remove-conditional	total >= self.free_from → false
 m51d5eada	truth	checked	mutastic/return-value	Ok(x * 3) → Ok(0)
 m51d65a09	operators	arguments::price_with	mutastic/null-parameter	 → let coupon: Option<u32> = None;
 m521e015b	operators	arguments::between	mutastic/return-value	low <= value && value <= high → false
@@ -771,6 +779,7 @@ m55520cc1	truth	bits	mutastic/replace-body	{ let mut flags = x & 6; flags |= 1; 
 m55549771	suggestions	rates::late_fee	mutastic/other-comparison	days_late <= 7 → (days_late) > (7)
 m5555babd	truth	arithmetic	mutastic/constant-value	3 → 1
 m55673afe	truth	bits	mutastic/bitwise	(flags << 2) | (x ^ 3) → ((flags << 2)) ^ ((x ^ 3))
+m557d0f13	suggestions	discounts::discount	mutastic/boundary	total >= FREE_FROM → (total) > (FREE_FROM)
 m557e336c	truth	stats	mutastic/keep-operand	x * 2 → x
 m558423fb	truth	in_while	mutastic/constant-value	3 → 1
 m55b8a89c	operators	library::header	mutastic/string-constant	", " → ""
@@ -934,6 +943,7 @@ m677ae615	truth	fields	mutastic/constant-value	2 → 1
 m67ec1b01	truth	in_while	mutastic/return-value	n → 0
 m681c9a12	truth	returns_early	mutastic/replace-body	{ if x > 5 { return 7; } 0 } → 0
 m689379f3	truth	arms	mutastic/remove-conditional	n > 5 → true
+m68a29413	suggestions	discounts::discount	mutastic/return-value	0 → 1
 m68aafb6e	operators	arguments::greet	mutastic/default-parameter	 → let excited: bool = Default::default();
 m68b404b7	truth	all	mutastic/default-parameter	 → let x: i32 = Default::default();
 m68f8c8e3	unsafety	raw::checked	mutastic/boundary	x < 0 → (x) <= (0)
@@ -969,6 +979,7 @@ m6c181cb9	truth	optional	mutastic/keep-operand	x + 1 → x
 m6c2fe6d4	operators	returns::is_valid_code	mutastic/return-value	code.len() == 6 && code.chars().all(|c| c.is_ascii_digit()) → false
 m6c45fbcb	truth	precedence	mutastic/arithmetic-replacement	2 * x + 3 → (2 * x) * (3)
 m6c51236e	truth	pipelines	mutastic/math	sum * 100 → (sum) / (100)
+m6c7a3914	suggestions	delivery::Delivery::is_free	mutastic/return-value	total >= self.free_from → false
 m6c83c9a8	truth	arithmetic	mutastic/other-arithmetic	x + 3 → (x) % (3)
 m6cd42562	truth	comparisons	mutastic/remove-conditional	v.len() > 0 → false
 m6d05659f	pricing	Pricing::discount	mutastic/return-value	total / 10 → 0
@@ -1088,6 +1099,7 @@ m79210a5c	truth	checked	mutastic/remove-conditional	x < 0 → true
 m79530b11	truth	constants	mutastic/return-value	format!("{label}:{total}") → String::new()
 m796e7faa	truth	positive	mutastic/return-value	Some(x) → None
 m79835af7	truth	not_condition	mutastic/constant-value	2 → 3
+m79b4cab7	suggestions	delivery::Delivery::is_free	mutastic/replace-body	{ total >= self.free_from } → false
 m79c729a5	operators	returns::quantity	mutastic/remove-conditional	text.is_empty() → false
 m7a17f505	operators	calls::with_tip	mutastic/default-parameter	 → let tip: u32 = Default::default();
 m7a83b02b	operators	options::display_name	mutastic/remove-conditional	nickname.is_none() → false
@@ -1138,6 +1150,7 @@ m801c2eec	truth	in_else_if	mutastic/remove-conditional	x < 0 → true
 m80251aa4	suggestions	rates::late_fee	mutastic/other-arithmetic	5 + (days_late - 7) * 2 → (5) / ((days_late - 7) * 2)
 m805932a5	truth	is_even	mutastic/return-value	v % 2 == 0 → true
 m806e397c	truth	total_of	mutastic/replace-body	{ values.iter().sum() } → 0
+m80b4f09e	suggestions	discounts::discount	mutastic/default-parameter	 → let total: i32 = Default::default();
 m80e8a955	truth	between	mutastic/return-value	lo <= x && x < hi → true
 m80fb34b8	truth	pipelines	mutastic/other-arithmetic	sum * 100 → (sum) + (100)
 m80ff2976	truth	searches	mutastic/constant-value	-1 → -2
@@ -1210,6 +1223,7 @@ m88f05a59	suggestions	window::Window::open_on	mutastic/replace-body	{ (self.star
 m893947ff	operators	arithmetic::after_refund	mutastic/other-arithmetic	paid - refund → (paid) / (refund)
 m8940a287	repeats	four_steps	mutastic/other-arithmetic	i + 1 → (i) / (1)
 m89433298	truth	in_closure	mutastic/return-value	small(x) → false
+m89522d0f	suggestions	delivery::Delivery::is_free	mutastic/other-comparison	total >= self.free_from → (total) < (self.free_from)
 m8967bae4	truth	overflowing	mutastic/math	c * 100000 → (c) / (100000)
 m897e7f00	unsafety	raw::halve	mutastic/return-value	x / 2 → 0
 m898341a2	truth	conditions	mutastic/math	out += 2 → out -= (2)
@@ -1225,9 +1239,11 @@ m8ba1e37b	truth	range_ends	mutastic/constant-value	1000 → 1001
 m8bb7a0a4	truth	precedence	mutastic/other-arithmetic	2 * x + 3 → (2 * x) / (3)
 m8bc9c51e	truth	loops	mutastic/math	total += i → total -= (i)
 m8bdc3c6e	truth	range_ends	mutastic/constant-value	4 → 5
+m8c09e71c	suggestions	delivery::Delivery::is_free	mutastic/return-value	total >= self.free_from → true
 m8c5b5209	truth	stage_in_for	mutastic/constant-value	3 → 1
 m8cad0e1e	truth	checked	mutastic/constant-value	8 → 9
 m8d08fc65	truth	overflowing	mutastic/math	(x as u8).checked_sub(3) → (x as u8).checked_add(3)
+m8d0a0621	suggestions	discounts::discount	mutastic/return-value	10 → 0
 m8d677769	unsafety	raw::checked	mutastic/remove-discarded-call	std::process::abort(); → 
 m8d6ac70a	truth	range_ends	mutastic/keep-operand	total * 1000 + part.iter().sum::<i32>() → { let _ = total * 1000; part.iter().sum::<i32>() }
 m8d7857bc	truth	overflowing	mutastic/constant-value	3 → 0
@@ -1411,6 +1427,7 @@ ma1e5ee79	truth	is_even	mutastic/default-parameter	 → let v: i32 = Default::de
 ma1f287d8	operators	returns::quantity	mutastic/remove-throw	return Err("no quantity given".into()); → 
 ma1ffbcf4	truth	record	mutastic/remove-conditional	value > 4 → true
 ma20c64c1	truth	defaults	mutastic/replace-body	{ format!("{label}{x}") } → String::new()
+ma23cd975	suggestions	discounts::discount	mutastic/other-comparison	total >= FREE_FROM → (total) != (FREE_FROM)
 ma24b8b5f	truth	precedence	mutastic/math	2 * x + 3 → (2 * x) - (3)
 ma265b755	truth	precedence	mutastic/default-parameter	 → let x: i32 = Default::default();
 ma267d8bb	truth	arithmetic	mutastic/constant-value	7 → 0
@@ -1447,6 +1464,7 @@ ma513b903	truth	negations	mutastic/other-arithmetic	y * 3 → (y) % (3)
 ma5231a4a	truth	range_ends	mutastic/constant-value	0 → 1
 ma544f6a2	truth	in_closure	mutastic/remove-conditional	v <= 2 → false
 ma54f0d72	truth	arithmetic	mutastic/other-arithmetic	a * 100 + b * 10 → (a * 100) % (b * 10)
+ma5530d27	suggestions	delivery::Delivery::is_free	mutastic/replace-body	{ total >= self.free_from } → true
 ma5623093	suggestions	rates::jitter	mutastic/keep-operand	nanos % 5 → nanos
 ma58742cb	truth	range_ends	mutastic/constant-value	4 → 1
 ma587efda	truth	connector	mutastic/remove-conditional	x > 1 → true
@@ -1779,6 +1797,7 @@ mcbd23734	truth	checked	mutastic/replace-body	{ if x < 0 { return Err(Problem::N
 mcbdc6ea3	truth	arithmetic	mutastic/keep-operand	a * 100 + b * 10 + c → a * 100 + b * 10
 mcbe0efba	truth	Builder::scale	mutastic/other-arithmetic	(self.v + 1) * by → ((self.v + 1)) + (by)
 mcc0aa110	truth	varargs	mutastic/constant-value	3 → 0
+mcc11bbc9	suggestions	discounts::discount	mutastic/other-comparison	total >= FREE_FROM → (total) < (FREE_FROM)
 mcc130673	truth	removes_calls	mutastic/other-arithmetic	x * 2 → (x) - (2)
 mcc3ee629	operators	calls::Cart::count	mutastic/replace-body	{ self.items.len() } → 0
 mcc55ea7f	suggestions	rates::jitter	mutastic/other-arithmetic	price + (nanos % 5) as i32 → (price) % ((nanos % 5) as i32)
@@ -1839,6 +1858,7 @@ md4732a8c	truth	shout	mutastic/omit-call	text.to_uppercase() → text
 md49bfd12	truth	overflowing	mutastic/constant-value	100000 → 0
 md49e6a22	truth	strings	mutastic/return-value	out → String::new()
 md4b57f94	operators	options::plausible_age	mutastic/other-comparison	*years < 150 → (*years) >= (150)
+md4e91309	suggestions	discounts::discount	mutastic/remove-conditional	total >= FREE_FROM → true
 md513f78b	truth	stage_in_for	mutastic/default-parameter	 → let x: i32 = Default::default();
 md56e8c39	pricing	Pricing::discount	mutastic/remove-conditional	total >= 100 → true
 md5a24e1b	truth	wider_returns	mutastic/other-arithmetic	x.unsigned_abs() as u8 + 1 → (x.unsigned_abs() as u8) % (1)
@@ -1883,6 +1903,7 @@ md96fd2fa	truth	conditions	mutastic/constant-value	2 → 3
 md99ca10c	truth	optional	mutastic/constant-value	-1 → -2
 md9ceba7c	operators	conditions::can_ship	mutastic/replace-body	{ paid && in_stock } → false
 md9ee009c	operators	arithmetic::line_total	mutastic/replace-body	{ price * quantity } → 0
+mda3cfbbb	suggestions	delivery::Delivery::is_free	mutastic/boundary	total >= self.free_from → (total) > (self.free_from)
 mda44e0b7	operators	arithmetic::line_total	mutastic/default-parameter	 → let quantity: u32 = Default::default();
 mda4d4892	truth	comparisons	mutastic/comparison	x != -2 → (x) > (-2)
 mda708a69	truth	in_else_if	mutastic/other-comparison	x == 0 → (x) != (0)
@@ -2076,11 +2097,13 @@ mf14fff4b	truth	compound	mutastic/constant-value	2 → 0
 mf153365f	repeats	four_steps	mutastic/other-arithmetic	i + 1 → (i) % (1)
 mf1621db1	truth	conditions	mutastic/remove-conditional	is_even(x) → false
 mf1bd67b3	suggestions	rates::late_fee	mutastic/constant-value	7 → 1
+mf1e12628	suggestions	discounts::discount	mutastic/other-comparison	total >= FREE_FROM → (total) <= (FREE_FROM)
 mf244ab27	truth	record	mutastic/other-comparison	value > 4 → (value) == (4)
 mf24697c6	truth	connector	mutastic/constant-value	4 → 0
 mf2b115fc	truth	in_closure	mutastic/default-parameter	 → let x: i32 = Default::default();
 mf2c62eb6	operators	library::extension	mutastic/other-arithmetic	dot + 1 → (dot) / (1)
 mf2ea5b41	unsafety	raw::first	mutastic/other-arithmetic	*values.get_unchecked(0) + 1 → (*values.get_unchecked(0)) / (1)
+mf300d10c	suggestions	discounts::discount	mutastic/comparison	total >= FREE_FROM → (total) == (FREE_FROM)
 mf339ee69	operators	returns::loyalty_points	mutastic/other-arithmetic	spent / 10 → (spent) % (10)
 mf34d97b8	truth	comparisons	mutastic/other-comparison	x < 4 → (x) == (4)
 mf350e568	truth	removes_calls	mutastic/other-arithmetic	x * 2 → (x) + (2)

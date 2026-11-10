@@ -11,7 +11,7 @@ would catch it, found by running your code:
    │
  6 │     pub fn late_fee(days_late: i64) -> i64 {
  7 │         if days_late <= 7 {
-   │                      ^^ changed to <
+   │                      ^^ <= changed to <
  8 │             return 0;
    │
    = mutant  - if days_late <= 7 {
@@ -67,6 +67,21 @@ new` writes it, and is named for its call (`discount_with_total_100`), with a nu
 module already has a test by that name. When the module has no `use super::*;`, the call is written
 with `super::`. When there's no test module, the card says where a new one goes, and the call is
 written with `super::` too.
+
+A value the source names is said its way, and names the test. A `const` in the function's file
+that the comparison reads (whose value is among the inputs tried) is passed by name, its value in
+the comment:
+
+```text
+#[test]
+fn discount_at_free_from() {
+    assert_eq!(discount(FREE_FROM), 10); // FREE_FROM = 100 · today 10 · with this mutant 0
+}
+```
+
+A field the receiver is made with, of the parameter's type and passed the same value, is one
+`let`, passed to both (`is_free_at_free_from`). Otherwise a receiver's values are named by its
+fields or `new`'s parameters: `open_on_with_day_5_for_start_5_and_end_10`.
 
 The test pins what the code does today. Check that's what it should do before you keep it: when
 today's value is wrong, the test is still the one to write, with the value it should be.

@@ -10,7 +10,7 @@ use crate::sites::{Change, Mutant};
 pub struct Advice {
     /// What the change is: "`>=` becomes `>`".
     pub change: String,
-    /// Beside the caret: "changed to >".
+    /// Beside the caret: ">= changed to >".
     pub caret: String,
     /// The gap: "no test checks `discount()` at `total == 100`".
     pub headline: String,
@@ -82,7 +82,7 @@ fn advise_change(mutant: &Mutant, name: &str, seen: &BTreeMap<String, Vec<i128>>
             let condition = format!("`{} {before} {}`", mutant.operands[0], mutant.operands[1]);
             Advice {
                 change: format!("`{before}` becomes `{after}`"),
-                caret: format!("changed to {after}"),
+                caret: format!("{before} changed to {after}"),
                 headline: format!("{method} behaves the same with {condition} reversed"),
                 notes: inputs_seen(seen),
                 help: format!("assert the result on both sides of {condition}"),
@@ -95,7 +95,7 @@ fn advise_change(mutant: &Mutant, name: &str, seen: &BTreeMap<String, Vec<i128>>
             );
             Advice {
                 change: format!("`{before}` becomes `{after}`"),
-                caret: format!("changed to {after}"),
+                caret: format!("{before} changed to {after}"),
                 headline: format!("no test checks {method} with {sides} true and the other false"),
                 notes: inputs_seen(seen),
                 help: format!(
@@ -107,7 +107,7 @@ fn advise_change(mutant: &Mutant, name: &str, seen: &BTreeMap<String, Vec<i128>>
             let (left, right) = (&mutant.operands[0], &mutant.operands[1]);
             Advice {
                 change: format!("`{before}` becomes `{after}`"),
-                caret: format!("changed to {after}"),
+                caret: format!("{before} changed to {after}"),
                 headline: format!("tests pass even when `{before}` becomes `{after}` in {method}"),
                 notes: inputs_seen(seen),
                 help: format!(
@@ -118,7 +118,7 @@ fn advise_change(mutant: &Mutant, name: &str, seen: &BTreeMap<String, Vec<i128>>
         Change::Returns { value } => returns(&method, value, seen),
         Change::Swapped { before, .. } if before == "?" => Advice {
             change: "`?` becomes `.unwrap()`".into(),
-            caret: "changed to .unwrap()".into(),
+            caret: "? changed to .unwrap()".into(),
             headline: format!("no test makes this `?` return its error from {method}"),
             notes: inputs_seen(seen),
             help: format!(
@@ -127,7 +127,7 @@ fn advise_change(mutant: &Mutant, name: &str, seen: &BTreeMap<String, Vec<i128>>
         },
         Change::Swapped { before, after } => Advice {
             change: format!("`{before}` becomes `{after}`"),
-            caret: format!("changed to {after}"),
+            caret: format!("{before} changed to {after}"),
             headline: format!("tests pass even when `{before}` becomes `{after}` in {method}"),
             notes: inputs_seen(seen),
             help: format!(
@@ -149,7 +149,7 @@ fn advise_change(mutant: &Mutant, name: &str, seen: &BTreeMap<String, Vec<i128>>
             let side = format!("`{} {differs} {}`", mutant.operands[0], mutant.operands[1]);
             Advice {
                 change: format!("`{before}` becomes `{after}`"),
-                caret: format!("changed to {after}"),
+                caret: format!("{before} changed to {after}"),
                 headline: format!("no test checks {method} with {side}"),
                 notes: inputs_seen(seen),
                 help: format!("add a test where {side}, and assert what {method} does then"),
@@ -253,7 +253,7 @@ fn boundary(
     };
     Advice {
         change: format!("`{before}` becomes `{after}`"),
-        caret: format!("changed to {after}"),
+        caret: format!("{before} changed to {after}"),
         headline,
         notes,
         help,
@@ -271,7 +271,7 @@ fn range_end(
     let end = mutant.operands.get(1).cloned().unwrap_or_default();
     Advice {
         change: format!("`{before}` becomes `{after}`"),
-        caret: format!("changed to {after}"),
+        caret: format!("{before} changed to {after}"),
         headline: format!("no test checks {method} where the range's end, `{end}`, matters"),
         notes: inputs_seen(seen),
         help: format!(

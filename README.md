@@ -38,14 +38,14 @@ On `fixtures/pricing`, a small crate in this repository whose tests reach every 
     │
  25 │     pub fn discount(&self, total: u32) -> u32 {
  26 │         if total >= 100 {
-    │                  ^^ changed to >
+    │                  ^^ >= changed to >
  27 │             return total / 10;
     │
     = mutant  - if total >= 100 {
               + if total > 100 {
     = note: every test calls discount() away from the boundary
             inputs seen: 50, 250 (none is 100)
-            covered by pricing::big_orders_get_ten_percent_off, tests::small_orders_pay_full_price (all 2 covering tests still pass)
+            covered by tests::small_orders_pay_full_price, pricing::big_orders_get_ten_percent_off (all 2 covering tests still pass)
     = help: test discount() with total = 100 and assert the result
 
             // in mod tests

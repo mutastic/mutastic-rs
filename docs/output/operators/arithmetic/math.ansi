@@ -3,7 +3,7 @@
    [2m│[0m
  [2m3[0m [2m│[0m pub fn line_total(price: u32, quantity: u32) -> u32 {
  [2m4[0m [2m│[0m     price * quantity
-   [2m│[0m           [1;31m^ changed to /[0m
+   [2m│[0m           [1;31m^ * changed to /[0m
  [2m5[0m [2m│[0m }
    [2m│[0m
    [2m=[0m mutant  [1;31m- [0mprice * quantity

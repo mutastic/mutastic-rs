@@ -74,3 +74,50 @@ pub mod window {
         }
     }
 }
+
+pub mod discounts {
+    /// From this total up, an order gets a discount: the test names it rather than say 100.
+    pub const FREE_FROM: i32 = 100;
+
+    pub fn discount(total: i32) -> i32 {
+        if total >= FREE_FROM {
+            10
+        } else {
+            0
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn big_totals_get_a_discount() {
+            assert_eq!(discount(250), 10); // nothing checks the edge
+        }
+    }
+}
+
+pub mod delivery {
+    /// Delivery charges: free from an order total each shop sets.
+    pub struct Delivery {
+        pub free_from: i32,
+    }
+
+    impl Delivery {
+        pub fn is_free(&self, total: i32) -> bool {
+            total >= self.free_from
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn big_orders_go_free() {
+            let delivery = Delivery { free_from: 20 };
+            assert!(delivery.is_free(50)); // nothing checks a total of exactly 20
+        }
+    }
+}

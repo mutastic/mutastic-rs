@@ -3,7 +3,7 @@
     [2m│[0m
  [2m21[0m [2m│[0m pub fn can_ship(paid: bool, in_stock: bool) -> bool {
  [2m22[0m [2m│[0m     paid && in_stock
-    [2m│[0m          [1;31m^^ changed to ||[0m
+    [2m│[0m          [1;31m^^ && changed to ||[0m
  [2m23[0m [2m│[0m }
     [2m│[0m
     [2m=[0m mutant  [1;31m- [0mpaid && in_stock

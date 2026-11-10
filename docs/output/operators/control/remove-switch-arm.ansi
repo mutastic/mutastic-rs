@@ -7,7 +7,6 @@
  [2m7[0m [2m│[0m         _ => 7,
    [2m│[0m
    [2m=[0m mutant  [1;31m- [0m2 => 3,
-             [32m+ [0m(nothing: the line is gone)
    [2m=[0m [1;34m[1mnote[0m[0m: inputs seen: zone = 1, 2, 3
            [2mcovered by control::tests::every_zone_within_a_week (its 1 covering test still passes)[0m
    [2m=[0m [32m[1mhelp[0m[0m: add a test where [1mdelivery_days()[0m takes the [1m2[0m arm, and assert what it does there

@@ -121,7 +121,13 @@ impl Receiver {
                 let fields: Vec<String> = names
                     .iter()
                     .zip(values)
-                    .map(|(name, value)| format!("{name}: {value}"))
+                    .map(|(name, value)| {
+                        if name == value {
+                            name.clone()
+                        } else {
+                            format!("{name}: {value}")
+                        }
+                    })
                     .collect();
                 format!("{ty} {{ {} }}", fields.join(", "))
             }

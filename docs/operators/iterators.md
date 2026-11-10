@@ -45,7 +45,7 @@ fn one_late_invoice() {
    │
  4 │ pub fn any_overdue(days_late: &[u32]) -> bool {
  5 │     days_late.iter().any(|days| *days > 30)
-   │                      ^^^ changed to all
+   │                      ^^^ any changed to all
  6 │ }
    │
    = mutant  - days_late.iter().any(|days| *days > 30)
@@ -114,8 +114,15 @@ No test has an unpaid order to leave out:
     │          ^^^^^^ left out
  13 │         .map(|(total, _)| total)
     │
-    = mutant  - .filter(|(_, paid)| *paid)
-              + (nothing: the line is gone)
+    = mutant  - orders
+              -     .iter()
+              -     .filter(|(_, paid)| *paid)
+              -     .map(|(total, _)| total)
+              -     .sum()
+              + orders
+              +     .iter()
+              +     .map(|(total, _)| total)
+              +     .sum()
     = note: covered by iterators::tests::a_paid_order (its 1 covering test still passes)
     = help: use inputs that .filter(|(_, paid)| *paid) makes a difference to, and assert what paid_total() does
 

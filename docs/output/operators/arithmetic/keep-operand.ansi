@@ -3,7 +3,7 @@
     [2m│[0m
  [2m15[0m [2m│[0m pub fn after_refund(paid: u32, refund: u32) -> u32 {
  [2m16[0m [2m│[0m     paid - refund
-    [2m│[0m          [1;31m^ changed to +[0m
+    [2m│[0m          [1;31m^ - changed to +[0m
  [2m17[0m [2m│[0m }
     [2m│[0m
     [2m=[0m mutant  [1;31m- [0mpaid - refund

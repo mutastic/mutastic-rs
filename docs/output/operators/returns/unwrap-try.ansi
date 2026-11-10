@@ -3,7 +3,7 @@
     [2m│[0m
  [2m13[0m [2m│[0m pub fn parse_quantity(text: &str) -> Result<u32, std::num::ParseIntError> {
  [2m14[0m [2m│[0m     let quantity: u32 = text.trim().parse()?;
-    [2m│[0m                                            [1;31m^ changed to .unwrap()[0m
+    [2m│[0m                                            [1;31m^ ? changed to .unwrap()[0m
  [2m15[0m [2m│[0m     Ok(quantity)
     [2m│[0m
     [2m=[0m mutant  [1;31m- [0mlet quantity: u32 = text.trim().parse()?;

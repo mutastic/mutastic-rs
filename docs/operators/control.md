@@ -58,7 +58,6 @@ fn every_zone_within_a_week() {
  7 │         _ => 7,
    │
    = mutant  - 2 => 3,
-             + (nothing: the line is gone)
    = note: inputs seen: zone = 1, 2, 3
            covered by control::tests::every_zone_within_a_week (its 1 covering test still passes)
    = help: add a test where delivery_days() takes the 2 arm, and assert what it does there
@@ -128,7 +127,7 @@ difference:
     │
  15 │             found = Some(index);
  16 │             break;
-    │             ^^^^^ changed to continue
+    │             ^^^^^ break changed to continue
  17 │         }
     │
     = mutant  - break;
