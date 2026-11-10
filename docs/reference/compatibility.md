@@ -48,9 +48,10 @@ structure is fixed and its words are not: see [Output](../concepts/output.md#the
 
 ## The two editions
 
-From 1.0.0, the Rust and Java editions are released together, at the same version, and keep the
-same promises. In a Maven or Gradle project, `mutastic` runs the Java edition with its own version
-unless `MUTASTIC_VERSION` names another: see [One command, two editions](../editions.md#the-java-edition).
+From 1.0.0, the Rust and Java editions release each minor version together, at the same version,
+and keep the same promises; either may ship a patch alone. In a Maven or Gradle project,
+`mutastic` runs the newest Java edition of its own major and minor version, so `mutastic 1.2.0`
+runs Java 1.2.3 once that's out, unless `MUTASTIC_VERSION` names another: see [One command, two editions](../editions.md#the-java-edition).
 
 ## What's experimental
 

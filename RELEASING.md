@@ -2,9 +2,14 @@
 
 A release is a version tag, `v<version>`, matching the version in `Cargo.toml`. The release
 workflow (`.github/workflows/release.yml`) builds the native `mutastic` for each target from it, as
-a draft release to read and publish. Nothing goes to crates.io yet. From 1.0.0 the Rust and Java
-editions are released together, at the same version: the native `mutastic` runs the Java edition
-with its own version, so a Rust release without its Java release would fetch nothing.
+a draft release to read and publish. Nothing goes to crates.io yet.
+
+From 1.0.0 the Rust and Java editions release each **minor** version together: `X.Y.0` of both, at
+the same time, as the native `mutastic X.Y.z` runs the newest Java edition `X.Y.*`, and a Rust
+`X.Y.0` without its Java `X.Y.0` would find nothing to fetch. A **patch** may ship alone, in
+either edition: a Rust `X.Y.1` keeps running the newest Java `X.Y.*`, and a Java `X.Y.1` reaches
+everyone on Rust `X.Y.*` within a day, as `mutastic` looks up the Java releases at most once a
+day.
 
 ## Each release
 
@@ -20,8 +25,9 @@ with its own version, so a Rust release without its Java release would fetch not
    - **Ids.** Run `MUTASTIC_IDS_WRITE=1 cargo test --test ids`. If `tests/ids/ids.tsv` changes, only
      by lines added for an operator new since the last release, commit it, so its ids are held
      from this release on.
-   - **The Java edition.** From 1.0.0, its release with the same version is ready to publish
-     beside this one (the Java repository's `RELEASING.md`).
+   - **The Java edition.** From 1.0.0, for a minor release (`X.Y.0`), the Java edition's `X.Y.0`
+     is ready to publish beside this one (the Java repository's `RELEASING.md`). A patch needs
+     nothing from it.
 2. **The release commit,** `chore(release): version X.Y.Z`: the version in `Cargo.toml` (and
    `Cargo.lock`), the changelog's *Unreleased* moved under the version and date, and the docs' kept
    outputs that print the version, written again with `MUTASTIC_DOCS_WRITE=1 cargo test --test

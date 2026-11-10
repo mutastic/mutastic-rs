@@ -2,7 +2,8 @@
 
 mutastic is one command, `mutastic`, for Rust, Maven and Gradle projects. It's a native program,
 with nothing else to install for Rust. In a Maven or Gradle project, it fetches its Java edition the
-first time it runs there: see [One command, two editions](editions.md).
+first time it runs there, and from 1.0.0 the Java edition's newer patches of the same minor version
+as they're released: see [One command, two editions](editions.md).
 
 ## With the installer
 

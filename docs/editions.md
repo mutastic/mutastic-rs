@@ -63,21 +63,27 @@ before it downloads anything, and says what it found if it isn't 25 or later.
 It keeps each release of the Java edition in `~/.mutastic/mutastic-<version>`, as the Java
 edition's own installer does, so a release installed that way is used as it is. A download is
 checked against its release's `SHA256SUMS` before it's kept, and one that doesn't match is
-refused. Without a version asked for, mutastic uses the Java edition with its own version: from
-1.0.0 the two editions are released together, at the same version, so `mutastic 1.2.0` runs the
-Java edition 1.2.0, fetching it if it isn't kept. Before 1.0.0 their versions don't match, so it
+refused.
+
+Without a version asked for, mutastic uses the newest Java edition of its own major and minor
+version. From 1.0.0 the two editions release each minor version together, and either may ship a
+patch alone, so `mutastic 1.2.0` runs the newest Java edition 1.2.x: 1.2.3 once that's released,
+fetching it if it isn't kept. It looks up the Java edition's releases (their feed,
+`releases.atom`) at most once a day, writing down what it found in `~/.mutastic/.java-releases`,
+and looks sooner only when none it knows of matches. When the releases can't be reached, it uses
+the newest matching release it has kept. Before 1.0.0 the editions' versions don't match, so it
 uses the newest release it has kept, and fetches the latest when it has none.
 
 | Variable | Effect |
 |---|---|
-| `MUTASTIC_VERSION` | The Java edition's release to use, such as `0.5.0`, fetched if it isn't kept |
+| `MUTASTIC_VERSION` | The Java edition's release to use, exactly, such as `1.2.0`, fetched if it isn't kept. Nothing is looked up |
 | `MUTASTIC_HOME` | Where releases are kept: `~/.mutastic` unless set |
 | `MUTASTIC_JAVA_ENGINE` | A Java edition's `bin/mutastic` to run instead, such as one built from its source. Nothing is fetched |
-| `MUTASTIC_JAVA_RELEASES` | Where releases are downloaded from, for a mirror: GitHub's releases of `mutastic/mutastic` unless set |
+| `MUTASTIC_JAVA_RELEASES` | Where releases are downloaded from, for a mirror: GitHub's releases of `mutastic/mutastic` unless set. A mirror serves `releases.atom` beside them, or at least `latest` |
 
-From 1.0.0, to move to a newer Java edition, install the newer `mutastic`: it runs the Java
-edition with its version. To use another, or before 1.0.0, set `MUTASTIC_VERSION` to it. Removing a release's
-directory from `~/.mutastic` removes it.
+From 1.0.0, a Java edition patch reaches you within a day of its release, and a new minor version
+comes with the `mutastic` of that minor version. To use another, or before 1.0.0, set
+`MUTASTIC_VERSION` to it. Removing a release's directory from `~/.mutastic` removes it.
 
 ## Which versions
 

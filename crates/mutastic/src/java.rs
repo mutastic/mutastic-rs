@@ -7,9 +7,10 @@
 //! the release's `SHA256SUMS`, and unpacks it there. Nothing is fetched for a Rust project.
 //!
 //! Settings, each optional:
-//! - `MUTASTIC_VERSION`: the Java edition's release to use, fetched if it isn't kept. Otherwise,
-//!   from 1.0.0, the release with this mutastic's own version, as the editions are released
-//!   together at matching versions; before 1.0.0, the newest kept, or the latest release when none
+//! - `MUTASTIC_VERSION`: the Java edition's release to use, exactly, fetched if it isn't kept.
+//!   Otherwise, from 1.0.0, the newest release of this mutastic's own major and minor version, as
+//!   the editions release each minor together and may each ship a patch alone: the releases are
+//!   looked up at most once a day. Before 1.0.0, the newest kept, or the latest release when none
 //!   is.
 //! - `MUTASTIC_HOME`: where releases are kept, `~/.mutastic` unless set.
 //! - `MUTASTIC_JAVA_ENGINE`: a Java edition's `bin/mutastic` to run instead, such as one built
@@ -70,23 +71,142 @@ fn wanted() -> Option<String> {
         .filter(|version| !version.is_empty())
 }
 
-/// The Java edition that goes with this mutastic, `own`, unless `MUTASTIC_VERSION` says: from
-/// 1.0.0 the editions are released together, at matching versions, so it's the release with the
-/// same version. Before 1.0.0 their versions don't match, and there's none.
-fn matching(own: &str) -> Option<String> {
+/// The major and minor version this mutastic, `own`, matches the Java edition by: from 1.0.0 the
+/// editions release each minor version together, and either may ship a patch alone. Before 1.0.0
+/// their versions don't match, and there's none.
+fn line(own: &str) -> Option<(u64, u64)> {
     release_numbers(own)
         .filter(|(major, _, _)| *major >= 1)
-        .map(|_| own.to_string())
+        .map(|(major, minor, _)| (major, minor))
 }
 
-/// The Java edition's release to use, without fetching: the one asked for, the one matching this
-/// mutastic's version, or the newest kept, in that order. `None` when it's the latest release.
-fn chosen(
-    wanted: Option<String>,
+/// The newest of `versions` in `own`'s major and minor version.
+fn newest_patch<'a>(own: &str, versions: impl IntoIterator<Item = &'a String>) -> Option<String> {
+    let (major, minor) = line(own)?;
+    versions
+        .into_iter()
+        .filter_map(|version| Some((release_numbers(version)?, version)))
+        .filter(|((ma, mi, _), _)| (*ma, *mi) == (major, minor))
+        .max()
+        .map(|(_, version)| version.clone())
+}
+
+/// How long a look at the releases is trusted before mutastic looks again: a day.
+const DAY: u64 = 24 * 60 * 60;
+
+/// The releases mutastic last saw at `source`, kept in `home`, and whether that was within a day
+/// of `now` (in seconds since the epoch). Seen at another source, they count for nothing.
+fn seen(home: &Path, source: &str, now: u64) -> (Vec<String>, bool) {
+    let Ok(text) = std::fs::read_to_string(home.join(SEEN)) else {
+        return (Vec::new(), false);
+    };
+    let mut lines = text.lines();
+    let checked = lines
+        .next()
+        .and_then(|l| l.strip_prefix("checked ")?.parse::<u64>().ok());
+    let from = lines.next().and_then(|l| l.strip_prefix("from "));
+    match (checked, from) {
+        (Some(checked), Some(from)) if from == source => (
+            lines.map(str::to_string).collect(),
+            now.saturating_sub(checked) < DAY,
+        ),
+        _ => (Vec::new(), false),
+    }
+}
+
+/// Where the releases mutastic last saw are written down, in its home.
+const SEEN: &str = ".java-releases";
+
+/// Writes down the releases seen at `source` at `now`. Failing to is no reason to stop.
+fn remember(home: &Path, source: &str, now: u64, releases: &[String]) {
+    let mut text = format!("checked {now}\nfrom {source}\n");
+    for release in releases {
+        text.push_str(release);
+        text.push('\n');
+    }
+    let partial = home.join(format!("{SEEN}-{}", std::process::id()));
+    if std::fs::create_dir_all(home).is_ok() && std::fs::write(&partial, text).is_ok() {
+        std::fs::rename(&partial, home.join(SEEN)).ok();
+    }
+    std::fs::remove_file(partial).ok();
+}
+
+/// The Java edition's release for this mutastic, `own`, from 1.0.0: the newest of its major and
+/// minor version, kept in `home` or released at `source`. The releases are looked up, through
+/// `look`, only when the last look is over a day old or found nothing to run; when a look fails,
+/// what's kept is used.
+fn matched(
+    home: &Path,
+    source: &str,
     own: &str,
-    newest: impl FnOnce() -> Option<String>,
-) -> Option<String> {
-    wanted.or_else(|| matching(own)).or_else(newest)
+    now: u64,
+    look: impl FnOnce() -> Option<Vec<String>>,
+) -> Result<String, String> {
+    let kept = kept(home);
+    let (before, fresh) = seen(home, source, now);
+    let known = newest_patch(own, kept.iter().chain(&before));
+    if let (true, Some(version)) = (fresh, &known) {
+        return Ok(version.clone());
+    }
+    let (major, minor) = line(own).unwrap_or_default();
+    match look() {
+        Some(released) => {
+            remember(home, source, now, &released);
+            newest_patch(own, kept.iter().chain(&released)).ok_or_else(|| {
+                format!(
+                    "mutastic {own} runs the Java edition {major}.{minor}.x, and there's no such \
+                     release at {source} yet: set MUTASTIC_VERSION to a release to use"
+                )
+            })
+        }
+        None => {
+            // Don't look again on every run while the releases can't be reached.
+            if known.is_some() {
+                remember(home, source, now, &before);
+            }
+            known.ok_or_else(|| {
+                format!(
+                    "mutastic {own} runs the Java edition {major}.{minor}.x, and couldn't look up \
+                     its releases at {source}: check the connection, or set MUTASTIC_VERSION to a \
+                     release to use"
+                )
+            })
+        }
+    }
+}
+
+/// The versions a releases feed links to, `.../tag/v1.0.2`: plain releases only.
+fn feed_versions(feed: &str) -> Vec<String> {
+    feed.split("/tag/v")
+        .skip(1)
+        .filter_map(|rest| {
+            let end = rest.find(['"', '<', '\'', ' ', '\n']).unwrap_or(rest.len());
+            let version = &rest[..end];
+            release_numbers(version).map(|_| version.to_string())
+        })
+        .collect()
+}
+
+/// The releases at `releases`, from its feed, `releases.atom`, newest first; or, without a feed,
+/// the latest release alone.
+fn published(releases: &str) -> Option<Vec<String>> {
+    let output = Command::new("curl")
+        .args(["-fsSL", "--connect-timeout", "5", "--max-time", "20"])
+        .arg(format!("{releases}.atom"))
+        .output()
+        .ok()?;
+    let found = feed_versions(&String::from_utf8_lossy(&output.stdout));
+    if output.status.success() && !found.is_empty() {
+        return Some(found);
+    }
+    latest(releases).ok().map(|version| vec![version])
+}
+
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs())
+        .unwrap_or_default()
 }
 
 /// This mutastic's version.
@@ -117,19 +237,27 @@ const LAUNCHER: &str = if cfg!(windows) {
     "mutastic"
 };
 
-/// The newest release kept in `home`, by version.
-pub fn newest(home: &Path) -> Option<String> {
-    std::fs::read_dir(home)
-        .ok()?
+/// The releases kept in `home`.
+fn kept(home: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(home) else {
+        return Vec::new();
+    };
+    entries
         .filter_map(Result::ok)
         .filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().into_owned();
             let version = name.strip_prefix("mutastic-")?.to_string();
-            let numbers = release_numbers(&version)?;
-            launcher(home, &version)
-                .is_file()
-                .then_some((numbers, version))
+            release_numbers(&version)?;
+            launcher(home, &version).is_file().then_some(version)
         })
+        .collect()
+}
+
+/// The newest release kept in `home`, by version.
+pub fn newest(home: &Path) -> Option<String> {
+    kept(home)
+        .into_iter()
+        .filter_map(|version| Some((release_numbers(&version)?, version)))
         .max()
         .map(|(_, version)| version)
 }
@@ -149,7 +277,11 @@ pub fn present() -> Option<(String, PathBuf)> {
         return Some((version, given));
     }
     let home = home().ok()?;
-    let version = chosen(wanted(), OWN, || newest(&home))?;
+    let version = match (wanted(), line(OWN)) {
+        (Some(version), _) => version,
+        (None, Some(_)) => newest_patch(OWN, &kept(&home))?,
+        (None, None) => newest(&home)?,
+    };
     let command = launcher(&home, &version);
     command.is_file().then_some((version, command))
 }
@@ -169,9 +301,13 @@ pub fn engine() -> Result<PathBuf, String> {
     }
     let home = home()?;
     let releases = releases();
-    let version = match chosen(wanted(), OWN, || newest(&home)) {
-        Some(version) => version,
-        None => latest(&releases)?,
+    let version = match (wanted(), line(OWN)) {
+        (Some(version), _) => version,
+        (None, Some(_)) => matched(&home, &releases, OWN, now(), || published(&releases))?,
+        (None, None) => match newest(&home) {
+            Some(version) => version,
+            None => latest(&releases)?,
+        },
     };
     let command = launcher(&home, &version);
     if command.is_file() {
@@ -380,20 +516,100 @@ mod tests {
         std::fs::remove_dir_all(home).ok();
     }
 
+    fn versions(list: &[&str]) -> Vec<String> {
+        list.iter().map(|v| v.to_string()).collect()
+    }
+
     #[test]
-    fn from_1_0_the_java_edition_is_the_one_with_the_same_version() {
-        let newest = || Some("1.4.0".to_string());
-        assert_eq!(chosen(None, "1.2.0", newest).as_deref(), Some("1.2.0"));
-        assert_eq!(chosen(None, "2.0.1", newest).as_deref(), Some("2.0.1"));
-        // MUTASTIC_VERSION still says which.
-        assert_eq!(
-            chosen(Some("1.1.0".into()), "1.2.0", newest).as_deref(),
-            Some("1.1.0")
-        );
-        // Before 1.0.0 the versions don't match: the newest kept, or the latest when none is.
-        assert_eq!(chosen(None, "0.2.1", newest).as_deref(), Some("1.4.0"));
-        assert_eq!(chosen(None, "0.2.1", || None), None);
-        assert_eq!(matching("1.0.0-dev"), None);
+    fn from_1_0_the_java_edition_is_the_newest_patch_of_the_same_minor() {
+        let released = versions(&["1.3.0", "1.2.10", "1.2.9", "1.2.3-rc1", "2.2.0", "1.1.4"]);
+        assert_eq!(newest_patch("1.2.0", &released).as_deref(), Some("1.2.10"));
+        assert_eq!(newest_patch("1.2.11", &released).as_deref(), Some("1.2.10"));
+        assert_eq!(newest_patch("1.4.0", &released), None);
+        // Before 1.0.0 the versions don't match.
+        assert_eq!(newest_patch("0.2.1", &versions(&["0.2.1", "0.5.0"])), None);
+        assert_eq!(line("1.0.0-dev"), None);
+    }
+
+    #[test]
+    fn a_releases_feed_gives_its_plain_releases() {
+        let feed = r#"<feed><link href="https://github.com/mutastic/mutastic/releases"/>
+            <entry><link rel="alternate" href="https://github.com/mutastic/mutastic/releases/tag/v1.0.2"/></entry>
+            <entry><link rel="alternate" href="https://github.com/mutastic/mutastic/releases/tag/v1.0.2-rc1"/></entry>
+            <entry><id>tag:github.com,2008:Repository/1/v1.0.1</id>
+            <link rel="alternate" href="https://github.com/mutastic/mutastic/releases/tag/v1.0.1"/></entry>
+            </feed>"#;
+        assert_eq!(feed_versions(feed), ["1.0.2", "1.0.1"]);
+        assert!(feed_versions("<html>Not Found</html>").is_empty());
+    }
+
+    /// A home of the test's own, with `kept` releases in it.
+    fn home_keeping(name: &str, kept: &[&str]) -> PathBuf {
+        let home = std::env::temp_dir().join(format!("mutastic-{name}-{}", std::process::id()));
+        std::fs::remove_dir_all(&home).ok();
+        for version in kept {
+            let command = launcher(&home, version);
+            std::fs::create_dir_all(command.parent().unwrap()).unwrap();
+            std::fs::write(command, "").unwrap();
+        }
+        std::fs::create_dir_all(&home).unwrap();
+        home
+    }
+
+    #[test]
+    fn the_releases_are_looked_up_at_most_once_a_day() {
+        let home = home_keeping("looked-up", &["1.0.1"]);
+        let source = "https://example.com/releases";
+        let looks = std::cell::Cell::new(0);
+        let look = |found: Option<&[&str]>| {
+            looks.set(looks.get() + 1);
+            found.map(versions)
+        };
+        let day = 1_000_000;
+        // The first run looks, and the newer patch is chosen over the one kept.
+        let first = matched(&home, source, "1.0.0", day, || {
+            look(Some(&["1.0.2", "1.1.0"]))
+        });
+        assert_eq!((first.as_deref(), looks.get()), (Ok("1.0.2"), 1));
+        // Within the day, what was seen counts, without looking.
+        let again = matched(&home, source, "1.0.4", day + DAY - 1, || {
+            look(Some(&["1.0.3"]))
+        });
+        assert_eq!((again.as_deref(), looks.get()), (Ok("1.0.2"), 1));
+        // A day on, it looks again.
+        let next = matched(&home, source, "1.0.0", day + DAY, || look(Some(&["1.0.3"])));
+        assert_eq!((next.as_deref(), looks.get()), (Ok("1.0.3"), 2));
+        // Another source's releases don't count.
+        let mirror = matched(&home, "file:///mirror", "1.0.0", day + DAY, || look(None));
+        assert_eq!((mirror.as_deref(), looks.get()), (Ok("1.0.1"), 3));
+        std::fs::remove_dir_all(home).ok();
+    }
+
+    #[test]
+    fn without_a_matching_release_it_looks_and_says_what_to_do() {
+        let home = home_keeping("unmatched", &["1.0.1"]);
+        let source = "https://example.com/releases";
+        let day = 1_000_000;
+        remember(&home, source, day, &versions(&["1.0.1"]));
+        // Seen today, but nothing of 1.1: it looks again rather than wait a day.
+        let looked = matched(&home, source, "1.1.0", day + 1, || {
+            Some(versions(&["1.1.0"]))
+        });
+        assert_eq!(looked.as_deref(), Ok("1.1.0"));
+        let none = matched(&home, source, "1.2.0", day + 2, || {
+            Some(versions(&["1.1.0"]))
+        });
+        assert!(none
+            .unwrap_err()
+            .contains("runs the Java edition 1.2.x, and there's no such release"));
+        // When the releases can't be reached, what's kept is used, and only that.
+        let offline = matched(&home, source, "1.0.0", day + 3 * DAY, || None);
+        assert_eq!(offline.as_deref(), Ok("1.0.1"));
+        let nothing = matched(&home, source, "1.3.0", day + 3 * DAY, || None);
+        assert!(nothing
+            .unwrap_err()
+            .contains("couldn't look up its releases"));
+        std::fs::remove_dir_all(home).ok();
     }
 
     #[test]

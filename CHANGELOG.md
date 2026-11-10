@@ -22,10 +22,12 @@ events format only gains.
 
 ### Changes
 
-- **From 1.0.0, `mutastic` runs the Java edition with its own version.** The two editions are
-  released together, at the same version, so in a Maven or Gradle project `mutastic 1.2.0` runs the
-  Java edition 1.2.0, fetching it if it isn't kept. Before 1.0.0 it still uses the newest kept, or
-  the latest release. `MUTASTIC_VERSION` still picks another. See
+- **From 1.0.0, `mutastic` runs the newest Java edition of its own minor version.** The two
+  editions release each minor version together, and either may ship a patch alone, so in a Maven or
+  Gradle project `mutastic 1.2.0` runs the newest Java edition 1.2.x, fetching it if it isn't kept.
+  It looks up the Java edition's releases at most once a day, and uses what it has kept when they
+  can't be reached. Before 1.0.0 it still uses the newest kept, or the latest release.
+  `MUTASTIC_VERSION` still picks one exactly. See
   [One command, two editions](docs/editions.md#the-java-edition).
 
 ### Cards
