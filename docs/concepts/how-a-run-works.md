@@ -152,7 +152,9 @@ jobs:
         share: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v5
-      - run: cargo install --locked --git https://github.com/mutastic/mutastic-rs.git mutastic
+      - run: |
+          curl -fsSL https://raw.githubusercontent.com/mutastic/mutastic-rs/main/scripts/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - run: mutastic run --shard=${{ matrix.share }}/4 --threshold=0
       - uses: actions/upload-artifact@v4
         if: always()
@@ -165,7 +167,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - run: cargo install --locked --git https://github.com/mutastic/mutastic-rs.git mutastic
+      - run: |
+          curl -fsSL https://raw.githubusercontent.com/mutastic/mutastic-rs/main/scripts/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - uses: actions/download-artifact@v4
         with:
           pattern: share-*
@@ -176,14 +180,16 @@ jobs:
 In GitLab CI, `parallel` runs a job as that many jobs, each told which it is in `CI_NODE_INDEX`,
 counting from 1, and how many there are in `CI_NODE_TOTAL`. A job that `needs` it waits for all of
 them, and gets each one's artifacts at the paths they were uploaded from, so every share's folder
-lands under `target/mutastic/shares/`. The image is pinned by its version tag:
+lands under `target/mutastic/shares/`. The image is pinned by its version tag, and has the `curl`
+the installer needs:
 
 ```yaml
 mutants:
   image: rust:1.99.1
   parallel: 4
   before_script:
-    - cargo install --locked --git https://github.com/mutastic/mutastic-rs.git mutastic
+    - curl -fsSL https://raw.githubusercontent.com/mutastic/mutastic-rs/main/scripts/install.sh | sh
+    - export PATH="$HOME/.local/bin:$PATH"
   script:
     - mutastic run --shard=$CI_NODE_INDEX/$CI_NODE_TOTAL --threshold=0
   artifacts:
@@ -197,13 +203,14 @@ mutation-score:
     - job: mutants
       artifacts: true
   before_script:
-    - cargo install --locked --git https://github.com/mutastic/mutastic-rs.git mutastic
+    - curl -fsSL https://raw.githubusercontent.com/mutastic/mutastic-rs/main/scripts/install.sh | sh
+    - export PATH="$HOME/.local/bin:$PATH"
   script:
     - mutastic run --from-shards=target/mutastic/shares --threshold=70
 ```
 
 When a share's job fails, the pipeline fails, and the last job doesn't run; when they all pass, the
-last job fails if the whole score is below the threshold. The last job builds nothing but mutastic
-itself, so cache Cargo's `bin` directory, or install a release, to make it quick. For a member of a
-workspace, name its directory in both commands (`mutastic run crates/core --shard=…`) and upload the
-share from the workspace's `target/mutastic/shares/…`.
+last job fails if the whole score is below the threshold. The last job builds nothing: it installs
+a release and puts the shares together. For a member of a workspace, name its directory in both
+commands (`mutastic run crates/core --shard=…`) and upload the share from the workspace's
+`target/mutastic/shares/…`.

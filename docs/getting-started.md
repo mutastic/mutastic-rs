@@ -5,17 +5,22 @@ reach every line, and still miss something. Then it closes the gap and proves it
 
 ## 1. Install it
 
-mutastic for Rust isn't on crates.io yet, so build it from its repository. It needs a Rust
-toolchain, stable is fine, and nothing else.
+The installer puts the latest release in `~/.local/bin`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mutastic/mutastic-rs/main/scripts/install.sh | sh
+```
+
+That installs two commands: `mutastic`, and `cargo-mutastic`, which Cargo runs as `cargo mutastic`.
+They do the same thing. [Installing mutastic](install.md) has what it does, and how to build from
+source where there's no release.
+
+The crate this page runs on is in mutastic's repository:
 
 ```sh
 git clone https://github.com/mutastic/mutastic-rs.git
 cd mutastic-rs
-cargo install --path crates/mutastic
 ```
-
-That installs two commands: `mutastic`, and `cargo-mutastic`, which Cargo runs as `cargo mutastic`.
-They do the same thing.
 
 ## 2. Run it
 

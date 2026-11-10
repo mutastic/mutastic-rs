@@ -1,5 +1,7 @@
 #!/bin/sh
 # Installs the `mutastic` command, for Rust, Maven and Gradle projects alike:
+#   curl -fsSL https://raw.githubusercontent.com/mutastic/mutastic-rs/main/scripts/install.sh | sh
+# or, from a clone of mutastic's repository:
 #   sh scripts/install.sh
 #
 # Downloads the native mutastic for this machine from a GitHub release into ~/.mutastic, checks it
@@ -42,7 +44,7 @@ target() {
     Darwin/x86_64) echo x86_64-apple-darwin ;;
     Linux/x86_64 | Linux/amd64) echo x86_64-unknown-linux-musl ;;
     Linux/aarch64 | Linux/arm64) echo aarch64-unknown-linux-musl ;;
-    *) fail "there's no mutastic release for $os on $arch yet: build it from source, as the getting-started page says" ;;
+    *) fail "there's no mutastic release for $os on $arch yet: build it from source, as the install page says" ;;
   esac
 }
 

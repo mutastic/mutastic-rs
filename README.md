@@ -77,10 +77,19 @@ mutastic: mb2f8ae57 is caught by tests::discount_with_total_100
 
 ## Install
 
-Each [release](https://github.com/mutastic/mutastic-rs/releases) has mutastic built for macOS and
-Linux, and [Installing mutastic](docs/install.md) has the installer for one. It isn't on
-crates.io yet. To build it yourself, you need a stable Rust toolchain and nothing else:
-`rust-version` in [Cargo.toml](Cargo.toml) is the oldest that builds it.
+On macOS or Linux, the installer puts the latest
+[release](https://github.com/mutastic/mutastic-rs/releases) in `~/.local/bin`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mutastic/mutastic-rs/main/scripts/install.sh | sh
+```
+
+That installs `mutastic`, and `cargo-mutastic`, which Cargo runs as `cargo mutastic`. They do the
+same thing.
+
+It isn't on crates.io yet. Elsewhere, or to work on mutastic, build it yourself: you need a stable
+Rust toolchain and nothing else, and `rust-version` in [Cargo.toml](Cargo.toml) is the oldest that
+builds it.
 
 ```sh
 git clone https://github.com/mutastic/mutastic-rs.git
@@ -88,8 +97,7 @@ cd mutastic-rs
 cargo install --path crates/mutastic
 ```
 
-That installs `mutastic`, and `cargo-mutastic`, which Cargo runs as `cargo mutastic`. They do the
-same thing.
+[Installing mutastic](docs/install.md) has the details.
 
 `mutastic` is the command for Maven and Gradle projects too: in one, it fetches the Java edition
 the first time, and hands it the command. See [One command, two editions](docs/editions.md).

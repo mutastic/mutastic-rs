@@ -6,11 +6,14 @@ first time it runs there: see [One command, two editions](editions.md).
 
 ## With the installer
 
-The installer, `scripts/install.sh` in mutastic's repository, installs a published release:
+The installer installs the latest release:
 
 ```sh
-sh scripts/install.sh
+curl -fsSL https://raw.githubusercontent.com/mutastic/mutastic-rs/main/scripts/install.sh | sh
 ```
+
+It's `scripts/install.sh` in mutastic's repository, so from a clone, `sh scripts/install.sh` does
+the same.
 
 It finds this machine's target, downloads that release's archive, checks it against the release's
 `SHA256SUMS`, and refuses one that doesn't match. It keeps the release in
@@ -18,9 +21,9 @@ It finds this machine's target, downloads that release's archive, checks it agai
 it again to update. If `~/.local/bin` isn't on your `PATH`, it says the line to add for your shell.
 Nothing goes anywhere else, so removing those two directories uninstalls it.
 
-Releases are built for macOS on Apple silicon and Intel, and for Linux on x86-64 and Arm64, static,
-so one archive runs on any distribution. Elsewhere, or before a release is out, build it from
-source.
+It needs `curl` and `tar`, which macOS and most Linux images have. Releases are built for macOS on
+Apple silicon and Intel, and for Linux on x86-64 and Arm64, static, so one archive runs on any
+distribution. Elsewhere, Windows among them, build it from source.
 
 | Variable | Effect |
 |---|---|
@@ -34,7 +37,8 @@ link, and keeps the Java edition's releases in `~/.mutastic`, where `mutastic` f
 
 ## From source
 
-With a Rust toolchain, stable is fine:
+On a platform without a release, or to work on mutastic itself, build it with a Rust toolchain,
+stable is fine:
 
 ```sh
 git clone https://github.com/mutastic/mutastic-rs.git
