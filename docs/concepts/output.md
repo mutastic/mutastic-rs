@@ -124,6 +124,22 @@ decline: if a mutant's case can't happen in practice, or the change is one no ca
    or propose: mutastic ignore mb2f8ae57 --propose --reason="<why>" fixtures/pricing
 ```
 
+#### The agent format's contract
+
+The agent format is for a coding agent to read as text, and both editions write it the same way.
+From 1.0.0 its structure is fixed, and its words are not:
+
+- **What stays:** the verdict is the first line, starting `mutastic: PASS` or `mutastic: FAIL`, then
+  the `rules:` and `decline:` lines. Each missed line is an entry of its own, starting
+  `N. missed <id>:`, numbered from 1, with its lines indented under it: `at` and the place, the
+  change as `-` and `+` lines, and each command on a line of its own after its label (`done when:`,
+  `reproduce:`, `or propose:`), whole, so it can be run as it's shown.
+- **What may change in any release:** the words of a headline, the evidence, a fix and the rules;
+  which other labelled lines an entry has; and how many entries are shown.
+
+A tool that needs fields reads `--format=jsonl` instead, where each missed mutant's `rendered` is
+its entry in the agent format's words.
+
 ### `jsonl`
 
 One JSON object per line, the `mutastic.events/v1` stream, for tools. Progress is off, so stdout is
