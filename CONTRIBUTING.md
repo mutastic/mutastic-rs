@@ -75,9 +75,60 @@ crates the tests run mutastic on.
 ## Pull requests
 
 - One change per pull request, with a description of what it changes and why. The template asks.
-- Commit messages explain why, as the log does: what was wrong or missing, and what the change does
-  about it.
+- Commit messages follow [Conventional Commits](https://www.conventionalcommits.org) and 50/72: a
+  `type(scope): subject` of at most 50 characters, imperative and lower case, a blank line, then a
+  body wrapped at 72 that explains why: what was wrong or missing, and what the change does about it.
 - CI must pass.
+
+## Commit messages
+
+What [Pull requests](#pull-requests) asks of a commit message, in full:
+
+- **Subject:** no full stop at the end. Imperative means "add", not "adds" or "added".
+- **Type:** `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore` or
+  `revert`. A breaking change adds `!` before the colon (`feat(cli)!: …`), or a
+  `BREAKING CHANGE:` footer.
+- **Scope:** optional and lower case, the crate area changed: `engine` (building and running
+  mutants: `engine`, `compile`, `testrun`, `workspace`), `sites` (where the operators find mutants),
+  `report` (cards' words, report files, the events schema, suggested tests), `cli` (commands,
+  config, ignores, `--since`, shares), `gate`, `java` (handing Maven and Gradle builds to the Java
+  edition), `cargo` (`cargo mutastic`), `fixtures`, `docs`, `ci` or `release`. Leave it out when a
+  change spans several.
+- **Long lines:** URLs, indented or fenced code, and trailers such as `Co-Authored-By:` (last)
+  may run past 72.
+
+Two from the log, as they'd be written now:
+
+```text
+fix(report): write paths with / on Windows
+
+Before a Windows build is promised, the tests have to pass there. A
+windows-latest job found cards, report paths and the gate's lines
+written with \, so they read differently from Linux and macOS. A source
+file's path is kept with / from the start, which Windows takes too.
+```
+
+```text
+feat(cli): split a run across CI jobs with --shard
+
+The Java edition splits one run across CI jobs and puts it back
+together, so the Rust edition does the same, in the same words and with
+the same events: --shard=N/M runs one share of the mutants, and
+--from-shards=DIR puts the shares back together as the whole run.
+```
+
+Commits before 9 Nov 2026 use the older style, a long subject that says why, and are not
+rewritten.
+
+`.githooks/commit-msg` checks each message as you commit, and lets merge, revert, `fixup!` and
+`squash!` commits through as git writes them. Turn it on once in each clone:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+CI runs the same check on each new commit in a push or pull request (`.githooks/check-commits`),
+counting from the commit that added the hook. `sh .githooks/test-commit-msg` tests the hook.
 
 ## Releases
 

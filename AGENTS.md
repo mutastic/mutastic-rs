@@ -46,6 +46,16 @@ Formatting is rustfmt's, with its defaults: that is the spec, not taste.
 14. One concern per type.
 15. No unsafe code in mutastic itself (`unsafe_code = "forbid"`). Take a dependency, or a process,
     before reaching for it.
+16. Commits follow Conventional Commits and 50/72: `type(scope): subject` in at most 50
+    characters, imperative and lower case; a blank line; then a body wrapped at 72 that says why.
+    The diff already says what.
+
+    The types are `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore` and
+    `revert`, with `!` or a `BREAKING CHANGE:` footer for a breaking change. The scope, optional, is
+    the crate area: `engine`, `sites`, `report`, `cli`, `gate`, `java`, `cargo`, `fixtures`, `docs`,
+    `ci` or `release`. [Commit messages](CONTRIBUTING.md#commit-messages) has examples from this
+    log. `.githooks/commit-msg` checks each message (`git config core.hooksPath .githooks`), and CI
+    checks every new commit. Commits before 9 Nov 2026 use the older style and are never reworded.
 
 ## mutastic's own rules
 

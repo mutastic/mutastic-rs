@@ -1,0 +1,49 @@
+#!/bin/sh
+# Runs the commit-msg hook over the commits in a range, as CI does for a push or a pull request:
+#
+#   .githooks/check-commits <base> <head>
+#
+# Only commits from the one that added the hook onwards are checked. Earlier ones kept the older
+# style and are never rewritten, so they never fail. A missing or all-zero base (a new branch)
+# checks everything from that commit to <head>.
+
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+base=${1:-}
+head=${2:-HEAD}
+
+# The boundary: the commit that first added the hook. It needs the full history to be found. A pull
+# request from a branch older than the hook finds it in the merge checked out (HEAD), and has all
+# of its own commits checked.
+boundary=$(git log --diff-filter=A --format=%H --reverse "$head" HEAD -- .githooks/commit-msg | head -n 1)
+if [ -z "$boundary" ]; then
+  echo "check-commits: no commit adds .githooks/commit-msg; is the history shallow?" >&2
+  exit 2
+fi
+
+if [ -n "$base" ] && ! echo "$base" | grep -q '^0*$' && git cat-file -e "$base^{commit}" 2>/dev/null; then
+  range="$head ^$base"
+else
+  range=$head
+fi
+# Everything before the boundary is history in the older style.
+for parent in $(git rev-parse "$boundary^@"); do
+  range="$range ^$parent"
+done
+
+message=$(mktemp)
+trap 'rm -f "$message" "$message.err"' EXIT
+failed=0
+checked=0
+# shellcheck disable=SC2086 # $range is a list of revisions
+for commit in $(git rev-list --reverse $range); do
+  checked=$((checked + 1))
+  git log -1 --format=%B "$commit" > "$message"
+  if ! sh .githooks/commit-msg "$message" 2> "$message.err"; then
+    git log -1 --format='%h %s' "$commit" >&2
+    sed 's/^/  /' "$message.err" >&2
+    failed=$((failed + 1))
+  fi
+done
+echo "check-commits: $checked commit(s) since $(git rev-parse --short "$boundary") checked, $failed failed"
+[ "$failed" -eq 0 ]

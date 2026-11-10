@@ -1,0 +1,95 @@
+#!/bin/sh
+# Tests the commit-msg hook on messages it must pass and messages it must stop, each with the
+# error it must give. Run it after changing the hook: sh .githooks/test-commit-msg
+
+cd "$(dirname "$0")" || exit 2
+message=$(mktemp)
+trap 'rm -f "$message" "$message.err"' EXIT
+failures=0
+cases=0
+
+# passes <name> <message>
+passes() {
+  cases=$((cases + 1))
+  printf '%s\n' "$2" > "$message"
+  if ! sh ./commit-msg "$message" 2> "$message.err"; then
+    echo "FAIL $1: stopped a good message: $(cat "$message.err")"
+    failures=$((failures + 1))
+  fi
+}
+
+# stops <name> <expected error> <message>
+stops() {
+  cases=$((cases + 1))
+  printf '%s\n' "$3" > "$message"
+  if sh ./commit-msg "$message" 2> "$message.err"; then
+    echo "FAIL $1: passed a bad message"
+    failures=$((failures + 1))
+  elif ! grep -qF "$2" "$message.err"; then
+    echo "FAIL $1: expected \"$2\", got: $(cat "$message.err")"
+    failures=$((failures + 1))
+  fi
+}
+
+long_url='See https://github.com/mutastic/mutastic/blob/main/docs/src/content/docs/guides/running-in-ci.md'
+long_trailer='Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com> and a long tail of text'
+
+passes "subject only" "fix: keep the exit status"
+passes "scope" "feat(cli): add --since to run"
+passes "breaking" "feat(api)!: drop the old event names"
+passes "50 characters" "docs(engine): $(printf '%036d' 0)"
+passes "characters, not bytes (57 bytes)" "docs: naïve résumé café déjà vu, über straße faç"
+passes "body and trailer" "fix(report): order covering tests by name
+
+Cards listed tests in the order they first ran, so two runs of the same
+build could differ.
+
+$long_trailer"
+passes "url" "docs: link the CI guide
+
+$long_url"
+passes "indented code" "test(engine): cover the long command
+
+    ./gradlew :mutastic-cli:test -Pmutastic.shard=1/4 --tests '*EndToEndTest*'"
+passes "fenced code" "test: cover the long command
+
+\`\`\`
+./gradlew :mutastic-cli:test -Pmutastic.shard=1/4 --tests '*EndToEndTest*'
+\`\`\`"
+passes "breaking change footer" "feat(cli)!: rename --format=json to jsonl
+
+BREAKING CHANGE: --format=json is now --format=jsonl, which every tool reading the events must use"
+passes "comments stripped" "chore: bump the wrapper
+# Please enter the commit message for your changes. Lines starting with '#' will be ignored, and an empty message aborts the commit."
+passes "scissors" "ci: pin checkout
+# ------------------------ >8 ------------------------
+a diff line that is much longer than seventy-two characters, which git drops anyway"
+passes "merge" "Merge branch 'main' into a-branch-with-a-very-long-name-indeed-and-more"
+passes "revert" "Revert \"feat(cli): add --since to run, which this subject makes far too long\""
+passes "fixup" "fixup! feat(cli): add --since to run, which this subject makes far too long"
+passes "squash" "squash! feat(cli): add --since"
+
+stops "empty" "the message is empty" ""
+stops "no type" "needs \"type(scope): subject\"" "Keep the exit status"
+stops "old style" "needs \"type(scope): subject\"" "The Output page opens with why there's more than one format"
+stops "unknown type" "unknown type \"feature\"" "feature: add --since"
+stops "upper-case scope" "lower-case scope" "fix(CLI): keep the exit status"
+stops "no space" "needs \"type(scope): subject\"" "fix:keep the exit status"
+stops "no summary" "needs \"type(scope): subject\"" "fix(cli): "
+stops "51 characters" "the subject is 51 characters" "docs(engine): $(printf '%037d' 0)"
+stops "capital" "starts with a capital" "fix(cli): Keep the exit status"
+stops "capital, no scope" "starts with a capital" "docs!: JUnit 5 is the only runner"
+stops "full stop" "ends with a full stop" "fix: keep the exit status."
+stops "no blank line" "line 2 must be blank" "fix: keep the exit status
+Because it was lost."
+stops "73 characters" "line 3 is 73 characters" "fix: keep the exit status
+
+$(printf '%073d' 0)"
+stops "long prose before trailers" "line 3 is 77 characters" "fix: keep the exit status
+
+Note: a body line that looks like a trailer is still prose when it isn't last
+
+$long_trailer"
+
+echo "test-commit-msg: $cases cases, $failures failed"
+[ "$failures" -eq 0 ]

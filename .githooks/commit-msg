@@ -1,0 +1,68 @@
+#!/bin/sh
+# Checks a commit message against Conventional Commits and 50/72, as CONTRIBUTING.md describes.
+# Git runs it as the commit-msg hook (`git config core.hooksPath .githooks`), and CI runs it on
+# each new commit through check-commits. POSIX sh and awk only, so it runs anywhere git does.
+#
+#   type(scope)!: subject     at most 50 characters, lower case, no full stop at the end
+#   (blank line)
+#   body                      lines of at most 72 characters, saying why
+#
+# URLs, indented or fenced code and trailers (Co-Authored-By: and the like) may run longer.
+# Merges, reverts and fixup!/squash!/amend! commits are left alone.
+
+if [ "$#" -ne 1 ] || [ ! -r "$1" ]; then
+  echo "usage: commit-msg <message file>" >&2
+  exit 2
+fi
+
+# Where the convention is written down: CONTRIBUTING.md, or the README in a repository without one.
+guide=CONTRIBUTING.md
+top=$(git rev-parse --show-toplevel 2>/dev/null) && [ ! -f "$top/CONTRIBUTING.md" ] && guide=README.md
+
+# Count characters, not bytes: drop UTF-8 continuation bytes before counting.
+LC_ALL=C awk -v guide="$guide" '
+function chars(s) { gsub(/[\200-\277]/, "", s); return length(s) }
+function fail(m) { print "commit-msg: " m > "/dev/stderr"; bad = 1 }
+# Git strips comment lines, and everything below the scissors line, after this hook runs.
+/^# -+ >8 -+$/ { exit_scan = 1 }
+exit_scan { next }
+/^#/ { next }
+{ line[++n] = $0; sub(/[ \t]+$/, "", line[n]) }
+END {
+  while (n > 0 && line[n] == "") n--
+  if (n == 0) { fail("the message is empty"); exit 1 }
+  s = line[1]
+  if (s ~ /^(Merge |Revert "|fixup! |squash! |amend! )/) exit 0
+
+  types = "feat|fix|docs|test|refactor|perf|build|ci|chore|revert"
+  if (s !~ "^(" types ")(\\([a-z0-9][a-z0-9._/-]*\\))?!?: [^ ]") {
+    if (s ~ /^[a-z]+(\([^)]*\))?!?: /) {
+      t = s; sub(/[(!:].*/, "", t)
+      if (t !~ "^(" types ")$") fail("unknown type \"" t "\": use one of " types)
+      else fail("the subject needs \"type(scope): subject\", with a lower-case scope and one space after the colon")
+    } else {
+      fail("the subject needs \"type(scope): subject\", e.g. \"fix(cli): keep the exit status\"")
+    }
+  }
+  if (s ~ /^[a-z]+(\([^)]*\))?!?: [A-Z]/) fail("the subject starts with a capital after the colon; use lower case")
+  if (chars(s) > 50) fail("the subject is " chars(s) " characters; keep it to 50")
+  if (s ~ /\.$/) fail("the subject ends with a full stop; drop it")
+  if (n >= 2 && line[2] != "") fail("line 2 must be blank, between the subject and the body")
+
+  # The last paragraph holds the trailers, if it has any.
+  last = n
+  while (last > 2 && line[last - 1] != "") last--
+  fence = 0
+  for (i = 3; i <= n; i++) {
+    l = line[i]
+    if (l ~ /^[ \t]*```/) { fence = !fence; continue }
+    if (fence || l ~ /^(    |\t)/ || l ~ /[a-z]+:\/\//) continue
+    if (i >= last && l ~ /^([A-Za-z][A-Za-z0-9-]*|BREAKING CHANGE): /) continue
+    if (chars(l) > 72) fail("line " i " is " chars(l) " characters; wrap the body at 72")
+  }
+  if (bad) {
+    print "commit-msg: see \"Commit messages\" in " guide > "/dev/stderr"
+    exit 1
+  }
+}
+' "$1"

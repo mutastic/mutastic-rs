@@ -1,0 +1,28 @@
+# Commit messages: every new commit in a push or pull request follows Conventional Commits and
+# 50/72, checked by the same script as the commit-msg hook (.githooks/). Commits from before the
+# hook was added keep the older style and aren't checked. Takes seconds. Actions are pinned to a
+# commit: a tag can be moved.
+name: Commits
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  messages:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The whole history, to find the commit that added the hook.
+          fetch-depth: 0
+      - run: sh .githooks/test-commit-msg
+      - run: sh .githooks/check-commits "$BASE" "$HEAD_SHA"
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
