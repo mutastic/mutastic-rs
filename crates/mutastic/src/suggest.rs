@@ -43,10 +43,13 @@ pub struct Built {
 /// receiver with whole numbers alone.
 pub fn built(callable: &Callable, covered_by: &[String]) -> Option<Built> {
     let receiver = callable.receiver.as_ref()?;
-    let opener = match receiver.made {
-        crate::sites::callable::Made::New => format!("{}::new(", receiver.type_name),
-        crate::sites::callable::Made::Tuple => format!("{}(", receiver.type_name),
-        _ => return None,
+    let (opener, closer, fields) = match &receiver.made {
+        crate::sites::callable::Made::New => (format!("{}::new(", receiver.type_name), ')', None),
+        crate::sites::callable::Made::Tuple => (format!("{}(", receiver.type_name), ')', None),
+        crate::sites::callable::Made::Fields(names) => {
+            (format!("{} {{", receiver.type_name), '}', Some(names))
+        }
+        crate::sites::callable::Made::Unit => return None,
     };
     let tests = &callable.tests.as_ref()?.text;
     let arity = receiver.parameters.len();
@@ -55,7 +58,8 @@ pub fn built(callable: &Callable, covered_by: &[String]) -> Option<Built> {
     }
     covered_by.iter().find_map(|test| {
         let name = test.rsplit("::").next()?;
-        let values = first_made(fn_body(tests, name)?, &opener, arity)?;
+        let body = fn_body(tests, name)?;
+        let values = first_made(body, &opener, closer, fields.map(Vec::as_slice), arity)?;
         Some(Built {
             test: test.clone(),
             values,
@@ -83,8 +87,15 @@ fn fn_body<'t>(text: &'t str, name: &str) -> Option<&'t str> {
     None
 }
 
-/// The values of the first `opener(..)` in `body` made of `arity` whole numbers alone.
-fn first_made(body: &str, opener: &str, arity: usize) -> Option<Vec<i128>> {
+/// The values of the first `opener ..closer` in `body` made of `arity` whole numbers alone: in
+/// order, or for a struct literal, by `fields`, `Delivery { free_from: 20 }`.
+fn first_made(
+    body: &str,
+    opener: &str,
+    closer: char,
+    fields: Option<&[String]>,
+    arity: usize,
+) -> Option<Vec<i128>> {
     let mut from = 0;
     while let Some(found) = body[from..].find(opener) {
         let at = from + found;
@@ -93,11 +104,14 @@ fn first_made(body: &str, opener: &str, arity: usize) -> Option<Vec<i128>> {
             .last()
             .is_some_and(|c| c.is_alphanumeric() || c == '_');
         let after = &body[at + opener.len()..];
-        if let (true, Some(close)) = (whole, after.find(')')) {
-            let values: Option<Vec<i128>> = after[..close]
-                .split(',')
-                .map(|word| crate::sites::integer_literal(word).map(|(value, _)| value))
-                .collect();
+        if let (true, Some(close)) = (whole, after.find(closer)) {
+            let values = match fields {
+                Some(names) => by_field(&after[..close], names),
+                None => after[..close]
+                    .split(',')
+                    .map(|word| crate::sites::integer_literal(word).map(|(value, _)| value))
+                    .collect(),
+            };
             if let Some(values) = values.filter(|values| values.len() == arity) {
                 return Some(values);
             }
@@ -105,6 +119,22 @@ fn first_made(body: &str, opener: &str, arity: usize) -> Option<Vec<i128>> {
         from = at + opener.len();
     }
     None
+}
+
+/// `free_from: 20, days: 3` as each of `names`'s value, in their order.
+fn by_field(text: &str, names: &[String]) -> Option<Vec<i128>> {
+    let given: Vec<(&str, &str)> = text
+        .split(',')
+        .filter(|part| !part.trim().is_empty())
+        .map(|part| part.split_once(':'))
+        .collect::<Option<_>>()?;
+    names
+        .iter()
+        .map(|name| {
+            let (_, value) = given.iter().find(|(field, _)| field.trim() == name)?;
+            crate::sites::integer_literal(value).map(|(value, _)| value)
+        })
+        .collect()
 }
 
 /// The inputs to try with the receiver made as `made`, first: as [`candidates`], its values first.
@@ -700,6 +730,23 @@ mod tests {
             })
         );
         assert_eq!(built(&callable, &["tests::gone".to_string()]), None);
+        let literal = Callable {
+            receiver: Some(Receiver {
+                type_name: "Delivery".into(),
+                made: Made::Fields(vec!["free_from".into()]),
+                parameters: vec![("free_from".into(), "u32".into())],
+            }),
+            tests: Some(TestModule {
+                name: "tests".into(),
+                glob: true,
+                text: "fn big_orders() { let d = Delivery { free_from: 20 }; }".into(),
+            }),
+            ..delivery()
+        };
+        assert_eq!(
+            built(&literal, &["rates::tests::big_orders".to_string()]).map(|made| made.values),
+            Some(vec![20])
+        );
         assert_eq!(
             built(&late_fee(), &["tests::small_orders".to_string()]),
             None
@@ -750,7 +797,7 @@ mod tests {
                 "}"
             ]
         );
-        let unbuilt = named(&callable, &operands, "", &found.values, None).unwrap();
+        let unbuilt = super::named(&callable, &operands, "", &found.values, None).unwrap();
         assert_eq!(
             unbuilt.meaning,
             "free_from (Delivery's field, set when it's made)"

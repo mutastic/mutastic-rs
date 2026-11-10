@@ -942,6 +942,11 @@ fn the_gate_holds_a_task_to_its_changed_lines() {
     assert_eq!(code, 1, "{out}");
     assert!(out.contains("on the lines the task changed"), "{out}");
     assert!(out.contains("so it isn't done"), "{out}");
+    // What holds it is named by id, the mutants no test reaches too.
+    assert!(
+        out.contains("so it isn't done (no test reaches: m"),
+        "{out}"
+    );
     assert!(
         out.contains("not covered (no test reaches these lines):\n- src/lib.rs:"),
         "{out}"

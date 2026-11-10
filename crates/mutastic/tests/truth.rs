@@ -368,8 +368,8 @@ fn every_suggested_test_compiles_and_catches_its_mutant() {
 }
 
 /// A suggested test says a value the way the source does: a `const` the comparison reads is
-/// passed by name, its value in the comment, and a field the receiver is made with is one local,
-/// passed to both; each test is named for it.
+/// passed by name, its value in the comment, and a field the receiver is made with has the value
+/// the covering test makes it with; each test is named for it.
 fn names_the_values_the_source_names(suggested: &[serde_json::Value]) {
     let code = |function: &str| -> Vec<String> {
         suggested
@@ -385,10 +385,11 @@ fn names_the_values_the_source_names(suggested: &[serde_json::Value]) {
         "{:?}",
         code("discount")
     );
+    // The receiver is made as the covering test makes it, and its field's value is the test's.
     assert!(
-        code("is_free").iter().any(|test| test
-            .starts_with("#[test]\nfn is_free_at_free_from() {\n    let free_from = ")
-            && test.contains("Delivery { free_from }.is_free(free_from)")),
+        code("is_free").contains(
+            &"#[test]\nfn is_free_at_free_from() {\n    let delivery = Delivery { free_from: 20 }; // as delivery::tests::big_orders_go_free builds it\n    assert!(delivery.is_free(20)); // total == free_from · today true · with this mutant false\n}".to_string()
+        ),
         "{:?}",
         code("is_free")
     );

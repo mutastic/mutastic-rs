@@ -110,7 +110,7 @@
       "page": "ignore",
       "synopsis": "mutastic ignore <id> [dir] --reason=<why>",
       "summary": "Record a decision not to test one mutant",
-      "detail": "It goes in .mutastic/ignores.yaml in the package's directory with its line and the reason, to commit and review, and lapses when that line changes: the mutant runs again, and run-finished lists it in staleIgnores. --remove takes one back; ignore --prune takes away every one that has lapsed. --propose records it in .mutastic/proposals.yaml instead, for a person to accept with --accept: how a coding agent says a mutant isn't worth a test, since until then it still counts as missed. It runs no tests, and each step says how to undo it.",
+      "detail": "It goes in .mutastic/ignores.yaml in the package's directory with its line and the reason, to commit and review, and lapses when that line changes: the mutant runs again, and run-finished lists it in staleIgnores. --remove takes one back; ignore --prune takes away every one that has lapsed. --propose records it in .mutastic/proposals.yaml instead, for a person to accept with --accept: how a coding agent says a mutant isn't worth a test, since until then it still counts as missed. A proposal that a mutant is equivalent or unreachable says the one case where it differs, and why that can't happen. It runs no tests, and each step says how to undo it.",
       "exits": "0 when the decision is recorded, proposed, accepted or removed; 1 when --accept names a mutant that isn't proposed.",
       "takesMutantId": true,
       "examples": [
@@ -119,8 +119,8 @@
           "cargo": "cargo mutastic ignore mb2f8ae57 --reason=\"totals are rounded to tens\""
         },
         {
-          "commandLine": "mutastic ignore mb2f8ae57 --propose --as=unreachable --reason=\"totals are rounded to tens\"",
-          "cargo": "cargo mutastic ignore mb2f8ae57 --propose --as=unreachable --reason=\"totals are rounded to tens\""
+          "commandLine": "mutastic ignore mb2f8ae57 --propose --as=unreachable --reason=\"Differs only when total is 100. That can't happen because prices end in 9.\"",
+          "cargo": "cargo mutastic ignore mb2f8ae57 --propose --as=unreachable --reason=\"Differs only when total is 100. That can't happen because prices end in 9.\""
         },
         {
           "commandLine": "mutastic ignore --accept mb2f8ae57",
@@ -588,15 +588,15 @@
       "group": "Ignoring",
       "value": "",
       "choices": [],
-      "help": "Propose the ignore for a person to accept, rather than make it: a coding agent's way",
+      "help": "Propose the ignore for a person to accept, rather than make it: a coding agent's way. An equivalent or unreachable mutant's reason says the one case where it differs and why that can't happen",
       "commands": [
         "ignore"
       ],
       "environment": "",
       "examples": {
         "ignore": {
-          "commandLine": "mutastic ignore mb2f8ae57 --propose --as=unreachable --reason=\"totals are rounded to tens\"",
-          "cargo": "cargo mutastic ignore mb2f8ae57 --propose --as=unreachable --reason=\"totals are rounded to tens\""
+          "commandLine": "mutastic ignore mb2f8ae57 --propose --as=unreachable --reason=\"Differs only when total is 100. That can't happen because prices end in 9.\"",
+          "cargo": "cargo mutastic ignore mb2f8ae57 --propose --as=unreachable --reason=\"Differs only when total is 100. That can't happen because prices end in 9.\""
         }
       }
     },

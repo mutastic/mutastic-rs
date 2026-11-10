@@ -411,9 +411,62 @@ pub fn claude_hook(verdict: &Verdict) -> String {
     }
 }
 
+/// What holds the gate, every mutant by id, as the Java edition says it: those missed, those no
+/// test reaches, and apart from them those proposed, which wait on a person, not the agent.
+pub fn held_by(missed: &[String], uncovered: &[String], waiting: &[String]) -> String {
+    let count = missed.len() + uncovered.len();
+    let mut parts = Vec::new();
+    if !missed.is_empty() {
+        parts.push(format!("missed: {}", missed.join(", ")));
+    }
+    if !uncovered.is_empty() {
+        parts.push(format!("no test reaches: {}", uncovered.join(", ")));
+    }
+    let proposed = if waiting.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " Proposed, waiting on a person, and not holding it: {}.",
+            waiting.join(", ")
+        )
+    };
+    format!(
+        "mutastic gate: {count} mutant{} on the lines the task changed {} it, so it isn't done ({}).{proposed} For each card: write the test, and run its `done when` before you move on; for a line no test reaches, write a test that reaches it; if a case can't happen, propose ignoring it, for a person to accept.",
+        if count == 1 { "" } else { "s" },
+        if count == 1 { "holds" } else { "hold" },
+        parts.join("; ")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The shape an eval met: both missed mutants proposed, and two no test reaches holding the
+    /// gate. Every one that holds it is named, and the proposed ones aren't called missed.
+    #[test]
+    fn every_mutant_that_holds_the_gate_is_named() {
+        let ids = |list: &[&str]| list.iter().map(|id| id.to_string()).collect::<Vec<_>>();
+        let said = held_by(
+            &[],
+            &ids(&["m04b90863", "m304d2733"]),
+            &ids(&["m1a2b3c4d", "m5e6f7a8b"]),
+        );
+        assert!(
+            said.starts_with(
+                "mutastic gate: 2 mutants on the lines the task changed hold it, so it isn't done \
+                 (no test reaches: m04b90863, m304d2733). Proposed, waiting on a person, and not \
+                 holding it: m1a2b3c4d, m5e6f7a8b."
+            ),
+            "{said}"
+        );
+        assert!(!said.contains("missed:"), "{said}");
+        let one = held_by(&ids(&["m1a2b3c4d"]), &[], &[]);
+        assert!(
+            one.starts_with("mutastic gate: 1 mutant on the lines the task changed holds it, so it isn't done (missed: m1a2b3c4d). For each card"),
+            "{one}"
+        );
+    }
 
     #[test]
     fn tests_are_known_by_name_and_body_however_laid_out() {

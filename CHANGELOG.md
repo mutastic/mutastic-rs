@@ -30,6 +30,14 @@ events format only gains.
   The formatter equivalents say their reason the same way.
 - **Mutants no test reaches list their ids in the agent format,** by line, each with its `or
   propose` command, so an agent can propose one from what it's shown.
+- **A name a card's suggested test uses says what it is and what it was.** A suggestion first
+  tries the receiver as a covering test in the module beside the function makes it
+  (`Delivery::new(50)`), and then makes it the same way, saying so: `let delivery =
+  Delivery::new(50); // as tests::small_orders builds it`. The evidence says `inputs seen: total =
+  20, 80, with free_from = 50 (Delivery's field, from Delivery::new(50))` and `none has total ==
+  free_from`, or `the edge is FREE_FROM (FREE_FROM = 100)`. Events gain `suggestion.builtBy`.
+- **The gate names every mutant that holds it,** by id, those no test reaches too, and says a proposed one is waiting on a person, not missed; its
+  cards leave the proposed ones out.
 - **An empty `--only` id is refused** (`--only=`, `--only=a,,b`), where it ran every mutant.
 
 - **From 1.0.0, `mutastic` runs the newest Java edition of its own minor version.** The two

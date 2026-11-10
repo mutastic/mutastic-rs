@@ -1419,7 +1419,7 @@ fn gate_verdict(
     let mut options = options(parsed, Vec::new());
     options.since = Some(changed);
     let progress = Progress::new(&project.package, true, false, Some(Shown::None));
-    let report = match engine::run(project, &options, &|step| progress.step(step)) {
+    let mut report = match engine::run(project, &options, &|step| progress.step(step)) {
         Ok(report) => report,
         Err(error) => return red_verdict(here, state, &error),
     };
@@ -1427,14 +1427,24 @@ fn gate_verdict(
         .into_iter()
         .map(|entry| entry.id)
         .collect();
-    let missed: Vec<String> = report
-        .results
-        .iter()
-        .filter(|r| matches!(r.status, Status::Survived | Status::NoCoverage))
-        .map(|r| report.found.mutants[r.mutant].id.clone())
-        .collect();
-    let open: Vec<&String> = missed.iter().filter(|id| !proposed.contains(*id)).collect();
-    if open.is_empty() {
+    let ids_with = |status: Status| -> Vec<String> {
+        report
+            .results
+            .iter()
+            .filter(|r| r.status == status)
+            .map(|r| report.found.mutants[r.mutant].id.clone())
+            .collect()
+    };
+    let (survived, uncovered) = (ids_with(Status::Survived), ids_with(Status::NoCoverage));
+    let missed: Vec<String> = survived.iter().chain(&uncovered).cloned().collect();
+    let open = |ids: &[String]| -> Vec<String> {
+        ids.iter()
+            .filter(|id| !proposed.contains(*id))
+            .cloned()
+            .collect()
+    };
+    let (open_missed, open_uncovered) = (open(&survived), open(&uncovered));
+    if open_missed.is_empty() && open_uncovered.is_empty() {
         let caught = report.count(Status::Killed) + report.count(Status::Timeout);
         let scored = report.results.len() - report.count(Status::Ignored);
         let waiting = if missed.is_empty() {
@@ -1449,17 +1459,24 @@ fn gate_verdict(
             "mutastic gate: passed: the tests catch {caught} of the {scored} mutants on the lines the task changed{waiting}"
         )));
     }
+    let waiting: Vec<String> = missed
+        .iter()
+        .filter(|id| proposed.contains(*id))
+        .cloned()
+        .collect();
+    // The cards are for what holds the gate: a proposed mutant waits on a person, not the agent.
+    report.results.retain(|r| {
+        !proposed.contains(&report.found.mutants[r.mutant].id)
+            || !matches!(r.status, Status::Survived | Status::NoCoverage)
+    });
     let cards: String = report::render(&report, Format::Agent, Style { color: false })
         .lines()
         .skip_while(|line| line.starts_with("mutastic: "))
         .collect::<Vec<_>>()
         .join("\n");
-    let one = open.len() == 1;
     Ok(gate::Verdict::block(format!(
-        "mutastic gate: {} mutant{} on the lines the task changed {} missed, so it isn't done. For each card: write the test, and run its `done when` before you move on; if a case can't happen, propose ignoring it, for a person to accept.\n\n{cards}",
-        open.len(),
-        if one { "" } else { "s" },
-        if one { "is" } else { "are" }
+        "{}\n\n{cards}",
+        gate::held_by(&open_missed, &open_uncovered, &waiting)
     )))
 }
 

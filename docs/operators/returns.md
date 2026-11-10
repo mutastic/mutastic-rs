@@ -201,7 +201,7 @@ impl std::fmt::Display for Pieces {
       "text": "write!(f, \"{}\", self.0)? -> (write!(f, \"{}\", self.0)).unwrap()"
     }
   },
-  "statusReason": "equivalent: inside `fmt`, a `?` passes on a formatter's error, which no test can cause",
+  "statusReason": "equivalent: differs only when the formatter fails. That can't happen because inside `fmt` its error comes from the writer under it, which no test can make fail.",
   "skipKind": "equivalent",
   "coveredBy": [],
   "testsRun": 0,

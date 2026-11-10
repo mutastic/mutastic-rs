@@ -1,6 +1,6 @@
 mutastic: PASS · score 90.9% (threshold 80) · 1 missed, 0 not covered, 10 caught of 11 mutants
 rules: add or change tests only, never production code; a fix counts when `mutastic verify <id> fixtures/pricing` passes
-decline: if a mutant's case can't happen in practice, or the change is one no caller can see, don't contrive a test: say why
+decline: if a mutant's case can't happen in practice, or the change is one no caller can see, don't contrive a test: propose ignoring it, for a person to accept, as the kind it is (equivalent, unreachable, telemetry, deprecated or accepted-risk), with the reason in two sentences: the one case where it differs, and why that can't happen (`mutastic ignore <id> --propose --as=<equivalent|unreachable|…> --reason="Differs only when <case>. That can't happen because <why>." fixtures/pricing`)
 
 1. missed mb2f8ae57: no test checks `discount()` at `total == 100`
    at src/lib.rs:26
@@ -18,4 +18,4 @@ decline: if a mutant's case can't happen in practice, or the change is one no ca
      // check today's value is the one you intend: the test pins what the code does now
    done when: mutastic verify mb2f8ae57 fixtures/pricing passes
    reproduce: mutastic run --only=mb2f8ae57 fixtures/pricing
-   or propose: mutastic ignore mb2f8ae57 --propose --reason="<why>" fixtures/pricing
+   or propose: mutastic ignore mb2f8ae57 --propose --as=<equivalent|unreachable|…> --reason="Differs only when <case>. That can't happen because <why>." fixtures/pricing
