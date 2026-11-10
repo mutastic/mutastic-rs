@@ -20,6 +20,14 @@ events format only gains.
   `propose`, the counts, `toolchain`, `workers`, `workersStarted` and `coverageMs`. See
   [Events](docs/reference/events.md).
 
+### Changes
+
+- **From 1.0.0, `mutastic` runs the Java edition with its own version.** The two editions are
+  released together, at the same version, so in a Maven or Gradle project `mutastic 1.2.0` runs the
+  Java edition 1.2.0, fetching it if it isn't kept. Before 1.0.0 it still uses the newest kept, or
+  the latest release. `MUTASTIC_VERSION` still picks another. See
+  [One command, two editions](docs/editions.md#the-java-edition).
+
 ## 0.2.1 (2026-11-09)
 
 Windows support, and installing through mutastic.io.

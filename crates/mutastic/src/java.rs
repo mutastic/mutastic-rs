@@ -7,8 +7,10 @@
 //! the release's `SHA256SUMS`, and unpacks it there. Nothing is fetched for a Rust project.
 //!
 //! Settings, each optional:
-//! - `MUTASTIC_VERSION`: the Java edition's release to use, fetched if it isn't kept; otherwise the
-//!   newest kept, or the latest release when none is.
+//! - `MUTASTIC_VERSION`: the Java edition's release to use, fetched if it isn't kept. Otherwise,
+//!   from 1.0.0, the release with this mutastic's own version, as the editions are released
+//!   together at matching versions; before 1.0.0, the newest kept, or the latest release when none
+//!   is.
 //! - `MUTASTIC_HOME`: where releases are kept, `~/.mutastic` unless set.
 //! - `MUTASTIC_JAVA_ENGINE`: a Java edition's `bin/mutastic` to run instead, such as one built
 //!   from source. Nothing is fetched.
@@ -68,6 +70,28 @@ fn wanted() -> Option<String> {
         .filter(|version| !version.is_empty())
 }
 
+/// The Java edition that goes with this mutastic, `own`, unless `MUTASTIC_VERSION` says: from
+/// 1.0.0 the editions are released together, at matching versions, so it's the release with the
+/// same version. Before 1.0.0 their versions don't match, and there's none.
+fn matching(own: &str) -> Option<String> {
+    release_numbers(own)
+        .filter(|(major, _, _)| *major >= 1)
+        .map(|_| own.to_string())
+}
+
+/// The Java edition's release to use, without fetching: the one asked for, the one matching this
+/// mutastic's version, or the newest kept, in that order. `None` when it's the latest release.
+fn chosen(
+    wanted: Option<String>,
+    own: &str,
+    newest: impl FnOnce() -> Option<String>,
+) -> Option<String> {
+    wanted.or_else(|| matching(own)).or_else(newest)
+}
+
+/// This mutastic's version.
+const OWN: &str = env!("CARGO_PKG_VERSION");
+
 /// A release's version, `0.5.0`, as numbers to compare: only plain releases, never a snapshot.
 fn release_numbers(version: &str) -> Option<(u64, u64, u64)> {
     let mut parts = version.split('.').map(|part| {
@@ -125,10 +149,7 @@ pub fn present() -> Option<(String, PathBuf)> {
         return Some((version, given));
     }
     let home = home().ok()?;
-    let version = match wanted() {
-        Some(version) => version,
-        None => newest(&home)?,
-    };
+    let version = chosen(wanted(), OWN, || newest(&home))?;
     let command = launcher(&home, &version);
     command.is_file().then_some((version, command))
 }
@@ -148,7 +169,7 @@ pub fn engine() -> Result<PathBuf, String> {
     }
     let home = home()?;
     let releases = releases();
-    let version = match wanted().or_else(|| newest(&home)) {
+    let version = match chosen(wanted(), OWN, || newest(&home)) {
         Some(version) => version,
         None => latest(&releases)?,
     };
@@ -357,6 +378,22 @@ mod tests {
         std::fs::create_dir_all(home.join("mutastic-0.12.0")).unwrap();
         assert_eq!(newest(&home).as_deref(), Some("0.10.0"));
         std::fs::remove_dir_all(home).ok();
+    }
+
+    #[test]
+    fn from_1_0_the_java_edition_is_the_one_with_the_same_version() {
+        let newest = || Some("1.4.0".to_string());
+        assert_eq!(chosen(None, "1.2.0", newest).as_deref(), Some("1.2.0"));
+        assert_eq!(chosen(None, "2.0.1", newest).as_deref(), Some("2.0.1"));
+        // MUTASTIC_VERSION still says which.
+        assert_eq!(
+            chosen(Some("1.1.0".into()), "1.2.0", newest).as_deref(),
+            Some("1.1.0")
+        );
+        // Before 1.0.0 the versions don't match: the newest kept, or the latest when none is.
+        assert_eq!(chosen(None, "0.2.1", newest).as_deref(), Some("1.4.0"));
+        assert_eq!(chosen(None, "0.2.1", || None), None);
+        assert_eq!(matching("1.0.0-dev"), None);
     }
 
     #[test]

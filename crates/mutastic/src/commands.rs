@@ -538,7 +538,7 @@ pub const ENVIRONMENT: &[Entry] = &[
     Entry {
         name: "MUTASTIC_VERSION",
         meaning: "In a Maven or Gradle project, the Java edition's release to use",
-        detail: "Such as `0.5.0`, fetched if it isn't kept.",
+        detail: "Such as `0.5.0`, fetched if it isn't kept. Unset, from 1.0.0 it's the release with this mutastic's own version.",
     },
     Entry {
         name: "MUTASTIC_HOME",

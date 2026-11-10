@@ -63,8 +63,10 @@ before it downloads anything, and says what it found if it isn't 25 or later.
 It keeps each release of the Java edition in `~/.mutastic/mutastic-<version>`, as the Java
 edition's own installer does, so a release installed that way is used as it is. A download is
 checked against its release's `SHA256SUMS` before it's kept, and one that doesn't match is
-refused. Without a version asked for, mutastic uses the newest release it has kept, and fetches
-the latest when it has none.
+refused. Without a version asked for, mutastic uses the Java edition with its own version: from
+1.0.0 the two editions are released together, at the same version, so `mutastic 1.2.0` runs the
+Java edition 1.2.0, fetching it if it isn't kept. Before 1.0.0 their versions don't match, so it
+uses the newest release it has kept, and fetches the latest when it has none.
 
 | Variable | Effect |
 |---|---|
@@ -73,7 +75,8 @@ the latest when it has none.
 | `MUTASTIC_JAVA_ENGINE` | A Java edition's `bin/mutastic` to run instead, such as one built from its source. Nothing is fetched |
 | `MUTASTIC_JAVA_RELEASES` | Where releases are downloaded from, for a mirror: GitHub's releases of `mutastic/mutastic` unless set |
 
-To move to a newer Java edition, run once with `MUTASTIC_VERSION` set to it. Removing a release's
+From 1.0.0, to move to a newer Java edition, install the newer `mutastic`: it runs the Java
+edition with its version. To use another, or before 1.0.0, set `MUTASTIC_VERSION` to it. Removing a release's
 directory from `~/.mutastic` removes it.
 
 ## Which versions
