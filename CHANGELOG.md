@@ -5,6 +5,18 @@ newest come first.
 
 ## Unreleased
 
+## 0.2.1 (2026-11-09)
+
+Windows support, and installing through mutastic.io.
+
+### Changes
+
+- **One line installs it, from mutastic.io.** `curl -fsSL https://mutastic.io/install.sh | sh`
+  installs the native `mutastic` for Rust, Maven and Gradle projects alike, and every page and CI
+  example now names it. [Installing](docs/install.md) leads with that line, then what it does and
+  the variables that change it, then checking the version, and only then building from source,
+  for platforms without a release build (Windows, where WSL also works).
+
 ### Fixes
 
 - **Windows: output reads as it does elsewhere.** mutastic built from source on Windows wrote its

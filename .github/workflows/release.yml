@@ -1,4 +1,4 @@
-# The native `mutastic` command for each target, on a version tag (`v0.2.0`), as a draft release for
+# The native `mutastic` command for each target, on a version tag (`v0.2.1`), as a draft release for
 # a person to read and publish. Each target is `mutastic-<version>-<target>.tar.gz`, holding
 # `mutastic-<version>-<target>/` with `mutastic`, `cargo-mutastic`, the licence and the README; and
 # `SHA256SUMS` lists them all. `scripts/install.sh` installs from that layout. Run by hand, it builds
