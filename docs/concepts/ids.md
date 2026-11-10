@@ -60,7 +60,7 @@ as they are now:
 
 <!-- output: concepts/unknown-id -->
 ```text
-mutastic 0.1.0 · reading the Cargo package…
+mutastic 0.2.0 · reading the Cargo package…
 mutastic: m00000000 isn't a mutant of pricing: run `mutastic run fixtures/pricing` to see its mutants
 ```
 

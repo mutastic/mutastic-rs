@@ -83,8 +83,8 @@ fetched:
 
 <!-- output: reference/version -->
 ```text
-mutastic 0.1.0
-Rust edition 0.1.0, built in
+mutastic 0.2.0
+Rust edition 0.2.0, built in
 Java edition: not fetched yet, which happens the first time mutastic runs in a Maven or Gradle project
 ```
 

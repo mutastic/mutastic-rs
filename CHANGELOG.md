@@ -5,32 +5,12 @@ newest come first.
 
 ## Unreleased
 
-### Changes
-
-- **One run across CI jobs.** `mutastic run --shard=N/M` runs only the Nth of M shares of the
-  mutants, dealt by each mutant's id, and keeps its events and report files in
-  `target/mutastic/shares/N-of-M/`; `mutastic run --from-shards=DIR` runs no mutants, and puts every
-  share found under DIR back together as the whole run: the same summary, cards, reports, threshold
-  and exit status, and the `mutation.json` `explain` reads. Shares that aren't every share of one
-  run (one missing or there twice, unfinished, split differently, a mutant in two, another
-  mutastic, other code, another package, or `--since`) are refused with exit status 2. As in the
-  Java edition. See [One run across CI jobs](docs/concepts/how-a-run-works.md#one-run-across-ci-jobs).
-- **Events: a mutation's `applied`, in place of `bytecode`.** Each `mutant-finished` event's
-  `mutation.applied` is the change as the engine makes it, and at what level: `{"level": "source",
-  "text": "x < 0 -> true"}`, the whole changed code before and after. 0.1.0 wrote that text as
-  `bytecode`, a name that said something it isn't; it's no longer written, as the schema asks
-  `bytecode` only of the Java edition, which writes `applied` too from 0.6.0 (`"level": "bytecode"`).
-  A later engine may add a level (`llvm-ir` is kept for one): accept a level you don't know, and
-  read `text` as opaque. See [Events](docs/reference/events.md).
-- **The events say more,** as the Java edition's do: `run-started`'s `share` in a share's run, a
-  missed mutant's `suggestion`, the call its suggested test was found by, and `run-finished`'s
-  `workers`, `workersStarted`, `coverageMs` and `build.setupMs`. An input above `i64`'s largest,
-  which a `u64` can hold, is written as it is, where it used to wrap.
-
-## 0.1.0 (2026-11-09)
+## 0.2.0 (2026-11-09)
 
 The first release of mutastic for Rust, the Rust edition of mutastic. These are the changes made
 while it was built, before this release.
+
+0.1.0 was tagged but never released: its changes are here too.
 
 ### Scoring changes
 
@@ -48,6 +28,25 @@ Expect your score to move, for these reasons, not because your tests changed:
 
 ### Changes
 
+- **One run across CI jobs.** `mutastic run --shard=N/M` runs only the Nth of M shares of the
+  mutants, dealt by each mutant's id, and keeps its events and report files in
+  `target/mutastic/shares/N-of-M/`; `mutastic run --from-shards=DIR` runs no mutants, and puts every
+  share found under DIR back together as the whole run: the same summary, cards, reports, threshold
+  and exit status, and the `mutation.json` `explain` reads. Shares that aren't every share of one
+  run (one missing or there twice, unfinished, split differently, a mutant in two, another
+  mutastic, other code, another package, or `--since`) are refused with exit status 2. As in the
+  Java edition. See [One run across CI jobs](docs/concepts/how-a-run-works.md#one-run-across-ci-jobs).
+- **Events: a mutation's `applied`, in place of `bytecode`.** Each `mutant-finished` event's
+  `mutation.applied` is the change as the engine makes it, and at what level: `{"level": "source",
+  "text": "x < 0 -> true"}`, the whole changed code before and after. The 0.1.0 tag wrote that text
+  as `bytecode`, a name that said something it isn't; no release writes it, as the schema asks
+  `bytecode` only of the Java edition, which writes `applied` too from 0.6.0 (`"level": "bytecode"`).
+  A later engine may add a level (`llvm-ir` is kept for one): accept a level you don't know, and
+  read `text` as opaque. See [Events](docs/reference/events.md).
+- **The events say more,** as the Java edition's do: `run-started`'s `share` in a share's run, a
+  missed mutant's `suggestion`, the call its suggested test was found by, and `run-finished`'s
+  `workers`, `workersStarted`, `coverageMs` and `build.setupMs`. An input above `i64`'s largest,
+  which a `u64` can hold, is written as it is, where it used to wrap.
 - **A flaky test is left out of the run, not a reason to stop it.** A test that fails before any
   mutant runs again on its own, up to three times, as in the Java edition. One that then passes is
   flaky: the run goes on without it, and says so: `(1 flaky, left out)` on the coverage line,

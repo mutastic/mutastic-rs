@@ -24,7 +24,7 @@ source.
 
 | Variable | Effect |
 |---|---|
-| `MUTASTIC_NATIVE_VERSION` | The release to install, such as `0.1.0`: the latest unless set |
+| `MUTASTIC_NATIVE_VERSION` | The release to install, such as `0.2.0`: the latest unless set |
 | `MUTASTIC_HOME` | Where releases are kept: `~/.mutastic` unless set |
 | `MUTASTIC_BIN_DIR` | Where the commands are linked: `~/.local/bin` unless set |
 | `MUTASTIC_NATIVE_RELEASES` | Where releases are downloaded from, for a mirror: GitHub's releases of `mutastic/mutastic-rs` unless set |
@@ -51,8 +51,8 @@ fetched:
 
 <!-- output: reference/version -->
 ```text
-mutastic 0.1.0
-Rust edition 0.1.0, built in
+mutastic 0.2.0
+Rust edition 0.2.0, built in
 Java edition: not fetched yet, which happens the first time mutastic runs in a Maven or Gradle project
 ```
 
