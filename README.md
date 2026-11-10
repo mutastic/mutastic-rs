@@ -84,8 +84,15 @@ On macOS or Linux, the installer puts the latest
 curl -fsSL https://mutastic.io/install.sh | sh
 ```
 
+On Windows, in PowerShell, it puts the latest release in `%USERPROFILE%\.mutastic\bin` and adds
+that to your user `Path`:
+
+```powershell
+irm https://mutastic.io/install.ps1 | iex
+```
+
 That installs `mutastic`, and `cargo-mutastic`, which Cargo runs as `cargo mutastic`. They do the
-same thing.
+same thing. Scoop and cargo-binstall install it too.
 
 It isn't on crates.io yet. Elsewhere, or to work on mutastic, build it yourself: you need a stable
 Rust toolchain and nothing else, and `rust-version` in [Cargo.toml](Cargo.toml) is the oldest that
