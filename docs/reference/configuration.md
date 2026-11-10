@@ -113,10 +113,11 @@ In a Maven or Gradle project, `MUTASTIC_VERSION`, `MUTASTIC_HOME`, `MUTASTIC_JAV
 
 `mutastic ignore` records a decision not to test one mutant in `.mutastic/ignores.yaml` in the
 package's directory, with the line it's on and the reason, to commit and review. The mutant is
-skipped (`user: … (ignored)`) while its line stays as it was; once the line changes, the decision no
-longer holds, the mutant runs again, and `run-finished` lists it in `staleIgnores`. Every card
-offers it as `or ignore`; a coding agent proposes one instead, in `.mutastic/proposals.yaml`, for a
-person to accept.
+skipped (`user: … (ignored)`) while its line stays as it was, and the summary counts it by the sort
+`--as` gave it (`1 ignored as unreachable`), so what ignores hide can be reviewed by sort. Once the
+line changes, the decision no longer holds, the mutant runs again, and `run-finished` lists it in
+`staleIgnores`. Every card offers it as `or ignore`; a coding agent proposes one instead, in
+`.mutastic/proposals.yaml`, for a person to accept.
 
 ```sh
 mutastic ignore mb2f8ae57 --reason="totals are rounded to tens" --as=unreachable fixtures/pricing

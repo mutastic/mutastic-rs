@@ -8,6 +8,7 @@ use std::ops::Range;
 use serde_json::{json, Value};
 
 use crate::engine::{MutantResult, Report, Status};
+use crate::ignores;
 use crate::sites::{self, Change, Crate, Mutant};
 use crate::suggest::{self, SuggestedTest};
 use crate::words::{self, Advice};
@@ -1143,13 +1144,15 @@ fn mutants_row(report: &Report, style: Style) -> String {
     row
 }
 
-/// `2 skipped (1 equivalent, 1 unviable)`: the kind is each reason's first word, as in the Java
-/// edition.
+/// `2 skipped (1 equivalent, 1 ignored as unreachable)`: the kind is each reason's first word,
+/// and an ignore's the sort it was given, as in the Java edition.
 fn skipped_by_kind(report: &Report) -> String {
-    let mut by_kind: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut by_kind: BTreeMap<String, usize> = BTreeMap::new();
     for result in &report.results {
         if result.status == Status::Ignored {
-            *by_kind.entry(skip_kind(result)).or_default() += 1;
+            *by_kind
+                .entry(summary_kind(result.reason.as_deref().unwrap_or_default()))
+                .or_default() += 1;
         }
     }
     let kinds: Vec<String> = by_kind
@@ -1161,6 +1164,23 @@ fn skipped_by_kind(report: &Report) -> String {
         report.count(Status::Ignored),
         kinds.join(", ")
     )
+}
+
+/// `equivalent` for `equivalent: …`; `ignored as unreachable` for `user: unreachable: … (ignored)`;
+/// `ignored` for an ignore that doesn't say its sort.
+fn summary_kind(reason: &str) -> String {
+    let (kind, rest) = reason.split_once(':').unwrap_or(("other", ""));
+    if !reason.ends_with("(ignored)") {
+        return kind.to_string();
+    }
+    let given = rest.trim_start();
+    ignores::KINDS
+        .iter()
+        .find(|sort| given.starts_with(&format!("{sort}:")))
+        .map_or_else(
+            || "ignored".to_string(),
+            |sort| format!("ignored as {sort}"),
+        )
 }
 
 /// `unviable` for `unviable: doesn't compile (…)`.
@@ -1963,6 +1983,23 @@ mod tests {
         }
         let after: Vec<&str> = changed.lines().collect();
         Shown::new(&before, &after)
+    }
+
+    #[test]
+    fn an_ignore_is_counted_by_the_sort_it_was_given() {
+        assert_eq!(
+            summary_kind("equivalent: a `?` on a formatter"),
+            "equivalent"
+        );
+        assert_eq!(
+            summary_kind("user: unreachable: totals are tens (ignored)"),
+            "ignored as unreachable"
+        );
+        assert_eq!(summary_kind("user: totals are tens (ignored)"), "ignored");
+        assert_eq!(
+            summary_kind("user: protobuf output (rule `skip: shop::generated::**`)"),
+            "user"
+        );
     }
 
     #[test]

@@ -19,6 +19,11 @@ events format only gains.
   `edition` on every event, `rule`, a mutation's `applied`, a missed mutant's `ignore` and
   `propose`, the counts, `toolchain`, `workers`, `workersStarted` and `coverageMs`. See
   [Events](docs/reference/events.md).
+- **The summary counts an ignore by the sort it was given,** as the Java edition does:
+  `1 skipped (1 ignored as equivalent)`, or `1 ignored` when it gave none, where it was counted
+  with the project's other decisions as `1 user`. Rules in `mutastic.yaml` are still `user`. The
+  events are unchanged: the mutant's `skipKind` is `user`, and `run-finished`'s `ignored` counts
+  every skipped mutant.
 
 ### Changes
 

@@ -645,6 +645,12 @@ fn an_ignore_holds_while_its_line_does() {
         "user: unreachable: totals are tens (ignored)"
     );
     assert_eq!(ignored["skipKind"], "user");
+    // The summary counts an ignore apart, by the sort it was given, as the Java edition does.
+    let (_, out) = mutastic_in(&dir, &["run", "--format=full", "--report=none"]);
+    assert!(
+        out.contains(" · 1 skipped (1 ignored as unreachable)\n"),
+        "{out}"
+    );
 
     // The line changes: the decision no longer holds, and the mutant runs again.
     let lib = dir.join("src/lib.rs");
