@@ -3,7 +3,7 @@
 What changes from one release of mutastic for Rust to the next, written as changes land. The
 newest come first.
 
-## Unreleased
+## 1.0.0 (2026-11-10)
 
 ### Breaking changes
 
