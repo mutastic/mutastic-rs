@@ -34,5 +34,8 @@ as you would running that project's tests.
   code whose tests you'd run under the same risk. See
   [Unsafe code](docs/concepts/unsafe.md).
 
-mutastic itself has no unsafe code (`unsafe_code = "forbid"`), runs no network services, and makes
-no network requests of its own.
+mutastic itself has no unsafe code (`unsafe_code = "forbid"`) and runs no network services. Its
+only network requests are for the Java edition, in a Maven or Gradle project: it looks up the
+Java edition's GitHub releases at most once a day, downloads one with `curl` the first time it's
+needed, and checks it against the release's `SHA256SUMS` before keeping it in `~/.mutastic`.
+`MUTASTIC_JAVA_RELEASES` points it at a mirror. For a Rust project it fetches nothing.

@@ -24,7 +24,7 @@ allow = [
 confidence-threshold = 0.9
 
 [licenses.private]
-# The workspace's own crates are `publish = false` until the first release.
+# The workspace's own crates are `publish = false`: releases go to GitHub, not crates.io.
 ignore = true
 
 [bans]
