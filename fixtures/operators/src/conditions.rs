@@ -1,5 +1,7 @@
 //! Conditions: comparisons, `if`, `&&` and `||`.
 
+use std::num::NonZeroU32;
+
 /// Free delivery from 50 up.
 pub fn free_delivery(total: u32) -> bool {
     total >= 50
@@ -25,6 +27,14 @@ pub fn can_ship(paid: bool, in_stock: bool) -> bool {
 /// Saturday is 6 and Sunday 7.
 pub fn is_weekend(day: u8) -> bool {
     matches!(day, 6 | 7)
+}
+
+/// An equal share for each part. A `NonZeroU32` is never 0, so the guard never passes.
+pub fn share(total: u32, parts: NonZeroU32) -> u32 {
+    if parts.get() == 0 {
+        unreachable!("a NonZeroU32 is never 0");
+    }
+    total / parts.get()
 }
 
 #[cfg(test)]
@@ -58,5 +68,10 @@ mod tests {
     fn weekend_days_are_known() {
         let saturday = is_weekend(6);
         println!("saturday: {saturday}");
+    }
+
+    #[test]
+    fn three_parts_share_ten() {
+        assert_eq!(share(10, NonZeroU32::new(3).unwrap()), 3);
     }
 }

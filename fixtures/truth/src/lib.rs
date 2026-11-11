@@ -550,18 +550,92 @@ pub fn extended(x: i32) -> String {
     )
 }
 
+use std::num::NonZeroU32;
+
+/// A zero check on a `NonZeroU32`, which can't hold 0: the guard is never true, so a mutant that
+/// differs only when it is is equivalent.
+pub fn per_part(total: u32, parts: NonZeroU32) -> u32 {
+    if parts.get() == 0 {
+        return 0;
+    }
+    total / parts.get()
+}
+
+/// The zero on the left, through a reference.
+pub fn not_zero_flipped(n: &std::num::NonZeroU8) -> bool {
+    0 != n.get()
+}
+
+/// A `let` with its type written, the generic form.
+pub fn above_zero(x: i32) -> bool {
+    let n: std::num::NonZero<u16> =
+        std::num::NonZero::new(x.unsigned_abs() as u16).unwrap_or(std::num::NonZero::<u16>::MAX);
+    n.get() > 0
+}
+
+pub struct Plan {
+    parts: std::num::NonZeroU32,
+}
+
+impl Plan {
+    /// A field.
+    pub fn share(&self, total: u32) -> u32 {
+        if self.parts.get() <= 0 {
+            return total;
+        }
+        total / self.parts.get()
+    }
+}
+
+/// Not a `NonZero*`: 0 is an input here.
+pub fn per_part_u32(total: u32, parts: u32) -> u32 {
+    if parts == 0 {
+        return 0;
+    }
+    total / parts
+}
+
+/// A `NonZero*` compared with 1, which it can hold.
+pub fn is_one(parts: std::num::NonZeroU32) -> bool {
+    parts.get() == 1
+}
+
+/// A signed `NonZero*` below 0, which it can be.
+pub fn below_zero(n: std::num::NonZeroI32) -> bool {
+    n.get() < 0
+}
+
+pub fn nonzero(x: i32) -> String {
+    let unsigned = std::num::NonZeroU32::new(x.unsigned_abs()).unwrap_or(std::num::NonZeroU32::MAX);
+    let signed = std::num::NonZeroI32::new(x).unwrap_or(std::num::NonZeroI32::MIN);
+    let small =
+        std::num::NonZeroU8::new(x.unsigned_abs() as u8).unwrap_or(std::num::NonZeroU8::MAX);
+    let plan = Plan { parts: unsigned };
+    format!(
+        "{} {} {} {} {} {} {}",
+        per_part(100, unsigned),
+        not_zero_flipped(&small),
+        above_zero(x),
+        plan.share(100),
+        per_part_u32(100, x.unsigned_abs()),
+        is_one(unsigned),
+        below_zero(signed),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn probe() {
         for x in -6..10 {
             println!(
-                "{x}: {} | {} | {} | {} | {}",
+                "{x}: {} | {} | {} | {} | {} | {}",
                 super::all(x),
                 super::more(x),
                 super::stronger(x),
                 super::rollback(x),
-                super::extended(x)
+                super::extended(x),
+                super::nonzero(x)
             );
         }
     }

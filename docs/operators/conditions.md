@@ -49,12 +49,12 @@ fn small_orders_pay_for_delivery() {
 <!-- output: operators/conditions/boundary -->
 ```text
  [✗ MISSED] no test checks free_delivery() at total == 50
-   ┌─ src/conditions.rs:5
+   ┌─ src/conditions.rs:7
    │
- 4 │ pub fn free_delivery(total: u32) -> bool {
- 5 │     total >= 50
+ 6 │ pub fn free_delivery(total: u32) -> bool {
+ 7 │     total >= 50
    │           ^^ >= changed to >
- 6 │ }
+ 8 │ }
    │
    = mutant  - total >= 50
              + total > 50
@@ -127,12 +127,12 @@ fn members_are_welcomed_back() {
 <!-- output: operators/conditions/remove-conditional -->
 ```text
  [✗ MISSED] no test needs member to be false in greeting()
-    ┌─ src/conditions.rs:14
+    ┌─ src/conditions.rs:16
     │
- 13 │ pub fn greeting(member: bool) -> &'static str {
- 14 │     if member {
+ 15 │ pub fn greeting(member: bool) -> &'static str {
+ 16 │     if member {
     │        ^^^^^^ now always true
- 15 │         "welcome back"
+ 17 │         "welcome back"
     │
     = mutant  - if member {
               + if true {
@@ -151,6 +151,57 @@ test has tried: here, someone who isn't a member.
 #[test]
 fn others_are_welcomed() {
     assert_eq!(greeting(false), "welcome");
+}
+```
+
+A zero check on a `NonZero*` value is never true, so the mutant that makes it never true is
+skipped as equivalent: `x.get() == 0` where `x` is a `NonZeroU32`, a `NonZero<u64>` or another of
+std's, declared as a parameter, a `let` with its type written, or a field. Its other changes that
+differ only at 0 are skipped too, `parts.get() == 0` becoming `parts.get() <= 0` and `!= 0`
+becoming always true, for example. A signed `NonZeroI32` can be below 0, so `n.get() < 0` made
+never true still runs. Only a type the source names is taken as proof: where it's inferred,
+generic, imported from elsewhere, or a name a macro is given, the mutants run.
+
+<!-- from: fixtures/operators/src/conditions.rs -->
+```rust
+pub fn share(total: u32, parts: NonZeroU32) -> u32 {
+    if parts.get() == 0 {
+        unreachable!("a NonZeroU32 is never 0");
+    }
+    total / parts.get()
+}
+```
+
+<!-- output: operators/conditions/remove-conditional-skipped -->
+```text
+{
+  "schema": "mutastic.events/v1",
+  "edition": "rust",
+  "reason": "mutant-finished",
+  "id": "m497f89e4",
+  "fingerprint": "497f89e437964e71",
+  "status": "Ignored",
+  "operator": "mutastic/remove-conditional",
+  "location": {
+    "file": "src/conditions.rs",
+    "line": 34,
+    "column": 8,
+    "class": "conditions",
+    "method": "share"
+  },
+  "mutation": {
+    "replacement": "false",
+    "description": "`parts.get() == 0` is always false",
+    "applied": {
+      "level": "source",
+      "text": "parts.get() == 0 -> false"
+    }
+  },
+  "statusReason": "equivalent: differs only when parts.get() is 0. That can't happen because parts is a NonZeroU32, which can't hold 0.",
+  "skipKind": "equivalent",
+  "coveredBy": [],
+  "testsRun": 0,
+  "durationMs": 0
 }
 ```
 
@@ -186,12 +237,12 @@ fn ships_when_paid_and_in_stock() {
 <!-- output: operators/conditions/logical-connector -->
 ```text
  [✗ MISSED] no test checks can_ship() with one of paid and in_stock true and the other false
-    ┌─ src/conditions.rs:22
+    ┌─ src/conditions.rs:24
     │
- 21 │ pub fn can_ship(paid: bool, in_stock: bool) -> bool {
- 22 │     paid && in_stock
+ 23 │ pub fn can_ship(paid: bool, in_stock: bool) -> bool {
+ 24 │     paid && in_stock
     │          ^^ && changed to ||
- 23 │ }
+ 25 │ }
     │
     = mutant  - paid && in_stock
               + paid || in_stock
@@ -265,12 +316,12 @@ fn restock_when_low() {
 <!-- output: operators/conditions/comparison -->
 ```text
  [✗ MISSED] no test checks needs_restock() with stock > low
-    ┌─ src/conditions.rs:10
+    ┌─ src/conditions.rs:12
     │
-  9 │ pub fn needs_restock(stock: u32, low: u32) -> bool {
- 10 │     stock < low
+ 11 │ pub fn needs_restock(stock: u32, low: u32) -> bool {
+ 12 │     stock < low
     │           ^ < changed to !=
- 11 │ }
+ 13 │ }
     │
     = mutant  - stock < low
               + stock != low
@@ -342,12 +393,12 @@ fn weekend_days_are_known() {
 <!-- output: operators/conditions/other-comparison -->
 ```text
  [✗ MISSED] tests pass even when matches!(day, 6 | 7) becomes !matches!(day, 6 | 7) in is_weekend()
-    ┌─ src/conditions.rs:27
+    ┌─ src/conditions.rs:29
     │
- 26 │ pub fn is_weekend(day: u8) -> bool {
- 27 │     matches!(day, 6 | 7)
+ 28 │ pub fn is_weekend(day: u8) -> bool {
+ 29 │     matches!(day, 6 | 7)
     │     ^^^^^^^^^^^^^^^^^^^^ changed to !matches!(day, 6 | 7)
- 28 │ }
+ 30 │ }
     │
     = mutant  - matches!(day, 6 | 7)
               + !matches!(day, 6 | 7)

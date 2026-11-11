@@ -23,6 +23,7 @@ use crate::id;
 
 pub mod callable;
 mod extended;
+mod nonzero;
 mod operators;
 mod rollback;
 mod stronger;
@@ -1456,6 +1457,7 @@ impl Finder<'_> {
         let line = line_of(&self.lines, caret_start);
         let column = self.text[self.lines[line - 1]..caret_start].chars().count() + 1;
         let ordinal = self.found.mutants.len() as u32 + 1;
+        let skipped = nonzero::never_zero(node, &change);
         self.found.mutants.push(Mutant {
             ordinal,
             id,
@@ -1473,7 +1475,7 @@ impl Finder<'_> {
             near_unsafe,
             form,
             claimed,
-            skipped: None,
+            skipped,
         });
     }
 

@@ -1,10 +1,10 @@
  [41;30;1m ✗ MISSED [0m no test checks [1mfree_delivery()[0m at [1mtotal == 50[0m
-   [2m┌─[0m src/conditions.rs:5
+   [2m┌─[0m src/conditions.rs:7
    [2m│[0m
- [2m4[0m [2m│[0m pub fn free_delivery(total: u32) -> bool {
- [2m5[0m [2m│[0m     total >= 50
+ [2m6[0m [2m│[0m pub fn free_delivery(total: u32) -> bool {
+ [2m7[0m [2m│[0m     total >= 50
    [2m│[0m           [1;31m^^ >= changed to >[0m
- [2m6[0m [2m│[0m }
+ [2m8[0m [2m│[0m }
    [2m│[0m
    [2m=[0m mutant  [1;31m- [0mtotal >= 50
              [32m+ [0mtotal > 50

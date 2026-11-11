@@ -1,10 +1,10 @@
  [41;30;1m ✗ MISSED [0m tests pass even when [1mmatches!(day, 6 | 7)[0m becomes [1m!matches!(day, 6 | 7)[0m in [1mis_weekend()[0m
-    [2m┌─[0m src/conditions.rs:27
+    [2m┌─[0m src/conditions.rs:29
     [2m│[0m
- [2m26[0m [2m│[0m pub fn is_weekend(day: u8) -> bool {
- [2m27[0m [2m│[0m     matches!(day, 6 | 7)
+ [2m28[0m [2m│[0m pub fn is_weekend(day: u8) -> bool {
+ [2m29[0m [2m│[0m     matches!(day, 6 | 7)
     [2m│[0m     [1;31m^^^^^^^^^^^^^^^^^^^^ changed to !matches!(day, 6 | 7)[0m
- [2m28[0m [2m│[0m }
+ [2m30[0m [2m│[0m }
     [2m│[0m
     [2m=[0m mutant  [1;31m- [0mmatches!(day, 6 | 7)
               [32m+ [0m!matches!(day, 6 | 7)

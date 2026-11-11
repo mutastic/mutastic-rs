@@ -608,6 +608,28 @@ fn operators(work: &Path, shown: &mut BTreeMap<String, String>) {
         "operators/returns/unwrap-try-skipped".into(),
         pretty(&skipped[0]),
     );
+    // A zero check on a `NonZeroU32` made never true is skipped as equivalent, and only that one.
+    let jsonl = ran(
+        work,
+        &[
+            "run",
+            "fixtures/operators",
+            "--format=jsonl",
+            "--operators=mutastic/remove-conditional",
+        ],
+    );
+    let share: Vec<Value> = events(&jsonl.stdout)
+        .into_iter()
+        .filter(|e| e["location"]["method"] == "share")
+        .collect();
+    let skipped: Vec<&Value> = share.iter().filter(|e| e["status"] == "Ignored").collect();
+    assert_eq!((share.len(), skipped.len()), (2, 1), "{}", jsonl.stdout);
+    assert_eq!(skipped[0]["mutation"]["replacement"], "false");
+    assert_eq!(skipped[0]["skipKind"], "equivalent");
+    shown.insert(
+        "operators/conditions/remove-conditional-skipped".into(),
+        pretty(skipped[0]),
+    );
     for operator in LISTED {
         let name = operator.rsplit('/').next().unwrap();
         shown.insert(

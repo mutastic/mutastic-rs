@@ -103,6 +103,8 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
 - **Skipped as equivalent:** a `?` that only passes on a formatter's error, inside the `fmt` of
   `Display` and the other formatting traits, or on a write to a `Formatter`: no test can make that
   error happen.
+  Also a change to a zero check on a `NonZero*` value that differs only at 0: `parts.get() == 0`
+  made never true, where `parts` is a `NonZeroU32`, which can't hold 0.
 
 ## Not in the Rust edition yet
 

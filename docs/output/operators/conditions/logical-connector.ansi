@@ -1,10 +1,10 @@
  [41;30;1m ✗ MISSED [0m no test checks [1mcan_ship()[0m with one of [1mpaid[0m and [1min_stock[0m true and the other false
-    [2m┌─[0m src/conditions.rs:22
+    [2m┌─[0m src/conditions.rs:24
     [2m│[0m
- [2m21[0m [2m│[0m pub fn can_ship(paid: bool, in_stock: bool) -> bool {
- [2m22[0m [2m│[0m     paid && in_stock
+ [2m23[0m [2m│[0m pub fn can_ship(paid: bool, in_stock: bool) -> bool {
+ [2m24[0m [2m│[0m     paid && in_stock
     [2m│[0m          [1;31m^^ && changed to ||[0m
- [2m23[0m [2m│[0m }
+ [2m25[0m [2m│[0m }
     [2m│[0m
     [2m=[0m mutant  [1;31m- [0mpaid && in_stock
               [32m+ [0mpaid || in_stock

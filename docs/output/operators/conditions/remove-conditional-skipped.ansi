@@ -1,0 +1,29 @@
+{
+  "schema": "mutastic.events/v1",
+  "edition": "rust",
+  "reason": "mutant-finished",
+  "id": "m497f89e4",
+  "fingerprint": "497f89e437964e71",
+  "status": "Ignored",
+  "operator": "mutastic/remove-conditional",
+  "location": {
+    "file": "src/conditions.rs",
+    "line": 34,
+    "column": 8,
+    "class": "conditions",
+    "method": "share"
+  },
+  "mutation": {
+    "replacement": "false",
+    "description": "`parts.get() == 0` is always false",
+    "applied": {
+      "level": "source",
+      "text": "parts.get() == 0 -> false"
+    }
+  },
+  "statusReason": "equivalent: differs only when parts.get() is 0. That can't happen because parts is a NonZeroU32, which can't hold 0.",
+  "skipKind": "equivalent",
+  "coveredBy": [],
+  "testsRun": 0,
+  "durationMs": 0
+}

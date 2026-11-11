@@ -1,10 +1,10 @@
  [41;30;1m ✗ MISSED [0m no test checks [1mneeds_restock()[0m with [1mstock > low[0m
-    [2m┌─[0m src/conditions.rs:10
+    [2m┌─[0m src/conditions.rs:12
     [2m│[0m
- [2m 9[0m [2m│[0m pub fn needs_restock(stock: u32, low: u32) -> bool {
- [2m10[0m [2m│[0m     stock < low
+ [2m11[0m [2m│[0m pub fn needs_restock(stock: u32, low: u32) -> bool {
+ [2m12[0m [2m│[0m     stock < low
     [2m│[0m           [1;31m^ < changed to !=[0m
- [2m11[0m [2m│[0m }
+ [2m13[0m [2m│[0m }
     [2m│[0m
     [2m=[0m mutant  [1;31m- [0mstock < low
               [32m+ [0mstock != low

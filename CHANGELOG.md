@@ -3,6 +3,21 @@
 What changes from one release of mutastic for Rust to the next, written as changes land. The
 newest come first.
 
+## Unreleased
+
+### Changes
+
+- **A zero check on a `NonZero*` is skipped as equivalent where it can't differ.** In
+  `if parts.get() == 0` with `parts` a `NonZeroU32`, the guard made never true behaves as the code
+  does, since `parts` can't hold 0, so it's skipped with its reason (`equivalent: differs only when
+  parts.get() is 0. That can't happen because parts is a NonZeroU32, which can't hold 0.`), and so
+  is any other change to a comparison of a `NonZero*` with 0 that differs only at 0. It takes a
+  parameter, a `let` with its type written or a field, of one of std's `NonZero*` types or a
+  `NonZero<u32>`-style one; an inferred or generic type, or one from elsewhere, still runs. Those
+  mutants, which no test could catch, no longer count as missed, so a score can go up: a change to
+  scores, as a minor release may make. See
+  [Remove conditional](docs/operators/conditions.md#remove-conditional).
+
 ## 1.0.0 (2026-11-10)
 
 ### Breaking changes

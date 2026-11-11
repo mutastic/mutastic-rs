@@ -201,12 +201,81 @@ fn every_card_claim_behaves_as_its_mutant_does() {
         }
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    skipped_as_equivalent_behave_as_the_original(&found, &compared);
     // Most mutants change something the probe sees, so the comparison means something.
     assert!(
         changed * 10 > compared.len() * 8,
         "{changed} of {}",
         compared.len()
     );
+}
+
+/// A mutant skipped as equivalent behaves as the original on every input the probe gives: a skip
+/// whose mutant a test could catch hides a gap. The `NonZero*` zero checks are skipped, and their
+/// near misses (a plain `u32`, a `NonZero*` against 1, a signed one below 0) run, and differ.
+fn skipped_as_equivalent_behave_as_the_original(
+    found: &sites::Crate,
+    compared: &[(u32, Probed, Probed)],
+) {
+    let original = &compared[0].1;
+    let mutant_of = |ordinal: u32| &found.mutants[ordinal as usize - 1];
+    let function_of = |ordinal: u32| found.functions[mutant_of(ordinal).function].name.as_str();
+    let equivalent: Vec<&(u32, Probed, Probed)> = compared
+        .iter()
+        .skip(1)
+        .filter(|(ordinal, ..)| {
+            mutant_of(*ordinal)
+                .skipped
+                .as_deref()
+                .is_some_and(|reason| reason.starts_with("equivalent:"))
+        })
+        .collect();
+    let differ: Vec<String> = equivalent
+        .iter()
+        .filter(|(_, mutant, _)| !mutant.agrees(original))
+        .map(|(ordinal, mutant, _)| {
+            let m = mutant_of(*ordinal);
+            format!(
+                "{} {} `{}` in {}: {:?}",
+                m.id,
+                m.operator,
+                m.replacement,
+                function_of(*ordinal),
+                mutant.lines.first()
+            )
+        })
+        .collect();
+    assert!(
+        differ.is_empty(),
+        "skipped as equivalent, but behaves differently:\n{}",
+        differ.join("\n")
+    );
+    let skipped_in: BTreeSet<&str> = equivalent
+        .iter()
+        .map(|(ordinal, ..)| function_of(*ordinal))
+        .collect();
+    for function in [
+        "per_part",
+        "not_zero_flipped",
+        "above_zero",
+        "share",
+        "below_zero",
+    ] {
+        assert!(skipped_in.contains(function), "{function}: {skipped_in:?}");
+    }
+    for function in ["per_part_u32", "is_one", "below_zero"] {
+        let never = compared
+            .iter()
+            .skip(1)
+            .find(|(ordinal, ..)| {
+                function_of(*ordinal) == function && mutant_of(*ordinal).replacement == "false"
+            })
+            .unwrap_or_else(|| panic!("{function} has a condition made false"));
+        assert!(
+            mutant_of(never.0).skipped.is_none() && !never.1.agrees(original),
+            "{function}'s condition made false runs, and differs"
+        );
+    }
 }
 
 /// Where the claims crate is built: one place under the workspace's own `target`, written over
