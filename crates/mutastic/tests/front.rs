@@ -258,7 +258,13 @@ fn the_java_edition_is_fetched_once_checked_and_kept() {
     write(&shop.join("pom.xml"), "<project/>");
     let home = shop.join("home");
     let releases = Releases::new(&root, 25);
-    releases.publish("9.9.9", None);
+    // A Java patch of this native's own major.minor: from 1.0.0 that's the only line it runs.
+    let java = format!(
+        "{}.{}.9",
+        env!("CARGO_PKG_VERSION_MAJOR"),
+        env!("CARGO_PKG_VERSION_MINOR")
+    );
+    releases.publish(&java, None);
 
     let version = mutastic(&shop, &["--version"]).output().unwrap();
     assert_eq!(
@@ -266,19 +272,19 @@ fn the_java_edition_is_fetched_once_checked_and_kept() {
         Some("Java edition: not fetched yet, which happens the first time mutastic runs in a Maven or Gradle project")
     );
 
-    let (output, given) = releases.run(&shop, &["verify", "m855c8e3c"], "9.9.9");
+    let (output, given) = releases.run(&shop, &["verify", "m855c8e3c"], &java);
     assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
     assert_eq!(given.unwrap(), ["verify", "m855c8e3c"]);
-    assert!(text(&output.stderr).contains("fetches its Java edition, 9.9.9"));
-    assert!(home.join("mutastic-9.9.9/bin/mutastic").is_file());
+    assert!(text(&output.stderr).contains(&format!("fetches its Java edition, {java}")));
+    assert!(home.join(format!("mutastic-{java}/bin/mutastic")).is_file());
     let left: Vec<_> = std::fs::read_dir(&home)
         .unwrap()
         .map(|e| e.unwrap().file_name())
         .collect();
-    assert_eq!(left, ["mutastic-9.9.9"]);
+    assert_eq!(left, [std::ffi::OsString::from(format!("mutastic-{java}"))]);
 
     // Kept: the next run fetches nothing, even with the release gone, and finds it unasked.
-    std::fs::remove_dir_all(releases.root.join("download/v9.9.9")).unwrap();
+    std::fs::remove_dir_all(releases.root.join(format!("download/v{java}"))).unwrap();
     let (output, given) = releases.run(&shop, &["run"], "");
     assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
     assert_eq!(given.unwrap(), ["run"]);
@@ -287,8 +293,8 @@ fn the_java_edition_is_fetched_once_checked_and_kept() {
     assert_eq!(
         text(&version.stdout).lines().nth(2).unwrap(),
         format!(
-            "Java edition 9.9.9, at {}",
-            home.join("mutastic-9.9.9/bin/mutastic").display()
+            "Java edition {java}, at {}",
+            home.join(format!("mutastic-{java}/bin/mutastic")).display()
         )
     );
 }
