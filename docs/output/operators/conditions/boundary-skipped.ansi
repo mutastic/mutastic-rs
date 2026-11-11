@@ -1,0 +1,30 @@
+{
+  "schema": "mutastic.events/v1",
+  "edition": "rust",
+  "reason": "mutant-finished",
+  "id": "mbe0ed92f",
+  "fingerprint": "be0ed92fc9d72e1b",
+  "status": "Ignored",
+  "operator": "mutastic/boundary",
+  "location": {
+    "file": "src/conditions.rs",
+    "line": 44,
+    "column": 22,
+    "class": "conditions",
+    "method": "is_newer"
+  },
+  "mutation": {
+    "original": ">",
+    "replacement": ">=",
+    "description": "`>` becomes `>=`",
+    "applied": {
+      "level": "source",
+      "text": "major > than_major -> (major) >= (than_major)"
+    }
+  },
+  "statusReason": "equivalent: differs only when major is than_major. That can't happen because the if major != than_major around it rules it out.",
+  "skipKind": "equivalent",
+  "coveredBy": [],
+  "testsRun": 0,
+  "durationMs": 0
+}

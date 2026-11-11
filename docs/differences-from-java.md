@@ -105,6 +105,8 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
   error happen.
   Also a change to a zero check on a `NonZero*` value that differs only at 0: `parts.get() == 0`
   made never true, where `parts` is a `NonZeroU32`, which can't hold 0.
+  And a change to a comparison that differs only when its sides are equal, inside a guard that
+  they differ: `ver.major > cmp.major` made `>=` inside `if ver.major != cmp.major`.
 
 ## Not in the Rust edition yet
 

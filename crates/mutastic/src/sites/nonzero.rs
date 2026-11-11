@@ -154,7 +154,7 @@ fn nonzero(value: &ast::Expr) -> Option<NonZero> {
 }
 
 /// `parts`: a path of one plain name, not `self`.
-fn simple_name(expr: &ast::Expr) -> Option<String> {
+pub(super) fn simple_name(expr: &ast::Expr) -> Option<String> {
     let ast::Expr::PathExpr(path) = expr else {
         return None;
     };
@@ -266,7 +266,7 @@ const INERT_ATTRIBUTES: &[&str] = &[
 
 /// Whether every item around a node, the node too, has only outer attributes that leave it as
 /// written, a `cfg_attr`'s among them. An inner attribute can't be a macro on stable Rust.
-fn untouched_by_macros(node: &SyntaxNode) -> bool {
+pub(super) fn untouched_by_macros(node: &SyntaxNode) -> bool {
     node.ancestors()
         .filter_map(ast::AnyHasAttrs::cast)
         .flat_map(|item| item.attrs().collect::<Vec<_>>())
@@ -284,7 +284,7 @@ fn untouched_by_macros(node: &SyntaxNode) -> bool {
 }
 
 /// The items a node sits among: its block's statements, its module's items, or the file's.
-fn scope_of(node: &SyntaxNode) -> Option<SyntaxNode> {
+pub(super) fn scope_of(node: &SyntaxNode) -> Option<SyntaxNode> {
     node.ancestors().skip(1).find(|ancestor| {
         matches!(
             ancestor.kind(),
@@ -294,7 +294,7 @@ fn scope_of(node: &SyntaxNode) -> Option<SyntaxNode> {
 }
 
 /// A type with its references taken off: `&mut Plan` is `Plan`.
-fn unreferenced(ty: ast::Type) -> Option<ast::Type> {
+pub(super) fn unreferenced(ty: ast::Type) -> Option<ast::Type> {
     match ty {
         ast::Type::RefType(reference) => unreferenced(reference.ty()?),
         other => Some(other),
@@ -302,7 +302,7 @@ fn unreferenced(ty: ast::Type) -> Option<ast::Type> {
 }
 
 /// `Plan`: a path type of one segment with no generics.
-fn single_name(ty: &ast::Type) -> Option<String> {
+pub(super) fn single_name(ty: &ast::Type) -> Option<String> {
     let ast::Type::PathType(path) = ty else {
         return None;
     };
@@ -375,7 +375,7 @@ fn nonzero_type(ty: &ast::Type, at: &SyntaxNode) -> Option<(String, bool)> {
 }
 
 /// Whether a generic parameter around `at` is called `name`, so it isn't the type of that name.
-fn generic_named(at: &SyntaxNode, name: &str) -> bool {
+pub(super) fn generic_named(at: &SyntaxNode, name: &str) -> bool {
     at.ancestors()
         .filter_map(|node| {
             ast::Fn::cast(node.clone())
@@ -454,12 +454,12 @@ fn from_std(path: &[String]) -> bool {
 }
 
 /// One name a `use` brings in: its path, and the name it's bound to (none for a glob).
-struct Leaf {
-    path: Vec<String>,
-    binds: Option<String>,
+pub(super) struct Leaf {
+    pub(super) path: Vec<String>,
+    pub(super) binds: Option<String>,
 }
 
-fn leaves_of(tree: &ast::UseTree, prefix: &[String], out: &mut Vec<Leaf>) {
+pub(super) fn leaves_of(tree: &ast::UseTree, prefix: &[String], out: &mut Vec<Leaf>) {
     let mut path = prefix.to_vec();
     if let Some(own) = tree.path() {
         let text: String = plain(own.syntax())

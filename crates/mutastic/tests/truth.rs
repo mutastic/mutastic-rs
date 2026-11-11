@@ -212,7 +212,9 @@ fn every_card_claim_behaves_as_its_mutant_does() {
 
 /// A mutant skipped as equivalent behaves as the original on every input the probe gives: a skip
 /// whose mutant a test could catch hides a gap. The `NonZero*` zero checks are skipped, and their
-/// near misses (a plain `u32`, a `NonZero*` against 1, a signed one below 0) run, and differ.
+/// near misses (a plain `u32`, a `NonZero*` against 1, a signed one below 0) run, and differ. So
+/// are the comparisons inside a guard that their sides differ, and their near misses (a side
+/// reassigned, another side, a guard on other sides, one that doesn't hold, floats) run.
 fn skipped_as_equivalent_behave_as_the_original(
     found: &sites::Crate,
     compared: &[(u32, Probed, Probed)],
@@ -260,9 +262,35 @@ fn skipped_as_equivalent_behave_as_the_original(
         "above_zero",
         "share",
         "below_zero",
+        "newer",
+        "sign_of",
+        "order_of",
+        "rising",
+        "above_nought",
     ] {
         assert!(skipped_in.contains(function), "{function}: {skipped_in:?}");
     }
+    let boundary_in = |function: &str| {
+        compared
+            .iter()
+            .skip(1)
+            .find(|(ordinal, ..)| {
+                function_of(*ordinal) == function && mutant_of(*ordinal).operator == sites::BOUNDARY
+            })
+            .unwrap_or_else(|| panic!("{function} has a boundary"))
+    };
+    for function in ["reassigned", "other_side", "other_guard", "not_dominating"] {
+        let (ordinal, mutant, _) = boundary_in(function);
+        assert!(
+            mutant_of(*ordinal).skipped.is_none() && !mutant.agrees(original),
+            "{function}'s boundary runs, and differs"
+        );
+    }
+    let (ordinal, ..) = boundary_in("float_below");
+    assert!(
+        mutant_of(*ordinal).skipped.is_none(),
+        "a boundary on floats runs"
+    );
     for function in ["per_part_u32", "is_one", "below_zero"] {
         let never = compared
             .iter()

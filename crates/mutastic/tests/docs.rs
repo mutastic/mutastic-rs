@@ -630,6 +630,31 @@ fn operators(work: &Path, shown: &mut BTreeMap<String, String>) {
         "operators/conditions/remove-conditional-skipped".into(),
         pretty(skipped[0]),
     );
+    // A boundary inside a guard that its sides differ is skipped as equivalent, and only that one.
+    let jsonl = ran(
+        work,
+        &[
+            "run",
+            "fixtures/operators",
+            "--format=jsonl",
+            "--operators=mutastic/boundary",
+        ],
+    );
+    let is_newer: Vec<Value> = events(&jsonl.stdout)
+        .into_iter()
+        .filter(|e| e["location"]["method"] == "is_newer")
+        .collect();
+    let skipped: Vec<&Value> = is_newer
+        .iter()
+        .filter(|e| e["status"] == "Ignored")
+        .collect();
+    assert_eq!((is_newer.len(), skipped.len()), (2, 1), "{}", jsonl.stdout);
+    assert_eq!(skipped[0]["mutation"]["replacement"], ">=");
+    assert_eq!(skipped[0]["skipKind"], "equivalent");
+    shown.insert(
+        "operators/conditions/boundary-skipped".into(),
+        pretty(skipped[0]),
+    );
     for operator in LISTED {
         let name = operator.rsplit('/').next().unwrap();
         shown.insert(

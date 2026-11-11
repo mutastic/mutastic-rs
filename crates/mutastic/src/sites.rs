@@ -23,6 +23,7 @@ use crate::id;
 
 pub mod callable;
 mod extended;
+mod guarded;
 mod nonzero;
 mod operators;
 mod rollback;
@@ -442,6 +443,8 @@ struct Facts {
     default_types: BTreeSet<String>,
     /// How each type can be made with whole numbers, by its module and name.
     receivers: BTreeMap<(String, String), callable::Receiver>,
+    /// The structs declared outside functions, with their fields' types.
+    structs: guarded::Structs,
 }
 
 impl Facts {
@@ -513,6 +516,7 @@ impl Facts {
             }
             facts.defaults(&parsed.tree);
             callable::receivers(&parsed.module, &parsed.tree, &mut facts.receivers);
+            guarded::index(&parsed.module, &parsed.tree, &mut facts.structs);
             for node in parsed.tree.syntax().descendants() {
                 if !opens_unsafe(&node) {
                     continue;
@@ -1457,7 +1461,8 @@ impl Finder<'_> {
         let line = line_of(&self.lines, caret_start);
         let column = self.text[self.lines[line - 1]..caret_start].chars().count() + 1;
         let ordinal = self.found.mutants.len() as u32 + 1;
-        let skipped = nonzero::never_zero(node, &change);
+        let skipped = nonzero::never_zero(node, &change)
+            .or_else(|| guarded::never_equal(node, &change, self.module, &self.facts.structs));
         self.found.mutants.push(Mutant {
             ordinal,
             id,

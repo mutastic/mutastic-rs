@@ -37,6 +37,15 @@ pub fn share(total: u32, parts: NonZeroU32) -> u32 {
     total / parts.get()
 }
 
+/// Whether a version is newer than another: by major, then by minor. Once the majors differ, they
+/// can't be equal, so `>` and `>=` agree there.
+pub fn is_newer(major: u32, minor: u32, than_major: u32, than_minor: u32) -> bool {
+    if major != than_major {
+        return major > than_major;
+    }
+    minor > than_minor
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -73,5 +82,13 @@ mod tests {
     #[test]
     fn three_parts_share_ten() {
         assert_eq!(share(10, NonZeroU32::new(3).unwrap()), 3);
+    }
+
+    #[test]
+    fn newer_by_major_then_minor() {
+        assert!(is_newer(2, 0, 1, 9));
+        assert!(!is_newer(1, 9, 2, 0));
+        assert!(is_newer(1, 4, 1, 3));
+        assert!(!is_newer(1, 3, 1, 3));
     }
 }

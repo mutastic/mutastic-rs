@@ -623,19 +623,163 @@ pub fn nonzero(x: i32) -> String {
     )
 }
 
+pub struct Release {
+    major: u32,
+    minor: u32,
+}
+
+pub struct Wanted {
+    major: u32,
+    minor: Option<u32>,
+}
+
+/// A comparison inside a guard that its sides differ, where they can't be equal: fields of a
+/// parameter, and the `x` of a `Some(x)`, each compared inside an `if a != b`.
+pub fn newer(wanted: &Wanted, release: &Release) -> bool {
+    if release.major != wanted.major {
+        return release.major > wanted.major;
+    }
+    match wanted.minor {
+        None => false,
+        Some(minor) => {
+            if release.minor != minor {
+                return release.minor > minor;
+            }
+            false
+        }
+    }
+}
+
+/// The `else` of an `if a == b`.
+pub fn sign_of(a: i32, b: i32) -> i32 {
+    if a == b {
+        0
+    } else if a < b {
+        -1
+    } else {
+        1
+    }
+}
+
+/// After an `if a == b` that returns.
+pub fn order_of(a: i32, b: i32) -> &'static str {
+    if a == b {
+        return "same";
+    }
+    if b >= a {
+        "up"
+    } else {
+        "down"
+    }
+}
+
+/// The right of an `&&`.
+pub fn rising(a: i32, b: i32) -> bool {
+    a != b && a <= b
+}
+
+/// A literal side, and a comparison the guard makes always false.
+pub fn above_nought(n: i32) -> u8 {
+    if n != 0 {
+        if n == 0 {
+            return 9;
+        }
+        if n > 0 {
+            1
+        } else {
+            2
+        }
+    } else {
+        3
+    }
+}
+
+/// Not the same value: `c` changes between the guard and the comparison.
+pub fn reassigned(a: i32, b: i32) -> bool {
+    let mut c = a;
+    if c != b {
+        c = b;
+        return c >= b;
+    }
+    false
+}
+
+/// One side isn't the guard's.
+pub fn other_side(a: i32, b: i32, c: i32) -> bool {
+    if a != b {
+        a < c
+    } else {
+        false
+    }
+}
+
+/// A guard on other sides.
+pub fn other_guard(a: i32, b: i32, c: i32) -> bool {
+    if a != c {
+        a < b
+    } else {
+        false
+    }
+}
+
+/// A guard that doesn't hold wherever the comparison runs.
+pub fn not_dominating(a: i32, b: i32, either: bool) -> bool {
+    if a != b || either {
+        a <= b
+    } else {
+        false
+    }
+}
+
+/// Floats, where `NaN != NaN`: never proved.
+pub fn float_below(a: f64, b: f64) -> bool {
+    if a != b {
+        a < b
+    } else {
+        false
+    }
+}
+
+pub fn guarded(x: i32) -> String {
+    let b = x % 4;
+    let wanted = Wanted {
+        major: b.unsigned_abs(),
+        minor: (x > -3).then_some(2),
+    };
+    let release = Release {
+        major: x.unsigned_abs() % 3,
+        minor: x.unsigned_abs() % 4,
+    };
+    format!(
+        "{} {} {} {} {} {} {} {} {} {} {}",
+        newer(&wanted, &release),
+        sign_of(x, b),
+        order_of(x, b),
+        rising(x, b),
+        rising(b, x),
+        above_nought(b),
+        reassigned(x, b),
+        other_side(x, b, 5),
+        other_guard(x, b, 5),
+        not_dominating(x, b, x > 1),
+        float_below(f64::from(x), f64::from(b)),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn probe() {
         for x in -6..10 {
             println!(
-                "{x}: {} | {} | {} | {} | {} | {}",
+                "{x}: {} | {} | {} | {} | {} | {} | {}",
                 super::all(x),
                 super::more(x),
                 super::stronger(x),
                 super::rollback(x),
                 super::extended(x),
-                super::nonzero(x)
+                super::nonzero(x),
+                super::guarded(x)
             );
         }
     }

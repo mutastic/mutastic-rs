@@ -17,6 +17,18 @@ newest come first.
   mutants, which no test could catch, no longer count as missed, so a score can go up: a change to
   scores, as a minor release may make. See
   [Remove conditional](docs/operators/conditions.md#remove-conditional).
+- **A boundary inside a guard that its sides differ is skipped as equivalent.** In
+  `if ver.major != cmp.major { return ver.major > cmp.major; }`, `>` made `>=` differs only when
+  the two are equal, which the `if` rules out, so it's skipped with its reason (`equivalent: differs
+  only when ver.major is cmp.major. That can't happen because the if ver.major != cmp.major around
+  it rules it out.`), and so is any other change to that comparison that differs only when its sides
+  are equal. The guard can be the `if` around it, the `else` of an `if a == b`, an `if a == b`
+  before it that returns, or the left of an `&&`. Each side must be a whole number that can't
+  change on the way: a parameter, a `let` or a `Some(x)` bound once without `mut`, a field of one,
+  or a literal; a float, an inferred or generic type, or a `mut` binding still runs. On semver
+  1.0.28 that's 10 boundary mutants no test could catch, in the defaults, that no longer count as
+  missed, so a score can go up: a change to scores, as a minor release may make. See
+  [Boundary](docs/operators/conditions.md#boundary).
 
 ## 1.0.0 (2026-11-10)
 

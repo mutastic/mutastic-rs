@@ -86,6 +86,58 @@ fn delivery_is_free_from_exactly_50() {
 }
 ```
 
+Inside code that runs only when a comparison's two sides differ, they can't be equal, so the change
+of its edge is skipped as equivalent: `major > than_major` inside `if major != than_major`, the
+`else` of an `if a == b`, after an `if a == b` that returns, or to the right of `a != b &&`. So are
+the other changes that differ only when the sides are equal, `a == b` made always false there, for
+example. Each side has to be a whole number that can't change on the way: a parameter, a `let` or
+the `x` of a `Some(x)`, without `mut` and bound once, a field of one, or a literal. A float, a type
+that's inferred or generic, or a name a macro is given, and the mutants run.
+
+<!-- from: fixtures/operators/src/conditions.rs -->
+```rust
+pub fn is_newer(major: u32, minor: u32, than_major: u32, than_minor: u32) -> bool {
+    if major != than_major {
+        return major > than_major;
+    }
+    minor > than_minor
+}
+```
+
+<!-- output: operators/conditions/boundary-skipped -->
+```text
+{
+  "schema": "mutastic.events/v1",
+  "edition": "rust",
+  "reason": "mutant-finished",
+  "id": "mbe0ed92f",
+  "fingerprint": "be0ed92fc9d72e1b",
+  "status": "Ignored",
+  "operator": "mutastic/boundary",
+  "location": {
+    "file": "src/conditions.rs",
+    "line": 44,
+    "column": 22,
+    "class": "conditions",
+    "method": "is_newer"
+  },
+  "mutation": {
+    "original": ">",
+    "replacement": ">=",
+    "description": "`>` becomes `>=`",
+    "applied": {
+      "level": "source",
+      "text": "major > than_major -> (major) >= (than_major)"
+    }
+  },
+  "statusReason": "equivalent: differs only when major is than_major. That can't happen because the if major != than_major around it rules it out.",
+  "skipKind": "equivalent",
+  "coveredBy": [],
+  "testsRun": 0,
+  "durationMs": 0
+}
+```
+
 **Edition notes:** the Java edition has this operator too, `mutastic/boundary`, for `<`, `<=`, `>`
 and `>=`; it has no ranges to move.
 
