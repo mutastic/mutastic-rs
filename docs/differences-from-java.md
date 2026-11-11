@@ -105,8 +105,10 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
   error happen.
   Also a change to a zero check on a `NonZero*` value that differs only at 0: `parts.get() == 0`
   made never true, where `parts` is a `NonZeroU32`, which can't hold 0.
-  And a change to a comparison that differs only when its sides are equal, inside a guard that
-  they differ: `ver.major > cmp.major` made `>=` inside `if ver.major != cmp.major`.
+  Both editions skip a boundary inside a guard that its sides differ, `a < b` made `<=` inside
+  `if a != b`; Rust also takes a field of a binding that can't change and the `x` of a `Some(x)`
+  (`ver.major > cmp.major` inside `if ver.major != cmp.major`), where Java takes only `int` and
+  `long` locals.
 
 ## Not in the Rust edition yet
 
