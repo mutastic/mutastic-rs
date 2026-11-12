@@ -73,6 +73,10 @@ newest come first.
 
 ### Fixes
 
+- **Two runs on one package wait for each other.** Run at once, they rewrote each other's copy and
+  build in `target/mutastic/` in the middle of a run, so a mutant could be judged by the other
+  run's build. The first run now holds the package's work directory until it ends, and a second
+  says it's waiting and runs after it.
 - **A closed stderr no longer loses a run.** `mutastic run … 2>&1 | head` closed stderr under a
   run, and its first progress line stopped it with a panic. Progress and notes are now dropped
   when they can't be written, and the run goes on. A worker thread that panics now fails the run;
