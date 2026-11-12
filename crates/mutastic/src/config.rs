@@ -1,8 +1,9 @@
-//! `mutastic.yaml`, in the package's directory: the project's own say over which mutants run, in
-//! the Java edition's format, read as strictly: a line it doesn't understand is an error that names
-//! it, never a guess.
+//! `mutastic.yaml`, the nearest at or above the package's directory: the project's own say over
+//! which mutants run, in the Java edition's format, read as strictly: a line it doesn't understand
+//! is an error that names it, never a guess.
 //!
 //! ```yaml
+//! extends: ../mutastic.yaml
 //! rules:
 //!   - skip: shop::generated::**
 //!     reason: protobuf output
@@ -73,28 +74,167 @@ fn glob(pattern: &str, text: &str) -> bool {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Configuration {
     pub rules: Vec<Rule>,
+    /// Rules files, each found from the file that names it: once read, the path from where the
+    /// first file was read.
     pub plugins: Vec<PathBuf>,
     pub operators: Vec<String>,
 }
 
 impl Configuration {
-    /// The package's configuration, or none when it has no `mutastic.yaml`.
+    /// The configuration in `dir`, or none when it has no `mutastic.yaml`: the file's own, then
+    /// what it `extends:`, in turn. A file adds another's only when it says so, so one file and the
+    /// ones it names are all that apply, never a cascade nobody wrote down.
     pub fn read(dir: &Path) -> Result<Configuration, String> {
-        match std::fs::read_to_string(dir.join(FILE)) {
-            Ok(text) => parse(&text),
-            Err(_) => Ok(Configuration::default()),
+        let base = normalized(dir);
+        let first = base.join(FILE);
+        if !first.is_file() {
+            return Ok(Configuration::default());
         }
+        let shown = |file: &Path| relative(&base, file).display().to_string();
+        // The files read so far, in order, so one that comes back round is an error, not a loop.
+        let mut chain = vec![first.clone()];
+        let mut file = first;
+        let mut config = Configuration::default();
+        loop {
+            let text = std::fs::read_to_string(&file)
+                .map_err(|error| format!("{}: {error}", shown(&file)))?;
+            let written = parse_as(&text, &shown(&file))?;
+            let from = file.parent().map(Path::to_path_buf).unwrap_or_default();
+            config = config.over(written.own.found_from(&from));
+            let Some(extends) = written.extends else {
+                return Ok(config);
+            };
+            let named = normalized(&from.join(&extends.path));
+            if !named.is_file() {
+                return Err(format!(
+                    "{} line {}: extends {}, which isn't there",
+                    shown(&file),
+                    extends.line,
+                    extends.path
+                ));
+            }
+            if chain.contains(&named) {
+                let names: Vec<String> = chain.iter().chain([&named]).map(|f| shown(f)).collect();
+                return Err(format!(
+                    "extends: goes round in a loop: {}",
+                    names.join(" extends ")
+                ));
+            }
+            chain.push(named.clone());
+            file = named;
+        }
+    }
+
+    /// This file's say over `parent`'s: its rules first, so a package's own reason is the one
+    /// shown, then the parent's; the plugins of both; and its operators, if it chooses any, in
+    /// place of the parent's, as `--operators` replaces them.
+    fn over(self, parent: Configuration) -> Configuration {
+        Configuration {
+            rules: joined(self.rules, parent.rules),
+            plugins: joined(self.plugins, parent.plugins),
+            operators: if self.operators.is_empty() {
+                parent.operators
+            } else {
+                self.operators
+            },
+        }
+    }
+
+    /// The same configuration, its plugins found from `dir`, the directory of the file that
+    /// names them.
+    fn found_from(self, dir: &Path) -> Configuration {
+        let plugins = self
+            .plugins
+            .iter()
+            .map(|plugin| normalized(&dir.join(plugin)))
+            .collect();
+        Configuration { plugins, ..self }
     }
 }
 
-/// Reads the file a line at a time, in the shape above.
+/// `first` then `then`, each once.
+fn joined<T: PartialEq>(first: Vec<T>, then: Vec<T>) -> Vec<T> {
+    let mut both = first;
+    for each in then {
+        if !both.contains(&each) {
+            both.push(each);
+        }
+    }
+    both
+}
+
+/// Where a package's `mutastic.yaml` is: the nearest at or above the package's directory, no
+/// higher than the top of its git repository, or, outside one, than the directory the run is on,
+/// so a stray file above the project is never read. Both are absolute. The same package gets the
+/// same rules from the workspace's top as from its own directory.
+pub fn nearest(package: &Path, run: &Path) -> Option<PathBuf> {
+    let top = package
+        .ancestors()
+        .find(|at| at.join(".git").exists())
+        .unwrap_or(run);
+    package
+        .ancestors()
+        .take_while(|at| at.starts_with(top))
+        .find(|at| at.join(FILE).is_file())
+        .map(Path::to_path_buf)
+}
+
+/// The path without `.` and with each `..` taking away the name before it, as Java's `normalize`
+/// does: a file named two ways is one file.
+fn normalized(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir
+                if matches!(out.components().next_back(), Some(Component::Normal(_))) =>
+            {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
+/// The path to `to` from the directory `from`, both normalized: `../mutastic.yaml`.
+pub fn relative(from: &Path, to: &Path) -> PathBuf {
+    let from: Vec<_> = from.components().collect();
+    let to: Vec<_> = to.components().collect();
+    let shared = from.iter().zip(&to).take_while(|(a, b)| a == b).count();
+    let mut path: PathBuf = from[shared..].iter().map(|_| "..").collect();
+    path.extend(&to[shared..]);
+    path
+}
+
+/// One file as written: its own say, and the file it `extends:`, if any.
+struct Written {
+    own: Configuration,
+    extends: Option<Extends>,
+}
+
+/// `extends: <path>`, on its line.
+struct Extends {
+    line: usize,
+    path: String,
+}
+
+/// Reads the file a line at a time, in the shape above, as `mutastic.yaml` in the directory it's
+/// read from.
 pub fn parse(text: &str) -> Result<Configuration, String> {
+    parse_as(text, FILE).map(|written| written.own)
+}
+
+/// Reads a file that its errors name as `shown`.
+fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
     let mut config = Configuration::default();
+    let mut extends: Option<Extends> = None;
     let mut section = "";
     let mut pending: Option<(bool, String)> = None;
     let mut last = 0;
     for (index, raw) in text.lines().enumerate() {
-        let error = |what: &str| format!("{FILE} line {}: {what}", index + 1);
+        let error = |what: &str| format!("{shown} line {}: {what}", index + 1);
         let line = without_comment(raw);
         if line.trim().is_empty() {
             continue;
@@ -104,12 +244,31 @@ pub fn parse(text: &str) -> Result<Configuration, String> {
             if let Some((mutate, target)) = &pending {
                 return Err(error(&needs_reason(*mutate, target)));
             }
+            if let Some(path) = line.trim().strip_prefix("extends:") {
+                if extends.is_some() {
+                    return Err(error("a file extends one other file, once"));
+                }
+                let path = value(path);
+                if path.is_empty() {
+                    return Err(error("`extends:` needs a path, such as ../mutastic.yaml"));
+                }
+                extends = Some(Extends {
+                    line: index + 1,
+                    path,
+                });
+                section = "";
+                continue;
+            }
             section = match line.trim() {
                 "rules:" => "rules",
                 "plugins:" => "plugins",
                 "filters:" => "filters",
                 "operators:" => "operators",
-                _ => return Err(error("expected rules:, plugins:, filters: or operators:")),
+                _ => {
+                    return Err(error(
+                        "expected extends:, rules:, plugins:, filters: or operators:",
+                    ))
+                }
             };
             continue;
         }
@@ -152,11 +311,14 @@ pub fn parse(text: &str) -> Result<Configuration, String> {
     }
     if let Some((mutate, target)) = &pending {
         return Err(format!(
-            "{FILE} line {last}: {}",
+            "{shown} line {last}: {}",
             needs_reason(*mutate, target)
         ));
     }
-    Ok(config)
+    Ok(Written {
+        own: config,
+        extends,
+    })
 }
 
 /// Every skip says why: a rule without a reason is an error, not "no reason given".
@@ -270,13 +432,137 @@ mod tests {
     #[test]
     fn what_it_doesnt_understand_is_an_error_that_names_the_line() {
         for (text, error) in [
-            ("rule:\n", "mutastic.yaml line 1: expected rules:, plugins:, filters: or operators:"),
+            ("rule:\n", "mutastic.yaml line 1: expected extends:, rules:, plugins:, filters: or operators:"),
+            ("extends: a.yaml\nextends: b.yaml\n", "mutastic.yaml line 2: a file extends one other file, once"),
+            ("extends: ''\n", "mutastic.yaml line 1: `extends:` needs a path, such as ../mutastic.yaml"),
+            ("extends: a.yaml\n  - x\n", "mutastic.yaml line 2: a list item needs a section above it"),
             ("rules:\n  - skip: a::**\n", "mutastic.yaml line 2: the rule `skip: a::**` needs a `reason:` under it"),
             ("rules:\n  - drop: a\n", "mutastic.yaml line 2: a rule is `- skip: <pattern>` or `- mutate: <pattern>`, then `reason: …`"),
             ("operators:\n  stronger\n", "mutastic.yaml line 2: expected a list item, `- …`"),
         ] {
             assert_eq!(parse(text).unwrap_err(), error);
         }
+    }
+
+    /// A directory of its own for one test, with `files` written in it.
+    fn written(label: &str, files: &[(&str, &str)]) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("mutastic-config-{label}-{}", std::process::id()));
+        std::fs::remove_dir_all(&dir).ok();
+        for (path, text) in files {
+            let file = dir.join(path);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, text).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn a_file_adds_what_it_extends_after_its_own() {
+        let top =
+            "rules:\n  - skip: shop::**\n    reason: top\n  - skip: a::**\n    reason: both\n\
+                   plugins:\n  - rules/top.yaml\noperators:\n  - stronger\n";
+        let dir = written(
+            "extends",
+            &[
+                ("mutastic.yaml", top),
+                (
+                    "shop/mutastic.yaml",
+                    "extends: ../mutastic.yaml\nrules:\n  - skip: shop::legacy::**\n    reason: own\n\
+                     \x20 - skip: a::**\n    reason: both\nplugins:\n  - rules/shop.yaml\n  - ../rules/top.yaml\n",
+                ),
+                (
+                    "billing/mutastic.yaml",
+                    "extends: ../mutastic.yaml\noperators:\n  - defaults\n",
+                ),
+            ],
+        );
+        let shop = Configuration::read(&dir.join("shop")).unwrap();
+        let reasons: Vec<&str> = shop.rules.iter().map(|r| r.reason.as_str()).collect();
+        assert_eq!(reasons, ["own", "both", "top"]);
+        assert_eq!(
+            shop.plugins,
+            [dir.join("shop/rules/shop.yaml"), dir.join("rules/top.yaml")]
+        );
+        assert_eq!(shop.operators, ["stronger"]);
+        let billing = Configuration::read(&dir.join("billing")).unwrap();
+        assert_eq!(billing.operators, ["defaults"]);
+        assert_eq!(billing.rules.len(), 2);
+        // Only what a file names applies: a package's file without extends: is all there is.
+        std::fs::write(
+            dir.join("billing/mutastic.yaml"),
+            "operators:\n  - defaults\n",
+        )
+        .unwrap();
+        assert!(Configuration::read(&dir.join("billing"))
+            .unwrap()
+            .rules
+            .is_empty());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn extends_names_a_file_that_is_there_and_never_comes_round() {
+        let dir = written(
+            "extends-errors",
+            &[
+                ("missing/mutastic.yaml", "extends: ../top.yaml\n"),
+                ("a/mutastic.yaml", "extends: ../mutastic.yaml\n"),
+                ("mutastic.yaml", "extends: a/mutastic.yaml\n"),
+                ("deep/mutastic.yaml", "extends: ../bad.yaml\n"),
+                ("bad.yaml", "rules:\n  - skip: x::**\n"),
+            ],
+        );
+        let error = |sub: &str| Configuration::read(&dir.join(sub)).unwrap_err();
+        assert_eq!(
+            error("missing"),
+            "mutastic.yaml line 1: extends ../top.yaml, which isn't there"
+        );
+        assert_eq!(
+            error("a"),
+            "extends: goes round in a loop: mutastic.yaml extends ../mutastic.yaml extends mutastic.yaml"
+        );
+        // An error in the file extended names that file, from the first.
+        assert_eq!(
+            error("deep"),
+            "../bad.yaml line 2: the rule `skip: x::**` needs a `reason:` under it"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn the_nearest_file_is_looked_for_up_to_the_repository_or_the_run() {
+        let dir = written(
+            "nearest",
+            &[("mutastic.yaml", "rules:\n"), ("shop/src/lib.rs", "")],
+        );
+        let dir = std::fs::canonicalize(dir).unwrap();
+        let shop = dir.join("shop");
+        // Outside a repository, no higher than the run's directory.
+        assert_eq!(nearest(&shop, &dir), Some(dir.clone()));
+        assert_eq!(nearest(&shop, &shop), None);
+        // In one, up to its top, however it's run.
+        std::fs::create_dir_all(dir.join(".git")).unwrap();
+        assert_eq!(nearest(&shop, &shop), Some(dir.clone()));
+        // The package's own file is nearer.
+        std::fs::write(shop.join("mutastic.yaml"), "rules:\n").unwrap();
+        assert_eq!(nearest(&shop, &dir), Some(shop.clone()));
+        // Never above the repository's top.
+        std::fs::remove_file(shop.join("mutastic.yaml")).unwrap();
+        std::fs::create_dir_all(shop.join(".git")).unwrap();
+        assert_eq!(nearest(&shop, &shop), None);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn paths_are_named_from_the_first_files_directory() {
+        assert_eq!(
+            relative(Path::new("/a/b"), Path::new("/a/mutastic.yaml")),
+            Path::new("../mutastic.yaml")
+        );
+        assert_eq!(relative(Path::new("/a"), Path::new("/a")), Path::new(""));
+        assert_eq!(normalized(Path::new("./a/b/../c")), Path::new("a/c"));
+        assert_eq!(normalized(Path::new("../a")), Path::new("../a"));
     }
 
     #[test]
