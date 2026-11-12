@@ -1,0 +1,103 @@
+# mutastic on itself: every mutant of crates/mutastic, nightly, with the report uploaded whether it
+# passes or not. A mutation tool should publish its own score. No threshold until the score is
+# known; the run fails only when mutastic does.
+#
+# Each mutant runs mutastic's own tests, and the integration tests share folders: the copy's
+# fixtures, and the docs test's scratch. Two mutants running them at once could fail a test the
+# mutant didn't, a false catch, so each share runs one mutant at a time, and the shares, each on
+# a machine of its own, split the run. The last job puts them together, as --from-shards does.
+#
+# It runs on a pull request that changes this file, so a change to it is tried before it lands.
+name: Self
+
+on:
+  schedule:
+    - cron: "41 2 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths: [".github/workflows/self.yml"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  SHARES: 16
+
+jobs:
+  # mutastic, built once from this commit, for every share.
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 16 Oct 2026
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo build --release --locked --bin mutastic
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutastic
+          path: target/release/mutastic
+          retention-days: 1
+
+  share:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        # As many as SHARES says.
+        share: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 16 Oct 2026
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mutastic
+          path: bin
+      - run: chmod +x bin/mutastic
+      - name: Run share ${{ matrix.share }} of ${{ env.SHARES }}
+        run: >
+          bin/mutastic run crates/mutastic
+          --shard=${{ matrix.share }}/${{ env.SHARES }}
+          --workers=1 --threshold=0 --format=concise --progress=counter
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: share-${{ matrix.share }}
+          path: target/mutastic/shares/
+          retention-days: 7
+
+  # The shares put together: the whole run's score, cards and report files.
+  report:
+    needs: share
+    if: always() && needs.share.result != 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 16 Oct 2026
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mutastic
+          path: bin
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: share-*
+          path: shares
+      - run: chmod +x bin/mutastic
+      - name: Put the shares together
+        run: |
+          bin/mutastic run crates/mutastic --from-shards=shares --threshold=0 --format=concise \
+            | tee summary.txt
+          { echo '```'; cat summary.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: report
+          path: |
+            target/mutastic/mutation.json
+            target/mutastic/mutation.html
+            summary.txt
+          retention-days: 30
