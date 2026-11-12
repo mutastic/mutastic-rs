@@ -1290,13 +1290,14 @@ fn gate_open(
     };
     state.write(work)?;
     println!(
-        "mutastic gate: this task is gated from {}: before you finish, check the lines it changes with `mutastic run --since={base} --format=agent`; {}",
+        "mutastic gate: this task is gated from {}: before you finish, check the lines it changes with `mutastic run --since={base} --format=agent`; {}. {}",
         &base[..base.len().min(7)],
         if hooked {
             "the gate checks them when you finish, so you needn't run `mutastic gate check` yourself"
         } else {
             "`mutastic gate check` says when it's done"
-        }
+        },
+        crate::report::NO_REWRITE
     );
     Ok(ExitCode::SUCCESS)
 }

@@ -5,6 +5,14 @@ newest come first.
 
 ## Unreleased
 
+### Card changes
+
+- **Never change production code to make a mutant go away.** The agent format's `rules:` line now
+  says `add or change tests only; never change production code to make a mutant go away: tell the
+  person`, and the gate's open and block messages say the same, as in the Java edition. Production
+  code changed to pass a test the spec asks for is the task; code changed so a mutant can't exist
+  hides what the mutant found, and was the one cheat mutastic's own evals saw.
+
 ### Additions
 
 - **`--report=sarif`, for code scanning, as in the Java edition.** It writes `mutation.sarif`,

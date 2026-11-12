@@ -93,10 +93,7 @@ fn pricing_misses_only_the_edge_of_the_discount() {
     assert_eq!(finished["reason"], "run-finished");
     assert_eq!(finished["score"], 90.9);
     assert_eq!(finished["killed"], 10);
-    assert_eq!(
-        events[0]["rule"],
-        "add or change tests only, never production code"
-    );
+    assert_eq!(events[0]["rule"], mutastic::report::RULE);
     assert!(events.iter().all(|e| e["edition"] == "rust"), "{stdout}");
     assert_eq!(finished["toolchain"]["name"], "rustc");
     assert!(
