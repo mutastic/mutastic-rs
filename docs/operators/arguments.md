@@ -126,7 +126,7 @@ With the range turned round, nothing is a percent, and 150 still isn't:
 
             // in mod arguments::tests
             #[test]
-            fn is_percent_with_value_0() {
+            fn is_percent_when_value_is_zero() {
                 assert!(is_percent(0)); // today true · with this mutant false
             }
             check today's value is the one you intend: the test pins what the code does now

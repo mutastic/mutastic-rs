@@ -65,7 +65,7 @@ fn small_orders_pay_for_delivery() {
 
            // in mod conditions::tests
            #[test]
-           fn free_delivery_with_total_50() {
+           fn free_delivery_at_the_total_edge() {
                assert!(free_delivery(50)); // today true · with this mutant false
            }
            check today's value is the one you intend: the test pins what the code does now

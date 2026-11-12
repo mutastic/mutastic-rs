@@ -15,7 +15,7 @@
 
             // in mod tests
             #[test]
-            fn discount_with_total_100() {
+            fn discount_at_the_total_edge() {
                 assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
             }
             [2mcheck today's value is the one you intend: the test pins what the code does now[0m

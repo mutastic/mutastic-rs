@@ -311,9 +311,9 @@ impl<'a> View<'a> {
         for result in std::iter::once(entry.main).chain(entry.also.iter().copied()) {
             let test = self
                 .suggested_test(result, shared)
-                .filter(|test| !names.contains(&test.name));
+                .filter(|test| !names.contains(&test.call));
             if let Some(test) = &test {
-                names.push(test.name.clone());
+                names.push(test.call.clone());
             }
             each.push((result, test));
         }
@@ -330,12 +330,14 @@ impl<'a> View<'a> {
             .callable
             .as_ref()?;
         let at = self.named(result);
+        let edge = suggest::edge(mutant.operator, &mutant.operands);
         Some(suggest::test(
             callable,
             &mutant.file,
             suggestion,
             named.then_some(mutant.id.as_str()),
             at.as_ref(),
+            edge.as_ref(),
         ))
     }
 
