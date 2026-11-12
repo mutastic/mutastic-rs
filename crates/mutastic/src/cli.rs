@@ -87,14 +87,14 @@ pub fn main(args: Vec<OsString>) -> ExitCode {
         Ok((Some(code), _)) => return code,
         Ok((None, args)) => args,
         Err(message) => {
-            eprintln!("mutastic: {message}");
+            stderr_line!("mutastic: {message}");
             return ExitCode::from(2);
         }
     };
     match dispatch(&args) {
         Ok(code) => code,
         Err(message) => {
-            eprintln!("mutastic: {message}");
+            stderr_line!("mutastic: {message}");
             ExitCode::from(2)
         }
     }
@@ -123,7 +123,7 @@ fn front_door(chosen: Option<Edition>, args: &[String]) -> Result<Option<ExitCod
     };
     if command == "run" {
         if let Some(note) = edition::nested_note(&given, &route) {
-            eprintln!("{note}");
+            stderr_line!("{note}");
         }
     }
     if route.edition == Edition::Rust {
@@ -740,7 +740,7 @@ impl<'a> Progress<'a> {
         };
         match step {
             engine::Progress::Building { mutants } => {
-                eprintln!("building  {mutants} mutants in one build…")
+                stderr_line!("building  {mutants} mutants in one build…")
             }
             engine::Progress::Covered {
                 tests,
@@ -750,7 +750,7 @@ impl<'a> Progress<'a> {
                 flaky,
             } => {
                 counter.total = mutants;
-                eprintln!(
+                stderr_line!(
                     "coverage  {} on rustc {rustc} in {}{} · {}",
                     count(tests, "test"),
                     report::duration(took),
@@ -764,7 +764,7 @@ impl<'a> Progress<'a> {
             }
             engine::Progress::FromShares { summary, mutants } => {
                 counter.total = mutants;
-                eprintln!("{summary}");
+                stderr_line!("{summary}");
             }
             engine::Progress::MutantFinished { status } => {
                 counter.done += 1;
@@ -779,7 +779,7 @@ impl<'a> Progress<'a> {
             }
             engine::Progress::FileFinished { found, results } if self.files => {
                 let bar = self.shown == Shown::Bar;
-                eprint!(
+                stderr_text!(
                     "{}{}{}",
                     if bar { CLEAR } else { "" },
                     report::file_finished(self.package, found, results, self.style),
@@ -796,12 +796,12 @@ impl<'a> Progress<'a> {
 
     fn show(&self, counter: &mut Counter) {
         match self.shown {
-            Shown::Bar => eprint!("{CLEAR}{}", self.line(counter)),
+            Shown::Bar => stderr_text!("{CLEAR}{}", self.line(counter)),
             // With each file's line, a log already shows how far the run is.
             Shown::Counter if !self.files => {
                 let due = counter.printed.is_none_or(|at| at.elapsed() >= EVERY);
                 if due || counter.done == counter.total {
-                    eprintln!("{}", self.line(counter));
+                    stderr_line!("{}", self.line(counter));
                     counter.printed = Some(std::time::Instant::now());
                 }
             }
@@ -813,7 +813,7 @@ impl<'a> Progress<'a> {
     fn finished(&self) {
         let done = self.counter.lock().map_or(0, |counter| counter.done);
         if self.shown == Shown::Bar && done > 0 {
-            eprint!("{CLEAR}");
+            stderr_text!("{CLEAR}");
         }
     }
 }
@@ -826,7 +826,7 @@ fn count(number: usize, noun: &str) -> String {
 /// The first line, before anything slow.
 fn started(quiet: bool) {
     if !quiet {
-        eprintln!(
+        stderr_line!(
             "mutastic {} · reading the Cargo package…",
             env!("CARGO_PKG_VERSION")
         );

@@ -6,7 +6,7 @@
 )]
 
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use serde_json::Value;
 
@@ -1511,6 +1511,39 @@ pub mod repayments {
     assert!(
         agent.contains("test to add in mod rates::tests:"),
         "{agent}"
+    );
+    std::fs::remove_dir_all(&copy).ok();
+}
+
+/// A closed stderr (`mutastic run … 2>&1 | head`) loses the progress, never a mutant's result: a
+/// run whose progress can't be written keeps every mutant it had, as one that can.
+#[test]
+fn a_closed_stderr_loses_no_results() {
+    let copy = copy_of("pricing", "closed-stderr");
+    let kept = copy.join("target/mutastic/last-run.tsv");
+    let run = |stderr: Stdio| {
+        std::fs::remove_file(&kept).ok();
+        let mut child = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+            .args(["run", copy.to_str().unwrap(), "--progress=counter"])
+            .env("NO_COLOR", "1")
+            .env_remove("MUTASTIC_FORMAT")
+            .env_remove("MUTASTIC_AGENT")
+            .stdout(Stdio::null())
+            .stderr(stderr)
+            .spawn()
+            .unwrap();
+        // Closed before the run writes anything to it.
+        drop(child.stderr.take());
+        let status = child.wait().unwrap().code();
+        let record = std::fs::read_to_string(&kept).unwrap_or_default();
+        (status, record.lines().count())
+    };
+    let open = run(Stdio::null());
+    let closed = run(Stdio::piped());
+    assert!(open.1 > 1, "the open run kept a record: {open:?}");
+    assert_eq!(
+        closed, open,
+        "(exit, record lines) with stderr closed and open"
     );
     std::fs::remove_dir_all(&copy).ok();
 }

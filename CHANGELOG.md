@@ -64,6 +64,11 @@ newest come first.
 
 ### Fixes
 
+- **A closed stderr no longer loses a run.** `mutastic run … 2>&1 | head` closed stderr under a
+  run, and its first progress line stopped it with a panic. Progress and notes are now dropped
+  when they can't be written, and the run goes on. A worker thread that panics now fails the run;
+  before, its mutants' results went missing and the rest were kept as if it were whole.
+
 - **A workspace that excludes a package its tests run Cargo on can be mutated.** mutastic's copy
   of the workspace is under its target directory, so Cargo, finding a package the copy's workspace
   excludes, looked further up, reached the workspace itself and refused it: the tests failed in the
