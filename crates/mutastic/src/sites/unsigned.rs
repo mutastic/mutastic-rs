@@ -12,7 +12,7 @@
 //! `.len()`, `.count()` or `.capacity()` with 0 isn't made at all: see `stronger`.)
 
 use super::nonzero::{
-    binding, field_type, generic_named, holds, is_zero, mirrored, scope_of, simple_name,
+    binding, field_type, generic_named, holds, imported, is_zero, mirrored, scope_of, simple_name,
     unreferenced, untouched_by_macros, Sign,
 };
 use super::*;
@@ -88,9 +88,13 @@ fn unsigned(function: &ast::Fn, value: &ast::Expr) -> Option<String> {
                 let ty = unsigned_type(&ty, value.syntax())?;
                 return Some(format!("`{name}` is a `{ty}`"));
             }
+            if let Some(ty) = suffixed(function, &name, value.syntax()) {
+                return Some(format!("`{name}` is a `{ty}`, from its literal's suffix"));
+            }
             enumerated(function, &name, value.syntax())
                 .then(|| format!("`{name}` is an index `.enumerate()` counts from 0"))
         }
+        ast::Expr::MethodCallExpr(call) => duration_part(function, call),
         ast::Expr::FieldExpr(field) => {
             let (ty, at) = field_type(function, field)?;
             let ty = unsigned_type(&ty, &at)?;
@@ -180,6 +184,74 @@ fn returned(call: &ast::CallExpr) -> Option<String> {
     unsigned_type(&declared.ret_type()?.ty()?, declared.syntax())
 }
 
+/// The unsigned type of `name` where it's bound, once in the function and given to no macro, by a
+/// `let` with no type written from a literal whose suffix is one: `let n = 5u32;`.
+fn suffixed(function: &ast::Fn, name: &str, used: &SyntaxNode) -> Option<String> {
+    let given_to_a_macro = function
+        .syntax()
+        .descendants()
+        .filter(|node| node.kind() == SyntaxKind::MACRO_CALL)
+        .flat_map(|call| call.descendants_with_tokens())
+        .filter_map(|element| element.into_token())
+        .any(|token| token.kind() == SyntaxKind::IDENT && token.text() == name);
+    let mut bindings = function
+        .syntax()
+        .descendants()
+        .filter_map(ast::IdentPat::cast)
+        .filter(|pat| pat.name().is_some_and(|n| n.text() == name));
+    let (Some(pat), None) = (bindings.next(), bindings.next()) else {
+        return None;
+    };
+    let stmt = pat.syntax().parent().and_then(ast::LetStmt::cast)?;
+    let before = stmt.syntax().text_range().end() <= used.text_range().start();
+    if given_to_a_macro || pat.mut_token().is_some() || stmt.ty().is_some() || !before {
+        return None;
+    }
+    let Some(ast::Expr::Literal(literal)) = stmt.initializer() else {
+        return None;
+    };
+    let text = plain(literal.syntax());
+    let (_, suffix) = integer_literal(&text)?;
+    (UNSIGNED.contains(&suffix) && !declared_around(suffix, used)).then(|| suffix.to_string())
+}
+
+/// `Duration`'s accessors that give whole numbers: each an unsigned count.
+const DURATION_PARTS: &[&str] = &[
+    "as_secs",
+    "as_millis",
+    "as_micros",
+    "as_nanos",
+    "subsec_millis",
+    "subsec_micros",
+    "subsec_nanos",
+];
+
+/// Why a call of one of [`DURATION_PARTS`] can't be below 0: it's on a name whose type is written
+/// as std's `Duration`, imported from `std::time` or `core::time`, or written out so.
+fn duration_part(function: &ast::Fn, call: &ast::MethodCallExpr) -> Option<String> {
+    let method = call.name_ref()?.text().to_string();
+    if !DURATION_PARTS.contains(&method.as_str()) || call.arg_list()?.args().next().is_some() {
+        return None;
+    }
+    let receiver = call.receiver()?;
+    let name = simple_name(&receiver)?;
+    let ty = unreferenced(binding(function, &name, call.syntax())?)?;
+    let written: String = plain(ty.syntax())
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    let segments: Vec<&str> = written.trim_start_matches("::").split("::").collect();
+    let from_std = match segments.as_slice() {
+        [root, "time", "Duration"] => matches!(*root, "std" | "core"),
+        ["Duration"] => imported("Duration", call.syntax()).is_some_and(|path| {
+            matches!(path.as_slice(), [root, time, last]
+                if matches!(root.as_str(), "std" | "core") && time == "time" && last == "Duration")
+        }),
+        _ => false,
+    };
+    from_std.then(|| format!("it's `{name}.{method}()`, a count of a `Duration`"))
+}
+
 /// Whether `name` is bound, once in the function, as the first of a pair a `for` loop takes from a
 /// call of `.enumerate()` with nothing given it, and `used` is in that loop's body.
 fn enumerated(function: &ast::Fn, name: &str, used: &SyntaxNode) -> bool {
@@ -252,7 +324,14 @@ mod tests {
              pub fn generic<usize: Copy>(n: usize) -> bool { n == 0 }\n\
              pub fn own_count(s: &Shelf) -> bool { s.total() == 0 }\n\
              pub fn minus(a: u32, b: i32) -> bool { a as i32 - b == 0 }\n\
-             mod shadow { pub struct u32; pub fn f(n: u32) -> bool { n == 0 } }\n";
+             mod shadow { pub struct u32; pub fn f(n: u32) -> bool { n == 0 } }\n\
+             use std::time::Duration;\n\
+             pub fn literal() -> bool { let n = 5u32; n > 0 }\n\
+             pub fn waited(d: Duration) -> bool { d.as_secs() == 0 }\n\
+             pub fn spelled(d: &std::time::Duration) -> bool { d.subsec_nanos() > 0 }\n\
+             pub fn plain_literal() -> bool { let n = 5; n > 0 }\n\
+             pub fn changed() -> bool { let mut n = 5u32; n = n - 1; n > 0 }\n\
+             mod own { pub struct Duration; pub fn f(d: Duration) -> bool { d.as_secs() == 0 } }\n";
         let skipped = skipped(source);
         for proved in [
             "param",
@@ -262,8 +341,14 @@ mod tests {
             "called",
             "sum",
             "indexed",
+            "literal",
+            "waited",
+            "spelled",
         ] {
             assert!(skipped.contains_key(proved), "{proved}: {skipped:?}");
+        }
+        for kept in ["plain_literal", "changed", "own::f"] {
+            assert_eq!(skipped.get(kept), None, "{kept}: {skipped:?}");
         }
         for kept in [
             "signed",

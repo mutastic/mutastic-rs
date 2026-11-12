@@ -399,7 +399,7 @@ pub(super) fn generic_named(at: &SyntaxNode, name: &str) -> bool {
 /// The std path `name` is imported as where `at` is: `NonZeroU32` from `use std::num::NonZeroU32`,
 /// `num` from `use core::num`. Looks out from `at` through its blocks to its module. None when the
 /// name is declared or imported from anywhere else there, or isn't seen at all.
-fn imported(name: &str, at: &SyntaxNode) -> Option<Vec<String>> {
+pub(super) fn imported(name: &str, at: &SyntaxNode) -> Option<Vec<String>> {
     let mut scope = scope_of(at);
     while let Some(items) = scope {
         let declared = items.children().any(|item| {
