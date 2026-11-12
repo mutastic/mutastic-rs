@@ -19,7 +19,14 @@ pub mod sarif;
 pub const SCHEMA: &str = "mutastic.events/v1";
 /// The events format's name for this edition, on every event.
 pub const EDITION: &str = "rust";
-pub const RULE: &str = "add or change tests only, never production code";
+pub const RULE: &str =
+    "add or change tests only; never change production code to make a mutant go away: tell the person";
+
+/// The same, said to an agent the gate holds, as the Java edition says it: production code changed
+/// to pass a test the spec asks for is the task, but code changed so a mutant can't exist hides
+/// what the mutant found.
+pub const NO_REWRITE: &str =
+    "Never change production code to make a mutant go away: tell the person.";
 pub const DECLINE: &str = "if a mutant's case can't happen in practice, or the change is one no caller can see, don't contrive a test: propose ignoring it, for a person to accept, as the kind it is (equivalent, unreachable, telemetry, deprecated or accepted-risk), with the reason in two sentences: the one case where it differs, and why that can't happen";
 /// The reason a proposal gives, as the Java edition's: the one case where the mutant differs, and
 /// why that can't happen, for a person to check in place of a test.

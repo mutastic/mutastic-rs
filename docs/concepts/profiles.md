@@ -70,7 +70,7 @@ and mutastic's build of it still has them on:
   "edition": "rust",
   "reason": "run-started",
   "project": "unsafety",
-  "rule": "add or change tests only, never production code",
+  "rule": "add or change tests only; never change production code to make a mutant go away: tell the person",
   "decline": "if a mutant's case can't happen in practice, or the change is one no caller can see, don't contrive a test: propose ignoring it, for a person to accept, as the kind it is (equivalent, unreachable, telemetry, deprecated or accepted-risk), with the reason in two sentences: the one case where it differs, and why that can't happen",
   "profile": {
     "name": "mutastic",

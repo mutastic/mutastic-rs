@@ -431,10 +431,11 @@ pub fn held_by(missed: &[String], uncovered: &[String], waiting: &[String]) -> S
         )
     };
     format!(
-        "mutastic gate: {count} mutant{} on the lines the task changed {} it, so it isn't done ({}).{proposed} For each card: write the test, and run its `done when` before you move on; for a line no test reaches, write a test that reaches it; if a case can't happen, propose ignoring it, for a person to accept.",
+        "mutastic gate: {count} mutant{} on the lines the task changed {} it, so it isn't done ({}).{proposed} For each card: write the test, and run its `done when` before you move on; for a line no test reaches, write a test that reaches it; if a case can't happen, propose ignoring it, for a person to accept. {}",
         if count == 1 { "" } else { "s" },
         if count == 1 { "holds" } else { "hold" },
-        parts.join("; ")
+        parts.join("; "),
+        crate::report::NO_REWRITE
     )
 }
 
