@@ -97,7 +97,10 @@ impl Finder<'_> {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the parts of one mutant, passed on to `Make` as they're found"
+    )]
     fn operator_change(
         &mut self,
         operator: &'static str,

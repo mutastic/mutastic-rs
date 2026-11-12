@@ -1,0 +1,2 @@
+# A test's `unwrap` is its assertion that the value is there; elsewhere `unwrap_used` holds.
+allow-unwrap-in-tests = true

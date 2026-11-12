@@ -10,6 +10,11 @@
 //! To write the list: `MUTASTIC_IDS_WRITE=1 cargo test --test ids`, then read the diff: lines may
 //! be added, never changed or removed.
 
+#![allow(
+    clippy::unwrap_used,
+    reason = "a helper here asserts as the tests it serves do: a value that isn't there fails the test"
+)]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 

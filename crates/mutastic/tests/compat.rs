@@ -16,6 +16,11 @@
 //! To keep a release's copy: `MUTASTIC_RELEASED_WRITE=1 cargo test --test compat`, at the release's
 //! version (RELEASING.md).
 
+#![allow(
+    clippy::unwrap_used,
+    reason = "a helper here asserts as the tests it serves do: a value that isn't there fails the test"
+)]
+
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 

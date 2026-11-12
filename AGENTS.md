@@ -30,7 +30,9 @@ Formatting is rustfmt's, with its defaults: that is the spec, not taste.
 4. Limits are set where the code already is, then held. Never lower a floor (a score, a count a
    test expects, a threshold) to make a build pass: fix what moved it.
 5. When something grows past what reads well, split it and name the pieces.
-6. When you allow a lint, write the reason beside the `#[allow]`, not in a config file.
+6. When you allow a lint, write the reason beside it, not in a config file: `#[expect(lint, reason =
+   "…")]`, so one that stops firing says so. Keep `#[allow]` where an `expect` can't hold: in code
+   written into a user's crate, and in a module some test crates use and others don't.
 7. Name and structure carefully; let the formatter handle whitespace. Identifiers and shape
    change what a reader and a model understand. Indentation changes neither.
 8. Boundaries are asserted in tests, not described in comments.
