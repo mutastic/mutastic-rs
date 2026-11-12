@@ -1801,3 +1801,59 @@ fn next_works_through_the_misses_one_at_a_time() {
     assert_eq!(agent, "mutastic next: nothing missed is left in ranking\n");
     std::fs::remove_dir_all(&copy).ok();
 }
+
+/// Two mutants of one line with a test each, as the test-first guide's loyalty credit has: one fix
+/// can't describe both tests, so each comes after its own mutant's fix and id, in the card and the
+/// agent format. Once, the second test came with nothing saying why.
+#[test]
+fn each_suggested_test_comes_after_its_own_mutants_fix() {
+    let dir = copy_of("pricing", "each-fix");
+    let lib = dir.join("src/lib.rs");
+    let text = std::fs::read_to_string(&lib).unwrap();
+    let credit = "    /// 5 off orders of 30 or more, for loyal customers.
+    pub fn loyalty_credit(&self, total: u32) -> u32 {
+        if total >= 30 {
+            return 5;
+        }
+        0
+    }
+
+    /// Free from the threshold up.";
+    let test = "#[cfg(test)]
+mod loyalty {
+    use super::*;
+
+    #[test]
+    fn loyal_customers_get_five_off() {
+        assert_eq!(Pricing::new().loyalty_credit(50), 5);
+    }
+}
+
+#[cfg(test)]";
+    let text = text
+        .replacen("    /// Free from the threshold up.", credit, 1)
+        .replacen("#[cfg(test)]", test, 1);
+    std::fs::write(&lib, text).unwrap();
+
+    let (_, card) = mutastic_in(&dir, &["run", "--format=full"]);
+    let (_, agent) = mutastic_in(&dir, &["run", "--format=agent"]);
+    std::fs::remove_dir_all(&dir).ok();
+
+    let card = card[card.find("loyalty_credit").expect(&card)..].to_string();
+    assert!(card.contains("help: one test for each mutant"), "{card}");
+    let first = card.find("with total = 30").expect(&card);
+    let second = card.find("is false").expect(&card);
+    let tests: Vec<usize> = card
+        .match_indices("loyalty_credit(")
+        .map(|(at, _)| at)
+        .collect();
+    assert!(
+        tests.iter().any(|&at| at > first && at < second) && tests.iter().any(|&at| at > second),
+        "{card}"
+    );
+    assert!(
+        agent.contains("   fix: one test for each mutant"),
+        "{agent}"
+    );
+    assert!(agent.contains("   fix for m"), "{agent}");
+}
