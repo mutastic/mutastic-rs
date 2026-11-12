@@ -459,6 +459,34 @@ fn readme_card(output: &str, id: &str) -> String {
 
 /// The pricing fixture in each format but `full`, the `mutants` listing, `--version`, and
 /// `explain`.
+/// The pricing run's `mutation.json`, as the Report files page shows it: its one missed mutant,
+/// with the file's text, its absolute root and its timings left out, as they're long or change from
+/// machine to machine.
+fn mutation_json(work: &Path) -> String {
+    let file = work.join("fixtures/pricing/target/mutastic/mutation.json");
+    let report: Value = serde_json::from_str(&std::fs::read_to_string(file).unwrap()).unwrap();
+    let file = &report["files"]["src/lib.rs"];
+    let mut missed = file["mutants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|mutant| mutant["status"] == "Survived")
+        .unwrap()
+        .clone();
+    missed.as_object_mut().unwrap().remove("duration");
+    pretty(&serde_json::json!({
+        "$schema": report["$schema"],
+        "schemaVersion": report["schemaVersion"],
+        "thresholds": report["thresholds"],
+        "files": { "src/lib.rs": {
+            "language": file["language"],
+            "source": "…",
+            "mutants": [missed],
+        }},
+        "framework": report["framework"],
+    }))
+}
+
 fn reference(work: &Path, shown: &mut BTreeMap<String, String>) {
     for format in ["concise", "agent", "jsonl"] {
         // Each a first run, as the Java edition shows each format from a fresh copy.
@@ -478,6 +506,7 @@ fn reference(work: &Path, shown: &mut BTreeMap<String, String>) {
         }
         shown.insert(format!("concepts/format-{format}"), run.stdout);
     }
+    shown.insert("reference/mutation-json".into(), mutation_json(work));
     shown.insert(
         "commands/mutants".into(),
         ran(work, &["mutants", "fixtures/pricing"]).stdout,
