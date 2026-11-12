@@ -26,6 +26,8 @@ pub struct Project {
     pub edition: String,
     /// The features a plain build turns on: the default ones and what they enable.
     pub features: std::collections::BTreeSet<String>,
+    /// The directories of the workspace's packages, relative to the workspace.
+    pub members: std::collections::BTreeSet<PathBuf>,
 }
 
 impl Project {
@@ -116,6 +118,10 @@ pub fn read(dir: &str) -> Result<Project, String> {
             }
         }
     }
+    let members = packages
+        .iter()
+        .map(|member| relative(&manifest_dir(member)))
+        .collect();
     Ok(Project {
         given: dir.to_string(),
         package_dir: relative(&manifest_dir(package)),
@@ -126,6 +132,7 @@ pub fn read(dir: &str) -> Result<Project, String> {
         crate_name,
         edition: package["edition"].as_str().unwrap_or("2021").to_string(),
         features: crate::cfg::default_features(&package["features"]),
+        members,
     })
 }
 
@@ -157,6 +164,45 @@ pub fn sync(project: &Project, overrides: &Overrides) -> Result<(), String> {
     if !text.lines().any(|line| line.trim() == "[workspace]") {
         write_if_changed(&manifest, &format!("{text}\n[workspace]\n"))
             .map_err(|error| error.to_string())?;
+    }
+    stand_alone(&copy, project, &kept).map_err(|error| error.to_string())
+}
+
+/// Gives each package in the copy that the workspace excludes an empty `[workspace]`, as the copy's
+/// root has: in the workspace it stands alone, but Cargo, finding a workspace that excludes a
+/// package, looks further up, and above the copy is the workspace itself, which doesn't exclude
+/// its copy. A crate's tests that run Cargo on a fixture of its own then fail in the copy, and only
+/// there. A package of a workspace nested in it is left alone: Cargo finds that workspace first.
+fn stand_alone(
+    copy: &Path,
+    project: &Project,
+    kept: &std::collections::BTreeSet<PathBuf>,
+) -> std::io::Result<()> {
+    let mut manifests = Vec::new();
+    for manifest in kept {
+        let dir = match manifest.parent() {
+            Some(dir) if manifest.ends_with("Cargo.toml") && !dir.as_os_str().is_empty() => dir,
+            _ => continue,
+        };
+        let text = std::fs::read_to_string(copy.join(manifest))?;
+        manifests.push((dir.to_path_buf(), text));
+    }
+    let has = |text: &str, table: &str| text.lines().any(|line| line.trim() == table);
+    let workspaces: std::collections::BTreeSet<&Path> = manifests
+        .iter()
+        .filter(|(_, text)| has(text, "[workspace]"))
+        .map(|(dir, _)| dir.as_path())
+        .collect();
+    for (dir, text) in &manifests {
+        let nested = dir
+            .ancestors()
+            .skip(1)
+            .any(|above| workspaces.contains(above));
+        let excluded = !project.members.contains(dir) && !nested;
+        if excluded && has(text, "[package]") && !has(text, "[workspace]") {
+            let file = copy.join(dir).join("Cargo.toml");
+            write_if_changed(&file, &format!("{text}\n[workspace]\n"))?;
+        }
     }
     Ok(())
 }
@@ -234,4 +280,68 @@ pub fn write_if_changed(path: &Path, text: &str) -> std::io::Result<()> {
         std::fs::write(path, text)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A workspace that keeps a fixture out of it, as mutastic's own does: in the copy, Cargo
+    /// takes the fixture for a package on its own, as it does in the workspace.
+    #[test]
+    fn an_excluded_package_stands_alone_in_the_copy() {
+        let root = std::env::temp_dir().join(format!("mutastic-excluded-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let write = |path: &str, text: &str| {
+            let file = root.join(path);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, text).unwrap();
+        };
+        write(
+            "Cargo.toml",
+            "[workspace]\nmembers = [\"app\"]\nexclude = [\"fixtures\"]\nresolver = \"2\"\n",
+        );
+        let package = |name: &str| {
+            format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n")
+        };
+        write("app/Cargo.toml", &package("app"));
+        write("app/src/lib.rs", "");
+        write("fixtures/inner/Cargo.toml", &package("inner"));
+        write("fixtures/inner/src/lib.rs", "");
+        // A workspace of its own among the fixtures, whose packages are its members.
+        write(
+            "fixtures/nested/Cargo.toml",
+            "[workspace]\nmembers = [\"part\"]\nresolver = \"2\"\n",
+        );
+        write("fixtures/nested/part/Cargo.toml", &package("part"));
+        write("fixtures/nested/part/src/lib.rs", "");
+
+        let project = read(&root.join("app").display().to_string()).unwrap();
+        sync(&project, &Overrides::new()).unwrap();
+        let metadata = |dir: PathBuf| {
+            Command::new(cargo())
+                .args(["metadata", "--no-deps", "--format-version", "1"])
+                .current_dir(dir)
+                .output()
+                .unwrap()
+        };
+        let inner = metadata(project.copy_dir().join("fixtures/inner"));
+        let nested = metadata(project.copy_dir().join("fixtures/nested"));
+        let app = std::fs::read_to_string(project.copy_dir().join("app/Cargo.toml")).unwrap();
+        std::fs::remove_dir_all(&root).ok();
+        assert!(
+            nested.status.success() && String::from_utf8_lossy(&nested.stdout).contains("\"part\""),
+            "a nested workspace keeps its members: {}",
+            String::from_utf8_lossy(&nested.stderr)
+        );
+        assert!(
+            inner.status.success(),
+            "{}",
+            String::from_utf8_lossy(&inner.stderr)
+        );
+        assert!(
+            !app.contains("[workspace]"),
+            "a member stays a member: {app}"
+        );
+    }
 }
