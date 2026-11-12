@@ -65,6 +65,10 @@ newest come first.
   equivalent where the source proves it: a type written `u8` to `u128` or `usize` (parameter,
   `let` or field), a cast, a function declared beside it returning one, an `.enumerate()` index,
   or arithmetic on those. Scores can go up; no id changes.
+- **`cfg!(debug_assertions)` forced true is skipped as equivalent.** mutastic builds every mutant
+  with debug assertions on, so under it the condition is always true, and forcing it true changes
+  nothing a test can see. Forced false still runs. Measured on httparse: 3 of its misses, 3 of 3
+  this. Scores can go up; no id changes.
 - **A boundary where both sides give the same value at the edge is skipped as equivalent,** as in
   the Java edition: `if x > max { max = x }`, `if a < b { a } else { b }`,
   `if fee < 10 { 10 } else { fee }` and `if x < 2 { x = 2 }`, on whole numbers the source declares.

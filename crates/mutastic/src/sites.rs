@@ -29,6 +29,7 @@ mod extended;
 mod guarded;
 mod nonzero;
 mod operators;
+mod profile;
 mod rollback;
 mod stronger;
 mod unsigned;
@@ -1511,7 +1512,8 @@ impl Finder<'_> {
         let skipped = nonzero::never_zero(node, &change)
             .or_else(|| unsigned::never_negative(node, &change))
             .or_else(|| guarded::never_equal(node, &change, self.module, &self.facts.structs))
-            .or_else(|| edge::same_at_edge(node, &change, self.module, &self.facts.structs));
+            .or_else(|| edge::same_at_edge(node, &change, self.module, &self.facts.structs))
+            .or_else(|| profile::decided_by_profile(node, &change));
         self.found.mutants.push(Mutant {
             ordinal,
             id,

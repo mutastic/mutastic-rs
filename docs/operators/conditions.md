@@ -273,6 +273,13 @@ beside it to return one, the index a `for` loop takes from `.enumerate()`, or ar
 An inferred or generic type, or a type of the project's own with one of those names, and the
 mutants run.
 
+`cfg!(debug_assertions)` is always true under mutastic, which builds with debug assertions on, as
+the test profile does, whatever the project's own profiles say. So the mutant that forces it true
+is skipped as equivalent, alone, under `!` or as one side of `&&`, and the one that forces it false
+runs: that's the build without them, which the tests can tell apart. Only `cfg!(debug_assertions)`
+itself is taken: `cfg!(all(debug_assertions, unix))`, or a name it was stored in, and the mutants
+run.
+
 **Edition notes:** the Java edition has this operator too, `mutastic/remove-conditional`, for every
 condition the bytecode jumps on, `&&` and `||`'s sides among them.
 

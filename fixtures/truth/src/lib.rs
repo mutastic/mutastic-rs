@@ -838,6 +838,16 @@ pub fn unsigned_zero(x: i32) -> String {
     format!("{none} {some} {zero}")
 }
 
+/// A condition the build profile decides: mutastic builds with debug assertions on, so forcing it
+/// true changes nothing, and forcing it false does.
+pub fn debug_checked(x: i32) -> i32 {
+    if cfg!(debug_assertions) {
+        x + 1
+    } else {
+        x
+    }
+}
+
 /// The boundaries where both sides give the same value at the edge, and their near misses, at
 /// pairs that meet it: `b` is `x` for `x` from 0 to 3, and `fee_floor` gets 10 at `x` = 5.
 pub fn edges(x: i32) -> String {
@@ -860,7 +870,7 @@ mod tests {
     fn probe() {
         for x in -6..10 {
             println!(
-                "{x}: {} | {} | {} | {} | {} | {} | {} | {} | {}",
+                "{x}: {} | {} | {} | {} | {} | {} | {} | {} | {} | {}",
                 super::all(x),
                 super::more(x),
                 super::stronger(x),
@@ -869,7 +879,8 @@ mod tests {
                 super::nonzero(x),
                 super::guarded(x),
                 super::edges(x),
-                super::unsigned_zero(x)
+                super::unsigned_zero(x),
+                super::debug_checked(x)
             );
         }
     }

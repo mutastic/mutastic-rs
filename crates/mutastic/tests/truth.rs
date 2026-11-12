@@ -221,7 +221,7 @@ fn every_card_claim_behaves_as_its_mutant_does() {
 /// reassigned, another side, a guard on other sides, one that doesn't hold, floats) run. So are the
 /// boundaries where both sides give the same value at the edge, and theirs (a branch that isn't a
 /// side, a store of more, floats). So are the zero checks on values proved unsigned, and a signed
-/// one's runs.
+/// one's runs; and `cfg!(debug_assertions)` forced true, and forced false runs.
 fn skipped_as_equivalent_behave_as_the_original(
     found: &sites::Crate,
     compared: &[(u32, Probed, Probed)],
@@ -279,6 +279,7 @@ fn skipped_as_equivalent_behave_as_the_original(
         "fee_floor",
         "raised",
         "unsigned_zero",
+        "debug_checked",
     ] {
         assert!(skipped_in.contains(function), "{function}: {skipped_in:?}");
     }
@@ -294,6 +295,20 @@ fn skipped_as_equivalent_behave_as_the_original(
     assert!(
         mutant_of(signed.0).skipped.is_none() && !signed.1.agrees(original),
         "a signed zero check made `<=` runs, and differs"
+    );
+    // `cfg!(debug_assertions)` forced false, the other way from the profile, runs, and differs.
+    let forced_off = compared
+        .iter()
+        .skip(1)
+        .find(|(ordinal, ..)| {
+            function_of(*ordinal) == "debug_checked"
+                && mutant_of(*ordinal).operator == sites::REMOVE_CONDITIONAL
+                && mutant_of(*ordinal).replacement == "false"
+        })
+        .expect("debug_checked's condition forced false");
+    assert!(
+        mutant_of(forced_off.0).skipped.is_none() && !forced_off.1.agrees(original),
+        "debug_checked's condition forced false runs, and differs"
     );
     let boundary_in = |function: &str| {
         compared
