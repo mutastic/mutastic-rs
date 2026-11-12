@@ -220,7 +220,8 @@ fn every_card_claim_behaves_as_its_mutant_does() {
 /// are the comparisons inside a guard that their sides differ, and their near misses (a side
 /// reassigned, another side, a guard on other sides, one that doesn't hold, floats) run. So are the
 /// boundaries where both sides give the same value at the edge, and theirs (a branch that isn't a
-/// side, a store of more, floats).
+/// side, a store of more, floats). So are the zero checks on values proved unsigned, and a signed
+/// one's runs.
 fn skipped_as_equivalent_behave_as_the_original(
     found: &sites::Crate,
     compared: &[(u32, Probed, Probed)],
@@ -277,9 +278,23 @@ fn skipped_as_equivalent_behave_as_the_original(
         "smaller",
         "fee_floor",
         "raised",
+        "unsigned_zero",
     ] {
         assert!(skipped_in.contains(function), "{function}: {skipped_in:?}");
     }
+    // The signed near miss, `x == 0` made `x <= 0`, runs, and differs below 0.
+    let signed = compared
+        .iter()
+        .skip(1)
+        .find(|(ordinal, ..)| {
+            function_of(*ordinal) == "unsigned_zero"
+                && mutant_of(*ordinal).replacement == "(x) <= (0)"
+        })
+        .expect("unsigned_zero's signed `x == 0` made `<=`");
+    assert!(
+        mutant_of(signed.0).skipped.is_none() && !signed.1.agrees(original),
+        "a signed zero check made `<=` runs, and differs"
+    );
     let boundary_in = |function: &str| {
         compared
             .iter()

@@ -60,6 +60,11 @@ newest come first.
 
 ### Scoring changes
 
+- **A zero check on an unsigned value skips what differs only below 0.** `n == 0` made `n <= 0`, or
+  `n > 0` made `n != 0`, can't be told apart where `n` can't be negative, and is skipped as
+  equivalent where the source proves it: a type written `u8` to `u128` or `usize` (parameter,
+  `let` or field), a cast, a function declared beside it returning one, an `.enumerate()` index,
+  or arithmetic on those. Scores can go up; no id changes.
 - **A boundary where both sides give the same value at the edge is skipped as equivalent,** as in
   the Java edition: `if x > max { max = x }`, `if a < b { a } else { b }`,
   `if fee < 10 { 10 } else { fee }` and `if x < 2 { x = 2 }`, on whole numbers the source declares.

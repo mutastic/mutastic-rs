@@ -265,6 +265,14 @@ pub fn share(total: u32, parts: NonZeroU32) -> u32 {
 }
 ```
 
+A value that can't be below 0 is the same: an unsigned one compared with 0 skips the changes that
+differ only below 0, `n == 0` becoming `n <= 0` and `n > 0` becoming `n != 0`, while `n != 0`, the
+check made never true and the rest run. Only what the source proves counts: a name or a field whose
+type is written `u8` to `u128` or `usize`, a cast `as` one of them, a call of a function declared
+beside it to return one, the index a `for` loop takes from `.enumerate()`, or arithmetic on those.
+An inferred or generic type, or a type of the project's own with one of those names, and the
+mutants run.
+
 **Edition notes:** the Java edition has this operator too, `mutastic/remove-conditional`, for every
 condition the bytecode jumps on, `&&` and `||`'s sides among them.
 

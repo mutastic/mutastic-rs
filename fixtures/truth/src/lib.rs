@@ -828,6 +828,16 @@ pub fn guarded(x: i32) -> String {
     )
 }
 
+/// Zero checks on values that can't be below 0, one with its type written and one cast, and a
+/// signed near miss, which can.
+pub fn unsigned_zero(x: i32) -> String {
+    let n: u32 = x.unsigned_abs();
+    let none = n == 0;
+    let some = (x as u8) > 0;
+    let zero = x == 0;
+    format!("{none} {some} {zero}")
+}
+
 /// The boundaries where both sides give the same value at the edge, and their near misses, at
 /// pairs that meet it: `b` is `x` for `x` from 0 to 3, and `fee_floor` gets 10 at `x` = 5.
 pub fn edges(x: i32) -> String {
@@ -850,7 +860,7 @@ mod tests {
     fn probe() {
         for x in -6..10 {
             println!(
-                "{x}: {} | {} | {} | {} | {} | {} | {} | {}",
+                "{x}: {} | {} | {} | {} | {} | {} | {} | {} | {}",
                 super::all(x),
                 super::more(x),
                 super::stronger(x),
@@ -858,7 +868,8 @@ mod tests {
                 super::extended(x),
                 super::nonzero(x),
                 super::guarded(x),
-                super::edges(x)
+                super::edges(x),
+                super::unsigned_zero(x)
             );
         }
     }

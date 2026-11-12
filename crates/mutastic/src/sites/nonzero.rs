@@ -14,7 +14,7 @@ use ra_ap_syntax::ast::{HasArgList, HasGenericArgs, HasGenericParams};
 
 /// Where a whole number stands against 0: all a comparison with 0 can tell.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Sign {
+pub(super) enum Sign {
     Negative,
     Zero,
     Positive,
@@ -91,7 +91,7 @@ pub(super) fn never_zero(node: &SyntaxNode, change: &Change) -> Option<String> {
 
 /// Whether `value op 0` holds for a value of this sign; none for an operator that isn't a
 /// comparison.
-fn holds(op: &str, sign: Sign) -> Option<bool> {
+pub(super) fn holds(op: &str, sign: Sign) -> Option<bool> {
     Some(match op {
         "==" => sign == Sign::Zero,
         "!=" => sign != Sign::Zero,
@@ -104,7 +104,7 @@ fn holds(op: &str, sign: Sign) -> Option<bool> {
 }
 
 /// The operator that says the same with its sides swapped: `0 < x` is `x > 0`.
-fn mirrored(op: &str) -> String {
+pub(super) fn mirrored(op: &str) -> String {
     match op {
         "<" => ">",
         "<=" => ">=",
@@ -115,7 +115,7 @@ fn mirrored(op: &str) -> String {
     .to_string()
 }
 
-fn is_zero(expr: &ast::Expr) -> bool {
+pub(super) fn is_zero(expr: &ast::Expr) -> bool {
     matches!(expr, ast::Expr::Literal(_))
         && integer_literal(&plain(expr.syntax())).is_some_and(|(value, _)| value == 0)
 }
@@ -169,7 +169,7 @@ pub(super) fn simple_name(expr: &ast::Expr) -> Option<String> {
 /// The declared type of the one binding of `name` in `function` that `used` can see: a parameter,
 /// or a `let` before it in a block around it, each with its type written and the name bound
 /// directly. None when the function binds the name anywhere else, or a macro is given it.
-fn binding(function: &ast::Fn, name: &str, used: &SyntaxNode) -> Option<ast::Type> {
+pub(super) fn binding(function: &ast::Fn, name: &str, used: &SyntaxNode) -> Option<ast::Type> {
     let given_to_a_macro = function
         .syntax()
         .descendants()
@@ -204,7 +204,10 @@ fn binding(function: &ast::Fn, name: &str, used: &SyntaxNode) -> Option<ast::Typ
 /// The declared type of `self.parts`, or of `plan.parts` where `plan` is bound as [`binding`]
 /// says: a named field of a struct with no generics declared in the same scope as the function.
 /// Gives the field's type and where it's written.
-fn field_type(function: &ast::Fn, field: &ast::FieldExpr) -> Option<(ast::Type, SyntaxNode)> {
+pub(super) fn field_type(
+    function: &ast::Fn,
+    field: &ast::FieldExpr,
+) -> Option<(ast::Type, SyntaxNode)> {
     let field_name = field.name_ref()?.text().to_string();
     let base = field.expr()?;
     let owner = if plain(base.syntax()) == "self" {
@@ -582,6 +585,9 @@ mod tests {
                 ],
             ),
             ("signed", vec!["(n.get()) <= (0)"]),
+            // Not a `NonZero*`, but a `u32`, which can't be below 0: only that rule's skip, and
+            // its zero check made never true still runs.
+            ("plain", vec!["(parts) <= (0)"]),
             (
                 "Plan::empty",
                 vec![
