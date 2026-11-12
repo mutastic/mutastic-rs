@@ -210,12 +210,14 @@ const ESCAPES: &str = r"(?:\x1b\[[0-9;]*m)*";
 /// Output as mutastic prints it without colour: a label, black on a block of colour, is `[MISSED]`,
 /// and every other colour is gone.
 fn plain(text: &str) -> String {
-    let label = regex::Regex::new(r"\x1b\[4[0-9];30;1m (?<label>[^\x1b]*) \x1b\[0m").unwrap();
-    let labelled = label.replace_all(text, "[$label]");
-    regex::Regex::new(ESCAPES)
-        .unwrap()
-        .replace_all(&labelled, "")
-        .into_owned()
+    // Compiled once: a section reads every line of a run's output through here, once per card.
+    static LABEL: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"\x1b\[4[0-9];30;1m (?<label>[^\x1b]*) \x1b\[0m").unwrap()
+    });
+    static ESCAPE: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(ESCAPES).unwrap());
+    let labelled = LABEL.replace_all(text, "[$label]");
+    ESCAPE.replace_all(&labelled, "").into_owned()
 }
 
 /// What changes from run to run or machine to machine: timings, when the run started, the
@@ -301,9 +303,19 @@ fn pretty(event: &Value) -> String {
 
 /// The ids of a fixture's mutants in `function` by `operator`.
 fn ids_of(work: &Path, fixture: &str, function: &str, operator: &str) -> BTreeSet<String> {
+    ids_in(&found_in(work, fixture), function, operator)
+}
+
+/// Every mutant of a fixture, found once for all the cards that need it: finding them is the
+/// engine's whole scan, and a section asked for it once per card.
+fn found_in(work: &Path, fixture: &str) -> mutastic::sites::Crate {
     let project =
         workspace::read(&work.join("fixtures").join(fixture).display().to_string()).unwrap();
-    let found = engine::find_all(&project);
+    engine::find_all(&project)
+}
+
+/// The ids of `found`'s mutants in `function` by `operator`.
+fn ids_in(found: &mutastic::sites::Crate, function: &str, operator: &str) -> BTreeSet<String> {
     found
         .mutants
         .iter()
@@ -628,8 +640,9 @@ fn operators(work: &Path, shown: &mut BTreeMap<String, String>) {
         );
         runs.insert(*family, run.stdout);
     }
+    let found = found_in(work, "operators");
     for (family, function, operator) in CARDS {
-        let ids = ids_of(work, "operators", function, operator);
+        let ids = ids_in(&found, function, operator);
         assert!(!ids.is_empty(), "{operator} has no mutant in {function}()");
         let found = card(&runs[family], &ids)
             .unwrap_or_else(|| panic!("no card for {operator} in {function}(): {}", runs[family]));
@@ -738,14 +751,15 @@ fn troubleshooting(work: &Path, shown: &mut BTreeMap<String, String>) {
         .find(|e| e["status"] == "Ignored")
         .expect("omit-call's to_lowercase() is unviable");
     shown.insert("troubleshooting/unviable-event".into(), pretty(&unviable));
-    // Each hanging mutant waits for its time limit: side by side, they wait together.
+    // Each hanging mutant waits for its time limit, at least 10s: one worker for each of the five,
+    // and they wait together, once.
     let loops = ran(
         work,
         &[
             "run",
             "fixtures/loops",
             "--operators=stronger",
-            "--workers=4",
+            "--workers=5",
         ],
     );
     assert!(
