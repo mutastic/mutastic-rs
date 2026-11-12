@@ -1,0 +1,46 @@
+# The fuzz targets in fuzz/, nightly, a few minutes each, seeded with the fixtures' files. A panic
+# fails the job, and the input that caused it is kept as an artifact: fix it, then keep the input
+# in crates/mutastic/tests/fuzzed/ (fuzz/README.md). cargo-fuzz needs nightly.
+name: Fuzz
+
+on:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths: ["fuzz/**", ".github/workflows/fuzz.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: config, seeds: "fixtures/configured" }
+          - { target: rules, seeds: "fixtures/configured/rules" }
+          - { target: ignores, seeds: "crates/mutastic/tests/fuzzed/ignores" }
+          - { target: sites, seeds: "fixtures/pricing/src fixtures/operators/src" }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, 16 Oct 2026
+        with:
+          toolchain: nightly
+      - run: cargo install cargo-fuzz --version 0.13.2 --locked
+      - name: Fuzz ${{ matrix.target }}
+        # A rule's id is leaked on purpose, to live as long as the run: no leak check.
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+        run: >
+          cargo +nightly fuzz run ${{ matrix.target }} fuzz/corpus/${{ matrix.target }} ${{ matrix.seeds }}
+          -- -max_total_time=300 -timeout=10 -detect_leaks=0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: crash-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}/
+          retention-days: 30
