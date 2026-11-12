@@ -81,8 +81,10 @@ The commands and their output are the Java edition's: the summary, the `Not cove
 counter while mutants run, the report files, `explain`, `ignore` and `--since`. Where Rust differs:
 
 - **`explain`** shows the change as source, `total >= 100 → (total) > (100)`, where the Java edition
-  shows bytecode, and its `last run` comes from the last full run's `mutation.json`, as there's no
-  run record yet.
+  shows bytecode, and its `last run` comes from the last full run's `mutation.json`.
+- **A run compared with the last** works as in the Java edition. A mutant that crashed where a
+  crash proves nothing is out of the score, as a skipped one is, so a change to or from one isn't
+  counted against the test that caught it.
 - **Report files** are `mutation.json` and `mutation.html` in `target/mutastic`; there's no
   `mutations.xml`, whose consumers key on JVM mutator names.
 - **One run across CI jobs,** `--shard` and `--from-shards`, works as in the Java edition: the same

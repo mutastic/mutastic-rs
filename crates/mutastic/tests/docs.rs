@@ -119,12 +119,21 @@ fn scratch(name: &str) -> PathBuf {
 fn work() -> PathBuf {
     let work = scratch("docs");
     for name in BUILT.iter().chain(&["workspace"]) {
-        sync(
-            &root().join("fixtures").join(name),
-            &work.join("fixtures").join(name),
-        );
+        let fixture = work.join("fixtures").join(name);
+        sync(&root().join("fixtures").join(name), &fixture);
+        // The runs a page shows start with no last run to compare with, whatever this copy ran
+        // before.
+        forget_last_runs(&fixture);
     }
     work
+}
+
+/// Takes away a fixture's kept runs, so its next run is a first run, as a fresh copy's is, with its
+/// build still warm.
+fn forget_last_runs(fixture: &Path) {
+    let kept = fixture.join("target/mutastic");
+    std::fs::remove_file(kept.join("last-run.tsv")).ok();
+    std::fs::remove_dir_all(kept.join("last-runs")).ok();
 }
 
 /// Copies a tree, writing only what changed, so the copy's build stays warm.
@@ -447,6 +456,8 @@ fn readme_card(output: &str, id: &str) -> String {
 /// `explain`.
 fn reference(work: &Path, shown: &mut BTreeMap<String, String>) {
     for format in ["concise", "agent", "jsonl"] {
+        // Each a first run, as the Java edition shows each format from a fresh copy.
+        forget_last_runs(&work.join("fixtures/pricing"));
         let run = ran(
             work,
             &["run", "fixtures/pricing", &format!("--format={format}")],

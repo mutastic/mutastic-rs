@@ -845,6 +845,11 @@ fn finish(
         || report.project.mutastic_dir(),
         std::path::Path::to_path_buf,
     );
+    // Only a run of every mutant compares with the last one and is kept for the next: a run of one
+    // says nothing about the others, and a change's score says nothing about the whole package's.
+    if parsed.only.is_empty() && report.scope.is_none() {
+        report.comparison = recorded(&report, &folder)?;
+    }
     // Only a full run writes reports: a run of some mutants would leave out the rest.
     if parsed.only.is_empty() {
         let reports = parsed.reports.clone().unwrap_or_else(|| {
@@ -877,6 +882,28 @@ fn finish(
     } else {
         ExitCode::FAILURE
     })
+}
+
+/// Keeps `report` as the last run in `folder`, with its comparison with the one before: only an
+/// earlier run of the same package, in the same place, under the same operators, says anything
+/// about it. A share's folder is its own, so a whole run is never compared with part of one.
+fn recorded(
+    report: &engine::Report,
+    folder: &std::path::Path,
+) -> Result<Option<crate::record::Comparison>, String> {
+    let code = crate::shares::code(&report.project)?;
+    let record = crate::record::RunRecord::of(report, &code, &crate::record::tool());
+    let records = crate::records::RunRecords::new(folder);
+    let comparison = records
+        .comparable_to(&record)
+        .map(|previous| record.against(&previous));
+    records.keep(&record).map_err(|error| {
+        format!(
+            "couldn't keep the run's record in {}: {error}",
+            folder.display()
+        )
+    })?;
+    Ok(comparison)
 }
 
 fn verify(parsed: &Parsed) -> Result<ExitCode, String> {

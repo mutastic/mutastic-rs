@@ -19,6 +19,8 @@ pub mod gate;
 pub mod id;
 pub mod ignores;
 pub mod java;
+pub mod record;
+pub mod records;
 pub mod report;
 pub mod schema;
 pub mod shares;

@@ -150,11 +150,11 @@ mutastic run fixtures/pricing
    Mutants  ✓ 11 caught (11)
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  15 (44 without coverage selection)
-  Start at  13:21:34
-  Duration  1.4s (setup 1.3s, coverage 15ms, mutants 17ms)
-     Tests  4 on rustc 1.98.0 · 4 workers
+  Start at  20:24:53
+  Duration  308ms (setup 286ms, coverage 2ms, mutants 8ms)
+     Tests  4 on rustc 1.99.1 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  100.0%  threshold 80
+     Score  100.0%  ▲ 9.1 vs last run (code changed)  threshold 80
 
  [PASS] Every mutant was caught.
 ```

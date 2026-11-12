@@ -7,6 +7,16 @@ newest come first.
 
 ### Changes
 
+- **Each full run is compared with the last, as in the Java edition.** A run keeps what it found in
+  `target/mutastic/last-run.tsv` (each mutant's result and catching test, the score, and hashes of
+  the code and of mutastic), and the next run under the same operators compares with it: the score
+  line says `= vs last run`, `▲ 2.0 vs last run` or `▼ …`, with `same code`, `code changed` or
+  `mutastic changed`. With the code and mutastic unchanged, a mutant that changed result names the
+  test that caught it as `! likely flaky: …`. The agent format adds `vs last run:` and `likely
+  flaky:` lines, and `run-finished` fills `previousScore`, `sameCodeAsLastRun`,
+  `sameMutasticAsLastRun`, `changedSinceLastRun` and `likelyFlaky`, as the events schema
+  describes. A run of one mutant or of a change neither compares nor is kept, and a share keeps
+  its own. See [Compared with the last run](docs/concepts/how-a-run-works.md#compared-with-the-last-run).
 - **A zero check on a `NonZero*` is skipped as equivalent where it can't differ.** In
   `if parts.get() == 0` with `parts` a `NonZeroU32`, the guard made never true behaves as the code
   does, since `parts` can't hold 0, so it's skipped with its reason (`equivalent: differs only when

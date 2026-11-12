@@ -103,6 +103,28 @@ time to see how it died. What that means depends on where the mutant is: see
 The copy and its build stay in `target/mutastic`, so the next run, or a `verify`, rebuilds only what
 changed. `cargo clean` removes them with the rest of `target/`.
 
+## Compared with the last run
+
+Each full run keeps what it found in `target/mutastic/last-run.tsv`: every mutant's result and the
+test that caught it, the score, and hashes of the code and of the mutastic that ran. The next run
+under the same operators compares with it. A score is a share of what its operators make, so runs
+under other operators aren't compared; the last run under each set you use stays in
+`target/mutastic/last-runs/` until you come back to it, and the sets you've used least recently go
+first. The score line says what changed in between: `same code`, `code changed` or `mutastic
+changed`, beside the change in score (`= vs last run`, `▲ 2.0 vs last run`).
+
+With the same code, tests and mutastic, every mutant should be caught or missed exactly as before.
+One that changed result points at the test that caught it, in whichever run it was caught: that
+test is named as `! likely flaky: …`, with the mutants whose results it changed. With anything
+changed, a different result is just the change at work, and nothing is named. A mutant that's
+skipped, or that crashed where a crash proves nothing, is out of the score in either run, so a
+change to or from one isn't counted.
+
+Only a full run compares and records: a run of one mutant (`--only`, `verify`, `explain`) says
+nothing about the others, and a run of a change (`--since`) has a different score by design. A
+share (`--shard`) keeps its record in its own folder, so a whole run is never compared with part of
+one.
+
 ## One run across CI jobs
 
 A crate's run can take longer than one CI job should. `--shard=N/M` runs only the Nth of M shares of
