@@ -48,6 +48,9 @@
         "--shard",
         "--from-shards",
         "--format",
+        "--vocabulary",
+        "--color",
+        "--hyperlinks",
         "--progress",
         "--edition"
       ]
@@ -101,6 +104,9 @@
       "options": [
         "--workers",
         "--no-suggestions",
+        "--vocabulary",
+        "--color",
+        "--hyperlinks",
         "--progress",
         "--edition"
       ]
@@ -469,7 +475,9 @@
       "value": "FORMAT",
       "choices": [
         "full",
+        "brief",
         "concise",
+        "grouped",
         "agent",
         "jsonl"
       ],
@@ -482,6 +490,89 @@
         "run": {
           "commandLine": "mutastic run --format=agent",
           "cargo": "cargo mutastic run --format=agent"
+        }
+      }
+    },
+    {
+      "name": "--vocabulary",
+      "synopsis": "--vocabulary=WORDS",
+      "kind": "value",
+      "group": "Output",
+      "value": "WORDS",
+      "choices": [
+        "plain",
+        "classic"
+      ],
+      "help": "plain says caught and missed; classic says killed and survived",
+      "commands": [
+        "explain",
+        "run"
+      ],
+      "environment": "MUTASTIC_VOCABULARY",
+      "examples": {
+        "explain": {
+          "commandLine": "mutastic explain mb2f8ae57 --vocabulary=classic",
+          "cargo": "cargo mutastic explain mb2f8ae57 --vocabulary=classic"
+        },
+        "run": {
+          "commandLine": "mutastic run --vocabulary=classic",
+          "cargo": "cargo mutastic run --vocabulary=classic"
+        }
+      }
+    },
+    {
+      "name": "--color",
+      "synopsis": "--color=WHEN",
+      "kind": "value",
+      "group": "Output",
+      "value": "WHEN",
+      "choices": [
+        "auto",
+        "always",
+        "never"
+      ],
+      "help": "Colour: auto uses it on a terminal that wants it",
+      "commands": [
+        "explain",
+        "run"
+      ],
+      "environment": "NO_COLOR, FORCE_COLOR",
+      "examples": {
+        "explain": {
+          "commandLine": "mutastic explain mb2f8ae57 --color=never",
+          "cargo": "cargo mutastic explain mb2f8ae57 --color=never"
+        },
+        "run": {
+          "commandLine": "mutastic run --color=never",
+          "cargo": "cargo mutastic run --color=never"
+        }
+      }
+    },
+    {
+      "name": "--hyperlinks",
+      "synopsis": "--hyperlinks=WHEN",
+      "kind": "value",
+      "group": "Output",
+      "value": "WHEN",
+      "choices": [
+        "auto",
+        "always",
+        "never"
+      ],
+      "help": "File locations as links a terminal can open: auto uses them on a terminal",
+      "commands": [
+        "explain",
+        "run"
+      ],
+      "environment": "",
+      "examples": {
+        "explain": {
+          "commandLine": "mutastic explain mb2f8ae57 --hyperlinks=never",
+          "cargo": "cargo mutastic explain mb2f8ae57 --hyperlinks=never"
+        },
+        "run": {
+          "commandLine": "mutastic run --hyperlinks=never",
+          "cargo": "cargo mutastic run --hyperlinks=never"
         }
       }
     },
@@ -757,6 +848,11 @@
       "name": "MUTASTIC_AGENT=1",
       "meaning": "The agent format, for coding agents",
       "detail": "Coding agents set it, so mutastic answers in the format they read best. `MUTASTIC_FORMAT` still wins."
+    },
+    {
+      "name": "MUTASTIC_VOCABULARY",
+      "meaning": "plain or classic, when --vocabulary isn't given",
+      "detail": "`classic` says killed and survived instead of caught and missed. The JSON report and the event stream always use the standard names."
     },
     {
       "name": "NO_COLOR",

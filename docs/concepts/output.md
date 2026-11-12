@@ -68,6 +68,46 @@ summary. On the pricing fixture:
 
 See [Getting started](../getting-started.md#3-read-the-card) for how to read a card.
 
+### `brief`
+
+Each card's head: the code with the change marked, and what the run saw, then the summary. The
+help, the suggested test and the commands are left out; the last line says how to see the whole
+card. For a person who wants the gaps and not the rest.
+
+<!-- output: concepts/format-brief -->
+```text
+
+ Missed ────────────────────────────────────────────────────────────
+
+ ❯ src/lib.rs  1 missed in 1 function
+
+ [✗ MISSED] no test checks discount() at total == 100
+    ┌─ src/lib.rs:26
+    │
+ 25 │     pub fn discount(&self, total: u32) -> u32 {
+ 26 │         if total >= 100 {
+    │                  ^^ >= changed to >
+ 27 │             return total / 10;
+    │
+    = note: every test calls discount() away from the boundary
+            inputs seen: 50, 250 (none is 100)
+    = id: mb2f8ae57 · mutastic run --only=mb2f8ae57 fixtures/pricing --format=full for the whole card
+
+     Files  0 clean | 1 with misses (1)
+   Mutants  ✓ 10 caught · ✗ 1 missed (11)
+  Worst at  Pricing::discount() 1 ✗
+     Build  one build of every mutant, 2 rounds (check and build)
+ Test runs  13 (33 without coverage selection)
+  Start at  22:29:13
+  Duration  307ms (setup 278ms, coverage 2ms, mutants 13ms)
+     Tests  3 on rustc 1.99.1 · 4 workers
+   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
+     Score  90.9%  threshold 80
+
+ [PASS] 1 missed, above the threshold.
+ Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+```
+
 ### `concise`
 
 One line for each line with a missed mutant, with its ids, then the summary. For logs.
@@ -86,6 +126,35 @@ One line for each line with a missed mutant, with its ids, then the summary. For
   Start at  13:21:36
   Duration  1.3s (setup 1.2s, coverage 4ms, mutants 29ms)
      Tests  3 on rustc 1.98.0 · 4 workers
+   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
+     Score  90.9%  threshold 80
+
+ [PASS] 1 missed, above the threshold.
+ Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+```
+
+### `grouped`
+
+The missed mutants of each file by function, a line each: where, what, and the id. For seeing
+where they gather.
+
+<!-- output: concepts/format-grouped -->
+```text
+
+ Missed ────────────────────────────────────────────────────────────
+
+ src/lib.rs
+   discount() 1 missed
+     26:18   ✗ no test checks discount() at total == 100 mb2f8ae57
+
+     Files  0 clean | 1 with misses (1)
+   Mutants  ✓ 10 caught · ✗ 1 missed (11)
+  Worst at  Pricing::discount() 1 ✗
+     Build  one build of every mutant, 2 rounds (check and build)
+ Test runs  13 (33 without coverage selection)
+  Start at  22:29:15
+  Duration  69ms (setup 40ms, coverage 2ms, mutants 13ms)
+     Tests  3 on rustc 1.99.1 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
      Score  90.9%  threshold 80
 
@@ -161,6 +230,18 @@ only the events. See [Events](../reference/events.md).
 {"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"mbddcd9c4","fingerprint":"bddcd9c42b757c41","status":"Killed","operator":"mutastic/return-value","location":{"file":"src/lib.rs","line":35,"column":20,"class":"Pricing","method":"shipping"},"mutation":{"replacement":"0","description":"returns `0` instead","applied":{"level":"source","text":"5 -> 0"}},"coveredBy":["tests::shipping_is_free_from_the_threshold"],"caughtBy":"tests::shipping_is_free_from_the_threshold","caughtWith":"panic","inputs":{"total":[39,40]},"testsRun":1,"durationMs":4}
 {"schema":"mutastic.events/v1","edition":"rust","reason":"run-finished","toolchain":{"name":"rustc","version":"1.98.0"},"mutants":11,"killed":10,"survived":1,"timeout":0,"noCoverage":0,"ignored":0,"runtimeError":0,"notMutated":{"unsafe":0,"cfg":0},"score":90.9,"threshold":80,"passed":true,"coveredScore":90.9,"tests":3,"workers":4,"workersStarted":4,"coverageMs":4,"flaky":[],"flakyEvidence":[],"likelyFlaky":[],"unrelatedCatches":[],"reports":["target/mutastic/mutation.json","target/mutastic/mutation.html"],"staleIgnores":[],"build":{"rounds":2,"unviable":0,"setupMs":67},"durationMs":126}
 ```
+
+## Words, colour and links
+
+`--vocabulary=classic` says killed and survived where mutastic says caught and missed, as the
+literature does, in every format a person reads; `MUTASTIC_VOCABULARY` sets it too. The JSON report
+and the events always use the standard names.
+
+`--color` chooses colour: `auto`, the default, uses it on a terminal unless `NO_COLOR` is set or
+`TERM=dumb`, and anywhere `FORCE_COLOR` asks; `always` and `never` say so. `--hyperlinks` makes file
+locations links a terminal can open, to the file itself: `auto` does on a terminal that isn't
+`TERM=dumb`. The line number stays in the text, as whether a terminal honours one in a link
+varies.
 
 ## Streams
 

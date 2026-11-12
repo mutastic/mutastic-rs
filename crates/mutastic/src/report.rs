@@ -28,7 +28,9 @@ pub const REASON: &str = "Differs only when <case>. That can't happen because <w
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Format {
     Full,
+    Brief,
     Concise,
+    Grouped,
     Agent,
     Jsonl,
 }
@@ -37,7 +39,9 @@ impl Format {
     pub fn parse(name: &str) -> Option<Format> {
         match name {
             "full" => Some(Format::Full),
+            "brief" => Some(Format::Brief),
             "concise" => Some(Format::Concise),
+            "grouped" => Some(Format::Grouped),
             "agent" => Some(Format::Agent),
             "jsonl" => Some(Format::Jsonl),
             _ => None,
@@ -46,10 +50,81 @@ impl Format {
 }
 
 /// ANSI colour, only where it's wanted: the Java edition's colours, code for code. Every colour has
-/// a glyph or a word beside it, so the output reads the same without it.
-#[derive(Clone, Copy, Debug)]
+/// a glyph or a word beside it, so the output reads the same without it. With it, whether file
+/// locations are links a terminal can open, and the words a person reads for a mutant's fate.
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Style {
     pub color: bool,
+    pub links: bool,
+    pub words: Vocabulary,
+}
+
+/// The words people read for a mutant's fate, as the Java edition has them. `plain` (caught, missed)
+/// is the default, because "your tests missed this" needs no metaphor explained; `classic` (killed,
+/// survived) is the literature's. Machine formats always use the standard statuses.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Vocabulary {
+    #[default]
+    Plain,
+    Classic,
+}
+
+impl Vocabulary {
+    pub fn parse(name: &str) -> Option<Vocabulary> {
+        match name {
+            "plain" => Some(Vocabulary::Plain),
+            "classic" => Some(Vocabulary::Classic),
+            _ => None,
+        }
+    }
+
+    /// `caught`, or `killed`.
+    pub fn detected(self) -> &'static str {
+        match self {
+            Vocabulary::Plain => "caught",
+            Vocabulary::Classic => "killed",
+        }
+    }
+
+    /// `missed`, or `survived`.
+    pub fn undetected(self) -> &'static str {
+        match self {
+            Vocabulary::Plain => "missed",
+            Vocabulary::Classic => "survived",
+        }
+    }
+
+    /// The heading over the missed mutants: `Missed`, or `Survivors`.
+    pub fn heading(self) -> &'static str {
+        match self {
+            Vocabulary::Plain => "Missed",
+            Vocabulary::Classic => "Survivors",
+        }
+    }
+
+    /// `with misses`, or `with survivors`, of files.
+    pub fn with_misses(self) -> &'static str {
+        match self {
+            Vocabulary::Plain => "with misses",
+            Vocabulary::Classic => "with survivors",
+        }
+    }
+
+    /// `Every mutant was caught.`, or `Every mutant was killed.`
+    pub fn all_detected(self) -> &'static str {
+        match self {
+            Vocabulary::Plain => "Every mutant was caught.",
+            Vocabulary::Classic => "Every mutant was killed.",
+        }
+    }
+
+    /// `not covered`, or `no coverage`.
+    pub fn not_covered(self) -> &'static str {
+        match self {
+            Vocabulary::Plain => "not covered",
+            Vocabulary::Classic => "no coverage",
+        }
+    }
 }
 
 /// Label backgrounds.
@@ -58,6 +133,21 @@ const GREEN: &str = "42";
 const CYAN: &str = "46";
 
 impl Style {
+    /// `text` linking to `file`, when links are on, as the Java edition writes them: the line
+    /// number stays in the text, as whether terminals honour one in a `file:` URI varies.
+    fn link(self, file: &std::path::Path, text: &str) -> String {
+        if !self.links {
+            return text.to_string();
+        }
+        let path = crate::workspace::slashed(file).replace('\\', "/");
+        let path = if path.starts_with('/') {
+            path
+        } else {
+            format!("/{path}")
+        };
+        format!("\x1b]8;;file://{path}\x1b\\{text}\x1b]8;;\x1b\\")
+    }
+
     fn paint(self, code: &str, text: &str) -> String {
         if self.color {
             format!("\x1b[{code}m{text}\x1b[0m")
@@ -388,9 +478,10 @@ pub fn duration(took: std::time::Duration) -> String {
 /// The whole result in `format`.
 pub fn render(report: &Report, format: Format, style: Style) -> String {
     match format {
-        Format::Full => human(report, style, true),
-        Format::Concise => human(report, style, false),
-        Format::Agent => agent(report),
+        Format::Full | Format::Brief | Format::Concise | Format::Grouped => {
+            human(report, style, format)
+        }
+        Format::Agent => agent(report, style),
         Format::Jsonl => jsonl(report),
     }
 }
@@ -425,10 +516,14 @@ pub fn file_finished(
         if results.len() == 1 { "" } else { "s" }
     ))];
     if !missed.is_empty() {
-        counts.push(style.red(&format!("{} missed", missed.len())));
+        counts.push(style.red(&format!("{} {}", missed.len(), style.words.undetected())));
     }
     if !uncovered.is_empty() {
-        counts.push(style.amber(&format!("{} not covered", uncovered.len())));
+        counts.push(style.amber(&format!(
+            "{} {}",
+            uncovered.len(),
+            style.words.not_covered()
+        )));
     }
     let took: std::time::Duration = results.iter().map(|r| r.took).sum();
     let mut out = format!(
@@ -485,7 +580,7 @@ pub fn file_finished(
     out
 }
 
-fn human(report: &Report, style: Style, cards: bool) -> String {
+fn human(report: &Report, style: Style, format: Format) -> String {
     let view = View { report };
     let mut out = String::new();
     let entries = view.entries();
@@ -493,10 +588,12 @@ fn human(report: &Report, style: Style, cards: bool) -> String {
         let _ = writeln!(
             out,
             "\n{}{}",
-            style.red(&style.bold(" Missed ")),
+            style.red(&style.bold(&format!(" {} ", style.words.heading()))),
             style.dim(&"─".repeat(60))
         );
-        if cards {
+        if format == Format::Grouped {
+            grouped(&mut out, &view, &entries, style);
+        } else if matches!(format, Format::Full | Format::Brief) {
             let mut by_file: BTreeMap<String, Vec<&Entry>> = BTreeMap::new();
             for entry in &entries {
                 by_file
@@ -514,15 +611,20 @@ fn human(report: &Report, style: Style, cards: bool) -> String {
                     out,
                     "\n {} {}  {}",
                     style.blue("❯"),
-                    style.bold(&file),
+                    style.bold(&style.link(&view.report.project.workspace.join(&file), &file)),
                     style.dim(&format!(
-                        "{missed} missed in {} function{}",
+                        "{missed} {} in {} function{}",
+                        style.words.undetected(),
                         functions.len(),
                         if functions.len() == 1 { "" } else { "s" }
                     ))
                 );
                 for entry in entries {
-                    card(&mut out, &view, entry, style);
+                    if format == Format::Brief {
+                        brief_card(&mut out, &view, entry, style);
+                    } else {
+                        card(&mut out, &view, entry, style);
+                    }
                 }
             }
         } else {
@@ -530,10 +632,12 @@ fn human(report: &Report, style: Style, cards: bool) -> String {
                 let mutant = view.mutant(entry.main);
                 let _ = writeln!(
                     out,
-                    " {} {}:{} {} {}",
+                    " {} {} {} {}",
                     style.red("✗"),
-                    view.file(mutant),
-                    mutant.line,
+                    style.link(
+                        &view.report.project.workspace.join(&mutant.file),
+                        &format!("{}:{}", view.file(mutant), mutant.line)
+                    ),
                     style.code(&view.advice(entry.main).headline),
                     style.dim(&id_list(&view, entry))
                 );
@@ -635,10 +739,12 @@ fn frame(out: &mut String, view: &View, mutant: &Mutant, advice: &Advice, style:
     let bar = style.dim("│");
     let _ = writeln!(
         out,
-        "{g}{} {}:{}",
+        "{g}{} {}",
         style.dim("┌─"),
-        view.file(mutant),
-        mutant.line
+        style.link(
+            &view.report.project.workspace.join(&mutant.file),
+            &format!("{}:{}", view.file(mutant), mutant.line)
+        )
     );
     let _ = writeln!(out, "{g}{bar}");
     for number in mutant.line.saturating_sub(1).max(1)..=(mutant.line + 1).min(lines.len()) {
@@ -816,6 +922,89 @@ fn id_list(view: &View, entry: &Entry) -> String {
         .join(",")
 }
 
+/// The missed mutants of each file, by function, a line each: where, what, and the id, as the Java
+/// edition's `grouped` shows them.
+fn grouped(out: &mut String, view: &View, entries: &[Entry], style: Style) {
+    let mut by_file: BTreeMap<String, BTreeMap<usize, Vec<&MutantResult>>> = BTreeMap::new();
+    for entry in entries {
+        for result in std::iter::once(entry.main).chain(entry.also.iter().copied()) {
+            let mutant = view.mutant(result);
+            by_file
+                .entry(view.file(mutant))
+                .or_default()
+                .entry(mutant.function)
+                .or_default()
+                .push(result);
+        }
+    }
+    for (file, functions) in by_file {
+        let linked = style.link(&view.report.project.workspace.join(&file), &file);
+        let _ = writeln!(out, "\n {}", style.bold(&linked));
+        for (function, mut results) in functions {
+            results.sort_by_key(|result| {
+                let mutant = view.mutant(result);
+                (mutant.line, mutant.column, mutant.ordinal)
+            });
+            let name = &view.report.found.functions[function].name;
+            let _ = writeln!(
+                out,
+                "   {}() {}",
+                name,
+                style.red(&format!("{} {}", results.len(), style.words.undetected()))
+            );
+            for result in results {
+                let mutant = view.mutant(result);
+                let _ = writeln!(
+                    out,
+                    "     {}   {} {} {}",
+                    style.dim(&format!("{}:{}", mutant.line, mutant.column)),
+                    style.red("✗"),
+                    style.code(&view.advice(result).headline),
+                    style.dim(&mutant.id)
+                );
+            }
+        }
+    }
+}
+
+/// A card's head: where the mutant is and what's seen there, and how to see the whole card, as
+/// the Java edition's `brief` shows it.
+fn brief_card(out: &mut String, view: &View, entry: &Entry, style: Style) {
+    let result = entry.main;
+    let mutant = view.mutant(result);
+    let advice = view.advice(result);
+    let _ = writeln!(
+        out,
+        "\n {} {}",
+        style.label(
+            &format!("✗ {}", style.words.undetected().to_uppercase()),
+            RED
+        ),
+        style.code(&advice.headline)
+    );
+    let g = frame(out, view, mutant, &advice, style);
+    let equals = style.dim("=");
+    for (index, note) in advice.notes.iter().enumerate() {
+        if index == 0 {
+            let _ = writeln!(
+                out,
+                "{g}{equals} {}: {}",
+                style.blue(&style.bold("note")),
+                style.code(note)
+            );
+        } else {
+            let _ = writeln!(out, "{g}        {}", style.dim(&style.code(note)));
+        }
+    }
+    let ids = id_list(view, entry);
+    let _ = writeln!(
+        out,
+        "{g}{equals} id: {ids} · {} {}",
+        view.command("run", &ids),
+        style.dim("--format=full for the whole card")
+    );
+}
+
 fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
     let result = entry.main;
     let mutant = view.mutant(result);
@@ -824,7 +1013,10 @@ fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
     let _ = writeln!(
         out,
         "\n {} {}{}",
-        style.label("✗ MISSED", RED),
+        style.label(
+            &format!("✗ {}", style.words.undetected().to_uppercase()),
+            RED
+        ),
         style.code(&advice.headline),
         if shared {
             style.dim(&format!(" · {}", mutant.id))
@@ -1121,7 +1313,7 @@ fn files_row(report: &Report, style: Style) -> String {
     let mut parts =
         vec![style.green(&style.bold(&format!("{} clean", by_file.len() - with_misses)))];
     if with_misses > 0 {
-        parts.push(style.red(&style.bold(&format!("{with_misses} with misses"))));
+        parts.push(style.red(&style.bold(&format!("{with_misses} {}", style.words.with_misses()))));
     }
     format!(
         "{}{}",
@@ -1137,15 +1329,22 @@ fn mutants_row(report: &Report, style: Style) -> String {
     let not_covered = report.count(Status::NoCoverage);
     let skipped = report.count(Status::Ignored);
     let crashed = report.count(Status::RuntimeError);
-    let mut counts = vec![style.green(&format!("✓ {}", style.bold(&format!("{caught} caught"))))];
+    let words = style.words;
+    let mut counts = vec![style.green(&format!(
+        "✓ {}",
+        style.bold(&format!("{caught} {}", words.detected()))
+    ))];
     if missed > 0 {
-        counts.push(style.red(&format!("✗ {}", style.bold(&format!("{missed} missed")))));
+        counts.push(style.red(&format!(
+            "✗ {}",
+            style.bold(&format!("{missed} {}", words.undetected()))
+        )));
     }
     if timed_out > 0 {
         counts.push(style.amber(&format!("⏱ {timed_out} timed out")));
     }
     if not_covered > 0 {
-        counts.push(style.amber(&format!("○ {not_covered} not covered")));
+        counts.push(style.amber(&format!("○ {not_covered} {}", words.not_covered())));
     }
     let scored = report.results.len() - report.unscored();
     let mut row = format!(
@@ -1330,9 +1529,12 @@ fn verdict(report: &Report, style: Style) -> String {
             "{} {}",
             style.label("PASS", GREEN),
             style.green(&if missed == 0 {
-                "Every mutant was caught.".to_string()
+                style.words.all_detected().to_string()
             } else {
-                format!("{missed} missed, above the threshold.")
+                format!(
+                    "{missed} {}, above the threshold.",
+                    style.words.undetected()
+                )
             })
         )
     } else {
@@ -1340,9 +1542,11 @@ fn verdict(report: &Report, style: Style) -> String {
             "{} {}",
             style.label("FAIL", RED),
             style.red(&format!(
-                "Score below {}: {missed} missed, {} not covered.",
+                "Score below {}: {missed} {}, {} {}.",
                 report.threshold,
-                report.count(Status::NoCoverage)
+                style.words.undetected(),
+                report.count(Status::NoCoverage),
+                style.words.not_covered()
             ))
         )
     }
@@ -1370,7 +1574,8 @@ fn not_mutated(report: &Report) -> Vec<String> {
     lines
 }
 
-fn agent(report: &Report) -> String {
+fn agent(report: &Report, style: Style) -> String {
+    let words = style.words;
     let view = View { report };
     let mut out = String::new();
     let missed = report.count(Status::Survived);
@@ -1379,7 +1584,7 @@ fn agent(report: &Report) -> String {
     let dir = &report.project.given;
     let _ = writeln!(
         out,
-        "mutastic: {} · score {} (threshold {}{}) · {missed} missed, {not_covered} not covered, {} caught of {} mutants{}",
+        "mutastic: {} · score {} (threshold {}{}) · {missed} {}, {not_covered} {}, {} {} of {} mutants{}",
         if report.passed() { "PASS" } else { "FAIL" },
         report.score().map_or("none (no mutants to score)".into(), |s| format!("{s:.1}%")),
         report.threshold,
@@ -1388,7 +1593,10 @@ fn agent(report: &Report) -> String {
         } else {
             format!("; {} where tests reach", percent(report.covered_score()))
         },
+        words.undetected(),
+        words.not_covered(),
         report.count(Status::Killed) + report.count(Status::Timeout),
+        words.detected(),
         report.results.len() - skipped,
         if skipped == 0 {
             String::new()
@@ -1434,7 +1642,7 @@ fn agent(report: &Report) -> String {
     }
     let entries = ranked(&view, view.entries());
     for (index, entry) in entries.iter().take(10).enumerate() {
-        let _ = write!(out, "\n{}. {}", index + 1, agent_entry(&view, entry));
+        let _ = write!(out, "\n{}. {}", index + 1, agent_entry(&view, entry, words));
     }
     if entries.len() > 10 {
         let _ = writeln!(
@@ -1453,7 +1661,11 @@ fn agent(report: &Report) -> String {
             if entries.is_empty() {
                 ""
             } else {
-                "; fix the missed mutants first"
+                if words == Vocabulary::Plain {
+                    "; fix the missed mutants first"
+                } else {
+                    "; fix the survived mutants first"
+                }
             }
         );
         for (place, mutants) in places {
@@ -1490,14 +1702,20 @@ fn agent(report: &Report) -> String {
     out
 }
 
-fn agent_entry(view: &View, entry: &Entry) -> String {
+fn agent_entry(view: &View, entry: &Entry, words: Vocabulary) -> String {
     let result = entry.main;
     let mutant = view.mutant(result);
     let advice = view.advice(result);
     let ids = id_list(view, entry);
     let shown = view.changed_lines(mutant);
     let mut out = String::new();
-    let _ = writeln!(out, "missed {}: {}", mutant.id, advice.headline);
+    let _ = writeln!(
+        out,
+        "{} {}: {}",
+        words.undetected(),
+        mutant.id,
+        advice.headline
+    );
     let _ = writeln!(out, "   at {}:{}", view.file(mutant), mutant.line);
     for line in &shown.before {
         let _ = writeln!(out, "   - {line}");
@@ -1508,7 +1726,8 @@ fn agent_entry(view: &View, entry: &Entry) -> String {
     for other in &entry.also {
         let _ = writeln!(
             out,
-            "   also missed {}: {}",
+            "   also {} {}: {}",
+            words.undetected(),
             view.id(other),
             view.advice(other).headline
         );
@@ -1800,7 +2019,8 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
             main: result,
             also: Vec::new(),
         };
-        event["rendered"] = json!(agent_entry(view, &entry));
+        // A machine format: the standard words, whatever the vocabulary.
+        event["rendered"] = json!(agent_entry(view, &entry, Vocabulary::Plain));
     }
     event
 }
@@ -1897,7 +2117,10 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
     let advice = view.advice(result);
     let (label, outcome) = match result.status {
         Status::Killed => (
-            style.label("✓ CAUGHT", GREEN),
+            style.label(
+                &format!("✓ {}", style.words.detected().to_uppercase()),
+                GREEN,
+            ),
             format!(
                 "caught by {}{}",
                 result.killed_by.as_deref().unwrap_or("a test"),
@@ -1910,7 +2133,10 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
             ),
         ),
         Status::Timeout => (
-            style.label("✓ CAUGHT", GREEN),
+            style.label(
+                &format!("✓ {}", style.words.detected().to_uppercase()),
+                GREEN,
+            ),
             "its tests stopped finishing in time, which counts as caught".to_string(),
         ),
         Status::NoCoverage => (

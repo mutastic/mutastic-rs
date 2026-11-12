@@ -488,7 +488,7 @@ fn mutation_json(work: &Path) -> String {
 }
 
 fn reference(work: &Path, shown: &mut BTreeMap<String, String>) {
-    for format in ["concise", "agent", "jsonl"] {
+    for format in ["brief", "concise", "grouped", "agent", "jsonl"] {
         // Each a first run, as the Java edition shows each format from a fresh copy.
         forget_last_runs(&work.join("fixtures/pricing"));
         let run = ran(

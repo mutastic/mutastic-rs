@@ -34,7 +34,7 @@ Usage:
 
 Options:
   --only=<id>[,<id>…]   Run only these mutants
-  --format=<format>     full (default at a terminal), concise, agent or jsonl
+  --format=<format>     full (default at a terminal), brief, concise, grouped, agent or jsonl
   --threshold=<score>   The score a run must reach to pass (default 80)
   --operators=<set>     defaults, stronger or extended, or operator ids separated by commas
   --workers=<n>         Tests run side by side (default half the cores, at most 4)
@@ -53,6 +53,9 @@ Options:
                         missed mutant's function outside the tests
   --progress=<mode>     auto (default): a line redrawn in place at a terminal, none for agent
                         and jsonl; bar, counter (a line every so often) or none
+  --vocabulary=<words>  plain (default) says caught and missed; classic says killed and survived
+  --color=<when>        auto (default): colour on a terminal that wants it; always or never
+  --hyperlinks=<when>   auto (default): file locations as links on a terminal; always or never
   --edition=<edition>   rust or java: which edition runs. Unless given, the build file in dir, or
                         the nearest above it, decides: Cargo.toml for rust; pom.xml, build.gradle
                         or settings.gradle for java, which is fetched the first time it's needed
@@ -147,6 +150,11 @@ struct Parsed {
     fraction: f64,
     unsafe_mode: UnsafeMode,
     progress: Option<Shown>,
+    /// `--vocabulary`: the words for a mutant's fate, `MUTASTIC_VOCABULARY`'s unless given.
+    vocabulary: Option<report::Vocabulary>,
+    /// `--color` and `--hyperlinks`: `None` is `auto`, `Some(true)` `always`, `Some(false)` `never`.
+    color: Option<bool>,
+    hyperlinks: Option<bool>,
     /// The report files to write, from `--report`: `None` for the defaults.
     reports: Option<Vec<(Kind, Option<String>)>>,
     /// `ignore`'s: why, what sort of decision (`--as`), and what to do with it.
@@ -193,6 +201,9 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
         positional: Vec::new(),
         only: Vec::new(),
         format: None,
+        vocabulary: None,
+        color: None,
+        hyperlinks: None,
         threshold: 80.0,
         operators: sites::DEFAULTS.to_vec(),
         workers: testrun::default_workers(),
@@ -248,7 +259,9 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
             }
             "format" => {
                 parsed.format = Some(Format::parse(value).ok_or_else(|| {
-                    format!("--format: {value} isn't one of full, concise, agent or jsonl")
+                    format!(
+                    "--format: {value} isn't one of full, brief, concise, grouped, agent or jsonl"
+                )
                 })?)
             }
             "threshold" => {
@@ -323,6 +336,13 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
                     reports.push((kind, path));
                 }
             }
+            "vocabulary" => {
+                parsed.vocabulary = Some(report::Vocabulary::parse(value).ok_or_else(|| {
+                    format!("--vocabulary: {value} isn't one of plain or classic")
+                })?)
+            }
+            "color" => parsed.color = choice("--color", value)?,
+            "hyperlinks" => parsed.hyperlinks = choice("--hyperlinks", value)?,
             "progress" => {
                 parsed.progress = match value {
                     "auto" => None,
@@ -571,14 +591,41 @@ fn format(parsed: &Parsed) -> Format {
         })
 }
 
-/// Colour for a stream that's a terminal, or when `FORCE_COLOR` asks; never with `NO_COLOR` or a
-/// dumb terminal, unless forced.
-fn style(terminal: bool) -> Style {
-    let forced = std::env::var_os("FORCE_COLOR").is_some();
-    let plain = std::env::var_os("NO_COLOR").is_some()
-        || std::env::var("TERM").is_ok_and(|term| term == "dumb");
+/// `auto` as `None`, `always` as `Some(true)`, `never` as `Some(false)`.
+fn choice(option: &str, value: &str) -> Result<Option<bool>, String> {
+    match value {
+        "auto" => Ok(None),
+        "always" => Ok(Some(true)),
+        "never" => Ok(Some(false)),
+        _ => Err(format!(
+            "{option}: {value} isn't one of auto, always or never"
+        )),
+    }
+}
+
+/// The style for a stream, `terminal` when it's one, as the Java edition chooses it. Colour:
+/// `--color`, or on a terminal unless `NO_COLOR` is set or `TERM=dumb`, and anywhere `FORCE_COLOR`
+/// asks. Links: `--hyperlinks`, or on a terminal that isn't `TERM=dumb`. Words: `--vocabulary`,
+/// `MUTASTIC_VOCABULARY`, or plain.
+fn style(parsed: &Parsed, terminal: bool) -> Style {
+    let dumb = std::env::var("TERM").is_ok_and(|term| term == "dumb");
+    let color = parsed.color.unwrap_or_else(|| {
+        std::env::var_os("FORCE_COLOR").is_some()
+            || (terminal && std::env::var_os("NO_COLOR").is_none() && !dumb)
+    });
+    let links = parsed.hyperlinks.unwrap_or(terminal && !dumb);
+    let words = parsed
+        .vocabulary
+        .or_else(|| {
+            std::env::var("MUTASTIC_VOCABULARY")
+                .ok()
+                .and_then(|name| report::Vocabulary::parse(&name))
+        })
+        .unwrap_or_default();
     Style {
-        color: forced || (!plain && terminal),
+        color,
+        links,
+        words,
     }
 }
 
@@ -623,7 +670,13 @@ const EVERY: std::time::Duration = std::time::Duration::from_secs(10);
 const CLEAR: &str = "\r\x1b[2K";
 
 impl<'a> Progress<'a> {
-    fn new(package: &'a str, quiet: bool, files: bool, asked: Option<Shown>) -> Progress<'a> {
+    fn new(
+        package: &'a str,
+        quiet: bool,
+        files: bool,
+        asked: Option<Shown>,
+        parsed: &Parsed,
+    ) -> Progress<'a> {
         let terminal = std::io::stderr().is_terminal();
         let shown = match asked {
             _ if quiet => Shown::None,
@@ -636,7 +689,7 @@ impl<'a> Progress<'a> {
             quiet,
             files,
             shown,
-            style: style(terminal),
+            style: style(parsed, terminal),
             started: std::time::Instant::now(),
             counter: std::sync::Mutex::new(Counter::default()),
         }
@@ -797,7 +850,7 @@ fn run(parsed: &Parsed) -> Result<ExitCode, String> {
         }
         _ => None,
     };
-    let progress = Progress::new(&project.package, quiet, true, parsed.progress);
+    let progress = Progress::new(&project.package, quiet, true, parsed.progress, parsed);
     let mut options = options(parsed, parsed.only.clone());
     options.suggestions = !parsed.no_suggestions;
     options.shard = parsed.shard;
@@ -824,7 +877,7 @@ fn from_shards(parsed: &Parsed, shares: &str) -> Result<ExitCode, String> {
     let quiet = matches!(format, Format::Agent | Format::Jsonl);
     started(quiet);
     let project = workspace::read(dir)?;
-    let progress = Progress::new(&project.package, quiet, true, parsed.progress);
+    let progress = Progress::new(&project.package, quiet, true, parsed.progress, parsed);
     let code = crate::shares::code(&project)?;
     let report = shares.whole(&project, &code, &options(parsed, Vec::new()), &|step| {
         progress.step(step)
@@ -870,12 +923,16 @@ fn finish(
         report.reports.push(report::files::shown(given, &events));
         crate::shares::keep(
             &events,
-            &report::render(&report, Format::Jsonl, Style { color: false }),
+            &report::render(&report, Format::Jsonl, Style::default()),
         )?;
     }
     print!(
         "{}",
-        report::render(&report, format, style(std::io::stdout().is_terminal()))
+        report::render(
+            &report,
+            format,
+            style(parsed, std::io::stdout().is_terminal())
+        )
     );
     Ok(if report.passed() {
         ExitCode::SUCCESS
@@ -914,7 +971,7 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, String> {
     let dir = parsed.positional.get(taken).map_or(".", String::as_str);
     started(false);
     let project = workspace::read(dir)?;
-    let progress = Progress::new(&project.package, false, false, parsed.progress);
+    let progress = Progress::new(&project.package, false, false, parsed.progress, parsed);
     let report = engine::run(&project, &options(parsed, only), &|step| {
         progress.step(step)
     })?;
@@ -957,7 +1014,7 @@ fn explain(parsed: &Parsed) -> Result<ExitCode, String> {
     let dir = parsed.positional.get(1).map_or(".", String::as_str);
     started(false);
     let project = workspace::read(dir)?;
-    let progress = Progress::new(&project.package, false, false, parsed.progress);
+    let progress = Progress::new(&project.package, false, false, parsed.progress, parsed);
     let mut options = options(parsed, vec![id.clone()]);
     options.suggestions = !parsed.no_suggestions;
     let report = engine::run(&project, &options, &|step| progress.step(step))?;
@@ -965,7 +1022,11 @@ fn explain(parsed: &Parsed) -> Result<ExitCode, String> {
     let last = report::last_run(&project.mutastic_dir().join("mutation.json"), id);
     print!(
         "{}",
-        report::explained(&report, last, style(std::io::stdout().is_terminal()))
+        report::explained(
+            &report,
+            last,
+            style(parsed, std::io::stdout().is_terminal())
+        )
     );
     Ok(ExitCode::SUCCESS)
 }
@@ -1445,7 +1506,7 @@ fn gate_verdict(
     }
     let mut options = options(parsed, Vec::new());
     options.since = Some(changed);
-    let progress = Progress::new(&project.package, true, false, Some(Shown::None));
+    let progress = Progress::new(&project.package, true, false, Some(Shown::None), parsed);
     let mut report = match engine::run(project, &options, &|step| progress.step(step)) {
         Ok(report) => report,
         Err(error) => return red_verdict(here, state, &error),
@@ -1496,7 +1557,7 @@ fn gate_verdict(
         !proposed.contains(&report.found.mutants[r.mutant].id)
             || !matches!(r.status, Status::Survived | Status::NoCoverage)
     });
-    let cards: String = report::render(&report, Format::Agent, Style { color: false })
+    let cards: String = report::render(&report, Format::Agent, Style::default())
         .lines()
         .skip_while(|line| line.starts_with("mutastic: "))
         .collect::<Vec<_>>()
