@@ -1393,3 +1393,72 @@ fn the_sarif_report_is_a_result_for_each_miss_keyed_by_its_id() {
     );
     std::fs::remove_dir_all(&repository).ok();
 }
+
+/// A function only the crate calls gets its inputs from its callers: a suggested test that calls it
+/// alone on a value no caller passed may test what can't happen, as `fee(-1)` would here, where
+/// `repay` only passes a `u8`. Its card offers no such test: it says no caller passed the value,
+/// and to test a caller that can, or propose the mutant unreachable. `pub(crate)`, so a test can
+/// call it, as the crate's own tests could.
+#[test]
+fn a_private_function_gets_no_test_on_an_input_its_callers_never_gave() {
+    let copy = copy_of("suggestions", "beyond-callers");
+    let lib = copy.join("src/lib.rs");
+    let source = std::fs::read_to_string(&lib).unwrap();
+    std::fs::write(
+        &lib,
+        source
+            + r#"
+pub mod repayments {
+    /// What a repayment costs: the balance and a fee for the days it took, which only `repay`
+    /// asks for, with whole days.
+    pub fn repay(balance: i64, days: u8) -> i64 {
+        balance + fee(days as i64)
+    }
+
+    pub(crate) fn fee(days: i64) -> i64 {
+        if days < 0 {
+            return 100;
+        }
+        days * 3
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn a_week_costs_more_than_three_days() {
+            assert_eq!(repay(100, 7), 121);
+            assert_eq!(repay(100, 3), 109);
+        }
+    }
+}
+"#,
+    )
+    .unwrap();
+    let (_, agent) = mutastic_in(&copy, &["run", "--format=agent", "--operators=stronger"]);
+    let entry = agent
+        .split("\n\n")
+        .find(|entry| entry.contains("missed m") && entry.contains("`fee()`"))
+        .unwrap_or_else(|| panic!("{agent}"));
+    assert!(!entry.contains("test to add"), "{entry}");
+    assert!(
+        entry.contains(
+            "no caller of `fee()` passed `days = 0`, which a test of it alone would need"
+        ),
+        "{entry}"
+    );
+    assert!(
+        entry.contains(
+            "fix: if a caller can pass `days = 0`, test that caller with it; if none can, the \
+             mutant can't happen: propose ignoring it as unreachable"
+        ),
+        "{entry}"
+    );
+    // A function anyone can call keeps its suggested test.
+    assert!(
+        agent.contains("test to add in mod rates::tests:"),
+        "{agent}"
+    );
+    std::fs::remove_dir_all(&copy).ok();
+}
