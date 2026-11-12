@@ -6,7 +6,9 @@
 # manifest for the release, from `scoop/mutastic.json`. Before the release is drafted, both
 # installers install the Windows builds on Windows, and the installed command runs a crate and
 # fetches and runs the Java edition on a Gradle project. Run by hand, it builds the archives, checks
-# them the same way and keeps them as the run's artifacts, with no release. Linux builds are static
+# them the same way and keeps them as the run's artifacts, with no release. install.sh installs the
+# macOS and Linux builds the same way, and the installed command runs a crate. Each binary is built
+# with cargo-auditable on one pinned toolchain, and the release carries a CycloneDX SBOM. Linux builds are static
 # (musl), and Windows builds link the C runtime statically, so nothing else needs installing.
 # Actions are pinned to a commit: a tag can be moved.
 name: Release
@@ -21,6 +23,9 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # The exact toolchain a release is built with, so the same tag builds the same binaries. Here, not
+  # in a root rust-toolchain.toml, which would apply to the fixtures too. Move it on purpose.
+  RELEASE_TOOLCHAIN: "1.99.1"
 
 jobs:
   build:
@@ -38,11 +43,15 @@ jobs:
           - { target: aarch64-pc-windows-msvc, os: windows-latest }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 16 Oct 2026
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, 16 Oct 2026
         with:
+          toolchain: ${{ env.RELEASE_TOOLCHAIN }}
           targets: ${{ matrix.target }}
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
+      # Each binary carries its dependency list, so `cargo audit bin` can check what it was built
+      # from.
+      - run: cargo install cargo-auditable --version 0.7.7 --locked
       # The version the archives are named for: Cargo's, which a tag must match.
       - id: version
         shell: bash
@@ -53,7 +62,7 @@ jobs:
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-      - run: cargo build --release --locked -p mutastic --target ${{ matrix.target }}
+      - run: cargo auditable build --release --locked -p mutastic --target ${{ matrix.target }}
         env:
           # Windows: the C runtime in the executable, so it runs without the Visual C++
           # redistributable installed.
@@ -80,13 +89,17 @@ jobs:
           if-no-files-found: error
 
   # `SHA256SUMS`, on a tag or by hand, so the installers are checked against it before a release;
-  # and Scoop's manifest for the release, `mutastic.json`, with its hashes.
+  # Scoop's manifest for the release, `mutastic.json`, with its hashes; and what the release is made
+  # of, as a CycloneDX SBOM, `mutastic-<version>.cdx.json`.
   checksums:
     needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, 16 Oct 2026
+        with:
+          toolchain: ${{ env.RELEASE_TOOLCHAIN }}
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: archives
@@ -99,12 +112,19 @@ jobs:
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
           sh scripts/scoop-manifest.sh "$version" archives/SHA256SUMS > archives/mutastic.json
           cat archives/mutastic.json
+      - name: SBOM
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          cargo install cargo-cyclonedx --version 0.5.10 --locked
+          cargo cyclonedx --manifest-path crates/mutastic/Cargo.toml --format json
+          mv crates/mutastic/mutastic.cdx.json "archives/mutastic-$version.cdx.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: SHA256SUMS
           path: |
             archives/SHA256SUMS
             archives/mutastic.json
+            archives/mutastic-*.cdx.json
           if-no-files-found: error
 
   # The Windows builds as a person gets them: each installer, from the archives laid out as a
@@ -214,9 +234,61 @@ jobs:
             throw "the Java edition wasn't kept in $env:USERPROFILE\.mutastic"
           }
 
+  # The macOS and Linux builds as a person gets them: install.sh, from the archives laid out as a
+  # release is, refusing a bad checksum, then the installed command on a crate. Every Unix target
+  # but Intel macOS, which has no runner of its own here: its archive is built and summed, not run.
+  install-unix:
+    needs: checksums
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Cargo, for `mutastic run` on a crate.
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 16 Oct 2026
+      - id: version
+        run: echo "version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: releases/download/v${{ steps.version.outputs.version }}
+          merge-multiple: true
+      - name: Install with install.sh
+        env:
+          MUTASTIC_NATIVE_VERSION: ${{ steps.version.outputs.version }}
+          MUTASTIC_HOME: ${{ runner.temp }}/home
+          MUTASTIC_BIN_DIR: ${{ runner.temp }}/bin
+        run: |
+          MUTASTIC_NATIVE_RELEASES="file://$GITHUB_WORKSPACE/releases" sh scripts/install.sh
+          "$MUTASTIC_BIN_DIR/mutastic" --version
+          echo "$MUTASTIC_BIN_DIR" >> "$GITHUB_PATH"
+      - name: Refuse a bad checksum
+        env:
+          MUTASTIC_NATIVE_VERSION: ${{ steps.version.outputs.version }}
+          MUTASTIC_HOME: ${{ runner.temp }}/tampered-home
+          MUTASTIC_BIN_DIR: ${{ runner.temp }}/tampered-bin
+        run: |
+          cp -R releases "$RUNNER_TEMP/tampered"
+          sums="$RUNNER_TEMP/tampered/download/v$MUTASTIC_NATIVE_VERSION/SHA256SUMS"
+          sed -E 's/^[0-9a-f]{8}/00000000/' "$sums" > "$sums.new" && mv "$sums.new" "$sums"
+          if MUTASTIC_NATIVE_RELEASES="file://$RUNNER_TEMP/tampered" sh scripts/install.sh; then
+            echo "install.sh installed a download that doesn't match its checksum" >&2
+            exit 1
+          fi
+          if [ -e "$MUTASTIC_BIN_DIR/mutastic" ]; then
+            echo "install.sh left a command behind" >&2
+            exit 1
+          fi
+      - name: Run on a crate
+        run: |
+          mutastic run fixtures/pricing --threshold=0
+          cargo mutastic run fixtures/pricing --threshold=0
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [checksums, install-windows]
+    needs: [checksums, install-windows, install-unix]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -232,4 +304,4 @@ jobs:
         run: >
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag
           --title "$GITHUB_REF_NAME" archives/mutastic-*.tar.gz archives/mutastic-*.zip
-          archives/SHA256SUMS archives/mutastic.json
+          archives/SHA256SUMS archives/mutastic.json archives/mutastic-*.cdx.json
