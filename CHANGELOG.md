@@ -14,8 +14,6 @@ newest come first.
   `--hyperlinks=auto|always|never`, file locations as links a terminal opens. See
   [Output](docs/concepts/output.md#formats).
 
-### Additions
-
 - **`--report=sarif`, for code scanning, as in the Java edition.** It writes `mutation.sarif`,
   SARIF 2.1.0: a result for each missed mutant (a warning) and each one no test reaches (a note),
   on its line, with the card's headline, keyed by the mutant's id in `partialFingerprints` so an
