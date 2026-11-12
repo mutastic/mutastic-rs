@@ -30,6 +30,8 @@ page stands alone and links to the others by relative path.
 - [Suggested tests](concepts/suggested-tests.md): the test a card writes, and how its values are
   found by running your code.
 - [Output](concepts/output.md): each format, for people, coding agents and tools, and `explain`.
+- [Working through misses](concepts/next.md): `mutastic next`, the missed mutants as a queue, one
+  at a time, the one most worth a test first.
 
 ## Operators
 

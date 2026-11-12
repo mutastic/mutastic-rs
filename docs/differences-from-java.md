@@ -81,7 +81,15 @@ The commands and their output are the Java edition's: the summary, the `Not cove
 counter while mutants run, the report files, `explain`, `ignore` and `--since`. Where Rust differs:
 
 - **`explain`** shows the change as source, `total >= 100 → (total) > (100)`, where the Java edition
-  shows bytecode, and its `last run` comes from the last full run's `mutation.json`.
+  shows bytecode, and its `last run` comes from the `mutation.json` of the last run of every
+  mutant, by `run` or `next`.
+- **`next`** queues the misses as the Java edition does, in the same words and events, but with no
+  `mutastic baseline` yet: so no new misses come first, `rank` has no `baseline` factor, and
+  `next-finished`'s `legacy` is always 0. `--top` takes at most one item a function, where Java
+  says a method. Whether the code under test is the same, so that only what the last `next` left
+  uncaught runs, is a hash of the files mutastic mutates with their test code (`#[test]` functions
+  and `#[cfg(test)]` modules) taken out, as Java hashes only the classes under test. See
+  [Working through misses](concepts/next.md).
 - **A function only the crate calls** (not `pub`) gets no suggested test on an input none of its
   callers passed: its card says no caller passed the value, and to test a caller that can, or
   propose the mutant unreachable. A test of it alone on that value could test what can't happen.

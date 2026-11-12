@@ -48,8 +48,10 @@ for the conventions the code is held to, [AGENTS.md](AGENTS.md).
    `words` writes what a card says about a mutant: the gap, the change and the fix, in the Java
    edition's words.
 
-`cli` is the `mutastic` command, and `cargo mutastic` runs the same `cli::main`. `run`, `verify` and
-`mutants` share the first three steps; `mutants` stops after the second.
+`cli` is the `mutastic` command, and `cargo mutastic` runs the same `cli::main`. `run`, `verify`,
+`explain` and `next` share the first three steps, and `mutants` stops after the second. `next` runs
+every mutant once, then only those it left uncaught while the code under test is the same, and
+prints the misses as a queue (`report/next.rs`).
 
 ## Modules
 
@@ -71,7 +73,8 @@ All the code is in `crates/mutastic/src`:
 | `engine` | A run: finds, builds, records coverage, runs each mutant, and decides its status |
 | `words` | What a card says: the gap, the change, the inputs seen and the help |
 | `suggest` | Suggested tests: candidate inputs, running the probes, and the test written out |
-| `report` | The formats: `full`, `concise`, `agent` and `jsonl` |
+| `report` | The formats: `full`, `concise`, `agent` and `jsonl`; `report/next.rs`, `mutastic next`'s queue, its order and `--top`, in each format |
+| `nextrun` | What the last `mutastic next` left uncaught, and the hash of the code under test, its test code taken out, that says whether only those run again |
 | `shares` | A run split across machines: which share a mutant is in (`--shard`), a share's events, and the whole run put back together from them (`--from-shards`) |
 
 `crates/cargo-mutastic` and `crates/mutastic-rs` hold the other two names reserved on crates.io.

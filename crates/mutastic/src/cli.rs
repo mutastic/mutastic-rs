@@ -31,6 +31,9 @@ Usage:
                                      (--hook=claude answers as Claude Code's hooks, --tries=<n>),
                                      close forgets it; gate <action> --help says more
   mutastic mutants [dir]             List the mutants, without running anything
+  mutastic next [dir]                The missed mutant most worth a test first, why, and the test
+                                     to write; while the code under test is the same, it runs only
+                                     what the last next left uncaught
 
 Options:
   --only=<id>[,<id>…]   Run only these mutants
@@ -51,6 +54,8 @@ Options:
                         kept, found anywhere in dir, as the whole run
   --no-suggestions      Don't look for a test that catches each missed mutant, which runs the
                         missed mutant's function outside the tests
+  --top=<n>             How many of next's queue to show, at most one a function and two a
+                        file (default 1, at most 25)
   --progress=<mode>     auto (default): a line redrawn in place at a terminal, none for agent
                         and jsonl; bar, counter (a line every so often) or none
   --vocabulary=<words>  plain (default) says caught and missed; classic says killed and survived
@@ -60,8 +65,8 @@ Options:
                         the nearest above it, decides: Cargo.toml for rust; pom.xml, build.gradle
                         or settings.gradle for java, which is fetched the first time it's needed
 
-Exit status: 0 when the run passes, or verify's mutants are caught; 1 when it doesn't; 2 when
-mutastic couldn't run.";
+Exit status: 0 when the run passes, verify's mutants are caught, or next has nothing queued; 1
+when it doesn't; 2 when mutastic couldn't run.";
 
 pub fn main(args: Vec<OsString>) -> ExitCode {
     if wrapper::active(&args) {
@@ -181,6 +186,8 @@ struct Parsed {
     shard: Option<crate::shares::Shard>,
     /// `--from-shards`: the directory of the shares this run is made of.
     from_shards: Option<String>,
+    /// `--top`: how many of `next`'s queue to show.
+    top: usize,
 }
 
 /// The command as it's declared: `gate open` for `gate` and its action. `None` for one that isn't,
@@ -226,6 +233,7 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
         no_suggestions: false,
         shard: None,
         from_shards: None,
+        top: 1,
     };
     for arg in args {
         let Some(option) = arg.strip_prefix("--") else {
@@ -316,6 +324,18 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
                 }
                 parsed.hook = value.to_string();
             }
+            "top" => {
+                parsed.top = value
+                    .parse()
+                    .ok()
+                    .filter(|n: &usize| (1..=report::next::MOST).contains(n))
+                    .ok_or_else(|| {
+                        format!(
+                            "--top: {value} isn't a number from 1 to {}",
+                            report::next::MOST
+                        )
+                    })?
+            }
             "tries" => {
                 parsed.tries = value
                     .parse()
@@ -379,8 +399,8 @@ pub fn check(args: &[String]) -> Result<(), String> {
         return Err("no command".into());
     };
     match command.as_str() {
-        "run" | "verify" | "explain" | "ignore" | "gate" | "mutants" | "help" | "--help" | "-h"
-        | "--version" | "-V" => {
+        "run" | "verify" | "explain" | "ignore" | "gate" | "mutants" | "next" | "help"
+        | "--help" | "-h" | "--version" | "-V" => {
             let parsed = parse(command, &args[1..])?;
             arguments(command, &parsed)?;
             match &parsed.operators_given {
@@ -398,7 +418,7 @@ pub fn check(args: &[String]) -> Result<(), String> {
 fn arguments(command: &str, parsed: &Parsed) -> Result<(), String> {
     let synopsis = |name: &str| commands::command(name).map_or("", |command| command.synopsis);
     let (usage, takes_id, most) = match command {
-        "run" | "mutants" => (synopsis(command), false, 1),
+        "run" | "mutants" | "next" => (synopsis(command), false, 1),
         "build" => ("mutastic build [dir] --fraction=<share>", false, 1),
         "verify" => (
             synopsis(command),
@@ -515,7 +535,7 @@ fn operators(value: &str) -> Result<Vec<&'static str>, String> {
 /// operators, and the operators it chooses, unless `--operators` chose.
 fn configure(command: &str, parsed: &mut Parsed) -> Result<(), String> {
     let at = match command {
-        "run" | "mutants" => 0,
+        "run" | "mutants" | "next" => 0,
         "ignore" if parsed.prune => 0,
         "verify" => verify_ids(&parsed.positional).1,
         _ => 1,
@@ -547,7 +567,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, String> {
     arguments(command, &parsed)?;
     if matches!(
         command.as_str(),
-        "run" | "verify" | "explain" | "ignore" | "mutants" | "gate"
+        "run" | "verify" | "explain" | "ignore" | "mutants" | "gate" | "next"
     ) {
         configure(command, &mut parsed)?;
     }
@@ -558,6 +578,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, String> {
         "ignore" => ignore(&parsed),
         "gate" => gate_command(&parsed),
         "mutants" => mutants(&parsed),
+        "next" => next(&parsed),
         // For measuring the schema itself: build with a share of the mutants, and say how it went.
         "build" => build(&parsed),
         "--help" | "-h" | "help" => {
@@ -939,6 +960,107 @@ fn finish(
     } else {
         ExitCode::FAILURE
     })
+}
+
+/// `next`: the head of the queue of missed mutants, or with `--top` the first few, as the format
+/// has them. While the code under test, the operators, the unsafe code mutated, the scope and
+/// mutastic are as they were at the last `next`, it runs only the mutants that one left uncaught,
+/// since a test written since can only catch some of them; and none when it left none. Otherwise
+/// it runs every mutant, and keeps that run as `run` does, for `explain` and the next run to read.
+/// A mutant proposed for ignoring waits on a person, not a test: it's counted, not queued. Exits 1
+/// while something is queued, so a loop can run it until it's done.
+fn next(parsed: &Parsed) -> Result<ExitCode, String> {
+    let dir = parsed.positional.first().map_or(".", String::as_str);
+    let format = format(parsed);
+    let quiet = matches!(format, Format::Agent | Format::Jsonl);
+    started(quiet);
+    let project = workspace::read(dir)?;
+    let folder = project.mutastic_dir();
+    let found = engine::find_with(&project, &parsed.operators, parsed.unsafe_mode);
+    let key = crate::nextrun::key(
+        &crate::nextrun::code_under_test(&found),
+        &parsed.operators,
+        parsed.unsafe_mode.name(),
+        parsed.since.as_deref().unwrap_or("-"),
+        &crate::record::tool(),
+    );
+    let last = crate::nextrun::NextRun::read(&folder, &key);
+    let report = match &last {
+        Some(left) if left.uncaught.is_empty() => None,
+        _ => {
+            let only = last
+                .as_ref()
+                .map(|left| left.uncaught.iter().cloned().collect())
+                .unwrap_or_default();
+            Some(next_pass(parsed, &project, only)?)
+        }
+    };
+    if let Some(report) = &report {
+        let results: Vec<(&str, Status)> = report
+            .results
+            .iter()
+            .map(|r| (report.found.mutants[r.mutant].id.as_str(), r.status))
+            .collect();
+        let asked = last.map_or_else(
+            || results.iter().map(|(id, _)| id.to_string()).collect(),
+            |left| left.uncaught,
+        );
+        let uncaught = crate::nextrun::left_uncaught(&asked, results);
+        crate::nextrun::NextRun { key, uncaught }.write(&folder)?;
+    }
+    let proposed: std::collections::BTreeSet<String> =
+        ignores::proposed(std::path::Path::new(dir))?
+            .into_iter()
+            .map(|entry| entry.id)
+            .collect();
+    let asked = report::next::Asked {
+        proposed: &proposed,
+        project: &project.package,
+        dir: &project.given,
+        format,
+        style: style(parsed, std::io::stdout().is_terminal()),
+        top: parsed.top,
+    };
+    let (text, queued) = report::next::next(report.as_ref(), &asked);
+    print!("{text}");
+    Ok(if queued {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    })
+}
+
+/// The run `next` ranks: of `only`, or of every mutant when it's empty. A run of every mutant,
+/// with no `--since`, is kept as `run` keeps one: its record, and the report files `explain` reads.
+fn next_pass(
+    parsed: &Parsed,
+    project: &workspace::Project,
+    only: Vec<String>,
+) -> Result<engine::Report, String> {
+    let format = format(parsed);
+    let quiet = matches!(format, Format::Agent | Format::Jsonl);
+    let progress = Progress::new(&project.package, quiet, false, parsed.progress, parsed);
+    let whole = only.is_empty();
+    let mut options = options(parsed, only);
+    options.suggestions = !parsed.no_suggestions;
+    if let Some(since) = &parsed.since {
+        options.since = Some(crate::since::changed_since(
+            std::path::Path::new(&project.given),
+            since,
+        )?);
+    }
+    let mut report = engine::run(project, &options, &|step| progress.step(step))?;
+    progress.finished();
+    if whole && report.scope.is_none() {
+        let folder = project.mutastic_dir();
+        report.comparison = recorded(&report, &folder)?;
+        let reports: Vec<(Kind, Option<String>)> = report::files::DEFAULT
+            .iter()
+            .map(|(kind, path)| (*kind, path.map(str::to_string)))
+            .collect();
+        report.reports = report::files::write(&report, &reports, &folder)?;
+    }
+    Ok(report)
 }
 
 /// Keeps `report` as the last run in `folder`, with its comparison with the one before: only an
@@ -1840,6 +1962,46 @@ mod tests {
         assert!(help("tries").ends_with("; 3 unless set"));
         assert_eq!(parsed.unsafe_mode, UnsafeMode::Skip);
         assert!(help("unsafe").ends_with("; skip unless set"));
+        let parsed = parse("next", &[]).unwrap();
+        assert_eq!(parsed.top, 1);
+        assert!(help("top").ends_with(&format!("; 1 unless set, at most {}", report::next::MOST)));
+        assert_eq!(check(&words("next --top=25")), Ok(()));
+        for wrong in ["0", "26", "five"] {
+            assert!(
+                check(&words(&format!("next --top={wrong}"))).is_err(),
+                "{wrong}"
+            );
+        }
+    }
+
+    /// Every command the output offers for a mutant, and `next`'s for the next item, parses: the
+    /// placeholders filled in as a person or an agent fills them, and the ids as a card names
+    /// them, one or several.
+    #[test]
+    fn every_command_offered_for_a_mutant_parses() {
+        let filled = |command: String| {
+            command
+                .replace("<equivalent|unreachable|…>", "unreachable")
+                .replace("<id>", "mb2f8ae57")
+                .split(" for each of ")
+                .next()
+                .unwrap()
+                .to_string()
+        };
+        for ids in ["mb2f8ae57", "mb2f8ae57,m95f96847"] {
+            for verb in report::MUTANT_COMMANDS {
+                let command = filled(report::mutant_command(verb, ids, "fixtures/pricing"));
+                // `explain` takes one mutant.
+                if *verb == "explain" && ids.contains(',') {
+                    continue;
+                }
+                assert_eq!(check(&words(&command)), Ok(()), "{command}");
+            }
+        }
+        for dir in [".", "fixtures/pricing"] {
+            let command = report::next_command(dir);
+            assert_eq!(check(&words(&command)), Ok(()), "{command}");
+        }
     }
 
     /// The help lists every option declared, and only those.

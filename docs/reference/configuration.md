@@ -152,6 +152,7 @@ Everything is under your target directory, in `target/mutastic`:
 | `target/mutastic/coverage` | What each test reached in the last run |
 | `target/mutastic/last-run.tsv` | The last full run, for the next to compare with |
 | `target/mutastic/last-runs/` | The last full run under each other set of operators |
+| `target/mutastic/next.tsv` | What the last `mutastic next` left uncaught, and what it ran under |
 
 `cargo clean` removes it with the rest. A `CARGO_TARGET_DIR` or `build.target-dir` you've set moves
 it with your target directory.

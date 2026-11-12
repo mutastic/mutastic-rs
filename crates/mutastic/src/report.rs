@@ -14,6 +14,7 @@ use crate::suggest::{self, SuggestedTest};
 use crate::words::{self, Advice};
 
 pub mod files;
+pub mod next;
 pub mod sarif;
 
 pub const SCHEMA: &str = "mutastic.events/v1";
@@ -337,9 +338,14 @@ impl<'a> View<'a> {
 
     /// The missed mutants, a line's together, the line's most telling first.
     fn entries(&self) -> Vec<Entry<'a>> {
+        self.entries_where(|_| true)
+    }
+
+    /// The missed mutants `kept` keeps, a line's together, the line's most telling first.
+    fn entries_where(&self, kept: impl Fn(&MutantResult) -> bool) -> Vec<Entry<'a>> {
         let mut by_line: BTreeMap<(String, usize), Vec<&'a MutantResult>> = BTreeMap::new();
         for result in &self.report.results {
-            if result.status == Status::Survived {
+            if result.status == Status::Survived && kept(result) {
                 let mutant = self.mutant(result);
                 by_line
                     .entry((self.file(mutant), mutant.line))
@@ -394,27 +400,83 @@ impl<'a> View<'a> {
     }
 
     fn command(&self, verb: &str, ids: &str) -> String {
-        let dir = &self.report.project.given;
-        match verb {
-            "verify" => format!("mutastic verify {ids} {dir}"),
-            "explain" => format!("mutastic explain {ids} {dir}"),
-            "ignore" | "propose" => {
-                let how = if verb == "propose" {
-                    format!(" --propose --as=<equivalent|unreachable|…> --reason=\"{REASON}\"")
-                } else {
-                    " --reason=\"<why>\"".to_string()
-                };
-                match ids.split_once(',') {
-                    // One decision each: a card with several mutants names them all.
-                    Some(_) => format!(
-                        "mutastic ignore <id>{how} {dir} for each of {}",
-                        ids.replace(',', ", ")
-                    ),
-                    None => format!("mutastic ignore {ids}{how} {dir}"),
-                }
-            }
-            _ => format!("mutastic run --only={ids} {dir}"),
+        mutant_command(verb, ids, &self.report.project.given)
+    }
+
+    /// Where an entry stands in the order a run ranks its misses.
+    fn standing(&self, entry: &Entry) -> Standing {
+        let mutant = self.mutant(entry.main);
+        Standing {
+            prior: std::iter::once(entry.main)
+                .chain(entry.also.iter().copied())
+                .map(|r| prior(self.mutant(r)))
+                .max()
+                .unwrap_or(1),
+            covering: entry.main.covered_by.len(),
+            file: self.file(mutant),
+            line: mutant.line,
         }
+    }
+}
+
+/// The commands offered with each missed mutant, by the verb [`mutant_command`] takes: what proves
+/// a fix, what explains it, what ignores it or proposes ignoring it, and what runs it again.
+pub const MUTANT_COMMANDS: &[&str] = &["verify", "explain", "ignore", "propose", "run"];
+
+/// The command for `ids` (split by commas) in the package at `dir`, by one of
+/// [`MUTANT_COMMANDS`]: `mutastic verify mb2f8ae57 fixtures/pricing`. Every command the output
+/// offers for a mutant is written here, so a test can check each one parses.
+pub fn mutant_command(verb: &str, ids: &str, dir: &str) -> String {
+    match verb {
+        "verify" => format!("mutastic verify {ids} {dir}"),
+        "explain" => format!("mutastic explain {ids} {dir}"),
+        "ignore" | "propose" => {
+            let how = if verb == "propose" {
+                format!(" --propose --as=<equivalent|unreachable|…> --reason=\"{REASON}\"")
+            } else {
+                " --reason=\"<why>\"".to_string()
+            };
+            match ids.split_once(',') {
+                // One decision each: a card with several mutants names them all.
+                Some(_) => format!(
+                    "mutastic ignore <id>{how} {dir} for each of {}",
+                    ids.replace(',', ", ")
+                ),
+                None => format!("mutastic ignore {ids}{how} {dir}"),
+            }
+        }
+        _ => format!("mutastic run --only={ids} {dir}"),
+    }
+}
+
+/// `mutastic next fixtures/pricing`: what `next` offers to run again, for the next item.
+pub fn next_command(dir: &str) -> String {
+    format!("mutastic next {dir}")
+}
+
+/// Where an entry stands in the order a run ranks its misses, as the Java edition's `Finding.ranked`
+/// orders them and `mutastic next` queues them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Standing {
+    /// 2 for a condition or a removal, 1 for anything else: the best of the line's mutants.
+    pub prior: u8,
+    /// How many tests run the line: many run it and none checks it.
+    pub covering: usize,
+    /// Where it is in the code: its file and line.
+    pub file: String,
+    pub line: usize,
+}
+
+impl Standing {
+    /// The order: a condition or a removal first, then the line more tests run, then where it is
+    /// in the code. The Java edition puts the misses a baseline doesn't have before all of these:
+    /// that step goes first here once the Rust edition has `mutastic baseline`.
+    pub fn order(&self, other: &Standing) -> std::cmp::Ordering {
+        other
+            .prior
+            .cmp(&self.prior)
+            .then(other.covering.cmp(&self.covering))
+            .then_with(|| (&self.file, self.line).cmp(&(&other.file, other.line)))
     }
 }
 
@@ -476,20 +538,14 @@ fn prior(mutant: &Mutant) -> u8 {
 
 /// `entries`, those most worth a test first, as the Java edition's `Finding.ranked`: by the best
 /// prior among an entry's mutants, then the one more tests reach (many tests run it and none checks
-/// it), and in their order otherwise.
-fn ranked<'a>(view: &View<'a>, mut entries: Vec<Entry<'a>>) -> Vec<Entry<'a>> {
-    entries.sort_by_key(|entry| {
-        let best = std::iter::once(entry.main)
-            .chain(entry.also.iter().copied())
-            .map(|r| prior(view.mutant(r)))
-            .max()
-            .unwrap_or(1);
-        (
-            std::cmp::Reverse(best),
-            std::cmp::Reverse(entry.main.covered_by.len()),
-        )
-    });
-    entries
+/// it), then where it is in the code ([`Standing::order`]).
+fn ranked<'a>(view: &View<'a>, entries: Vec<Entry<'a>>) -> Vec<Entry<'a>> {
+    let mut standings: Vec<(Standing, Entry<'a>)> = entries
+        .into_iter()
+        .map(|entry| (view.standing(&entry), entry))
+        .collect();
+    standings.sort_by(|(a, _), (b, _)| a.order(b));
+    standings.into_iter().map(|(_, entry)| entry).collect()
 }
 
 fn covered_by(result: &MutantResult) -> String {
@@ -2306,7 +2362,7 @@ fn about(
         Vec::new(),
     );
     let last = match last {
-        None => "none yet: a full run records one".to_string(),
+        None => "none yet: `run` or `next` records one".to_string(),
         Some(run) => match run.status.as_str() {
             "Killed" => format!(
                 "caught{}",
