@@ -24,6 +24,7 @@ use crate::cfg::Cfg;
 use crate::id;
 
 pub mod callable;
+mod edge;
 mod extended;
 mod guarded;
 mod nonzero;
@@ -1482,7 +1483,8 @@ impl Finder<'_> {
         let column = self.text[self.lines[line - 1]..caret_start].chars().count() + 1;
         let ordinal = self.found.mutants.len() as u32 + 1;
         let skipped = nonzero::never_zero(node, &change)
-            .or_else(|| guarded::never_equal(node, &change, self.module, &self.facts.structs));
+            .or_else(|| guarded::never_equal(node, &change, self.module, &self.facts.structs))
+            .or_else(|| edge::same_at_edge(node, &change, self.module, &self.facts.structs));
         self.found.mutants.push(Mutant {
             ordinal,
             id,

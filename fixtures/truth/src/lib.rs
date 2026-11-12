@@ -740,6 +740,68 @@ pub fn float_below(a: f64, b: f64) -> bool {
     }
 }
 
+/// A running maximum: at the edge, `max = x` stores what `max` holds.
+pub fn kept_max(x: i32, start: i32) -> i32 {
+    let mut max: i32 = start;
+    if x > max {
+        max = x;
+    }
+    max
+}
+
+/// The smaller of two: at the edge, either is the same.
+pub fn smaller(a: i32, b: i32) -> i32 {
+    if a < b {
+        a
+    } else {
+        b
+    }
+}
+
+/// A floor on a fee: at the edge, both are 10.
+pub fn fee_floor(fee: i32) -> i32 {
+    if fee < 10 {
+        10
+    } else {
+        fee
+    }
+}
+
+/// Raised to 2: at the edge, `x = 2` stores what `x` holds.
+pub fn raised(mut x: i32) -> i32 {
+    if x < 2 {
+        x = 2;
+    }
+    x
+}
+
+/// Not one side in each branch: at the edge, `b + 1` isn't `a`.
+pub fn not_a_side(a: i32, b: i32) -> i32 {
+    if a < b {
+        a
+    } else {
+        b + 1
+    }
+}
+
+/// Stores more than the other side: at the edge, `x + 1` isn't what `max` holds.
+pub fn stored_more(x: i32, start: i32) -> i32 {
+    let mut max: i32 = start;
+    if x > max {
+        max = x + 1;
+    }
+    max
+}
+
+/// Floats: `-0.0` equals `0.0` but isn't the same value, so the boundary runs.
+pub fn smaller_float(a: f64, b: f64) -> f64 {
+    if a < b {
+        a
+    } else {
+        b
+    }
+}
+
 pub fn guarded(x: i32) -> String {
     let b = x % 4;
     let wanted = Wanted {
@@ -766,20 +828,37 @@ pub fn guarded(x: i32) -> String {
     )
 }
 
+/// The boundaries where both sides give the same value at the edge, and their near misses, at
+/// pairs that meet it: `b` is `x` for `x` from 0 to 3, and `fee_floor` gets 10 at `x` = 5.
+pub fn edges(x: i32) -> String {
+    let b = x % 4;
+    format!(
+        "{} {} {} {} {} {} {}",
+        kept_max(x, b),
+        smaller(x, b),
+        fee_floor(x + 5),
+        raised(x),
+        not_a_side(x, b),
+        stored_more(x, b),
+        smaller_float(f64::from(x), f64::from(b)),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn probe() {
         for x in -6..10 {
             println!(
-                "{x}: {} | {} | {} | {} | {} | {} | {}",
+                "{x}: {} | {} | {} | {} | {} | {} | {} | {}",
                 super::all(x),
                 super::more(x),
                 super::stronger(x),
                 super::rollback(x),
                 super::extended(x),
                 super::nonzero(x),
-                super::guarded(x)
+                super::guarded(x),
+                super::edges(x)
             );
         }
     }
