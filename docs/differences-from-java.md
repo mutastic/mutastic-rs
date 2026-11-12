@@ -117,7 +117,8 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
   `Display` and the other formatting traits, or on a write to a `Formatter`: no test can make that
   error happen.
   Also a change to a zero check on a `NonZero*` value that differs only at 0: `parts.get() == 0`
-  made never true, where `parts` is a `NonZeroU32`, which can't hold 0.
+  made never true, where `parts` is a `NonZeroU32`, which can't hold 0. And
+  `cfg!(debug_assertions)` forced true, which it always is under mutastic's build.
   Both editions skip a boundary inside a guard that its sides differ, `a < b` made `<=` inside
   `if a != b`; Rust also takes a field of a binding that can't change and the `x` of a `Some(x)`
   (`ver.major > cmp.major` inside `if ver.major != cmp.major`), where Java takes only `int` and
