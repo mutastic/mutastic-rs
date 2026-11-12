@@ -49,3 +49,43 @@ day.
    `mutastic.json`), then publish it. For `X.Y.0`, publish it only once the Java edition's
    `vX.Y.0` GitHub release has its CLI attached: until then the native `mutastic X.Y.0` finds no
    Java edition to run in a Maven or Gradle project.
+
+## Withdrawing a release
+
+A release can't be taken back from anyone who has it: an archive downloaded stays downloaded. What
+can be stopped is anyone else getting it, and the fix is the next patch, released as quickly as a
+release can be. Do both: withdraw it, then release `X.Y.Z+1` with the fault fixed or reverted.
+
+### A bad Rust release
+
+1. **Make the GitHub release a draft again** (edit it, *Set as a draft*), so nothing finds it as
+   the latest: `install.sh`, `install.ps1` and Scoop's `releases/latest/download/mutastic.json` all
+   go back to the release before it. Keep the tag: deleting it breaks whatever pinned it with
+   `MUTASTIC_NATIVE_VERSION`, and its archives are the evidence of what went out.
+2. **Move the docs site's pin back** (`docs/rust-edition.json` in the Java repository) to the
+   release before it, and rebuild the docs (`gh workflow run docs.yml --ref main -f release=true`
+   there).
+3. **cargo-binstall** builds its download address from the version in `Cargo.toml` on `main`, so
+   until the next patch's release commit moves it, `cargo binstall --git` finds no archive for a
+   draft and falls back to building from source. Release the patch.
+4. Say so in the changelog's entry for the patch: which release was withdrawn, and why.
+
+### A bad Java patch
+
+Every native `mutastic X.Y.*` runs the newest Java `X.Y.*` it can find, and looks the releases up
+at most once a day (`java.rs`, from GitHub's releases feed, which lists only published releases
+and whose pre-release tags, `v1.2.3-rc1`, aren't plain versions and are skipped). So a Java patch
+reaches everyone on that minor version within a day, and a bad one does too.
+
+1. **Make the Java GitHub release a draft again,** so it leaves the feed: a native that hasn't
+   fetched it yet won't. Maven Central can't withdraw a release, so the Gradle and Maven plugins
+   keep finding it where a build names that version; the next patch supersedes it for anyone who
+   follows the latest.
+2. **Release the next Java patch** with the fault fixed or reverted. A native that already fetched
+   the bad one keeps it in `~/.mutastic/mutastic-X.Y.Z` and runs it, as the newest kept, until a
+   newer patch arrives: the next patch is what reaches them, within a day.
+3. **Until it's out,** say in the release notes and the issue how to step back: set
+   `MUTASTIC_VERSION` to the patch before, or delete `~/.mutastic/mutastic-X.Y.Z`.
+
+Never tag a pre-release with a plain version (`v1.2.4` marked *pre-release*): the feed lists it,
+and every native would fetch it as the newest patch. Give it a suffix, `v1.2.4-rc1`.
