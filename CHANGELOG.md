@@ -5,6 +5,14 @@ newest come first.
 
 ## Unreleased
 
+### Fixes
+
+- **A workspace that excludes a package its tests run Cargo on can be mutated.** mutastic's copy
+  of the workspace is under its target directory, so Cargo, finding a package the copy's workspace
+  excludes, looked further up, reached the workspace itself and refused it: the tests failed in the
+  copy before any mutant, and the run stopped. In the copy, such a package now stands alone, as it
+  does in the workspace; a package of a workspace nested in it is left as it is.
+
 ### Changes
 
 - **Each full run is compared with the last, as in the Java edition.** A run keeps what it found in
