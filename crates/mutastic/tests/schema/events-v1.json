@@ -745,25 +745,28 @@
     "mutantExplained": {
       "type": "object",
       "description": "The last event of `mutastic explain ID --format=jsonl`, after the run's `run-started`, the mutant's `mutant-finished` and `run-finished`: what the text's About this mutant says, a field for each of its rows, in the same words.",
-      "required": ["schema", "reason", "id", "operator", "fingerprint", "idDescription", "idNote", "site"],
+      "required": ["schema", "reason", "id", "applied", "operator", "fingerprint", "idDescription", "idNote", "site"],
       "properties": {
         "schema": { "$ref": "#/$defs/schema" },
         "reason": { "const": "mutant-explained" },
         "edition": { "$ref": "#/$defs/edition" },
         "id": { "$ref": "#/$defs/mutantId" },
-        "bytecode": {
+        "applied": {
           "type": "object",
-          "description": "The change in the bytecode: the instruction before and after, what each does, and how a jump relates to the source.",
-          "required": ["original", "replacement", "meanings"],
+          "description": "The change as the engine makes it, as `mutant-finished`'s `mutation.applied` says it, with what each edition can add: in the Java edition the compiled instruction before and after, what each does and how a jump relates to the source (`level` `bytecode`); in the Rust edition the source before and after (`level` `source`).",
+          "required": ["level", "text", "original", "replacement"],
           "properties": {
-            "original": { "type": "string", "description": "The instruction the code has: `IF_ICMPLT`." },
-            "replacement": { "type": "string", "description": "The instruction the mutant has instead: `IF_ICMPLE`." },
+            "level": { "type": "string", "description": "What the engine changes: `bytecode` (the Java edition) or `source` (the Rust edition), as `mutation.applied.level` says. A later v1 may add one: accept a level you don't know." },
+            "text": { "type": "string", "description": "The change at that level, before and after, as `mutation.applied.text` has it: `IF_ICMPLT -> IF_ICMPLE`, `total >= 100 -> (total) > (100)`." },
+            "original": { "type": "string", "description": "What the engine changes, at that level: `IF_ICMPLT`, or `total >= 100`." },
+            "replacement": { "type": "string", "description": "What it becomes: `IF_ICMPLE`, or `(total) > (100)`." },
             "meanings": {
               "type": "array",
               "items": { "type": "string" },
-              "description": "What each instruction does, the original's first, for each one there are words for: `IF_ICMPLT: jump if the first int is less than the second`."
+              "description": "At the bytecode level, what each instruction does, the original's first, for each one there are words for: `IF_ICMPLT: jump if the first int is less than the second`."
             },
-            "note": { "type": "string", "description": "For a changed conditional jump, how it relates to the source: javac usually jumps past an `if`'s body when its condition is false, so the jump tests the opposite of the source. Only when the change is to a jump." }
+            "note": { "type": "string", "description": "At the bytecode level, for a changed conditional jump, how it relates to the source: javac usually jumps past an `if`'s body when its condition is false, so the jump tests the opposite of the source. Only when the change is to a jump." },
+            "description": { "type": "string", "description": "At the source level, what the replacement is, in the text's words." }
           }
         },
         "operator": {
@@ -802,13 +805,7 @@
             "description": { "type": "string", "description": "The last run's result, in words: `missed: every covering test still passed`." }
           }
         }
-      },
-      "allOf": [
-        {
-          "if": { "properties": { "edition": { "const": "java" } } },
-          "then": { "required": ["bytecode"] }
-        }
-      ]
+      }
     }
   }
 }

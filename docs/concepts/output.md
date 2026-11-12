@@ -332,6 +332,7 @@ add:
 
 `--format=jsonl` gives the same as events, for a coding agent or a script: the ones a run's
 `--format=jsonl` writes for that one mutant, then a `mutant-explained` event with what "About this
-mutant" says, a field for each row in the same words, as the Java edition writes it. Where its event
-has the `bytecode`, this one has the source's `change`, from `original` to `replacement`. `explain`
-takes `full`, the default, and `jsonl`.
+mutant" says, a field for each row in the same words, as the Java edition writes it. Its `applied`
+is the change as `mutation.applied` has it, `level` `source` and its `text`, with the `original`
+and `replacement` code; the Java edition's is at the bytecode. `explain` takes `full`, the default,
+and `jsonl`.

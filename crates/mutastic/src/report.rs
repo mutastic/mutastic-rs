@@ -2468,7 +2468,7 @@ fn about(
 
 /// `explain --format=jsonl`: the events a run's `--format=jsonl` writes for the one mutant, then a
 /// `mutant-explained` event with what `About this mutant` says, a field for each row, as the Java
-/// edition writes it. Where Java's event has the `bytecode`, this has the source's `change`.
+/// edition writes it: `applied` is at the source level here, where Java's is at the bytecode.
 pub fn explained_jsonl(report: &Report, last: Option<LastRun>) -> String {
     let view = View { report };
     let mut out = jsonl(report);
@@ -2481,7 +2481,11 @@ pub fn explained_jsonl(report: &Report, last: Option<LastRun>) -> String {
         "edition": EDITION,
         "reason": "mutant-explained",
         "id": view.id(result),
-        "change": {
+        // As `mutation.applied` has it, at the source level, with what that level adds: the
+        // Java edition's has the bytecode's.
+        "applied": {
+            "level": "source",
+            "text": format!("{} -> {}", about.from, about.to),
             "original": about.from,
             "replacement": about.to,
             "description": CHANGE_NOTE,

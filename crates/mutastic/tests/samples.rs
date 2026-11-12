@@ -1988,13 +1988,18 @@ fn explain_as_events_says_what_the_text_says() {
     }
     let explained = &all[3];
     assert_eq!(explained["fingerprint"], "b2f8ae57ca6c48cb");
+    assert_eq!(explained["applied"]["level"], "source");
+    assert_eq!(
+        explained["applied"]["text"], all[1]["mutation"]["applied"]["text"],
+        "the same text as the mutant-finished event's applied"
+    );
     for words in [
         &explained["operator"]["description"],
         &explained["idDescription"],
         &explained["idNote"],
         &explained["site"]["description"],
         &explained["lastRun"]["description"],
-        &explained["change"]["description"],
+        &explained["applied"]["description"],
     ] {
         assert!(
             text.contains(words.as_str().unwrap()),
