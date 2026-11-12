@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://docs.mutastic.io/schemas/events/v1.json",
   "title": "mutastic events, v1",
-  "description": "One event of `mutastic run --format=jsonl`: each line of its output is one JSON object, keyed on its `reason`. A run writes `run-started` first, then `mutant-finished` for each mutant, `mutant-revised` for each mutant run again once a test turned out to fail on its own, then `run-finished`. From 1.0.0, within v1, events only gain fields, event reasons and enum values: read what you know, and ignore a field or an event you don't. See https://docs.mutastic.io/reference/schemas/.",
+  "description": "One event of `mutastic run --format=jsonl`: each line of its output is one JSON object, keyed on its `reason`. A run writes `run-started` first, then `mutant-finished` for each mutant, `mutant-revised` for each mutant run again once a test turned out to fail on its own, then `run-finished`. `mutastic explain ID --format=jsonl` writes the same three for its one mutant, then `mutant-explained`. From 1.0.0, within v1, events only gain fields, event reasons and enum values: read what you know, and ignore a field or an event you don't. See https://docs.mutastic.io/reference/schemas/.",
   "type": "object",
   "required": ["schema", "edition", "reason"],
   "properties": {
@@ -10,7 +10,7 @@
     "edition": { "$ref": "#/$defs/edition" },
     "reason": {
       "type": "string",
-      "description": "What the event is: `run-started`, `mutant-finished`, `mutant-revised` or `run-finished`; from `mutastic next`, `next-item` and `next-finished`. Ignore an event whose reason you don't know: a later v1 may add one."
+      "description": "What the event is: `run-started`, `mutant-finished`, `mutant-revised` or `run-finished`; from `mutastic next`, `next-item` and `next-finished`; from `mutastic explain`, `mutant-explained` after the run's. Ignore an event whose reason you don't know: a later v1 may add one."
     }
   },
   "allOf": [
@@ -37,6 +37,10 @@
     {
       "if": { "properties": { "reason": { "const": "next-finished" } }, "required": ["reason"] },
       "then": { "$ref": "#/$defs/nextFinished" }
+    },
+    {
+      "if": { "properties": { "reason": { "const": "mutant-explained" } }, "required": ["reason"] },
+      "then": { "$ref": "#/$defs/mutantExplained" }
     }
   ],
   "$defs": {
@@ -737,6 +741,74 @@
         "legacy": { "type": "integer", "minimum": 0, "description": "How many of the queued items a committed baseline already has." },
         "waiting": { "type": "integer", "minimum": 0, "description": "How many missed mutants are left out of the queue because they are proposed for ignoring (`ignore --propose`), waiting on a person to accept them." }
       }
+    },
+    "mutantExplained": {
+      "type": "object",
+      "description": "The last event of `mutastic explain ID --format=jsonl`, after the run's `run-started`, the mutant's `mutant-finished` and `run-finished`: what the text's About this mutant says, a field for each of its rows, in the same words.",
+      "required": ["schema", "reason", "id", "operator", "fingerprint", "idDescription", "idNote", "site"],
+      "properties": {
+        "schema": { "$ref": "#/$defs/schema" },
+        "reason": { "const": "mutant-explained" },
+        "edition": { "$ref": "#/$defs/edition" },
+        "id": { "$ref": "#/$defs/mutantId" },
+        "bytecode": {
+          "type": "object",
+          "description": "The change in the bytecode: the instruction before and after, what each does, and how a jump relates to the source.",
+          "required": ["original", "replacement", "meanings"],
+          "properties": {
+            "original": { "type": "string", "description": "The instruction the code has: `IF_ICMPLT`." },
+            "replacement": { "type": "string", "description": "The instruction the mutant has instead: `IF_ICMPLE`." },
+            "meanings": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "What each instruction does, the original's first, for each one there are words for: `IF_ICMPLT: jump if the first int is less than the second`."
+            },
+            "note": { "type": "string", "description": "For a changed conditional jump, how it relates to the source: javac usually jumps past an `if`'s body when its condition is false, so the jump tests the opposite of the source. Only when the change is to a jump." }
+          }
+        },
+        "operator": {
+          "type": "object",
+          "description": "The operator that made it, and what it does.",
+          "required": ["id", "description"],
+          "properties": {
+            "id": { "type": "string", "description": "The operator's id: `mutastic/boundary`." },
+            "description": { "type": "string", "description": "What it changes, and what tests that miss it don't check." }
+          }
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$",
+          "description": "The mutant's fingerprint, from its class, method, site and change: the id is `m` and its first eight digits."
+        },
+        "idDescription": { "type": "string", "description": "How the id is made from the fingerprint, and the fingerprint from the mutant." },
+        "idNote": { "type": "string", "description": "Why the id stays the same when code above it moves." },
+        "site": {
+          "type": "object",
+          "description": "Which site of its method it is.",
+          "required": ["method", "description"],
+          "properties": {
+            "ordinal": { "type": "integer", "minimum": 1, "description": "Which site, counting from 1, as `description` says they're counted. Not for a change to the class as a whole." },
+            "method": { "type": "string", "description": "The method, with its JVM descriptor: `discount(I)I`." },
+            "description": { "type": "string", "description": "Which site it is and how the sites are counted, in words." }
+          }
+        },
+        "lastRun": {
+          "type": "object",
+          "description": "How the last full run (`run` or `next`) went for it. Only when one has been recorded.",
+          "required": ["status", "description"],
+          "properties": {
+            "status": { "$ref": "#/$defs/status" },
+            "caughtBy": { "type": "string", "description": "The test that caught it, when one did." },
+            "description": { "type": "string", "description": "The last run's result, in words: `missed: every covering test still passed`." }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "edition": { "const": "java" } } },
+          "then": { "required": ["bytecode"] }
+        }
+      ]
     }
   }
 }

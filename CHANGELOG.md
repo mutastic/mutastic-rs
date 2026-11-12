@@ -24,6 +24,10 @@ newest come first.
 
 ### Additions
 
+- **`explain --format=jsonl`**, as in the Java edition: the run's events for the one mutant, then
+  a `mutant-explained` event with what "About this mutant" says, a field for each row: the
+  `change` (where Java has the `bytecode`), the `operator`, the `fingerprint` and how the id is
+  made, the `site` and the `lastRun`. `explain` takes `full` and `jsonl`, and refuses another.
 - **`extends:` in `mutastic.yaml`, as in the Java edition.** A package's file adds another's rules
   and plugins when it says `extends: ../mutastic.yaml`; its own `operators:`, if any, replace the
   other's. A file names one other, which may extend another in turn. See

@@ -55,6 +55,18 @@ impl Format {
             _ => None,
         }
     }
+
+    /// The name `--format` takes for it: `jsonl`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Format::Full => "full",
+            Format::Brief => "brief",
+            Format::Concise => "concise",
+            Format::Grouped => "grouped",
+            Format::Agent => "agent",
+            Format::Jsonl => "jsonl",
+        }
+    }
 }
 
 /// ANSI colour, only where it's wanted: the Java edition's colours, code for code. Every colour has
@@ -2336,6 +2348,80 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
     );
 }
 
+/// What `About this mutant` says, a row at a time, in the words both the text and the
+/// `mutant-explained` event give.
+struct About {
+    /// The code the change replaces, and what's put in its place.
+    from: String,
+    to: String,
+    operator: String,
+    operator_description: String,
+    fingerprint: String,
+    id: String,
+    id_note: &'static str,
+    function: String,
+    site: String,
+    last: Option<LastRun>,
+    last_words: String,
+}
+
+impl About {
+    fn of(view: &View, result: &MutantResult, last: Option<LastRun>) -> About {
+        let mutant = view.mutant(result);
+        let function = &view.report.found.functions[mutant.function];
+        let text = view.text(mutant);
+        let from = sites_plain(&text[mutant.site.clone()]);
+        let operator_description = crate::callrules::find(mutant.operator).map_or_else(
+            || view.advice(result).change,
+            |rule| rule.explanation.clone(),
+        );
+        About {
+            site: format!(
+                "`{from}` in {}, line {}, column {}",
+                function.path, mutant.line, mutant.column
+            ),
+            from,
+            to: mutant.replacement.clone(),
+            operator: mutant.operator.to_string(),
+            operator_description,
+            fingerprint: mutant.fingerprint.clone(),
+            id: format!(
+                "{}: `m` and the first 8 hex digits of its fingerprint, {}, a SHA-256 of the crate, function, operator, site and change",
+                mutant.id, mutant.fingerprint
+            ),
+            id_note: "no line number goes in, so the id stays the same when code above it moves",
+            function: function.path.clone(),
+            last_words: last_words(last.as_ref()),
+            last,
+        }
+    }
+}
+
+/// What the last full run said of the mutant, in words.
+fn last_words(last: Option<&LastRun>) -> String {
+    match last {
+        None => "none yet: `run` or `next` records one".to_string(),
+        Some(run) => match run.status.as_str() {
+            "Killed" => format!(
+                "caught{}",
+                run.caught_by
+                    .as_ref()
+                    .map(|t| format!(" by {t}"))
+                    .unwrap_or_default()
+            ),
+            "Survived" => "missed: every covering test still passed".into(),
+            "Timeout" => "caught: its tests ran out of time".into(),
+            "NoCoverage" => "not covered: no test reached its line".into(),
+            "RuntimeError" => "crashed where a crash proves nothing".into(),
+            _ => "skipped".into(),
+        },
+    }
+}
+
+/// What the change replaces, in the text's words.
+const CHANGE_NOTE: &str =
+    "the code the switch puts in place of the original when this mutant is live";
+
 /// `About this mutant`: the change, the operator, the id, the site, and the last full run.
 fn about(
     out: &mut String,
@@ -2344,8 +2430,7 @@ fn about(
     last: Option<LastRun>,
     style: Style,
 ) {
-    let mutant = view.mutant(result);
-    let function = &view.report.found.functions[mutant.function];
+    let about = About::of(view, result, last);
     let title = " About this mutant ";
     let _ = writeln!(
         out,
@@ -2353,7 +2438,6 @@ fn about(
         style.bold(title),
         style.dim(&"─".repeat(66 - title.len()))
     );
-    let text = view.text(mutant);
     let row = |out: &mut String, label: &str, first: String, rest: Vec<String>| {
         let _ = writeln!(
             out,
@@ -2368,64 +2452,56 @@ fn about(
     row(
         out,
         "change",
-        style.bold(&format!(
-            "{} → {}",
-            sites_plain(&text[mutant.site.clone()]),
-            mutant.replacement
-        )),
-        vec!["the code the switch puts in place of the original when this mutant is live".into()],
+        style.bold(&format!("{} → {}", about.from, about.to)),
+        vec![CHANGE_NOTE.into()],
     );
     row(
         out,
         "operator",
-        format!(
-            "{}: {}",
-            mutant.operator,
-            crate::callrules::find(mutant.operator).map_or_else(
-                || view.advice(result).change,
-                |rule| rule.explanation.clone()
-            )
-        ),
+        format!("{}: {}", about.operator, about.operator_description),
         Vec::new(),
     );
-    row(
-        out,
-        "id",
-        format!(
-            "{}: `m` and the first 8 hex digits of its fingerprint, {}, a SHA-256 of the crate, function, operator, site and change",
-            mutant.id, mutant.fingerprint
-        ),
-        vec!["no line number goes in, so the id stays the same when code above it moves".into()],
-    );
-    row(
-        out,
-        "site",
-        format!(
-            "`{}` in {}, line {}, column {}",
-            sites_plain(&text[mutant.site.clone()]),
-            function.path,
-            mutant.line,
-            mutant.column
-        ),
-        Vec::new(),
-    );
-    let last = match last {
-        None => "none yet: `run` or `next` records one".to_string(),
-        Some(run) => match run.status.as_str() {
-            "Killed" => format!(
-                "caught{}",
-                run.caught_by
-                    .map(|t| format!(" by {t}"))
-                    .unwrap_or_default()
-            ),
-            "Survived" => "missed: every covering test still passed".into(),
-            "Timeout" => "caught: its tests ran out of time".into(),
-            "NoCoverage" => "not covered: no test reached its line".into(),
-            "RuntimeError" => "crashed where a crash proves nothing".into(),
-            _ => "skipped".into(),
-        },
+    row(out, "id", about.id.clone(), vec![about.id_note.into()]);
+    row(out, "site", about.site.clone(), Vec::new());
+    row(out, "last run", about.last_words.clone(), Vec::new());
+}
+
+/// `explain --format=jsonl`: the events a run's `--format=jsonl` writes for the one mutant, then a
+/// `mutant-explained` event with what `About this mutant` says, a field for each row, as the Java
+/// edition writes it. Where Java's event has the `bytecode`, this has the source's `change`.
+pub fn explained_jsonl(report: &Report, last: Option<LastRun>) -> String {
+    let view = View { report };
+    let mut out = jsonl(report);
+    let Some(result) = report.results.first() else {
+        return out;
     };
-    row(out, "last run", last, Vec::new());
+    let about = About::of(&view, result, last);
+    let mut event = json!({
+        "schema": SCHEMA,
+        "edition": EDITION,
+        "reason": "mutant-explained",
+        "id": view.id(result),
+        "change": {
+            "original": about.from,
+            "replacement": about.to,
+            "description": CHANGE_NOTE,
+        },
+        "operator": { "id": about.operator, "description": about.operator_description },
+        "fingerprint": about.fingerprint,
+        "idDescription": about.id,
+        "idNote": about.id_note,
+        "site": { "method": about.function, "description": about.site },
+    });
+    if let Some(last) = &about.last {
+        let mut run = json!({ "status": last.status, "description": about.last_words });
+        if let Some(caught_by) = &last.caught_by {
+            run["caughtBy"] = json!(caught_by);
+        }
+        event["lastRun"] = run;
+    }
+    out.push_str(&event.to_string());
+    out.push('\n');
+    out
 }
 
 #[cfg(test)]
