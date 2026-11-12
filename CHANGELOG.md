@@ -7,6 +7,10 @@ newest come first.
 
 ### Card changes
 
+- **`explain` says `run` or `next` records a last run.** With none kept, its `last run` row said a
+  full run records one; `next`'s first pass now does too, and the row says so in the Java edition's
+  words.
+
 - **Never change production code to make a mutant go away.** The agent format's `rules:` line now
   says `add or change tests only; never change production code to make a mutant go away: tell the
   person`, and the gate's open and block messages say the same, as in the Java edition. Production
@@ -14,6 +18,18 @@ newest come first.
   hides what the mutant found, and was the one cheat mutastic's own evals saw.
 
 ### Additions
+
+- **`mutastic next`: the misses one at a time.** A long list of missed mutants goes unread, so
+  `next` hands over the one most worth a test first: its card, why it's first, the test to write
+  and the `done when` that proves it, as in the Java edition. The queue is in the run's order (a
+  condition or a removal first, then the line more tests run, then where it is), a line's mutants
+  are one item, and `--top=N` shows the first few, at most one a function and two a file. While
+  the code under test is the same, `next` runs only what the last one left uncaught, so a new test
+  in `mod tests` doesn't run everything again; a mutant proposed for ignoring waits on a person,
+  not in the queue. `--format=agent` gives exactly one task; `--format=jsonl` writes `next-item`
+  and `next-finished`. It exits 1 while something is queued and 0 when nothing missed is left.
+  There's no baseline yet, so no new misses first. See
+  [Working through misses](docs/concepts/next.md).
 
 - **The output options the Java edition has.** `--format=brief` (each card's head: the code with
   the change marked and what the run saw) and `--format=grouped` (the missed mutants of each file

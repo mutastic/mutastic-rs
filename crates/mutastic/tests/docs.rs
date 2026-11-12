@@ -99,6 +99,7 @@ const BUILT: &[&str] = &[
     "platforms",
     "configured",
     "suggestions",
+    "ranking",
 ];
 
 fn root() -> PathBuf {
@@ -139,6 +140,7 @@ fn forget_last_runs(fixture: &Path) {
     let kept = fixture.join("target/mutastic");
     std::fs::remove_file(kept.join("last-run.tsv")).ok();
     std::fs::remove_dir_all(kept.join("last-runs")).ok();
+    std::fs::remove_file(kept.join(mutastic::nextrun::FILE)).ok();
 }
 
 /// Copies a tree, writing only what changed, so the copy's build stays warm.
@@ -781,6 +783,31 @@ fn suggested(work: &Path, shown: &mut BTreeMap<String, String>) {
     shown.insert("concepts/suggested-test".into(), card);
 }
 
+/// `next` on the ranking fixture, from a first pass: the head of the queue for a person, the same
+/// task for an agent, and the events with `--top`, which spreads them over the code.
+fn queue(work: &Path, shown: &mut BTreeMap<String, String>) {
+    let fixture = work.join("fixtures/ranking");
+    let first = |args: &[&str]| {
+        forget_last_runs(&fixture);
+        let next = mutastic(work, &[&["next", "fixtures/ranking"], args].concat());
+        assert_eq!(next.code, 1, "{}{}", next.stdout, next.stderr);
+        next.stdout
+    };
+    let head = first(&[]);
+    shown.insert("concepts/next".into(), head.clone());
+    shown.insert("commands/next".into(), head);
+    shown.insert("concepts/next-agent".into(), first(&["--format=agent"]));
+    let top = first(&["--top=3", "--format=jsonl"]);
+    for event in events(&top) {
+        let errors: Vec<String> = common::schema()
+            .iter_errors(&event)
+            .map(|e| e.to_string())
+            .collect();
+        assert!(errors.is_empty(), "{event}\n{}", errors.join("\n"));
+    }
+    shown.insert("concepts/next-jsonl".into(), top);
+}
+
 /// Runs the pages show as a Unix build makes them: code and tests under `cfg(unix)` are in it, and
 /// a Windows build leaves them out, so there they're run but the pages' copies are kept.
 const UNIX_BUILDS: &[&str] = &[
@@ -799,6 +826,7 @@ fn the_docs_show_what_mutastic_prints() {
     operators(&work, &mut shown);
     troubleshooting(&work, &mut shown);
     suggested(&work, &mut shown);
+    queue(&work, &mut shown);
 
     let output = docs().join("output");
     let mut stale = Vec::new();

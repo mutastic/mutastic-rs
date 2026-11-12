@@ -121,7 +121,8 @@ mutastic run fixtures/pricing
 
 On your own crate, run `cargo mutastic run` inside it, or `mutastic run path/to/crate`. Each card
 ends with the commands for its mutant: `done when` passes once a test catches it, and `reproduce`
-runs it alone. `mutastic mutants` lists the mutants without building or running anything.
+runs it alone. `mutastic next` hands the missed mutants over one at a time, the one most worth a
+test first. `mutastic mutants` lists the mutants without building or running anything.
 
 [Getting started](docs/getting-started.md) walks through the card, the test, and the proof.
 
@@ -131,8 +132,8 @@ runs it alone. `mutastic mutants` lists the mutants without building or running 
 [docs.mutastic.io](https://docs.mutastic.io):
 
 - [How a run works](docs/concepts/how-a-run-works.md), [results and the score](docs/concepts/results.md),
-  [unsafe code](docs/concepts/unsafe.md), [profiles](docs/concepts/profiles.md) and
-  [mutant ids](docs/concepts/ids.md);
+  [unsafe code](docs/concepts/unsafe.md), [profiles](docs/concepts/profiles.md),
+  [mutant ids](docs/concepts/ids.md) and [working through misses](docs/concepts/next.md);
 - [operators](docs/operators.md), with a page and a real card for each family;
 - [commands](docs/reference/commands.md), [report files](docs/reference/reports.md), [events](docs/reference/events.md) and
   [configuration](docs/reference/configuration.md);
