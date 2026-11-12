@@ -531,7 +531,7 @@ fn operators(value: &str) -> Result<Vec<&'static str>, String> {
     crate::config::resolve(&entries, "--operators")
 }
 
-/// Reads `mutastic.yaml` in the package's directory, if there is one: its rules, its rules files'
+/// Reads the package's nearest `mutastic.yaml`, if there is one: its rules, its rules files'
 /// operators, and the operators it chooses, unless `--operators` chose.
 fn configure(command: &str, parsed: &mut Parsed) -> Result<(), String> {
     let at = match command {
@@ -540,11 +540,14 @@ fn configure(command: &str, parsed: &mut Parsed) -> Result<(), String> {
         "verify" => verify_ids(&parsed.positional).1,
         _ => 1,
     };
-    let dir = std::path::PathBuf::from(parsed.positional.get(at).map_or(".", String::as_str));
-    let config = crate::config::Configuration::read(&dir)?;
+    let given = parsed.positional.get(at).map_or(".", String::as_str);
+    let config = match configured_dir(given) {
+        Some(dir) => crate::config::Configuration::read(&dir)?,
+        None => crate::config::Configuration::default(),
+    };
     let mut rules = Vec::new();
     for plugin in &config.plugins {
-        rules.extend(crate::callrules::read(&dir.join(plugin))?);
+        rules.extend(crate::callrules::read(plugin)?);
     }
     crate::callrules::load(rules);
     parsed.rules = config.rules;
@@ -556,6 +559,20 @@ fn configure(command: &str, parsed: &mut Parsed) -> Result<(), String> {
         None => {}
     }
     Ok(())
+}
+
+/// The directory of the package's nearest `mutastic.yaml`, as a path from `given`, the directory
+/// the run is on, so what it names reads as it did there. The package is the one `given` names,
+/// which may be a workspace's top with one package below it; where `given` isn't a package, the
+/// command says so itself, and the search starts at `given`.
+fn configured_dir(given: &str) -> Option<std::path::PathBuf> {
+    let run = std::fs::canonicalize(given).ok()?;
+    let package = workspace::read(given)
+        .map(|project| project.workspace.join(&project.package_dir))
+        .unwrap_or_else(|_| run.clone());
+    let found = crate::config::nearest(&package, &run)?;
+    let from_run = crate::config::relative(&run, &found);
+    Some(std::path::Path::new(given).join(from_run))
 }
 
 fn dispatch(args: &[String]) -> Result<ExitCode, String> {

@@ -24,6 +24,11 @@ newest come first.
 
 ### Additions
 
+- **`extends:` in `mutastic.yaml`, as in the Java edition.** A package's file adds another's rules
+  and plugins when it says `extends: ../mutastic.yaml`; its own `operators:`, if any, replace the
+  other's. A file names one other, which may extend another in turn. See
+  [In a workspace](docs/reference/configuration.md#in-a-workspace).
+
 - **`mutastic next`: the misses one at a time.** A long list of missed mutants goes unread, so
   `next` hands over the one most worth a test first: its card, why it's first, the test to write
   and the `done when` that proves it, as in the Java edition. The queue is in the run's order (a
@@ -60,6 +65,12 @@ newest come first.
 
 ### Scoring changes
 
+- **A package uses its nearest `mutastic.yaml`, however it's run,** as in the Java edition. A run
+  on a workspace's top read only the top's file, while `mutastic run shop` read only
+  `shop/mutastic.yaml`, so the same package could get two scores. Now each reads
+  `shop/mutastic.yaml` for `shop` when there is one, and the nearest above it, up to the git
+  repository's top, when there isn't. A package without a file of its own, in a repository with one
+  at its top, now has the top's rules applied.
 - **A zero check on an unsigned value skips what differs only below 0.** `n == 0` made `n <= 0`, or
   `n > 0` made `n != 0`, can't be told apart where `n` can't be negative, and is skipped as
   equivalent where the source proves it: a type written `u8` to `u128` or `usize` (parameter,

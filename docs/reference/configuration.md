@@ -5,13 +5,13 @@ writes output. mutastic leaves some out on its own, and a project says which oth
 with a reason, so the score is about the code you mean to test, and a person reviewing the skip can
 see why it's there.
 
-A run is set by its options (see [`mutastic run`](commands.md#run)), by `mutastic.yaml` in the package's directory,
-and by a few environment variables. Nothing goes in `Cargo.toml`.
+A run is set by its options (see [`mutastic run`](commands.md#run)), by the package's nearest
+`mutastic.yaml`, and by a few environment variables. Nothing goes in `Cargo.toml`.
 
 ## `mutastic.yaml`
 
-The project's own say over which mutants run, in the package's directory, in the Java edition's
-format: the same keys, read as strictly, with Rust paths where the Java edition names classes. A
+The project's own say over which mutants run, in the package's directory or above it, in the Java
+edition's format: the same keys, read as strictly, with Rust paths where the Java edition names classes. A
 line mutastic doesn't understand is an error that names it, never a guess.
 
 <!-- from: fixtures/configured/mutastic.yaml -->
@@ -28,8 +28,9 @@ operators:
 
 | Key | What it does |
 |---|---|
+| `extends:` | Another `mutastic.yaml` this one adds to, by its path from this file's directory: see [In a workspace](#in-a-workspace) |
 | `rules:` | Code to skip, each `- skip: <pattern>` with a `reason:` under it. Its mutants are skipped as ``user: <reason> (rule `skip: <pattern>`)``, out of the score |
-| `plugins:` | Rules files of call operators, by their path from the package's directory |
+| `plugins:` | Rules files of call operators, by their path from the directory of the file that names them |
 | `operators:` | Which operators run, as `--operators` chooses, which replaces this for one run: a set (`defaults`, `stronger`, `extended`, `all`), a namespace (`stream`) or an operator's id, or one of those after `-` to leave it out |
 | `filters:` | A compiled plugin's filters: the Rust edition has no compiled plugins yet, so naming one is an error |
 
@@ -40,6 +41,31 @@ its path, or by the item that holds it (`shop::Money`), as a Java rule covers a 
 class. A `mutate:` rule takes back an arid skip in the code it covers, as in the Java edition: a
 `println!` or `log::warn!` that's a contract runs as a mutant there. It never takes back any other
 skip.
+
+### In a workspace
+
+Each package uses the nearest `mutastic.yaml` at or above its own directory, however it's run:
+`mutastic run` on a workspace's top that runs `shop`, and `mutastic run shop`, both read
+`shop/mutastic.yaml` for `shop` when there is one, and the top's when there isn't. The search stops
+at the top of the git repository, or outside one at the directory the run is on, so a stray file
+above the project is never read.
+
+One file applies, never a cascade: a package's file replaces the top's for that package. To add to
+the top's instead, say so with `extends:`, a path from the file's own directory:
+
+```yaml
+# shop/mutastic.yaml
+extends: ../mutastic.yaml
+rules:
+  - skip: shop::legacy::**
+    reason: on its way out, replaced in 2.0
+```
+
+The package's rules come first, then the top's; the plugins of both apply, each rules file found
+from the file that names it; and the package's `operators:`, if it has any, replace the top's. A
+file names one other, which may extend another in turn.
+
+Ignores are the run's: `.mutastic/` in the directory the run is on.
 
 ## Rules files
 
