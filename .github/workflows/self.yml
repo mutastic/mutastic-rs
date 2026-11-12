@@ -23,7 +23,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   # At 16 the slowest share (sites.rs and report.rs) ran past five hours; at 24 each is
-  # about a third shorter, well inside the limit below.
+  # about a third shorter, well inside the limit below, run 14 at a time.
   SHARES: 24
 
 jobs:
@@ -48,6 +48,9 @@ jobs:
     timeout-minutes: 300
     strategy:
       fail-fast: false
+      # The account runs 20 jobs at once: 14 shares leave room for pull requests' checks, which
+      # would otherwise wait hours behind the run.
+      max-parallel: 14
       matrix:
         # As many as SHARES says.
         share: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
