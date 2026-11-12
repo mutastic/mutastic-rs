@@ -31,6 +31,9 @@ jobs:
         with:
           toolchain: nightly
       - run: cargo install cargo-fuzz --version 0.13.2 --locked
+      # libFuzzer writes what it finds to the first directory, and stops if it isn't there: the
+      # corpus isn't kept between runs, so each starts from the seeds.
+      - run: mkdir -p fuzz/corpus/${{ matrix.target }}
       - name: Fuzz ${{ matrix.target }}
         # A rule's id is leaked on purpose, to live as long as the run: no leak check.
         env:
