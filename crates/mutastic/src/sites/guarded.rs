@@ -127,6 +127,7 @@ pub(super) fn never_equal(
         function: &function,
         module,
         structs,
+        allow_mut: false,
     };
     let literals = [&lhs, &rhs]
         .into_iter()
@@ -143,7 +144,7 @@ pub(super) fn never_equal(
     })
 }
 
-fn unparenthesized(expr: ast::Expr) -> ast::Expr {
+pub(super) fn unparenthesized(expr: ast::Expr) -> ast::Expr {
     match &expr {
         ast::Expr::ParenExpr(paren) => match paren.expr() {
             Some(inner) => unparenthesized(inner),
@@ -153,7 +154,7 @@ fn unparenthesized(expr: ast::Expr) -> ast::Expr {
     }
 }
 
-fn is_integer(expr: &ast::Expr) -> bool {
+pub(super) fn is_integer(expr: &ast::Expr) -> bool {
     matches!(expr, ast::Expr::Literal(_)) && integer_literal(&plain(expr.syntax())).is_some()
 }
 
@@ -291,10 +292,12 @@ fn implied(condition: &ast::Expr, holding: bool, sides: &[String; 2]) -> Option<
 }
 
 /// What the source says about the values a function reads.
-struct Proof<'a> {
-    function: &'a ast::Fn,
-    module: &'a str,
-    structs: &'a Structs,
+pub(super) struct Proof<'a> {
+    pub(super) function: &'a ast::Fn,
+    pub(super) module: &'a str,
+    pub(super) structs: &'a Structs,
+    /// Whether a `mut` binding counts: where only its type matters, not that it can't change.
+    pub(super) allow_mut: bool,
 }
 
 /// A type as written, where it's written, and the module that is.
@@ -306,7 +309,7 @@ struct Typed {
 
 impl Proof<'_> {
     /// Whether `value` is a whole number that can't change while the function runs.
-    fn whole_number(&self, value: &ast::Expr) -> bool {
+    pub(super) fn whole_number(&self, value: &ast::Expr) -> bool {
         self.typed(value, 4)
             .and_then(|typed| {
                 let name = single_name(&shared(typed.ty)?)?;
@@ -380,7 +383,7 @@ impl Proof<'_> {
         let pat = bindings.next()?;
         if bindings.next().is_some()
             || pat.pat().is_some()
-            || pat.mut_token().is_some()
+            || (pat.mut_token().is_some() && !self.allow_mut)
             || pat.ref_token().is_some()
         {
             return None;

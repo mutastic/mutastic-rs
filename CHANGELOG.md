@@ -13,6 +13,15 @@ newest come first.
   alert follows its mutant; never a fix. Paths are from the git repository's root. GitHub shows it
   as alerts on a pull request's lines. See [Report files](docs/reference/reports.md#code-scanning).
 
+### Scoring changes
+
+- **A boundary where both sides give the same value at the edge is skipped as equivalent,** as in
+  the Java edition: `if x > max { max = x }`, `if a < b { a } else { b }`,
+  `if fee < 10 { 10 } else { fee }` and `if x < 2 { x = 2 }`, on whole numbers the source declares.
+  Those mutants, which no test could catch, no longer count as missed, so a score can go up: a
+  change to scores, as a minor release may make. See
+  [Conditions](docs/operators/conditions.md#boundary).
+
 ### Fixes
 
 - **A workspace that excludes a package its tests run Cargo on can be mutated.** mutastic's copy

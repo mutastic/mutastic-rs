@@ -86,6 +86,14 @@ fn delivery_is_free_from_exactly_50() {
 }
 ```
 
+Where both sides give the same value at the edge, the boundary changes nothing, and is skipped as
+equivalent (`equivalent: both sides give the same value at the edge`), as in the Java edition:
+`if x > max { max = x }` stores at the edge what `max` already holds, `if a < b { a } else { b }`
+gives the same value either way, and so does `if fee < 10 { 10 } else { fee }`, and
+`if x < 2 { x = 2 }`. The comparison has to be the `if`'s whole condition and its branch just that
+one assignment, or one side in each branch; each side a whole number of a type the source declares,
+or a literal. A float runs: `-0.0` equals `0.0` but isn't the same value.
+
 Inside code that runs only when a comparison's two sides differ, they can't be equal, so the change
 of its edge is skipped as equivalent: `major > than_major` inside `if major != than_major`, the
 `else` of an `if a == b`, after an `if a == b` that returns, or to the right of `a != b &&`. So are
