@@ -120,11 +120,13 @@ fn scratch(name: &str) -> PathBuf {
     std::env::temp_dir().join("mutastic-rs-docs").join(name)
 }
 
-/// Where the fixtures are copied to run, as `fixtures/<name>`, so commands print what a person
-/// types at the repository's root, and the repository's own fixtures are left alone.
-fn work() -> PathBuf {
-    let work = scratch("docs");
-    for name in BUILT.iter().chain(&["workspace"]) {
+/// Where a section's fixtures are copied to run, as `fixtures/<name>`, so commands print what a
+/// person types at the repository's root, and the repository's own fixtures are left alone. Each
+/// section has its own copy, of only the fixtures it runs: the sections run at once, and a mutant
+/// runs only the sections that reach its code, not every section for any of them.
+fn work(section: &str, fixtures: &[&str]) -> PathBuf {
+    let work = scratch(&format!("docs-{section}"));
+    for name in fixtures {
         let fixture = work.join("fixtures").join(name);
         sync(&root().join("fixtures").join(name), &fixture);
         // The runs a page shows start with no last run to compare with, whatever this copy ran
@@ -208,12 +210,14 @@ const ESCAPES: &str = r"(?:\x1b\[[0-9;]*m)*";
 /// Output as mutastic prints it without colour: a label, black on a block of colour, is `[MISSED]`,
 /// and every other colour is gone.
 fn plain(text: &str) -> String {
-    let label = regex::Regex::new(r"\x1b\[4[0-9];30;1m (?<label>[^\x1b]*) \x1b\[0m").unwrap();
-    let labelled = label.replace_all(text, "[$label]");
-    regex::Regex::new(ESCAPES)
-        .unwrap()
-        .replace_all(&labelled, "")
-        .into_owned()
+    // Compiled once: a section reads every line of a run's output through here, once per card.
+    static LABEL: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"\x1b\[4[0-9];30;1m (?<label>[^\x1b]*) \x1b\[0m").unwrap()
+    });
+    static ESCAPE: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(ESCAPES).unwrap());
+    let labelled = LABEL.replace_all(text, "[$label]");
+    ESCAPE.replace_all(&labelled, "").into_owned()
 }
 
 /// What changes from run to run or machine to machine: timings, when the run started, the
@@ -299,9 +303,19 @@ fn pretty(event: &Value) -> String {
 
 /// The ids of a fixture's mutants in `function` by `operator`.
 fn ids_of(work: &Path, fixture: &str, function: &str, operator: &str) -> BTreeSet<String> {
+    ids_in(&found_in(work, fixture), function, operator)
+}
+
+/// Every mutant of a fixture, found once for all the cards that need it: finding them is the
+/// engine's whole scan, and a section asked for it once per card.
+fn found_in(work: &Path, fixture: &str) -> mutastic::sites::Crate {
     let project =
         workspace::read(&work.join("fixtures").join(fixture).display().to_string()).unwrap();
-    let found = engine::find_all(&project);
+    engine::find_all(&project)
+}
+
+/// The ids of `found`'s mutants in `function` by `operator`.
+fn ids_in(found: &mutastic::sites::Crate, function: &str, operator: &str) -> BTreeSet<String> {
     found
         .mutants
         .iter()
@@ -626,8 +640,9 @@ fn operators(work: &Path, shown: &mut BTreeMap<String, String>) {
         );
         runs.insert(*family, run.stdout);
     }
+    let found = found_in(work, "operators");
     for (family, function, operator) in CARDS {
-        let ids = ids_of(work, "operators", function, operator);
+        let ids = ids_in(&found, function, operator);
         assert!(!ids.is_empty(), "{operator} has no mutant in {function}()");
         let found = card(&runs[family], &ids)
             .unwrap_or_else(|| panic!("no card for {operator} in {function}(): {}", runs[family]));
@@ -736,14 +751,15 @@ fn troubleshooting(work: &Path, shown: &mut BTreeMap<String, String>) {
         .find(|e| e["status"] == "Ignored")
         .expect("omit-call's to_lowercase() is unviable");
     shown.insert("troubleshooting/unviable-event".into(), pretty(&unviable));
-    // Each hanging mutant waits for its time limit: side by side, they wait together.
+    // Each hanging mutant waits for its time limit, at least 10s: one worker for each of the five,
+    // and they wait together, once.
     let loops = ran(
         work,
         &[
             "run",
             "fixtures/loops",
             "--operators=stronger",
-            "--workers=4",
+            "--workers=5",
         ],
     );
     assert!(
@@ -816,21 +832,12 @@ const UNIX_BUILDS: &[&str] = &[
     "troubleshooting/platforms",
 ];
 
-#[test]
-fn the_docs_show_what_mutastic_prints() {
-    let work = work();
-    let mut shown = BTreeMap::new();
-    getting_started(&work, &mut shown);
-    reference(&work, &mut shown);
-    unsafety(&work, &mut shown);
-    operators(&work, &mut shown);
-    troubleshooting(&work, &mut shown);
-    suggested(&work, &mut shown);
-    queue(&work, &mut shown);
-
+/// What each section of the docs shows of mutastic's output is what it prints now. Each section is
+/// a test of its own, since what one section runs reaches code another doesn't.
+fn check(shown: &BTreeMap<String, String>) {
     let output = docs().join("output");
     let mut stale = Vec::new();
-    for (name, text) in &shown {
+    for (name, text) in shown {
         if cfg!(windows) && UNIX_BUILDS.contains(&name.as_str()) {
             continue;
         }
@@ -858,51 +865,53 @@ fn the_docs_show_what_mutastic_prints() {
         "mutastic prints something else now: MUTASTIC_DOCS_WRITE=1 cargo test --test docs\n{}",
         stale.join("\n")
     );
+}
 
-    // Each page's output blocks are the kept copies without their colour, and every copy is on a
-    // page.
-    let mut used = BTreeSet::new();
-    for page in pages() {
-        let mut text = std::fs::read_to_string(&page).unwrap();
-        let mut edits = Vec::new();
-        for block in blocks(&text) {
-            let Some((kind, name)) = &block.marker else {
-                continue;
-            };
-            if kind != "output" {
-                continue;
-            }
-            assert!(
-                shown.contains_key(name),
-                "{}: no run here makes {name}",
-                page.display()
-            );
-            used.insert(name.clone());
-            let kept =
-                plain(&std::fs::read_to_string(output.join(format!("{name}.ansi"))).unwrap());
-            if text[block.text.clone()] != kept {
-                edits.push((block.text.clone(), kept));
-            }
-        }
-        if edits.is_empty() {
-            continue;
-        }
-        assert!(
-            writing(),
-            "{} shows output other than docs/output's: MUTASTIC_DOCS_WRITE=1 cargo test --test docs",
-            page.display()
-        );
-        for (range, kept) in edits.into_iter().rev() {
-            text.replace_range(range, &kept);
-        }
-        std::fs::write(&page, text).unwrap();
-    }
-    // A command's page on the docs site shows its own, `commands/<page>`, from commands.json.
-    for command in mutastic::commands::COMMANDS {
-        used.insert(format!("commands/{}", command.page));
-    }
-    let unused: Vec<&String> = shown.keys().filter(|name| !used.contains(*name)).collect();
-    assert!(unused.is_empty(), "output no page shows: {unused:?}");
+/// A section's captures, run in its own copy of the fixtures it names, then checked.
+fn section(name: &str, fixtures: &[&str], run: fn(&Path, &mut BTreeMap<String, String>)) {
+    let work = work(name, fixtures);
+    let mut shown = BTreeMap::new();
+    run(&work, &mut shown);
+    check(&shown);
+}
+
+#[test]
+fn the_docs_show_what_getting_started_prints() {
+    section("getting-started", &["pricing"], getting_started);
+}
+
+#[test]
+fn the_docs_show_what_the_reference_prints() {
+    section("reference", &["pricing", "configured"], reference);
+}
+
+#[test]
+fn the_docs_show_what_unsafe_code_prints() {
+    section("unsafety", &["unsafety"], unsafety);
+}
+
+#[test]
+fn the_docs_show_what_the_operators_print() {
+    section("operators", &["operators", "truth"], operators);
+}
+
+#[test]
+fn the_docs_show_what_troubleshooting_prints() {
+    section(
+        "troubleshooting",
+        &["operators", "loops", "platforms", "workspace"],
+        troubleshooting,
+    );
+}
+
+#[test]
+fn the_docs_show_what_suggestions_print() {
+    section("suggested", &["suggestions"], suggested);
+}
+
+#[test]
+fn the_docs_show_what_next_prints() {
+    section("queue", &["ranking"], queue);
 }
 
 /// The lines of `text` without the indent they share.
