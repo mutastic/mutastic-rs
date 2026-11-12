@@ -29,7 +29,7 @@ mutastic run --shard=2/4 --threshold=0
 mutastic run --from-shards=shares --threshold=70
 ```
 
-**Options:** [`--threshold=N`](#--threshold), [`--since[=REF]`](#--since), [`--only=ID`](#--only), [`--workers=N`](#--workers), [`--no-suggestions`](#--no-suggestions), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--report=KIND[:PATH]`](#--report), [`--shard=N/M`](#--shard), [`--from-shards=DIR`](#--from-shards), [`--format=FORMAT`](#--format), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
+**Options:** [`--threshold=N`](#--threshold), [`--since[=REF]`](#--since), [`--only=ID`](#--only), [`--workers=N`](#--workers), [`--no-suggestions`](#--no-suggestions), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--report=KIND[:PATH]`](#--report), [`--shard=N/M`](#--shard), [`--from-shards=DIR`](#--from-shards), [`--format=FORMAT`](#--format), [`--vocabulary=WORDS`](#--vocabulary), [`--color=WHEN`](#--color), [`--hyperlinks=WHEN`](#--hyperlinks), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
 
 **Exit status:** 0 when the score reaches the threshold, 1 when it doesn't.
 
@@ -60,7 +60,7 @@ mutastic explain mb2f8ae57
 mutastic explain mb2f8ae57 fixtures/pricing
 ```
 
-**Options:** [`--workers=N`](#--workers), [`--no-suggestions`](#--no-suggestions), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
+**Options:** [`--workers=N`](#--workers), [`--no-suggestions`](#--no-suggestions), [`--vocabulary=WORDS`](#--vocabulary), [`--color=WHEN`](#--color), [`--hyperlinks=WHEN`](#--hyperlinks), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
 
 **Exit status:** 0 whatever the mutant's result: it explains, it doesn't judge.
 
@@ -230,10 +230,37 @@ mutastic run --from-shards=shares --threshold=70
 
 ### `--format`
 
-`--format=FORMAT`, for [`run`](#run). How the result is shown; full on a terminal, concise elsewhere, agent for coding agents. One of `full`, `concise`, `agent`, `jsonl`. Also set by `MUTASTIC_FORMAT` or `MUTASTIC_AGENT`.
+`--format=FORMAT`, for [`run`](#run). How the result is shown; full on a terminal, concise elsewhere, agent for coding agents. One of `full`, `brief`, `concise`, `grouped`, `agent`, `jsonl`. Also set by `MUTASTIC_FORMAT` or `MUTASTIC_AGENT`.
 
 ```sh
 mutastic run --format=agent
+```
+
+### `--vocabulary`
+
+`--vocabulary=WORDS`, for [`explain`](#explain), [`run`](#run). plain says caught and missed; classic says killed and survived. One of `plain`, `classic`. Also set by `MUTASTIC_VOCABULARY`.
+
+```sh
+mutastic explain mb2f8ae57 --vocabulary=classic
+mutastic run --vocabulary=classic
+```
+
+### `--color`
+
+`--color=WHEN`, for [`explain`](#explain), [`run`](#run). Colour: auto uses it on a terminal that wants it. One of `auto`, `always`, `never`. Also set by `NO_COLOR` or `FORCE_COLOR`.
+
+```sh
+mutastic explain mb2f8ae57 --color=never
+mutastic run --color=never
+```
+
+### `--hyperlinks`
+
+`--hyperlinks=WHEN`, for [`explain`](#explain), [`run`](#run). File locations as links a terminal can open: auto uses them on a terminal. One of `auto`, `always`, `never`.
+
+```sh
+mutastic explain mb2f8ae57 --hyperlinks=never
+mutastic run --hyperlinks=never
 ```
 
 ### `--progress`
@@ -331,6 +358,7 @@ mutastic verify mb2f8ae57 --edition=rust
 
 - `MUTASTIC_FORMAT`: The format when --format isn't given. For a machine or a CI job that always wants the same format, `concise` say.
 - `MUTASTIC_AGENT=1`: The agent format, for coding agents. Coding agents set it, so mutastic answers in the format they read best. `MUTASTIC_FORMAT` still wins.
+- `MUTASTIC_VOCABULARY`: plain or classic, when --vocabulary isn't given. `classic` says killed and survived instead of caught and missed. The JSON report and the event stream always use the standard names.
 - `NO_COLOR`: No colour. Set to anything, it turns colour off, as it does for many tools.
 - `FORCE_COLOR`: Colour even off a terminal. Set to anything, it turns colour on where mutastic can't tell a person is reading, such as a CI log that shows colour. It wins over `NO_COLOR`.
 - `TERM=dumb`: No colour, unless `FORCE_COLOR` is set.

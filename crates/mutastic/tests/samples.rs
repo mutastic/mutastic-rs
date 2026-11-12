@@ -1394,6 +1394,61 @@ fn the_sarif_report_is_a_result_for_each_miss_keyed_by_its_id() {
     std::fs::remove_dir_all(&repository).ok();
 }
 
+/// `--vocabulary`, `--color` and `--hyperlinks`, as the Java edition takes them: the classic words
+/// in what a person or an agent reads and never in the events, colour and links forced on or off,
+/// and a value they don't take refused.
+#[test]
+fn the_words_colour_and_links_are_chosen_as_the_java_edition_chooses_them() {
+    let dir = fixture("pricing");
+    let (_, concise) = mutastic(&["run", &dir, "--format=concise", "--vocabulary=classic"]);
+    for words in [
+        "Survivors",
+        "10 killed",
+        "1 survived",
+        "with survivors",
+        "1 survived, above",
+    ] {
+        assert!(concise.contains(words), "{words}: {concise}");
+    }
+    let (_, agent) = mutastic(&["run", &dir, "--format=agent", "--vocabulary=classic"]);
+    assert!(
+        agent.contains("1 survived, 0 no coverage, 10 killed of 11 mutants"),
+        "{agent}"
+    );
+    assert!(agent.contains("\n1. survived mb2f8ae57:"), "{agent}");
+    let (_, jsonl) = mutastic(&["run", &dir, "--format=jsonl", "--vocabulary=classic"]);
+    assert!(jsonl.contains("\"status\":\"Survived\""), "{jsonl}");
+    assert!(
+        jsonl.contains("missed mb2f8ae57:"),
+        "the events keep the standard words"
+    );
+
+    let (_, coloured) = mutastic(&["run", &dir, "--format=concise", "--color=always"]);
+    assert!(coloured.contains("\x1b["), "{coloured}");
+    let (_, linked) = mutastic(&["run", &dir, "--format=concise", "--hyperlinks=always"]);
+    assert!(linked.contains("\x1b]8;;file://"), "{linked}");
+    assert!(linked.contains("src/lib.rs:26\x1b]8;;\x1b\\"), "{linked}");
+    let (_, plain) = mutastic(&["run", &dir, "--format=concise", "--hyperlinks=never"]);
+    assert!(!plain.contains("\x1b]8;;"), "{plain}");
+
+    for (option, value) in [
+        ("--vocabulary", "loud"),
+        ("--color", "sometimes"),
+        ("--hyperlinks", "yes"),
+    ] {
+        let refused = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+            .args(["run", &dir, &format!("{option}={value}")])
+            .output()
+            .unwrap();
+        let said = String::from_utf8_lossy(&refused.stderr);
+        assert_eq!(refused.status.code(), Some(2), "{said}");
+        assert!(
+            said.contains(&format!("{option}: {value} isn't one of")),
+            "{said}"
+        );
+    }
+}
+
 /// A function only the crate calls gets its inputs from its callers: a suggested test that calls it
 /// alone on a value no caller passed may test what can't happen, as `fee(-1)` would here, where
 /// `repay` only passes a `u8`. Its card offers no such test: it says no caller passed the value,

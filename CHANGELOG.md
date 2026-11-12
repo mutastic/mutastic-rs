@@ -7,6 +7,13 @@ newest come first.
 
 ### Additions
 
+- **The output options the Java edition has.** `--format=brief` (each card's head: the code with
+  the change marked and what the run saw) and `--format=grouped` (the missed mutants of each file
+  by function, a line each); `--vocabulary=classic` (killed and survived, in what a person or an
+  agent reads, never in the events) and `MUTASTIC_VOCABULARY`; `--color=auto|always|never`; and
+  `--hyperlinks=auto|always|never`, file locations as links a terminal opens. See
+  [Output](docs/concepts/output.md#formats).
+
 - **`--report=sarif`, for code scanning, as in the Java edition.** It writes `mutation.sarif`,
   SARIF 2.1.0: a result for each missed mutant (a warning) and each one no test reaches (a note),
   on its line, with the card's headline, keyed by the mutant's id in `partialFingerprints` so an
