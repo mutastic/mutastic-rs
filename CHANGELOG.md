@@ -60,6 +60,11 @@ newest come first.
 
 ### Scoring changes
 
+- **A zero check on an unsigned value skips what differs only below 0.** `n == 0` made `n <= 0`, or
+  `n > 0` made `n != 0`, can't be told apart where `n` can't be negative, and is skipped as
+  equivalent where the source proves it: a type written `u8` to `u128` or `usize` (parameter,
+  `let` or field), a cast, a function declared beside it returning one, an `.enumerate()` index,
+  or arithmetic on those. Scores can go up; no id changes.
 - **`cfg!(debug_assertions)` forced true is skipped as equivalent.** mutastic builds every mutant
   with debug assertions on, so under it the condition is always true, and forcing it true changes
   nothing a test can see. Forced false still runs. Measured on httparse: 3 of its misses, 3 of 3
