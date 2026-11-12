@@ -1857,3 +1857,46 @@ mod loyalty {
     );
     assert!(agent.contains("   fix for m"), "{agent}");
 }
+
+/// Two runs on one package at once each get the whole run's result: the second waits for the
+/// first, which holds the package's work directory, rather than rewriting its copy and build in the
+/// middle of it. Once, the samples' own tests ran on the pricing fixture side by side and got each
+/// other's mutants.
+#[test]
+fn two_runs_at_once_each_get_the_whole_result() {
+    let dir = copy_of("pricing", "at-once");
+    let start = || {
+        Command::new(env!("CARGO_BIN_EXE_mutastic"))
+            .args(["run", "--format=jsonl"])
+            .current_dir(&dir)
+            .env_remove("MUTASTIC_FORMAT")
+            .env_remove("MUTASTIC_AGENT")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap()
+    };
+    let (first, second) = (start(), start());
+    let outputs = [
+        first.wait_with_output().unwrap(),
+        second.wait_with_output().unwrap(),
+    ];
+    std::fs::remove_dir_all(&dir).ok();
+    for output in &outputs {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let finished: Vec<Value> = events(&stdout)
+            .into_iter()
+            .filter(|e| e["reason"] == "mutant-finished")
+            .collect();
+        let missed = finished
+            .iter()
+            .filter(|e| e["status"] == "Survived")
+            .count();
+        assert_eq!(
+            (finished.len(), missed),
+            (11, 1),
+            "{stdout}{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}

@@ -136,6 +136,50 @@ pub fn read(dir: &str) -> Result<Project, String> {
     })
 }
 
+/// Holds `dir`, mutastic's work directory for a package, for this process from its first write to
+/// the copy until it exits. Two runs on one package at once would rewrite each other's copy and
+/// build in the middle of a run, so a mutant could be judged by the other run's build: a false
+/// catch. A second run waits for the first, and says so. The lock is the process's, taken once
+/// however many times it builds there, since a lock asked for again from the same process would
+/// wait on itself.
+fn hold(dir: &Path) -> Result<(), String> {
+    static HELD: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::BTreeMap<PathBuf, std::fs::File>>,
+    > = std::sync::OnceLock::new();
+    let mut held = HELD
+        .get_or_init(Default::default)
+        .lock()
+        .map_err(|_| "a run's lock was poisoned".to_string())?;
+    if held.contains_key(dir) {
+        return Ok(());
+    }
+    std::fs::create_dir_all(dir)
+        .map_err(|error| format!("couldn't make {}: {error}", dir.display()))?;
+    let path = dir.join("lock");
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .map_err(|error| format!("couldn't open {}: {error}", path.display()))?;
+    match file.try_lock() {
+        Ok(()) => {}
+        Err(std::fs::TryLockError::WouldBlock) => {
+            stderr_line!(
+                "mutastic: waiting for another mutastic run on this package to finish ({})",
+                path.display()
+            );
+            file.lock()
+                .map_err(|error| format!("couldn't lock {}: {error}", path.display()))?;
+        }
+        Err(std::fs::TryLockError::Error(error)) => {
+            return Err(format!("couldn't lock {}: {error}", path.display()));
+        }
+    }
+    held.insert(dir.to_path_buf(), file);
+    Ok(())
+}
+
 pub fn cargo() -> String {
     std::env::var("CARGO").unwrap_or_else(|_| "cargo".into())
 }
@@ -146,6 +190,7 @@ pub type Overrides = std::collections::BTreeMap<PathBuf, String>;
 /// Brings the copy up to date with the workspace, writing only what changed, with `overrides` in
 /// place of the originals.
 pub fn sync(project: &Project, overrides: &Overrides) -> Result<(), String> {
+    hold(&project.mutastic_dir())?;
     let copy = project.copy_dir();
     let mut kept = std::collections::BTreeSet::new();
     copy_tree(
