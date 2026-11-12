@@ -252,8 +252,9 @@ keeps only the result.
 
 `mutastic explain <id> [dir]` runs that one mutant and shows its card when it's missed, or what
 became of it otherwise, then what it is: the change, its operator, how its id is made, where it is,
-and how the last full run went for it, from that run's `mutation.json`. On the pricing fixture,
-after a run:
+and how the last run of every mutant went for it, from that run's `mutation.json`, which a full
+`mutastic run` writes, and `mutastic next` when it runs every mutant. On the pricing fixture, after
+a run:
 
 ```sh
 mutastic explain mb2f8ae57 fixtures/pricing

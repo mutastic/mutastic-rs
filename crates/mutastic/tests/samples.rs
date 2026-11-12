@@ -1547,3 +1547,257 @@ fn a_closed_stderr_loses_no_results() {
     );
     std::fs::remove_dir_all(&copy).ok();
 }
+
+/// `next`, worked to the end on the ranking fixture: one item at a time in the run's order, exit 1
+/// while something is queued; a rerun of only what's still uncaught while the code under test is
+/// the same, a new test in its `mod tests` included; every mutant again once that code changes; a
+/// mutant proposed for ignoring waits on a person, not in the queue; and exit 0, with nothing run,
+/// once nothing missed is left.
+#[test]
+fn next_works_through_the_misses_one_at_a_time() {
+    let copy = copy_of("ranking", "next");
+    let next = |args: &[&str]| mutastic_in(&copy, &[&["next"], args].concat());
+    let add_test = |test: &str| {
+        let lib = copy.join("src/lib.rs");
+        let source = std::fs::read_to_string(&lib).unwrap();
+        let end = source.rfind('}').unwrap();
+        std::fs::write(&lib, format!("{}{test}}}\n", &source[..end])).unwrap();
+    };
+    // How many mutants the run ran, from its coverage line; none when nothing ran.
+    let ran = |out: &str| {
+        out.lines()
+            .find_map(|line| line.strip_prefix("coverage  "))
+            .and_then(|line| line.rsplit(" · ").next())
+            .map(str::to_string)
+    };
+    let jsonl = |out: &str| -> Vec<Value> {
+        let lines: Vec<&str> = out.lines().filter(|l| l.starts_with('{')).collect();
+        let events = events(&lines.join("\n"));
+        for event in &events {
+            let errors: Vec<String> = schema().iter_errors(event).map(|e| e.to_string()).collect();
+            assert!(errors.is_empty(), "{event}\n{}", errors.join("\n"));
+        }
+        events
+    };
+    let ids_of = |event: &Value| -> Vec<String> {
+        event["ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|id| id.as_str().unwrap().to_string())
+            .collect()
+    };
+
+    // The head of the queue: is_small's condition, which three tests run.
+    let (code, out) = next(&["--format=jsonl"]);
+    assert_eq!(code, 1, "{out}");
+    let events = jsonl(&out);
+    assert_eq!(events.len(), 2, "{out}");
+    let head = &events[0];
+    assert_eq!(head["reason"], "next-item");
+    assert_eq!(head["location"]["line"], 15);
+    let ids = ids_of(head);
+    assert_eq!(ids.len(), 3, "{head}");
+    assert_eq!(head["ids"][0], head["id"], "the lead first");
+    assert_eq!(head["rank"]["position"], 1);
+    assert_eq!(head["rank"]["order"], "run-1");
+    let values: Vec<&Value> = head["rank"]["factors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|factor| &factor["value"])
+        .collect();
+    assert_eq!(
+        values,
+        [
+            &serde_json::json!("condition-or-removal"),
+            &serde_json::json!(3)
+        ]
+    );
+    assert_eq!(
+        events[1],
+        serde_json::json!({"schema": "mutastic.events/v1", "edition": "rust", "reason": "next-finished", "queued": 3, "mutants": 7, "shown": 1, "legacy": 0, "waiting": 0})
+    );
+    // That was a run of every mutant, so explain has a last run to say.
+    let (_, explained) = mutastic_in(&copy, &["explain", &ids[0]]);
+    assert!(
+        explained.contains("last run  missed: every covering test still passed"),
+        "{explained}"
+    );
+
+    // Again, with the code as it was: only the seven left uncaught run. --top shows two, as two is
+    // the most from one file.
+    let (code, out) = next(&["--top=3", "--format=concise", "--progress=counter"]);
+    assert_eq!(code, 1, "{out}");
+    assert_eq!(ran(&out).as_deref(), Some("7 mutants"), "{out}");
+    assert!(
+        out.contains("Next: the first 2 of 3 lines with missed mutants in ranking\n"),
+        "{out}"
+    );
+    let places: Vec<&str> = out
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("┌─ "))
+        .collect();
+    assert_eq!(places, ["src/lib.rs:15", "src/lib.rs:11"], "{out}");
+    assert!(
+        out.contains(
+            "\n Ranked first because\n   a condition or a removal: it changes what the code \
+             decides or does\n   3 tests run it, and none checks it\n"
+        ),
+        "{out}"
+    );
+    assert!(out.contains("\n Ranked 2nd because\n"), "{out}");
+    assert!(
+        out.contains("\nThen: mutastic next ., for the next one\n"),
+        "{out}"
+    );
+
+    // For an agent, one task, whole, and every command it offers parses.
+    let (code, agent) = next(&["--format=agent"]);
+    assert_eq!(code, 1, "{agent}");
+    assert!(
+        agent.starts_with(
+            "mutastic next: 1 of 3 lines with missed mutants in ranking; close this one, then ask \
+             for the next\nwhy first: a condition or a removal: it changes what the code decides \
+             or does; 3 tests run it, and none checks it\n"
+        ),
+        "{agent}"
+    );
+    let done_when = format!("mutastic verify {} .", ids.join(","));
+    assert!(
+        agent.contains(&format!(
+            "\nrules: {}, and never delete, disable or loosen a test; it's done when \
+             `{done_when}` passes\ndecline: {} (`mutastic ignore <id> --propose",
+            mutastic::report::RULE,
+            mutastic::report::DECLINE
+        )),
+        "{agent}"
+    );
+    let tasks = agent
+        .lines()
+        .filter(|line| line.starts_with("missed "))
+        .count();
+    assert_eq!(tasks, 1, "one task: {agent}");
+    assert!(
+        agent.ends_with(
+            "\nthen: run `mutastic next .` again for the next one; when it says nothing is left, \
+             you're done\n"
+        ),
+        "{agent}"
+    );
+    for command in [done_when.as_str(), "mutastic next ."] {
+        let words: Vec<String> = command.split(' ').skip(1).map(str::to_string).collect();
+        assert_eq!(mutastic::cli::check(&words), Ok(()), "{command}");
+    }
+
+    // A test for is_small, in mod tests: the code under test is the same, so again only the seven
+    // run, and its line drops out.
+    add_test(
+        "    #[test]\n    fn ten_isnt_small() {\n        assert!(!is_small(10));\n        \
+         assert!(is_small(9));\n    }\n",
+    );
+    let (code, out) = next(&["--top=25", "--format=jsonl"]);
+    assert_eq!(code, 1, "{out}");
+    let events = jsonl(&out);
+    let lines: Vec<&Value> = events
+        .iter()
+        .filter(|e| e["reason"] == "next-item")
+        .map(|e| &e["location"]["line"])
+        .collect();
+    assert_eq!(
+        lines,
+        [&serde_json::json!(11), &serde_json::json!(6)],
+        "{out}"
+    );
+    let doubled = ids_of(&events[1]);
+
+    // doubled's mutants, proposed for ignoring, wait on a person, out of the queue.
+    for id in &doubled {
+        let (code, out) = mutastic_in(&copy, &["ignore", id, "--propose", "--reason=only doubles"]);
+        assert_eq!(code, 0, "{out}");
+    }
+    let waiting = if doubled.len() == 1 {
+        "1 mutant proposed for ignoring, waiting on a person to accept it \
+         (.mutastic/proposals.yaml)"
+            .to_string()
+    } else {
+        format!(
+            "{} mutants proposed for ignoring, waiting on a person to accept them \
+             (.mutastic/proposals.yaml)",
+            doubled.len()
+        )
+    };
+    let (code, out) = next(&["--format=concise", "--progress=counter"]);
+    assert_eq!(code, 1, "{out}");
+    let rerun = format!("{} mutants", 3 + doubled.len());
+    assert_eq!(ran(&out), Some(rerun), "{out}");
+    assert!(
+        out.contains(&format!(
+            "Next: 1 of 1 line with missed mutants in ranking; {waiting}\n"
+        )),
+        "{out}"
+    );
+
+    // A test for is_big leaves only the proposals: nothing is queued, so next exits 0.
+    add_test(
+        "    #[test]\n    fn a_hundred_is_big() {\n        assert!(is_big(100));\n        \
+         assert!(!is_big(99));\n    }\n",
+    );
+    let nothing_but_waiting = format!("Next: nothing missed is left in ranking but {waiting}\n");
+    let (code, out) = next(&["--format=concise"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.starts_with(&nothing_but_waiting), "{out}");
+    let (code, out) = next(&["--format=jsonl"]);
+    assert_eq!(code, 0, "{out}");
+    let events = jsonl(&out);
+    assert_eq!(events.len(), 1, "{out}");
+    assert_eq!(events[0]["queued"], 0);
+    assert_eq!(events[0]["waiting"], doubled.len());
+
+    // The code under test changes: every mutant runs again.
+    let lib = copy.join("src/lib.rs");
+    let source = std::fs::read_to_string(&lib).unwrap();
+    let changed = source.replacen(
+        "#[cfg(test)]",
+        "pub const UNUSED: u32 = 7;\n\n#[cfg(test)]",
+        1,
+    );
+    std::fs::write(&lib, changed).unwrap();
+    let (code, out) = next(&["--format=concise", "--progress=counter"]);
+    assert_eq!(code, 0, "{out}");
+    assert_eq!(ran(&out).as_deref(), Some("12 mutants"), "{out}");
+    assert!(out.starts_with(&nothing_but_waiting), "{out}");
+
+    // Withdrawn, the proposals' mutants are queued again; a test for them, and nothing is left.
+    for id in &doubled {
+        let (code, out) = mutastic_in(&copy, &["ignore", "--remove", id]);
+        assert_eq!(code, 0, "{out}");
+    }
+    let (code, out) = next(&["--format=concise"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("Next: 1 of 1 line with missed mutants in ranking\n"),
+        "{out}"
+    );
+    add_test(
+        "    #[test]\n    fn three_doubled_is_six() {\n        assert_eq!(doubled(3), 6);\n    }\n",
+    );
+    let (code, out) = next(&["--format=concise"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.starts_with("Next: nothing missed is left in ranking\n"),
+        "{out}"
+    );
+    // Nothing was left uncaught, and the code is the same: nothing runs.
+    let (code, out) = next(&["--format=concise", "--progress=counter"]);
+    assert_eq!(code, 0, "{out}");
+    assert_eq!(ran(&out), None, "{out}");
+    assert!(
+        out.starts_with("Next: nothing missed is left in ranking\n"),
+        "{out}"
+    );
+    let (code, agent) = next(&["--format=agent"]);
+    assert_eq!(code, 0, "{agent}");
+    assert_eq!(agent, "mutastic next: nothing missed is left in ranking\n");
+    std::fs::remove_dir_all(&copy).ok();
+}

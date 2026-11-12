@@ -88,7 +88,7 @@
       "page": "explain",
       "synopsis": "mutastic explain <id> [dir]",
       "summary": "Everything known of one mutant, with its tests run",
-      "detail": "Its card when it's missed, or what became of it otherwise, then what the change is, its operator, how its id is made, where it is, and how the last full run went for it, from that run's mutation.json.",
+      "detail": "Its card when it's missed, or what became of it otherwise, then what the change is, its operator, how its id is made, where it is, and how the last run of every mutant, by run or next, went for it, from that run's mutation.json.",
       "exits": "0 whatever the mutant's result: it explains, it doesn't judge.",
       "takesMutantId": true,
       "examples": [
@@ -148,6 +148,43 @@
         "--propose",
         "--accept",
         "--prune",
+        "--edition"
+      ]
+    },
+    {
+      "name": "next",
+      "page": "next",
+      "synopsis": "mutastic next [dir] [options]",
+      "summary": "Show the missed mutant most worth a test first, and why",
+      "detail": "The missed mutants as a queue, one line's at a time, in the order a run ranks them: its card, why it's first, and the command that says when it's done. --top shows the first few, spread over the code. While the code under test is the same, it runs only the mutants the last next left uncaught, so any a new test catches drop out; once that code changes, it runs every mutant again. A mutant proposed for ignoring isn't queued: it waits on a person. For an agent, one task, and to run next again after it.",
+      "exits": "0 when nothing missed is left, or only mutants proposed for ignoring; 1 while something is queued.",
+      "takesMutantId": false,
+      "examples": [
+        {
+          "commandLine": "mutastic next",
+          "cargo": "cargo mutastic next"
+        },
+        {
+          "commandLine": "mutastic next --top=5",
+          "cargo": "cargo mutastic next --top=5"
+        },
+        {
+          "commandLine": "mutastic next --format=agent",
+          "cargo": "cargo mutastic next --format=agent"
+        }
+      ],
+      "options": [
+        "--since",
+        "--workers",
+        "--no-suggestions",
+        "--operators",
+        "--unsafe",
+        "--format",
+        "--vocabulary",
+        "--color",
+        "--hyperlinks",
+        "--progress",
+        "--top",
         "--edition"
       ]
     },
@@ -271,10 +308,15 @@
       "choices": [],
       "help": "Mutate only the lines changed since the merge-base of HEAD and REF, uncommitted and new files included; the default branch without one",
       "commands": [
+        "next",
         "run"
       ],
       "environment": "",
       "examples": {
+        "next": {
+          "commandLine": "mutastic next --since=main",
+          "cargo": "cargo mutastic next --since=main"
+        },
         "run": {
           "commandLine": "mutastic run --since=main",
           "cargo": "cargo mutastic run --since=main"
@@ -310,6 +352,7 @@
       "help": "How many mutants run side by side; half the cores, from 1 to 4, unless set",
       "commands": [
         "explain",
+        "next",
         "run",
         "verify"
       ],
@@ -318,6 +361,10 @@
         "explain": {
           "commandLine": "mutastic explain mb2f8ae57 --workers=2",
           "cargo": "cargo mutastic explain mb2f8ae57 --workers=2"
+        },
+        "next": {
+          "commandLine": "mutastic next --workers=2",
+          "cargo": "cargo mutastic next --workers=2"
         },
         "run": {
           "commandLine": "mutastic run --workers=2",
@@ -339,6 +386,7 @@
       "help": "Don't look for a test that catches each missed mutant, which runs the missed mutant's function outside the tests",
       "commands": [
         "explain",
+        "next",
         "run"
       ],
       "environment": "",
@@ -346,6 +394,10 @@
         "explain": {
           "commandLine": "mutastic explain mb2f8ae57 --no-suggestions",
           "cargo": "cargo mutastic explain mb2f8ae57 --no-suggestions"
+        },
+        "next": {
+          "commandLine": "mutastic next --no-suggestions",
+          "cargo": "cargo mutastic next --no-suggestions"
         },
         "run": {
           "commandLine": "mutastic run --no-suggestions",
@@ -363,6 +415,7 @@
       "help": "Which operators run: a set (defaults, stronger or extended), or operator ids split by commas, in place of mutastic.yaml's operators; defaults unless set",
       "commands": [
         "mutants",
+        "next",
         "run"
       ],
       "environment": "",
@@ -370,6 +423,10 @@
         "mutants": {
           "commandLine": "mutastic mutants --operators=stronger",
           "cargo": "cargo mutastic mutants --operators=stronger"
+        },
+        "next": {
+          "commandLine": "mutastic next --operators=stronger",
+          "cargo": "cargo mutastic next --operators=stronger"
         },
         "run": {
           "commandLine": "mutastic run --operators=stronger",
@@ -391,6 +448,7 @@
       "help": "Which unsafe code is mutated: skip leaves unsafe code and the functions holding an unsafe block alone, enclosing mutates those functions too, all unsafe code as well; skip unless set",
       "commands": [
         "mutants",
+        "next",
         "run"
       ],
       "environment": "",
@@ -398,6 +456,10 @@
         "mutants": {
           "commandLine": "mutastic mutants --unsafe=enclosing",
           "cargo": "cargo mutastic mutants --unsafe=enclosing"
+        },
+        "next": {
+          "commandLine": "mutastic next --unsafe=enclosing",
+          "cargo": "cargo mutastic next --unsafe=enclosing"
         },
         "run": {
           "commandLine": "mutastic run --unsafe=enclosing",
@@ -483,10 +545,15 @@
       ],
       "help": "How the result is shown; full on a terminal, concise elsewhere, agent for coding agents",
       "commands": [
+        "next",
         "run"
       ],
       "environment": "MUTASTIC_FORMAT, MUTASTIC_AGENT",
       "examples": {
+        "next": {
+          "commandLine": "mutastic next --format=agent",
+          "cargo": "cargo mutastic next --format=agent"
+        },
         "run": {
           "commandLine": "mutastic run --format=agent",
           "cargo": "cargo mutastic run --format=agent"
@@ -506,6 +573,7 @@
       "help": "plain says caught and missed; classic says killed and survived",
       "commands": [
         "explain",
+        "next",
         "run"
       ],
       "environment": "MUTASTIC_VOCABULARY",
@@ -513,6 +581,10 @@
         "explain": {
           "commandLine": "mutastic explain mb2f8ae57 --vocabulary=classic",
           "cargo": "cargo mutastic explain mb2f8ae57 --vocabulary=classic"
+        },
+        "next": {
+          "commandLine": "mutastic next --vocabulary=classic",
+          "cargo": "cargo mutastic next --vocabulary=classic"
         },
         "run": {
           "commandLine": "mutastic run --vocabulary=classic",
@@ -534,6 +606,7 @@
       "help": "Colour: auto uses it on a terminal that wants it",
       "commands": [
         "explain",
+        "next",
         "run"
       ],
       "environment": "NO_COLOR, FORCE_COLOR",
@@ -541,6 +614,10 @@
         "explain": {
           "commandLine": "mutastic explain mb2f8ae57 --color=never",
           "cargo": "cargo mutastic explain mb2f8ae57 --color=never"
+        },
+        "next": {
+          "commandLine": "mutastic next --color=never",
+          "cargo": "cargo mutastic next --color=never"
         },
         "run": {
           "commandLine": "mutastic run --color=never",
@@ -562,6 +639,7 @@
       "help": "File locations as links a terminal can open: auto uses them on a terminal",
       "commands": [
         "explain",
+        "next",
         "run"
       ],
       "environment": "",
@@ -569,6 +647,10 @@
         "explain": {
           "commandLine": "mutastic explain mb2f8ae57 --hyperlinks=never",
           "cargo": "cargo mutastic explain mb2f8ae57 --hyperlinks=never"
+        },
+        "next": {
+          "commandLine": "mutastic next --hyperlinks=never",
+          "cargo": "cargo mutastic next --hyperlinks=never"
         },
         "run": {
           "commandLine": "mutastic run --hyperlinks=never",
@@ -591,6 +673,7 @@
       "help": "Progress on stderr: a bar on a terminal, counter lines in logs, none for agents",
       "commands": [
         "explain",
+        "next",
         "run",
         "verify"
       ],
@@ -600,6 +683,10 @@
           "commandLine": "mutastic explain mb2f8ae57 --progress=counter",
           "cargo": "cargo mutastic explain mb2f8ae57 --progress=counter"
         },
+        "next": {
+          "commandLine": "mutastic next --progress=counter",
+          "cargo": "cargo mutastic next --progress=counter"
+        },
         "run": {
           "commandLine": "mutastic run --progress=counter",
           "cargo": "cargo mutastic run --progress=counter"
@@ -607,6 +694,25 @@
         "verify": {
           "commandLine": "mutastic verify mb2f8ae57 --progress=counter",
           "cargo": "cargo mutastic verify mb2f8ae57 --progress=counter"
+        }
+      }
+    },
+    {
+      "name": "--top",
+      "synopsis": "--top=N",
+      "kind": "value",
+      "group": "Output",
+      "value": "N",
+      "choices": [],
+      "help": "How many of the queue next shows, at most one a function and two a file; 1 unless set, at most 25",
+      "commands": [
+        "next"
+      ],
+      "environment": "",
+      "examples": {
+        "next": {
+          "commandLine": "mutastic next --top=5",
+          "cargo": "cargo mutastic next --top=5"
         }
       }
     },
@@ -798,6 +904,7 @@
         "gate open",
         "ignore",
         "mutants",
+        "next",
         "run",
         "verify"
       ],
@@ -826,6 +933,10 @@
         "mutants": {
           "commandLine": "mutastic mutants --edition=rust",
           "cargo": "cargo mutastic mutants --edition=rust"
+        },
+        "next": {
+          "commandLine": "mutastic next --edition=rust",
+          "cargo": "cargo mutastic next --edition=rust"
         },
         "run": {
           "commandLine": "mutastic run --edition=rust",
@@ -908,12 +1019,12 @@
   "exitCodes": [
     {
       "name": "0",
-      "meaning": "The score reaches the threshold; for verify, each mutant named is caught, skipped, or crashed where a crash proves nothing; for gate check, the task is done",
+      "meaning": "The score reaches the threshold; for verify, each mutant named is caught, skipped, or crashed where a crash proves nothing; for gate check, the task is done; for next, nothing missed is left but what's proposed for ignoring",
       "detail": ""
     },
     {
       "name": "1",
-      "meaning": "The score is below the threshold; for verify, a mutant named is still missed or not covered; for gate check, the task isn't done; for ignore --accept, the mutant isn't proposed",
+      "meaning": "The score is below the threshold; for verify, a mutant named is still missed or not covered; for gate check, the task isn't done; for ignore --accept, the mutant isn't proposed; for next, something is queued",
       "detail": ""
     },
     {

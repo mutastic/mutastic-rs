@@ -112,6 +112,7 @@ const EVERY_COMMAND: &[&str] = &[
     "gate check",
     "gate close",
     "mutants",
+    "next",
 ];
 
 pub const COMMANDS: &[Command] = &[
@@ -161,8 +162,8 @@ pub const COMMANDS: &[Command] = &[
         synopsis: "mutastic explain <id> [dir]",
         summary: "Everything known of one mutant, with its tests run",
         detail: "Its card when it's missed, or what became of it otherwise, then what the change \
-                 is, its operator, how its id is made, where it is, and how the last full run went \
-                 for it, from that run's mutation.json.",
+                 is, its operator, how its id is made, where it is, and how the last run of every \
+                 mutant, by run or next, went for it, from that run's mutation.json.",
         exits: "0 whatever the mutant's result: it explains, it doesn't judge.",
         takes_mutant_id: true,
         examples: &[
@@ -193,6 +194,27 @@ pub const COMMANDS: &[Command] = &[
             "mutastic ignore --accept mb2f8ae57",
             "mutastic ignore --remove mb2f8ae57",
             "mutastic ignore --prune",
+        ],
+    },
+    Command {
+        name: "next",
+        page: "next",
+        synopsis: "mutastic next [dir] [options]",
+        summary: "Show the missed mutant most worth a test first, and why",
+        detail: "The missed mutants as a queue, one line's at a time, in the order a run ranks \
+                 them: its card, why it's first, and the command that says when it's done. --top \
+                 shows the first few, spread over the code. While the code under test is the same, \
+                 it runs only the mutants the last next left uncaught, so any a new test catches \
+                 drop out; once that code changes, it runs every mutant again. A mutant proposed \
+                 for ignoring isn't queued: it waits on a person. For an agent, one task, and to \
+                 run next again after it.",
+        exits: "0 when nothing missed is left, or only mutants proposed for ignoring; 1 while \
+                something is queued.",
+        takes_mutant_id: false,
+        examples: &[
+            "mutastic next",
+            "mutastic next --top=5",
+            "mutastic next --format=agent",
         ],
     },
     Command {
@@ -273,7 +295,7 @@ pub const OPTIONS: &[CliOption] = &[
         choices: &[],
         help: "Mutate only the lines changed since the merge-base of HEAD and REF, uncommitted \
                and new files included; the default branch without one",
-        commands: &["run"],
+        commands: &["run", "next"],
         environment: "",
         example: "--since=main",
     },
@@ -295,7 +317,7 @@ pub const OPTIONS: &[CliOption] = &[
         group: "Running",
         choices: &[],
         help: "How many mutants run side by side; half the cores, from 1 to 4, unless set",
-        commands: &["run", "verify", "explain"],
+        commands: &["run", "verify", "explain", "next"],
         environment: "",
         example: "--workers=2",
     },
@@ -307,7 +329,7 @@ pub const OPTIONS: &[CliOption] = &[
         choices: &[],
         help: "Don't look for a test that catches each missed mutant, which runs the missed \
                mutant's function outside the tests",
-        commands: &["run", "explain"],
+        commands: &["run", "explain", "next"],
         environment: "",
         example: "--no-suggestions",
     },
@@ -319,7 +341,7 @@ pub const OPTIONS: &[CliOption] = &[
         choices: &[],
         help: "Which operators run: a set (defaults, stronger or extended), or operator ids split \
                by commas, in place of mutastic.yaml's operators; defaults unless set",
-        commands: &["run", "mutants"],
+        commands: &["run", "mutants", "next"],
         environment: "",
         example: "--operators=stronger",
     },
@@ -332,7 +354,7 @@ pub const OPTIONS: &[CliOption] = &[
         help: "Which unsafe code is mutated: skip leaves unsafe code and the functions holding \
                an unsafe block alone, enclosing mutates those functions too, all unsafe code as \
                well; skip unless set",
-        commands: &["run", "mutants"],
+        commands: &["run", "mutants", "next"],
         environment: "",
         example: "--unsafe=enclosing",
     },
@@ -381,7 +403,7 @@ pub const OPTIONS: &[CliOption] = &[
         choices: &["full", "brief", "concise", "grouped", "agent", "jsonl"],
         help: "How the result is shown; full on a terminal, concise elsewhere, agent for coding \
                agents",
-        commands: &["run"],
+        commands: &["run", "next"],
         environment: "MUTASTIC_FORMAT, MUTASTIC_AGENT",
         example: "--format=agent",
     },
@@ -392,7 +414,7 @@ pub const OPTIONS: &[CliOption] = &[
         group: "Output",
         choices: &["plain", "classic"],
         help: "plain says caught and missed; classic says killed and survived",
-        commands: &["run", "explain"],
+        commands: &["run", "explain", "next"],
         environment: "MUTASTIC_VOCABULARY",
         example: "--vocabulary=classic",
     },
@@ -403,7 +425,7 @@ pub const OPTIONS: &[CliOption] = &[
         group: "Output",
         choices: &["auto", "always", "never"],
         help: "Colour: auto uses it on a terminal that wants it",
-        commands: &["run", "explain"],
+        commands: &["run", "explain", "next"],
         environment: "NO_COLOR, FORCE_COLOR",
         example: "--color=never",
     },
@@ -414,7 +436,7 @@ pub const OPTIONS: &[CliOption] = &[
         group: "Output",
         choices: &["auto", "always", "never"],
         help: "File locations as links a terminal can open: auto uses them on a terminal",
-        commands: &["run", "explain"],
+        commands: &["run", "explain", "next"],
         environment: "",
         example: "--hyperlinks=never",
     },
@@ -425,9 +447,21 @@ pub const OPTIONS: &[CliOption] = &[
         group: "Output",
         choices: &["auto", "bar", "counter", "none"],
         help: "Progress on stderr: a bar on a terminal, counter lines in logs, none for agents",
-        commands: &["run", "verify", "explain"],
+        commands: &["run", "verify", "explain", "next"],
         environment: "",
         example: "--progress=counter",
+    },
+    CliOption {
+        name: "top",
+        value: "N",
+        kind: Kind::Value,
+        group: "Output",
+        choices: &[],
+        help: "How many of the queue next shows, at most one a function and two a file; 1 unless \
+               set, at most 25",
+        commands: &["next"],
+        environment: "",
+        example: "mutastic next --top=5",
     },
     CliOption {
         name: "reason",
@@ -613,14 +647,14 @@ pub const EXIT_CODES: &[Entry] = &[
         name: "0",
         meaning: "The score reaches the threshold; for verify, each mutant named is caught, \
                   skipped, or crashed where a crash proves nothing; for gate check, the task is \
-                  done",
+                  done; for next, nothing missed is left but what's proposed for ignoring",
         detail: "",
     },
     Entry {
         name: "1",
         meaning: "The score is below the threshold; for verify, a mutant named is still missed or \
                   not covered; for gate check, the task isn't done; for ignore --accept, the \
-                  mutant isn't proposed",
+                  mutant isn't proposed; for next, something is queued",
         detail: "",
     },
     Entry {

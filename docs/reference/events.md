@@ -17,6 +17,8 @@ Each event has `schema` (`mutastic.events/v1`), `edition` (`rust`, where the Jav
 | `run-started` | First, once the build is done |
 | `mutant-finished` | For each mutant |
 | `run-finished` | Last: the totals, the score and the verdict |
+| `next-item` | From `mutastic next`: each item shown, its lead mutant as `mutant-finished` has it, with `ids` and `rank`. See [Working through misses](../concepts/next.md#for-a-tool) |
+| `next-finished` | Last, from `mutastic next`: how many lines and mutants are `queued`, `shown`, and `waiting` on a person |
 
 This is the pricing fixture's whole stream:
 

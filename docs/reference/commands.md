@@ -8,6 +8,7 @@ Every command `mutastic` takes, with its options, the environment it reads and t
 - [`mutastic verify`](#verify): Run mutants' tests: it passes when they catch every one not skipped
 - [`mutastic explain`](#explain): Everything known of one mutant, with its tests run
 - [`mutastic ignore`](#ignore): Record a decision not to test one mutant
+- [`mutastic next`](#next): Show the missed mutant most worth a test first, and why
 - [`mutastic gate open`](#gate-open): Start gating a coding agent's task: keep where it starts
 - [`mutastic gate check`](#gate-check): Say whether a gated task is done: its changed lines' mutants caught
 - [`mutastic gate close`](#gate-close): Stop gating a task: forget where it started
@@ -53,7 +54,7 @@ mutastic verify mb2f8ae57 m95f96847 fixtures/pricing
 
 `mutastic explain <id> [dir]`
 
-Everything known of one mutant, with its tests run. Its card when it's missed, or what became of it otherwise, then what the change is, its operator, how its id is made, where it is, and how the last full run went for it, from that run's mutation.json.
+Everything known of one mutant, with its tests run. Its card when it's missed, or what became of it otherwise, then what the change is, its operator, how its id is made, where it is, and how the last run of every mutant, by run or next, went for it, from that run's mutation.json.
 
 ```sh
 mutastic explain mb2f8ae57
@@ -81,6 +82,22 @@ mutastic ignore --prune
 **Options:** [`--reason=WHY`](#--reason), [`--as=KIND`](#--as), [`--remove`](#--remove), [`--propose`](#--propose), [`--accept`](#--accept), [`--prune`](#--prune), [`--edition=EDITION`](#--edition).
 
 **Exit status:** 0 when the decision is recorded, proposed, accepted or removed; 1 when --accept names a mutant that isn't proposed.
+
+## next
+
+`mutastic next [dir] [options]`
+
+Show the missed mutant most worth a test first, and why. The missed mutants as a queue, one line's at a time, in the order a run ranks them: its card, why it's first, and the command that says when it's done. --top shows the first few, spread over the code. While the code under test is the same, it runs only the mutants the last next left uncaught, so any a new test catches drop out; once that code changes, it runs every mutant again. A mutant proposed for ignoring isn't queued: it waits on a person. For an agent, one task, and to run next again after it.
+
+```sh
+mutastic next
+mutastic next --top=5
+mutastic next --format=agent
+```
+
+**Options:** [`--since[=REF]`](#--since), [`--workers=N`](#--workers), [`--no-suggestions`](#--no-suggestions), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--format=FORMAT`](#--format), [`--vocabulary=WORDS`](#--vocabulary), [`--color=WHEN`](#--color), [`--hyperlinks=WHEN`](#--hyperlinks), [`--progress=STYLE`](#--progress), [`--top=N`](#--top), [`--edition=EDITION`](#--edition).
+
+**Exit status:** 0 when nothing missed is left, or only mutants proposed for ignoring; 1 while something is queued.
 
 ## gate open
 
@@ -153,9 +170,10 @@ mutastic run --threshold=70
 
 ### `--since`
 
-`--since[=REF]`, for [`run`](#run). Mutate only the lines changed since the merge-base of HEAD and REF, uncommitted and new files included; the default branch without one.
+`--since[=REF]`, for [`next`](#next), [`run`](#run). Mutate only the lines changed since the merge-base of HEAD and REF, uncommitted and new files included; the default branch without one.
 
 ```sh
+mutastic next --since=main
 mutastic run --since=main
 ```
 
@@ -169,38 +187,42 @@ mutastic run --only=mb2f8ae57
 
 ### `--workers`
 
-`--workers=N`, for [`explain`](#explain), [`run`](#run), [`verify`](#verify). How many mutants run side by side; half the cores, from 1 to 4, unless set.
+`--workers=N`, for [`explain`](#explain), [`next`](#next), [`run`](#run), [`verify`](#verify). How many mutants run side by side; half the cores, from 1 to 4, unless set.
 
 ```sh
 mutastic explain mb2f8ae57 --workers=2
+mutastic next --workers=2
 mutastic run --workers=2
 mutastic verify mb2f8ae57 --workers=2
 ```
 
 ### `--no-suggestions`
 
-`--no-suggestions`, for [`explain`](#explain), [`run`](#run). Don't look for a test that catches each missed mutant, which runs the missed mutant's function outside the tests.
+`--no-suggestions`, for [`explain`](#explain), [`next`](#next), [`run`](#run). Don't look for a test that catches each missed mutant, which runs the missed mutant's function outside the tests.
 
 ```sh
 mutastic explain mb2f8ae57 --no-suggestions
+mutastic next --no-suggestions
 mutastic run --no-suggestions
 ```
 
 ### `--operators`
 
-`--operators=OPERATORS`, for [`mutants`](#mutants), [`run`](#run). Which operators run: a set (defaults, stronger or extended), or operator ids split by commas, in place of mutastic.yaml's operators; defaults unless set.
+`--operators=OPERATORS`, for [`mutants`](#mutants), [`next`](#next), [`run`](#run). Which operators run: a set (defaults, stronger or extended), or operator ids split by commas, in place of mutastic.yaml's operators; defaults unless set.
 
 ```sh
 mutastic mutants --operators=stronger
+mutastic next --operators=stronger
 mutastic run --operators=stronger
 ```
 
 ### `--unsafe`
 
-`--unsafe=MODE`, for [`mutants`](#mutants), [`run`](#run). Which unsafe code is mutated: skip leaves unsafe code and the functions holding an unsafe block alone, enclosing mutates those functions too, all unsafe code as well; skip unless set. One of `skip`, `enclosing`, `all`.
+`--unsafe=MODE`, for [`mutants`](#mutants), [`next`](#next), [`run`](#run). Which unsafe code is mutated: skip leaves unsafe code and the functions holding an unsafe block alone, enclosing mutates those functions too, all unsafe code as well; skip unless set. One of `skip`, `enclosing`, `all`.
 
 ```sh
 mutastic mutants --unsafe=enclosing
+mutastic next --unsafe=enclosing
 mutastic run --unsafe=enclosing
 ```
 
@@ -230,47 +252,60 @@ mutastic run --from-shards=shares --threshold=70
 
 ### `--format`
 
-`--format=FORMAT`, for [`run`](#run). How the result is shown; full on a terminal, concise elsewhere, agent for coding agents. One of `full`, `brief`, `concise`, `grouped`, `agent`, `jsonl`. Also set by `MUTASTIC_FORMAT` or `MUTASTIC_AGENT`.
+`--format=FORMAT`, for [`next`](#next), [`run`](#run). How the result is shown; full on a terminal, concise elsewhere, agent for coding agents. One of `full`, `brief`, `concise`, `grouped`, `agent`, `jsonl`. Also set by `MUTASTIC_FORMAT` or `MUTASTIC_AGENT`.
 
 ```sh
+mutastic next --format=agent
 mutastic run --format=agent
 ```
 
 ### `--vocabulary`
 
-`--vocabulary=WORDS`, for [`explain`](#explain), [`run`](#run). plain says caught and missed; classic says killed and survived. One of `plain`, `classic`. Also set by `MUTASTIC_VOCABULARY`.
+`--vocabulary=WORDS`, for [`explain`](#explain), [`next`](#next), [`run`](#run). plain says caught and missed; classic says killed and survived. One of `plain`, `classic`. Also set by `MUTASTIC_VOCABULARY`.
 
 ```sh
 mutastic explain mb2f8ae57 --vocabulary=classic
+mutastic next --vocabulary=classic
 mutastic run --vocabulary=classic
 ```
 
 ### `--color`
 
-`--color=WHEN`, for [`explain`](#explain), [`run`](#run). Colour: auto uses it on a terminal that wants it. One of `auto`, `always`, `never`. Also set by `NO_COLOR` or `FORCE_COLOR`.
+`--color=WHEN`, for [`explain`](#explain), [`next`](#next), [`run`](#run). Colour: auto uses it on a terminal that wants it. One of `auto`, `always`, `never`. Also set by `NO_COLOR` or `FORCE_COLOR`.
 
 ```sh
 mutastic explain mb2f8ae57 --color=never
+mutastic next --color=never
 mutastic run --color=never
 ```
 
 ### `--hyperlinks`
 
-`--hyperlinks=WHEN`, for [`explain`](#explain), [`run`](#run). File locations as links a terminal can open: auto uses them on a terminal. One of `auto`, `always`, `never`.
+`--hyperlinks=WHEN`, for [`explain`](#explain), [`next`](#next), [`run`](#run). File locations as links a terminal can open: auto uses them on a terminal. One of `auto`, `always`, `never`.
 
 ```sh
 mutastic explain mb2f8ae57 --hyperlinks=never
+mutastic next --hyperlinks=never
 mutastic run --hyperlinks=never
 ```
 
 ### `--progress`
 
-`--progress=STYLE`, for [`explain`](#explain), [`run`](#run), [`verify`](#verify). Progress on stderr: a bar on a terminal, counter lines in logs, none for agents. One of `auto`, `bar`, `counter`, `none`.
+`--progress=STYLE`, for [`explain`](#explain), [`next`](#next), [`run`](#run), [`verify`](#verify). Progress on stderr: a bar on a terminal, counter lines in logs, none for agents. One of `auto`, `bar`, `counter`, `none`.
 
 ```sh
 mutastic explain mb2f8ae57 --progress=counter
+mutastic next --progress=counter
 mutastic run --progress=counter
 mutastic verify mb2f8ae57 --progress=counter
+```
+
+### `--top`
+
+`--top=N`, for [`next`](#next). How many of the queue next shows, at most one a function and two a file; 1 unless set, at most 25.
+
+```sh
+mutastic next --top=5
 ```
 
 ### `--reason`
@@ -341,7 +376,7 @@ mutastic gate check --hook=claude --tries=5
 
 ### `--edition`
 
-`--edition=EDITION`, for [`explain`](#explain), [`gate check`](#gate-check), [`gate close`](#gate-close), [`gate open`](#gate-open), [`ignore`](#ignore), [`mutants`](#mutants), [`run`](#run), [`verify`](#verify). Which edition runs; unless set, the build file in dir, or the nearest above it: Cargo.toml for rust, pom.xml, build.gradle or settings.gradle for java. One of `rust`, `java`.
+`--edition=EDITION`, for [`explain`](#explain), [`gate check`](#gate-check), [`gate close`](#gate-close), [`gate open`](#gate-open), [`ignore`](#ignore), [`mutants`](#mutants), [`next`](#next), [`run`](#run), [`verify`](#verify). Which edition runs; unless set, the build file in dir, or the nearest above it: Cargo.toml for rust, pom.xml, build.gradle or settings.gradle for java. One of `rust`, `java`.
 
 ```sh
 mutastic explain mb2f8ae57 --edition=rust
@@ -350,6 +385,7 @@ mutastic gate close --edition=rust
 mutastic gate open --edition=rust
 mutastic ignore mb2f8ae57 --edition=rust
 mutastic mutants --edition=rust
+mutastic next --edition=rust
 mutastic run --edition=rust
 mutastic verify mb2f8ae57 --edition=rust
 ```
@@ -372,6 +408,6 @@ mutastic verify mb2f8ae57 --edition=rust
 
 ## Exit codes
 
-- **0**: The score reaches the threshold; for verify, each mutant named is caught, skipped, or crashed where a crash proves nothing; for gate check, the task is done.
-- **1**: The score is below the threshold; for verify, a mutant named is still missed or not covered; for gate check, the task isn't done; for ignore --accept, the mutant isn't proposed.
+- **0**: The score reaches the threshold; for verify, each mutant named is caught, skipped, or crashed where a crash proves nothing; for gate check, the task is done; for next, nothing missed is left but what's proposed for ignoring.
+- **1**: The score is below the threshold; for verify, a mutant named is still missed or not covered; for gate check, the task isn't done; for ignore --accept, the mutant isn't proposed; for next, something is queued.
 - **2**: mutastic couldn't run: an unknown option, a word the command doesn't take, not a Cargo package, a workspace's root, a test that fails with no mutant in, an id that isn't a mutant of the package, shares --from-shards can't put together as one run, or no task open for gate check.
