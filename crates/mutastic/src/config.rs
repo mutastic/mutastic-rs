@@ -90,7 +90,14 @@ impl Configuration {
         if !first.is_file() {
             return Ok(Configuration::default());
         }
-        let shown = |file: &Path| relative(&base, file).display().to_string();
+        // Named with `/` on every platform, as the file's own `extends:` lines name them.
+        let shown = |file: &Path| {
+            let names: Vec<String> = relative(&base, file)
+                .components()
+                .map(|name| name.as_os_str().to_string_lossy().into_owned())
+                .collect();
+            names.join("/")
+        };
         // The files read so far, in order, so one that comes back round is an error, not a loop.
         let mut chain = vec![first.clone()];
         let mut file = first;
