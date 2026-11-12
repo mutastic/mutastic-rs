@@ -1,6 +1,7 @@
 //! The report files a full run writes, as the Java edition writes them: `mutation.json`, in the
 //! mutation-testing report schema (version 2), and `mutation.html`, that report in the schema's
-//! own viewer, embedded so the page needs no network.
+//! own viewer, embedded so the page needs no network; and `mutation.sarif`, SARIF 2.1.0 for code
+//! scanning, when asked for (`sarif.rs`).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -19,6 +20,7 @@ const VIEWER: &str = include_str!("viewer/mutation-test-elements.js");
 pub enum Kind {
     Json,
     Html,
+    Sarif,
 }
 
 impl Kind {
@@ -26,6 +28,7 @@ impl Kind {
         match name {
             "json" => Some(Kind::Json),
             "html" => Some(Kind::Html),
+            "sarif" => Some(Kind::Sarif),
             _ => None,
         }
     }
@@ -34,6 +37,7 @@ impl Kind {
         match self {
             Kind::Json => "mutation.json",
             Kind::Html => "mutation.html",
+            Kind::Sarif => "mutation.sarif",
         }
     }
 }
@@ -59,6 +63,7 @@ pub fn write(
         let text = match kind {
             Kind::Json => format!("{:#}\n", json(report)),
             Kind::Html => html(report),
+            Kind::Sarif => format!("{:#}\n", super::sarif::document(report)),
         };
         if let Some(parent) = file.parent() {
             std::fs::create_dir_all(parent)
@@ -164,7 +169,7 @@ fn mutant_entry(view: &View, result: &MutantResult) -> Value {
 }
 
 /// `{"line": 26, "column": 18}` for a byte offset: 1-based, the column in characters.
-fn position(text: &str, offset: usize) -> Value {
+pub(super) fn position(text: &str, offset: usize) -> Value {
     let offset = offset.min(text.len());
     let starts = crate::sites::line_starts(text);
     let line = crate::sites::line_of(&starts, offset);

@@ -14,6 +14,7 @@ use crate::suggest::{self, SuggestedTest};
 use crate::words::{self, Advice};
 
 pub mod files;
+pub mod sarif;
 
 pub const SCHEMA: &str = "mutastic.events/v1";
 /// The events format's name for this edition, on every event.

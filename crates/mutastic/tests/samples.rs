@@ -1329,3 +1329,62 @@ fn a_full_run_compares_with_the_last_and_is_kept_for_the_next() {
     );
     std::fs::remove_dir_all(&copy).ok();
 }
+
+/// `--report=sarif`: SARIF 2.1.0 the schema accepts, a result for the missed mutant on its line
+/// with its id, and paths from the repository's root, a folder above the package here.
+#[test]
+fn the_sarif_report_is_a_result_for_each_miss_keyed_by_its_id() {
+    let repository = copy_of("pricing", "sarif");
+    let package = repository.join("shop");
+    std::fs::create_dir_all(&package).unwrap();
+    for name in ["Cargo.toml", "src", "tests"] {
+        if repository.join(name).exists() {
+            std::fs::rename(repository.join(name), package.join(name)).unwrap();
+        }
+    }
+    std::fs::create_dir_all(repository.join(".git")).unwrap();
+    let (code, out) = mutastic_in(
+        &repository,
+        &["run", "shop", "--report=sarif", "--format=concise"],
+    );
+    assert_eq!(code, 0, "{out}");
+    let sarif: Value = serde_json::from_str(
+        &std::fs::read_to_string(package.join("target/mutastic/mutation.sarif")).unwrap(),
+    )
+    .unwrap();
+    let schema: Value = serde_json::from_str(include_str!("schema/sarif-2.1.0.json")).unwrap();
+    let validator = jsonschema::validator_for(&schema).unwrap();
+    let errors: Vec<String> = validator
+        .iter_errors(&sarif)
+        .map(|e| e.to_string())
+        .collect();
+    assert!(errors.is_empty(), "{errors:?}");
+    assert!(
+        !validator.is_valid(&serde_json::json!({ "version": "2.0.0", "runs": [{}] })),
+        "the schema refuses what isn't SARIF 2.1.0"
+    );
+
+    let run = &sarif["runs"][0];
+    let results = run["results"].as_array().unwrap();
+    assert_eq!(results.len(), 1, "{results:?}");
+    let missed = &results[0];
+    assert_eq!(missed["level"], "warning");
+    assert_eq!(missed["ruleId"], "mutastic/boundary");
+    assert_eq!(
+        run["tool"]["driver"]["rules"][missed["ruleIndex"].as_u64().unwrap() as usize]["id"],
+        "mutastic/boundary"
+    );
+    assert_eq!(missed["partialFingerprints"]["mutasticId/v1"], "mb2f8ae57");
+    assert!(missed.get("fixes").is_none());
+    assert_eq!(
+        missed["message"]["text"],
+        "no test checks discount() at total == 100"
+    );
+    let location = &missed["locations"][0]["physicalLocation"];
+    assert_eq!(location["artifactLocation"]["uri"], "shop/src/lib.rs");
+    assert_eq!(
+        location["region"],
+        serde_json::json!({ "startLine": 26, "startColumn": 18, "endColumn": 20 })
+    );
+    std::fs::remove_dir_all(&repository).ok();
+}
