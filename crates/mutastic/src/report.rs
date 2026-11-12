@@ -301,20 +301,23 @@ impl<'a> View<'a> {
         &self.mutant(result).id
     }
 
-    /// The tests suggested for an entry's mutants, each test once: two mutants of one line can
-    /// have the same call, and pasting it twice wouldn't compile. On a card with others, each
-    /// test's comment names the mutant it was found for.
-    fn suggested(&self, entry: &Entry) -> Vec<SuggestedTest> {
+    /// Each of an entry's mutants in order, with its test: none when there's no suggestion, or
+    /// when an earlier mutant's test is the same call, since pasting it twice wouldn't compile. On
+    /// a card with others, each test's comment names the mutant it was found for.
+    fn each_mutant<'e>(&self, entry: &Entry<'e>) -> Vec<(&'e MutantResult, Option<SuggestedTest>)> {
         let shared = !entry.also.is_empty();
-        let mut tests: Vec<SuggestedTest> = Vec::new();
+        let mut names: Vec<String> = Vec::new();
+        let mut each = Vec::new();
         for result in std::iter::once(entry.main).chain(entry.also.iter().copied()) {
-            if let Some(test) = self.suggested_test(result, shared) {
-                if !tests.iter().any(|kept| kept.name == test.name) {
-                    tests.push(test);
-                }
+            let test = self
+                .suggested_test(result, shared)
+                .filter(|test| !names.contains(&test.name));
+            if let Some(test) = &test {
+                names.push(test.name.clone());
             }
+            each.push((result, test));
         }
-        tests
+        each
     }
 
     fn suggested_test(&self, result: &MutantResult, named: bool) -> Option<SuggestedTest> {
@@ -1166,23 +1169,7 @@ fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
             let _ = writeln!(out, "{g}        {}", style.dim(&style.code(note)));
         }
     }
-    let _ = writeln!(
-        out,
-        "{g}{equals} {}: {}",
-        style.green(&style.bold("help")),
-        style.code(&advice.help)
-    );
-    let tests = view.suggested(entry);
-    if !tests.is_empty() {
-        let _ = writeln!(out);
-        for test in &tests {
-            let _ = writeln!(out, "{g}        // in {}", test.place);
-            for line in &test.lines {
-                let _ = writeln!(out, "{g}        {line}");
-            }
-        }
-        let _ = writeln!(out, "{g}        {}", style.dim(CHECK_TODAY));
-    }
+    help_and_tests(out, view, entry, &advice.help, &g, style);
     let ids = id_list(view, entry);
     let _ = writeln!(
         out,
@@ -1203,6 +1190,55 @@ fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
         style.dim("or ignore "),
         view.command("ignore", &ids)
     );
+}
+
+/// `= help: the fix`, then each test to add. When the card has a test for more than one of its
+/// mutants, each test comes after its own mutant's fix and id, as the Java edition gives them: the
+/// lead's fix describes only the lead's test.
+fn help_and_tests(out: &mut String, view: &View, entry: &Entry, help: &str, g: &str, style: Style) {
+    let each = view.each_mutant(entry);
+    let own = each.iter().filter(|(_, test)| test.is_some()).count() > 1;
+    let shown = if own {
+        each_help(&each).to_string()
+    } else {
+        style.code(help)
+    };
+    let _ = writeln!(
+        out,
+        "{g}{} {}: {shown}",
+        style.dim("="),
+        style.green(&style.bold("help"))
+    );
+    let mut any = false;
+    for (result, test) in &each {
+        if own {
+            let fix = style.code(&view.advice(result).help);
+            let id = style.dim(&format!(" · {}", view.id(result)));
+            let _ = writeln!(out, "\n{g}        {fix}{id}");
+        }
+        if let Some(test) = test {
+            if !own {
+                let _ = writeln!(out);
+            }
+            any = true;
+            let _ = writeln!(out, "{g}        // in {}", test.place);
+            for line in &test.lines {
+                let _ = writeln!(out, "{g}        {line}");
+            }
+        }
+    }
+    if any {
+        let _ = writeln!(out, "{g}        {}", style.dim(CHECK_TODAY));
+    }
+}
+
+/// What `help:` says when each test has its own fix: one test each, if every mutant has one.
+fn each_help(each: &[(&MutantResult, Option<SuggestedTest>)]) -> &'static str {
+    if each.iter().all(|(_, test)| test.is_some()) {
+        "one test for each mutant"
+    } else {
+        "for each mutant"
+    }
 }
 
 /// Under a suggested test, as the Java edition says it: the value it asserts is what the code
@@ -1851,15 +1887,27 @@ fn agent_entry(view: &View, entry: &Entry, words: Vocabulary) -> String {
     for note in &advice.notes {
         let _ = writeln!(out, "   evidence: {note}");
     }
-    let _ = writeln!(out, "   fix: {}", advice.help);
-    let tests = view.suggested(entry);
-    for test in &tests {
-        let _ = writeln!(out, "   test to add in {}:", test.place);
-        for line in &test.lines {
-            let _ = writeln!(out, "     {line}");
+    let each = view.each_mutant(entry);
+    let own = each.iter().filter(|(_, test)| test.is_some()).count() > 1;
+    let fix = if own {
+        each_help(&each)
+    } else {
+        advice.help.as_str()
+    };
+    let _ = writeln!(out, "   fix: {fix}");
+    for (result, test) in &each {
+        if own {
+            let help = &view.advice(result).help;
+            let _ = writeln!(out, "   fix for {}: {help}", view.id(result));
+        }
+        if let Some(test) = test {
+            let _ = writeln!(out, "   test to add in {}:", test.place);
+            for line in &test.lines {
+                let _ = writeln!(out, "     {line}");
+            }
         }
     }
-    if !tests.is_empty() {
+    if each.iter().any(|(_, test)| test.is_some()) {
         let _ = writeln!(out, "     // {CHECK_TODAY}");
     }
     let _ = writeln!(out, "   done when: {} passes", view.command("verify", &ids));

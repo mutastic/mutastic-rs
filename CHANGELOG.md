@@ -7,6 +7,11 @@ newest come first.
 
 ### Card changes
 
+- **Each suggested test says what it's for**, as in the Java edition. A card with a test for more
+  than one of its mutants gave only the first mutant's fix, so the second test came with nothing
+  saying why. Now `help:` says `one test for each mutant`, and each test follows its own mutant's
+  fix and id; the agent format's `fix:` does the same, with a `fix for <id>:` line before each
+  test.
 - **`explain` says `run` or `next` records a last run.** With none kept, its `last run` row said a
   full run records one; `next`'s first pass now does too, and the row says so in the Java edition's
   words.
