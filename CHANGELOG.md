@@ -7,6 +7,11 @@ newest come first.
 
 ### Card changes
 
+- **A suggested test is named by where its input sits, not its value,** as in the Java edition. A
+  call of one argument is named for zero or a negative input, `fee_when_amount_is_zero`, or for
+  the edge of the literal its condition compares with, `discount_at_the_total_edge` and
+  `discount_just_below_the_total_edge`; a `const` the source names is used as before; anything
+  else keeps its values. Two mutants on a card suggesting one call get one test.
 - **Each suggested test says what it's for**, as in the Java edition. A card with a test for more
   than one of its mutants gave only the first mutant's fix, so the second test came with nothing
   saying why. Now `help:` says `one test for each mutant`, and each test follows its own mutant's

@@ -52,7 +52,7 @@ On `fixtures/pricing`, a small crate in this repository whose tests reach every 
 
             // in mod tests
             #[test]
-            fn discount_with_total_100() {
+            fn discount_at_the_total_edge() {
                 assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
             }
             check today's value is the one you intend: the test pins what the code does now
@@ -74,7 +74,7 @@ mutastic verify mb2f8ae57 fixtures/pricing
 
 <!-- output: getting-started/verify -->
 ```text
-mutastic: mb2f8ae57 is caught by tests::discount_with_total_100
+mutastic: mb2f8ae57 is caught by tests::discount_at_the_total_edge
 ```
 
 ## Install

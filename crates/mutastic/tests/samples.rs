@@ -122,7 +122,7 @@ fn pricing_misses_only_the_edge_of_the_discount() {
 
             // in mod tests
             #[test]
-            fn discount_with_total_100() {{
+            fn discount_at_the_total_edge() {{
                 assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
             }}
             check today's value is the one you intend: the test pins what the code does now

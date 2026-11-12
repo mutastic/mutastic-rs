@@ -58,7 +58,7 @@ against the tests that reach it. One mutant gets past them:
 
             // in mod tests
             #[test]
-            fn discount_with_total_100() {
+            fn discount_at_the_total_edge() {
                 assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
             }
             check today's value is the one you intend: the test pins what the code does now
@@ -111,7 +111,7 @@ The card's test asserts what `discount(100)` gives today, 10. Is that right? The
 <!-- added to: fixtures/pricing/src/lib.rs -->
 ```rust
 #[test]
-fn discount_with_total_100() {
+fn discount_at_the_total_edge() {
     assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
 }
 ```
@@ -130,7 +130,7 @@ mutastic verify mb2f8ae57 fixtures/pricing
 
 <!-- output: getting-started/verify -->
 ```text
-mutastic: mb2f8ae57 is caught by tests::discount_with_total_100
+mutastic: mb2f8ae57 is caught by tests::discount_at_the_total_edge
 ```
 
 The mutant is caught: a test now fails when `>=` becomes `>`. `verify` exits with 0 when every

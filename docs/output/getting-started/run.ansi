@@ -20,7 +20,7 @@
 
             // in mod tests
             #[test]
-            fn discount_with_total_100() {
+            fn discount_at_the_total_edge() {
                 assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
             }
             [2mcheck today's value is the one you intend: the test pins what the code does now[0m
@@ -34,9 +34,9 @@
  [2m Worst at[0m  Pricing::discount() 1 ✗
  [2m    Build[0m  one build of every mutant, 2 rounds (check and build)
  [2mTest runs[0m  13[2m (33 without coverage selection)[0m
- [2m Start at[0m  03:00:33
- [2m Duration[0m  2.7s [2m(setup 2.7s, coverage 4ms, mutants 30ms)[0m
- [2m    Tests[0m  3 on rustc 1.98.0 · 4 workers
+ [2m Start at[0m  18:23:57
+ [2m Duration[0m  493ms [2m(setup 460ms, coverage 2ms, mutants 16ms)[0m
+ [2m    Tests[0m  3 on rustc 1.99.1 · 4 workers
  [2m  Reports[0m  target/mutastic/mutation.json[2m · [0mtarget/mutastic/mutation.html
  [2m    Score[0m  [32m[1m90.9%[0m[0m[2m  threshold 80[0m
 
