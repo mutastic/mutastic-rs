@@ -11,6 +11,11 @@
 //! To write the docs' copy again, after a change to what mutastic prints:
 //! `MUTASTIC_DOCS_WRITE=1 cargo test --test docs`, then read the diff.
 
+#![allow(
+    clippy::unwrap_used,
+    reason = "a helper here asserts as the tests it serves do: a value that isn't there fails the test"
+)]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;

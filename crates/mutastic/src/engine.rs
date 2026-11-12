@@ -692,7 +692,6 @@ fn first_at_site(found: &Crate, selected: &BTreeSet<usize>, built: &compile::Bui
         .collect()
 }
 
-#[allow(clippy::too_many_arguments)]
 fn result(
     found: &Crate,
     index: usize,

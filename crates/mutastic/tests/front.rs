@@ -2,6 +2,11 @@
 //! Gradle project it hands the command, unchanged, to the Java edition, which it fetches the first
 //! time one is needed. These run the built binary with a stand-in Java edition, a shell script that
 //! writes down what it was given, and a release directory on disk: never the network.
+
+#![allow(
+    clippy::unwrap_used,
+    reason = "a helper here asserts as the tests it serves do: a value that isn't there fails the test"
+)]
 #![cfg(unix)]
 
 use std::os::unix::fs::PermissionsExt;

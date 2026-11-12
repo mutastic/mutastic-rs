@@ -12,7 +12,10 @@ pub fn schema() -> jsonschema::Validator {
 /// What the schema says a mutation's `applied` is. The schema leaves objects open, so an event
 /// with a field it doesn't name still passes [`schema`]: this checks `applied` is one it names, and
 /// as it describes it.
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "only some test crates check `applied`, and an `expect` would fail in the others"
+)]
 pub fn applied_schema() -> jsonschema::Validator {
     let applied = pinned()["$defs"]["mutantFinished"]["properties"]["mutation"]["properties"]
         ["applied"]

@@ -1,6 +1,11 @@
 //! A run split across machines with `--shard`, and put back together with `--from-shards`: the
 //! shares together are the whole run, and shares that aren't one run's are refused.
 
+#![allow(
+    clippy::unwrap_used,
+    reason = "a helper here asserts as the tests it serves do: a value that isn't there fails the test"
+)]
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
