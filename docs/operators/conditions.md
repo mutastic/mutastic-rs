@@ -265,6 +265,13 @@ pub fn share(total: u32, parts: NonZeroU32) -> u32 {
 }
 ```
 
+`cfg!(debug_assertions)` is always true under mutastic, which builds with debug assertions on, as
+the test profile does, whatever the project's own profiles say. So the mutant that forces it true
+is skipped as equivalent, alone, under `!` or as one side of `&&`, and the one that forces it false
+runs: that's the build without them, which the tests can tell apart. Only `cfg!(debug_assertions)`
+itself is taken: `cfg!(all(debug_assertions, unix))`, or a name it was stored in, and the mutants
+run.
+
 **Edition notes:** the Java edition has this operator too, `mutastic/remove-conditional`, for every
 condition the bytecode jumps on, `&&` and `||`'s sides among them.
 

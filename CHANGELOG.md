@@ -71,7 +71,10 @@ newest come first.
   `shop/mutastic.yaml` for `shop` when there is one, and the nearest above it, up to the git
   repository's top, when there isn't. A package without a file of its own, in a repository with one
   at its top, now has the top's rules applied.
-
+- **`cfg!(debug_assertions)` forced true is skipped as equivalent.** mutastic builds every mutant
+  with debug assertions on, so under it the condition is always true, and forcing it true changes
+  nothing a test can see. Forced false still runs. Measured on httparse: 3 of its misses, 3 of 3
+  this. Scores can go up; no id changes.
 - **A boundary where both sides give the same value at the edge is skipped as equivalent,** as in
   the Java edition: `if x > max { max = x }`, `if a < b { a } else { b }`,
   `if fee < 10 { 10 } else { fee }` and `if x < 2 { x = 2 }`, on whole numbers the source declares.
@@ -81,6 +84,10 @@ newest come first.
 
 ### Fixes
 
+- **Two runs on one package wait for each other.** Run at once, they rewrote each other's copy and
+  build in `target/mutastic/` in the middle of a run, so a mutant could be judged by the other
+  run's build. The first run now holds the package's work directory until it ends, and a second
+  says it's waiting and runs after it.
 - **A closed stderr no longer loses a run.** `mutastic run … 2>&1 | head` closed stderr under a
   run, and its first progress line stopped it with a panic. Progress and notes are now dropped
   when they can't be written, and the run goes on. A worker thread that panics now fails the run;
