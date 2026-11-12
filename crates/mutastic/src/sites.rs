@@ -15,7 +15,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
-use ra_ap_syntax::ast::{self, ArithOp, BinaryOp, CmpOp, HasAttrs, HasName, LogicOp, Ordering};
+use ra_ap_syntax::ast::{
+    self, ArithOp, BinaryOp, CmpOp, HasAttrs, HasName, HasVisibility, LogicOp, Ordering,
+};
 use ra_ap_syntax::{AstNode, Edition, SourceFile, SyntaxKind, SyntaxNode, TextRange};
 
 use crate::cfg::Cfg;
@@ -372,6 +374,9 @@ pub struct Function {
     pub numbers: Vec<(String, String)>,
     /// How a test calls it with whole numbers alone, when one can: what a suggested test writes.
     pub callable: Option<callable::Callable>,
+    /// Whether code outside the crate can call it, and so give it any input: `pub`, or a method of
+    /// a trait's impl. The inputs of any other come from the crate's own callers.
+    pub public: bool,
 }
 
 /// A source file and what was found in it.
@@ -947,6 +952,17 @@ impl Finder<'_> {
         let callable = (tier == Tier::Safe)
             .then(|| callable::of(function, self.module, &self.facts.receivers))
             .flatten();
+        let in_trait_impl = function
+            .syntax()
+            .parent()
+            .and_then(ast::AssocItemList::cast)
+            .and_then(|list| list.syntax().parent())
+            .and_then(ast::Impl::cast)
+            .is_some_and(|block| block.trait_().is_some());
+        let public = in_trait_impl
+            || function
+                .visibility()
+                .is_some_and(|visibility| visibility.syntax().text() == "pub");
         self.found.functions.push(Function {
             ordinal: index as u32 + 1,
             name: name.clone(),
@@ -957,6 +973,7 @@ impl Finder<'_> {
             body_open,
             numbers,
             callable,
+            public,
         });
         let context = Context {
             function: index,

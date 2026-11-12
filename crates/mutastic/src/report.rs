@@ -128,7 +128,45 @@ impl<'a> View<'a> {
         if let Some(named) = self.named(result).filter(|named| !named.meaning.is_empty()) {
             named_notes(&mut advice.notes, &named, result);
         }
+        if let Some(unpassed) = self.beyond_callers(result) {
+            advice.notes.push(format!(
+                "no caller of `{name}()` passed {unpassed}, which a test of it alone would need"
+            ));
+            advice.help = format!(
+                "if a caller can pass {unpassed}, test that caller with it; if none can, the mutant \
+                 can't happen: propose ignoring it as unreachable"
+            );
+        }
         advice
+    }
+
+    /// The arguments of the suggested call no covering test gave, `days_late = -1`, when the
+    /// function is the crate's own: only its callers give it inputs, and a test of it alone on one
+    /// they never pass may test what can't happen. None for a function anyone can call, or a call
+    /// the callers made.
+    fn beyond_callers(&self, result: &MutantResult) -> Option<String> {
+        let suggestion = result.suggestion.as_ref()?;
+        let function = &self.report.found.functions[self.mutant(result).function];
+        if function.public {
+            return None;
+        }
+        let arguments = &suggestion.values[suggestion
+            .values
+            .len()
+            .checked_sub(function.numbers.len())?..];
+        let unpassed: Vec<String> = function
+            .numbers
+            .iter()
+            .zip(arguments)
+            .filter(|((name, _), value)| {
+                !result
+                    .inputs
+                    .get(name)
+                    .is_some_and(|seen| seen.contains(value))
+            })
+            .map(|((name, _), value)| format!("`{name} = {value}`"))
+            .collect();
+        (!unpassed.is_empty()).then(|| unpassed.join(" and "))
     }
 
     /// The value the suggested call is at, when the source names it.
@@ -182,6 +220,9 @@ impl<'a> View<'a> {
     }
 
     fn suggested_test(&self, result: &MutantResult, named: bool) -> Option<SuggestedTest> {
+        if self.beyond_callers(result).is_some() {
+            return None;
+        }
         let suggestion = result.suggestion.as_ref()?;
         let mutant = self.mutant(result);
         let callable = self.report.found.functions[mutant.function]
