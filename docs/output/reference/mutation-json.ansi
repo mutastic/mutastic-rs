@@ -1,0 +1,43 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/mutation-testing-elements/master/packages/report-schema/src/mutation-testing-report-schema.json",
+  "schemaVersion": "2",
+  "thresholds": {
+    "high": 80,
+    "low": 60
+  },
+  "files": {
+    "src/lib.rs": {
+      "language": "rust",
+      "source": "…",
+      "mutants": [
+        {
+          "id": "mb2f8ae57",
+          "mutatorName": "boundary",
+          "replacement": ">",
+          "description": "`>=` becomes `>`",
+          "location": {
+            "start": {
+              "line": 26,
+              "column": 18
+            },
+            "end": {
+              "line": 26,
+              "column": 20
+            }
+          },
+          "status": "Survived",
+          "statusReason": "no test checks discount() at total == 100",
+          "coveredBy": [
+            "tests::small_orders_pay_full_price",
+            "pricing::big_orders_get_ten_percent_off"
+          ],
+          "testsCompleted": 2
+        }
+      ]
+    }
+  },
+  "framework": {
+    "name": "mutastic",
+    "version": "1.0.0"
+  }
+}

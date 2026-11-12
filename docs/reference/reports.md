@@ -18,6 +18,61 @@ wrote, as `run-finished`'s `reports` does.
 `language` is `rust` in each file's entry, and the tests are grouped by the module that holds them
 (`tests`, `pricing`), where the Java edition groups them by class.
 
+### What `mutation.json` holds
+
+The pricing fixture's, trimmed to its one missed mutant, without the file's text (`source`), the
+other mutants, the tests, its absolute `projectRoot` or its timings:
+
+<!-- output: reference/mutation-json -->
+```text
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/mutation-testing-elements/master/packages/report-schema/src/mutation-testing-report-schema.json",
+  "schemaVersion": "2",
+  "thresholds": {
+    "high": 80,
+    "low": 60
+  },
+  "files": {
+    "src/lib.rs": {
+      "language": "rust",
+      "source": "…",
+      "mutants": [
+        {
+          "id": "mb2f8ae57",
+          "mutatorName": "boundary",
+          "replacement": ">",
+          "description": "`>=` becomes `>`",
+          "location": {
+            "start": {
+              "line": 26,
+              "column": 18
+            },
+            "end": {
+              "line": 26,
+              "column": 20
+            }
+          },
+          "status": "Survived",
+          "statusReason": "no test checks discount() at total == 100",
+          "coveredBy": [
+            "tests::small_orders_pay_full_price",
+            "pricing::big_orders_get_ten_percent_off"
+          ],
+          "testsCompleted": 2
+        }
+      ]
+    }
+  },
+  "framework": {
+    "name": "mutastic",
+    "version": "1.0.0"
+  }
+}
+```
+
+`location` is 1-based, its end one past the change. `statusReason` is the card's headline, and
+`coveredBy` the tests that ran it and passed.
+
 ## Where they go
 
 In `target/mutastic` beside the build, wherever your target directory is. A file given a path of
