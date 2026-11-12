@@ -122,6 +122,7 @@ pub fn is_newer(major: u32, minor: u32, than_major: u32, than_minor: u32) -> boo
   "fingerprint": "be0ed92fc9d72e1b",
   "status": "Ignored",
   "operator": "mutastic/boundary",
+  "docs": "https://docs.mutastic.io/rust/operators/conditions/#boundary",
   "location": {
     "file": "src/conditions.rs",
     "line": 44,
@@ -242,6 +243,7 @@ pub fn share(total: u32, parts: NonZeroU32) -> u32 {
   "fingerprint": "497f89e437964e71",
   "status": "Ignored",
   "operator": "mutastic/remove-conditional",
+  "docs": "https://docs.mutastic.io/rust/operators/conditions/#remove-conditional",
   "location": {
     "file": "src/conditions.rs",
     "line": 34,

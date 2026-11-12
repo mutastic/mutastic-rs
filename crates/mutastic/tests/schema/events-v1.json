@@ -162,6 +162,10 @@
           "type": "string",
           "description": "The operator that made it: `mutastic/boundary`, `stream/remove-stage`."
         },
+        "docs": {
+          "type": "string",
+          "description": "Where docs.mutastic.io describes the operator, in the docs of the mutastic that ran: in the Java edition its row on the operators page, `https://docs.mutastic.io/concepts/operators/#boundary`; in Rust's its section in the Rust docs, `https://docs.mutastic.io/rust/operators/conditions/#boundary`. Only for mutastic's own operators: a plugin's has none."
+        },
         "location": {
           "type": "object",
           "description": "Where the mutant is.",

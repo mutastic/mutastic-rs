@@ -28,6 +28,7 @@ the function returns a `String`:
   "fingerprint": "4db96a5721e0ee95",
   "status": "Ignored",
   "operator": "mutastic/omit-call",
+  "docs": "https://docs.mutastic.io/rust/operators/arguments/#omit-call",
   "location": {
     "file": "src/arguments.rs",
     "line": 4,

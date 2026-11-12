@@ -126,6 +126,7 @@ Near-unsafe mutants run differently:
   "fingerprint": "9ff2826156a229af",
   "status": "RuntimeError",
   "operator": "mutastic/remove-conditional",
+  "docs": "https://docs.mutastic.io/rust/operators/conditions/#remove-conditional",
   "location": {
     "file": "src/raw.rs",
     "line": 24,
@@ -176,6 +177,7 @@ stops it. That's std's catch, not a test's, so it's a `RuntimeError` too, wherev
   "fingerprint": "71ecfa0fc15036f8",
   "status": "RuntimeError",
   "operator": "mutastic/return-value",
+  "docs": "https://docs.mutastic.io/rust/operators/returns/#return-value",
   "location": {
     "file": "src/raw.rs",
     "line": 5,

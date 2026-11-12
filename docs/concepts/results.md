@@ -56,6 +56,7 @@ crashed, not by a test's check`), and in the event stream the mutant has `caught
   "fingerprint": "418fd2e4aad78dcd",
   "status": "Killed",
   "operator": "mutastic/remove-conditional",
+  "docs": "https://docs.mutastic.io/rust/operators/conditions/#remove-conditional",
   "location": {
     "file": "src/plain.rs",
     "line": 5,

@@ -144,16 +144,22 @@ impl Style {
     /// `text` linking to `file`, when links are on, as the Java edition writes them: the line
     /// number stays in the text, as whether terminals honour one in a `file:` URI varies.
     fn link(self, file: &std::path::Path, text: &str) -> String {
-        if !self.links {
-            return text.to_string();
-        }
         let path = crate::workspace::slashed(file).replace('\\', "/");
         let path = if path.starts_with('/') {
             path
         } else {
             format!("/{path}")
         };
-        format!("\x1b]8;;file://{path}\x1b\\{text}\x1b]8;;\x1b\\")
+        self.link_url(&format!("file://{path}"), text)
+    }
+
+    /// `text` linking to `url`, when links are on.
+    fn link_url(self, url: &str, text: &str) -> String {
+        if self.links {
+            format!("\x1b]8;;{url}\x1b\\{text}\x1b]8;;\x1b\\")
+        } else {
+            text.to_string()
+        }
     }
 
     fn paint(self, code: &str, text: &str) -> String {
@@ -837,8 +843,16 @@ fn or_only_flaky(report: &Report) -> &'static str {
 }
 
 /// `┌─ src/lib.rs:26`, then the changed line between the lines either side, the change marked under
-/// it; gives the gutter the rest of the card is indented by.
-fn frame(out: &mut String, view: &View, mutant: &Mutant, advice: &Advice, style: Style) -> String {
+/// it; gives the gutter the rest of the card is indented by. With `docs`, the mark links to its
+/// operator's section in the docs when links are on, as the Java edition's full card does.
+fn frame(
+    out: &mut String,
+    view: &View,
+    mutant: &Mutant,
+    advice: &Advice,
+    docs: Option<&str>,
+    style: Style,
+) -> String {
     let text = view.text(mutant);
     let lines: Vec<&str> = text.lines().collect();
     let width = (mutant.line + 1).to_string().len();
@@ -869,11 +883,12 @@ fn frame(out: &mut String, view: &View, mutant: &Mutant, advice: &Advice, style:
                 .chars()
                 .count()
                 .max(1);
+            let marked = style.red(&format!("{} {}", "^".repeat(caret_width), advice.caret));
             let _ = writeln!(
                 out,
                 "{g}{bar} {}{}",
                 " ".repeat(mutant.column - 1),
-                style.red(&format!("{} {}", "^".repeat(caret_width), advice.caret))
+                docs.map_or_else(|| marked.clone(), |url| style.link_url(url, &marked))
             );
         }
     }
@@ -1089,7 +1104,7 @@ fn brief_card(out: &mut String, view: &View, entry: &Entry, style: Style) {
         ),
         style.code(&advice.headline)
     );
-    let g = frame(out, view, mutant, &advice, style);
+    let g = frame(out, view, mutant, &advice, None, style);
     let equals = style.dim("=");
     for (index, note) in advice.notes.iter().enumerate() {
         if index == 0 {
@@ -1131,7 +1146,8 @@ fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
             String::new()
         }
     );
-    let g = frame(out, view, mutant, &advice, style);
+    let docs = crate::operator_docs::url(mutant.operator);
+    let g = frame(out, view, mutant, &advice, docs.as_deref(), style);
     let equals = style.dim("=");
     before_and_after(out, &g, &view.changed_lines(mutant), style);
     for other in &entry.also {
@@ -2118,6 +2134,17 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
         },
         "mutation": mutation,
     });
+    if let (Some(docs), Some(fields)) = (
+        crate::operator_docs::url(mutant.operator),
+        event.as_object_mut(),
+    ) {
+        // Beside the operator it describes, as the Java edition writes it.
+        let at = fields
+            .keys()
+            .position(|key| key == "operator")
+            .map_or(fields.len(), |operator| operator + 1);
+        fields.shift_insert(at, "docs".to_string(), json!(docs));
+    }
     if let Some(reason) = &result.reason {
         event["statusReason"] = json!(reason);
         if result.status == Status::Ignored {
@@ -2308,7 +2335,8 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
         ),
     };
     let _ = writeln!(out, "\n {label} {}", style.bold(&outcome));
-    let g = frame(out, view, mutant, &advice, style);
+    let docs = crate::operator_docs::url(mutant.operator);
+    let g = frame(out, view, mutant, &advice, docs.as_deref(), style);
     before_and_after(out, &g, &view.changed_lines(mutant), style);
     let mut notes = advice.notes.clone();
     if !result.covered_by.is_empty() {
@@ -2386,7 +2414,12 @@ fn about(
                 |rule| rule.explanation.clone()
             )
         ),
-        Vec::new(),
+        // Where the docs say more, as text to copy in any terminal; a rules file's operator has
+        // no section there.
+        crate::operator_docs::url(mutant.operator)
+            .map(|url| format!("docs: {url}"))
+            .into_iter()
+            .collect(),
     );
     row(
         out,

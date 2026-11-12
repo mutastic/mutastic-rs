@@ -6,6 +6,7 @@
   "fingerprint": "497f89e437964e71",
   "status": "Ignored",
   "operator": "mutastic/remove-conditional",
+  "docs": "https://docs.mutastic.io/rust/operators/conditions/#remove-conditional",
   "location": {
     "file": "src/conditions.rs",
     "line": 34,

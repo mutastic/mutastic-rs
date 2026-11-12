@@ -6,6 +6,7 @@
   "fingerprint": "71ecfa0fc15036f8",
   "status": "RuntimeError",
   "operator": "mutastic/return-value",
+  "docs": "https://docs.mutastic.io/rust/operators/returns/#return-value",
   "location": {
     "file": "src/raw.rs",
     "line": 5,
@@ -32,5 +33,5 @@
     ]
   },
   "testsRun": 1,
-  "durationMs": 47
+  "durationMs": 4
 }
