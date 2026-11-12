@@ -206,7 +206,7 @@ mutastic run --unsafe=enclosing
 
 ### `--report`
 
-`--report=KIND[:PATH]`, for [`run`](#run). A report file a full run writes: json (mutation.json) or html (mutation.html), in target/mutastic unless a path is given, or none; json and html unless set. One of `json`, `html`, `none`.
+`--report=KIND[:PATH]`, for [`run`](#run). A report file a full run writes: json (mutation.json), html (mutation.html) or sarif (mutation.sarif), in target/mutastic unless a path is given, or none; json and html unless set. One of `json`, `html`, `sarif`, `none`.
 
 ```sh
 mutastic run --report=json

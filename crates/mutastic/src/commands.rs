@@ -341,9 +341,10 @@ pub const OPTIONS: &[CliOption] = &[
         value: "KIND[:PATH]",
         kind: Kind::Repeated,
         group: "Running",
-        choices: &["json", "html", "none"],
-        help: "A report file a full run writes: json (mutation.json) or html (mutation.html), in \
-               target/mutastic unless a path is given, or none; json and html unless set",
+        choices: &["json", "html", "sarif", "none"],
+        help: "A report file a full run writes: json (mutation.json), html (mutation.html) or \
+               sarif (mutation.sarif), in target/mutastic unless a path is given, or none; json and \
+               html unless set",
         commands: &["run"],
         environment: "",
         example: "--report=json",

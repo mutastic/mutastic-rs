@@ -318,7 +318,7 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
                 };
                 if kind != "none" {
                     let kind = Kind::parse(kind).ok_or_else(|| {
-                        format!("--report: unknown report {kind} (one of json, html, none)")
+                        format!("--report: unknown report {kind} (one of json, html, sarif, none)")
                     })?;
                     reports.push((kind, path));
                 }

@@ -5,6 +5,14 @@ newest come first.
 
 ## Unreleased
 
+### Additions
+
+- **`--report=sarif`, for code scanning, as in the Java edition.** It writes `mutation.sarif`,
+  SARIF 2.1.0: a result for each missed mutant (a warning) and each one no test reaches (a note),
+  on its line, with the card's headline, keyed by the mutant's id in `partialFingerprints` so an
+  alert follows its mutant; never a fix. Paths are from the git repository's root. GitHub shows it
+  as alerts on a pull request's lines. See [Report files](docs/reference/reports.md#code-scanning).
+
 ### Fixes
 
 - **A workspace that excludes a package its tests run Cargo on can be mutated.** mutastic's copy

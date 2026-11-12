@@ -12,6 +12,7 @@ wrote, as `run-finished`'s `reports` does.
 |---|---|---|
 | `json` | `mutation.json` | The [mutation-testing report schema](https://github.com/stryker-mutator/mutation-testing-elements/tree/master/packages/report-schema), version 2: each source file with its text and its mutants, their status, the tests that cover them, and why each has its status. Other tools that read that schema read it. |
 | `html` | `mutation.html` | The same report in the schema's own viewer. Everything is in the one file, so it opens from disk with no network. |
+| `sarif` | `mutation.sarif` | SARIF 2.1.0, which code scanning reads: GitHub's alerts on a pull request's lines, Azure DevOps, and SARIF viewers in an editor. |
 
 `json` and `html` are written unless you choose otherwise.
 
@@ -37,3 +38,33 @@ mutastic run fixtures/pricing --report=json
 ```
 
 See [`--report`](commands.md#--report) for the option itself.
+
+## Code scanning
+
+`--report=sarif` writes a result for each missed mutant, as a warning, and each one no test
+reaches, as a note, on the line it's on, with the card's headline as its message: `no test checks
+discount() at total == 100`. Caught and skipped mutants aren't results. Each operator that made a
+result is a rule, which links to the operator's row in [Operators](../operators.md#every-operator),
+or says what a rules file's operator does in the file's own words.
+
+A result carries the mutant's id in `partialFingerprints` (`mutasticId/v1`), and the id stays the
+same when code above it moves, so an alert follows its mutant from one run to the next instead of
+closing and opening again. A result never suggests a fix: the fix is a test, never a change to the
+code. Paths are relative to the git repository the workspace is in, which is what code scanning
+resolves them against, so a package in a folder of the repository points at the right files.
+
+On GitHub, upload it after the run. With `--since`, only the lines a pull request changed are
+mutated, so its alerts are its own; `--threshold=0` keeps the job green, leaving the alerts to say
+what's missed:
+
+```yaml
+    permissions:
+      security-events: write
+    steps:
+      # … check out with fetch-depth: 0 and install mutastic, as in Running in CI
+      - run: mutastic run --since=origin/${{ github.base_ref }} --report=sarif --threshold=0
+      - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: target/mutastic/mutation.sarif
+          category: mutastic
+```
