@@ -22,6 +22,15 @@ newest come first.
   alert follows its mutant; never a fix. Paths are from the git repository's root. GitHub shows it
   as alerts on a pull request's lines. See [Report files](docs/reference/reports.md#code-scanning).
 
+### Card changes
+
+- **No suggested test of a crate's own function on an input its callers never gave.** A function
+  that isn't `pub` (or a trait impl's) gets its inputs from the crate's callers, so a test calling
+  it alone on a value none of them passed may test what can't happen: an agent was offered
+  `fee(-1)` where the only caller passes a `u8`. Its card now offers no such test. It says no
+  caller passed the value, and to test a caller that can, or, if none can, to propose the mutant
+  unreachable.
+
 ### Fixes
 
 - **A workspace that excludes a package its tests run Cargo on can be mutated.** mutastic's copy

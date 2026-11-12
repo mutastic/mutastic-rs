@@ -82,6 +82,9 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
 
 - **`explain`** shows the change as source, `total >= 100 → (total) > (100)`, where the Java edition
   shows bytecode, and its `last run` comes from the last full run's `mutation.json`.
+- **A function only the crate calls** (not `pub`) gets no suggested test on an input none of its
+  callers passed: its card says no caller passed the value, and to test a caller that can, or
+  propose the mutant unreachable. A test of it alone on that value could test what can't happen.
 - **A run compared with the last** works as in the Java edition. A mutant that crashed where a
   crash proves nothing is out of the score, as a skipped one is, so a change to or from one isn't
   counted against the test that caught it.
