@@ -1,0 +1,47 @@
+# The fuzz targets: each feeds arbitrary input to something that reads what a user writes, and
+# fails on a panic, which would end a whole run. A workspace of its own, as cargo-fuzz builds on
+# nightly with sanitizers, apart from mutastic's own build. Run one with
+# `cargo +nightly fuzz run <target>` from the repository's root; see fuzz/README.md.
+[package]
+name = "mutastic-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+mutastic = { path = "../crates/mutastic" }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "config"
+path = "fuzz_targets/config.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rules"
+path = "fuzz_targets/rules.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ignores"
+path = "fuzz_targets/ignores.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sites"
+path = "fuzz_targets/sites.rs"
+test = false
+doc = false
+bench = false

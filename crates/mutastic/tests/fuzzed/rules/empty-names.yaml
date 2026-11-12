@@ -1,0 +1,4 @@
+operators:
+  - id:
+    tier: nowhere
+    rename: {a: , : b}

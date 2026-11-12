@@ -101,6 +101,11 @@ fn read_file(file: &PathBuf, name: &str) -> Result<Vec<Entry>, String> {
     let Ok(text) = std::fs::read_to_string(file) else {
         return Ok(Vec::new());
     };
+    parse(&text, name)
+}
+
+/// The entries of an ignores or proposals file's `text`; `name` is how an error names the file.
+pub fn parse(text: &str, name: &str) -> Result<Vec<Entry>, String> {
     let mut entries = Vec::new();
     let mut fields: Vec<(String, String)> = Vec::new();
     for raw in text.lines() {
