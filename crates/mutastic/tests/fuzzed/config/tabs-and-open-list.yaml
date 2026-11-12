@@ -1,0 +1,4 @@
+rules:
+	- skip: a::**
+	  reason: tabs
+operators: [

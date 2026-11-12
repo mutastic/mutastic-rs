@@ -1,0 +1,3 @@
+operators:
+  - id: acme/x
+    methods: [unclosed
