@@ -64,14 +64,13 @@ const ROLLBACK: &[&str] = &[
     sites::SWAP_PRESENT,
 ];
 
+/// How long a probe may run: a probe takes milliseconds, and the few mutants that loop forever
+/// wait this out, 15 of them on each run, so it's most of what the test takes. A second is still
+/// a hundred times a probe's own time on a slow machine.
+const PROBE_LIMIT: Duration = Duration::from_secs(1);
+
 fn probe(binary: &Binary, cwd: &Path, test: &str, env: &[(&str, String)]) -> Probed {
-    let outcome = testrun::run(
-        binary,
-        cwd,
-        &[test, "--nocapture"],
-        env,
-        Duration::from_secs(3),
-    );
+    let outcome = testrun::run(binary, cwd, &[test, "--nocapture"], env, PROBE_LIMIT);
     let lines = outcome
         .stdout
         .lines()
