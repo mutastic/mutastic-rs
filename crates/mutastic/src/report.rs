@@ -547,7 +547,8 @@ fn human(report: &Report, style: Style, cards: bool) -> String {
 
 /// The run's warnings, before the summary: each flaky test left out, as the Java edition shows them.
 fn warnings(out: &mut String, report: &Report, style: Style) {
-    if report.flaky.is_empty() {
+    let likely_flaky = likely_flaky(report);
+    if report.flaky.is_empty() && likely_flaky.is_empty() {
         return;
     }
     out.push('\n');
@@ -560,6 +561,24 @@ fn warnings(out: &mut String, report: &Report, style: Style) {
             flaky_reason(flaky)
         );
     }
+    for (test, mutants) in &likely_flaky {
+        let _ = writeln!(
+            out,
+            " {} {test}; with the code unchanged, whether it catches {} changed since the last run",
+            style.amber("! likely flaky:"),
+            mutants.join(", ")
+        );
+    }
+}
+
+/// Each test whose catches changed since the last run with the code and mutastic unchanged, and
+/// the mutants it changed.
+fn likely_flaky(report: &Report) -> std::collections::BTreeMap<String, Vec<String>> {
+    report
+        .comparison
+        .as_ref()
+        .map(crate::record::Comparison::likely_flaky)
+        .unwrap_or_default()
 }
 
 /// `; it reaches SystemTime::now`: what it reaches that changes from run to run, its own code first.
@@ -1258,14 +1277,42 @@ fn score_row(report: &Report, style: Style) -> String {
         String::new()
     };
     format!(
-        "{}{}{covered}",
+        "{}{}{}{covered}",
         if report.passed() {
             style.green(&style.bold(&score))
         } else {
             style.red(&style.bold(&score))
         },
+        delta(report, style),
         style.dim(&format!("  threshold {threshold}"))
     )
+}
+
+/// `  ▲ 2.0 vs last run (same code)`, when there was a last run to compare with, as the Java
+/// edition writes it.
+fn delta(report: &Report, style: Style) -> String {
+    let (Some(now), Some(found)) = (report.score(), &report.comparison) else {
+        return String::new();
+    };
+    let Some(before) = found.previous_score else {
+        return String::new();
+    };
+    let change = ((now - before) * 10.0).round() / 10.0;
+    let sameness = style.dim(&format!(" ({})", found.sameness()));
+    if change == 0.0 {
+        return format!("{}{sameness}", style.dim("  = vs last run"));
+    }
+    let text = format!(
+        "{} {:.1} vs last run",
+        if change > 0.0 { "▲" } else { "▼" },
+        change.abs()
+    );
+    let shown = if change > 0.0 {
+        style.green(&text)
+    } else {
+        style.red(&text)
+    };
+    format!("  {shown}{sameness}")
 }
 
 /// The last line: PASS or FAIL, and why.
@@ -1354,6 +1401,22 @@ fn agent(report: &Report) -> String {
             "flaky: {} failed, then passed when run again; left out of this run, so its catches don't count. {} Never remove, disable or loosen it to get a run through",
             flaky.test,
             flaky_advice(flaky)
+        );
+    }
+    if let Some(found) = &report.comparison {
+        let _ = writeln!(
+            out,
+            "vs last run: {} → {} ({})",
+            percent(found.previous_score),
+            percent(report.score()),
+            found.sameness()
+        );
+    }
+    for (test, mutants) in likely_flaky(report) {
+        let _ = writeln!(
+            out,
+            "likely flaky: {test}; with the code unchanged, whether it catches {} changed since the last run. Its catches can't be trusted until it's fixed",
+            mutants.join(", ")
         );
     }
     let _ = writeln!(
@@ -1557,10 +1620,38 @@ fn jsonl(report: &Report) -> String {
             "outside": false,
         }))
         .collect::<Vec<_>>());
-    // Nothing of these is built yet, so each is empty, as the schema asks.
-    for none in ["likelyFlaky", "unrelatedCatches"] {
-        finished[none] = json!([]);
+    if let Some(found) = &report.comparison {
+        finished["previousScore"] = found
+            .previous_score
+            .map_or(Value::Null, |s| json!(round1(s)));
+        finished["sameCodeAsLastRun"] = json!(found.same_code);
+        finished["sameMutasticAsLastRun"] = json!(found.same_tool);
+        finished["changedSinceLastRun"] = json!(found
+            .flips
+            .iter()
+            .map(|flip| {
+                let mut entry = json!({
+                    "id": flip.id,
+                    "before": flip.before.schema_name(),
+                    "after": flip.after.schema_name(),
+                });
+                if let Some(test) = &flip.caught_by {
+                    entry["caughtBy"] = json!(test);
+                }
+                entry
+            })
+            .collect::<Vec<_>>());
     }
+    finished["likelyFlaky"] = json!(likely_flaky(report)
+        .into_iter()
+        .map(|(test, mutants)| json!({
+            "test": test,
+            "mutants": mutants,
+            "reasons": ["changed-since-last-run"],
+        }))
+        .collect::<Vec<_>>());
+    // Nothing of this is built yet, so it's empty, as the schema asks.
+    finished["unrelatedCatches"] = json!([]);
     if let Some(scope) = &report.scope {
         finished["scope"] = json!({
             "since": scope.since,

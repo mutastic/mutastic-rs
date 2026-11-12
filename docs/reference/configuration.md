@@ -150,6 +150,8 @@ Everything is under your target directory, in `target/mutastic`:
 | `target/mutastic/copy` | The copy of your workspace with the mutants written in |
 | `target/mutastic/target` | The copy's build, kept warm between runs |
 | `target/mutastic/coverage` | What each test reached in the last run |
+| `target/mutastic/last-run.tsv` | The last full run, for the next to compare with |
+| `target/mutastic/last-runs/` | The last full run under each other set of operators |
 
 `cargo clean` removes it with the rest. A `CARGO_TARGET_DIR` or `build.target-dir` you've set moves
 it with your target directory.

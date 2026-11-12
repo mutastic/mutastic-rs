@@ -74,6 +74,14 @@ fn untimed(text: &str) -> Vec<Value> {
     events
 }
 
+/// Takes away the package's kept runs, so its next run is a first run, with nothing to compare
+/// with: what's compared here is the results, which a comparison with the last run would add to.
+fn forget_last_runs(dir: &Path) {
+    let kept = dir.join("target/mutastic");
+    std::fs::remove_file(kept.join("last-run.tsv")).ok();
+    std::fs::remove_dir_all(kept.join("last-runs")).ok();
+}
+
 /// A human format without the rows that tell the time, or how many tests ran.
 fn untimed_text(text: &str) -> String {
     let varies = ["  Start at", "  Duration", " Test runs"];
@@ -117,6 +125,7 @@ fn two_shares_put_together_are_the_whole_run() {
     let whole: Vec<String> = FORMATS
         .iter()
         .map(|format| {
+            forget_last_runs(&dir);
             let (code, out, err) = mutastic(&dir, &["run", &format!("--format={format}")]);
             assert_eq!(code, 0, "{out}{err}");
             out
@@ -184,6 +193,7 @@ fn two_shares_put_together_are_the_whole_run() {
     );
     std::fs::remove_file(&report).unwrap();
     for (format, whole) in FORMATS.iter().zip(&whole) {
+        forget_last_runs(&dir);
         let (code, out, err) = mutastic(
             &dir,
             &[
@@ -210,6 +220,12 @@ fn two_shares_put_together_are_the_whole_run() {
         }
     }
     assert_eq!(untimed_report(&report), whole_report);
+    // The shares put together are a whole run, compared with the last whole run, as in the Java
+    // edition.
+    let (_, out, _) = mutastic(&dir, &["run", "--from-shards=downloaded", "--format=jsonl"]);
+    let finished = events(&out).pop().unwrap();
+    assert_eq!(finished["previousScore"], finished["score"], "{finished}");
+    assert_eq!(finished["sameCodeAsLastRun"], true, "{finished}");
 
     // explain reads the whole run's record, for a mutant of either share.
     let missed = "mb2f8ae57";
@@ -251,6 +267,7 @@ fn two_shares_put_together_are_the_whole_run() {
     let (code, out, err) = mutastic(&dir, &["run", "--shard=1/1", "--format=jsonl"]);
     assert_eq!(code, 0, "{out}{err}");
     assert_eq!(events(&out)[0]["share"]["of"], 1);
+    forget_last_runs(&dir);
     let (code, out, err) = mutastic(
         &dir,
         &[

@@ -416,10 +416,14 @@ fn the_full_view_is_coloured_as_the_java_editions() {
     );
     shows(&out, "Start at", " \x1b[2m Start at\x1b[0m  ");
     shows(&out, "Duration's parts are dim", "\x1b[2m(setup ");
-    shows(
-        &out,
-        "a passing score is bold green, its threshold dim",
-        " \x1b[2m    Score\x1b[0m  \x1b[32m\x1b[1m90.9%\x1b[0m\x1b[0m\x1b[2m  threshold 80\x1b[0m\n",
+    // The fixture runs in place, so a run before this one may have left a last run to compare with.
+    let score = regex::Regex::new(
+        r" \x1b\[2m    Score\x1b\[0m  \x1b\[32m\x1b\[1m90\.9%\x1b\[0m\x1b\[0m(?<delta>\x1b\[2m  = vs last run\x1b\[0m\x1b\[2m \((?<sameness>[a-z ]+)\)\x1b\[0m)?\x1b\[2m  threshold 80\x1b\[0m\n",
+    )
+    .unwrap();
+    assert!(
+        score.is_match(&out),
+        "a passing score is bold green, its threshold dim: {out:?}"
     );
     shows(
         &out,
@@ -1241,4 +1245,87 @@ fn a_flaky_test_is_left_out_and_one_that_always_fails_stops_the_run() {
     let log = std::fs::read_to_string(dir.join("target/mutastic/tests.log")).unwrap();
     assert!(log.contains("fails every time"), "{log}");
     std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Each full run is compared with the last under the same operators, as in the Java edition: its
+/// score, whether the code and mutastic are the same, and which mutants changed result. A run of
+/// one mutant, or of a change, says nothing about the whole package, so it neither compares nor is
+/// kept.
+#[test]
+fn a_full_run_compares_with_the_last_and_is_kept_for_the_next() {
+    let copy = copy_of("pricing", "last-run");
+    let dir = copy.to_str().unwrap();
+    // A repository, for the run of a change.
+    let git = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(&copy)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap()
+            .status;
+        assert!(status.success(), "git {args:?}");
+    };
+    git(&["init", "-q"]);
+    std::fs::write(copy.join(".gitignore"), "target\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "start"]);
+    let finished = |args: &[&str]| -> Value {
+        let (_, out) = mutastic_in(&copy, args);
+        let events = events(
+            out.lines()
+                .filter(|l| l.starts_with('{'))
+                .collect::<Vec<_>>()
+                .join("\n")
+                .as_str(),
+        );
+        let finished = events
+            .last()
+            .unwrap_or_else(|| panic!("no events: {out}"))
+            .clone();
+        let errors: Vec<String> = schema()
+            .iter_errors(&finished)
+            .map(|e| e.to_string())
+            .collect();
+        assert!(errors.is_empty(), "{errors:?}");
+        finished
+    };
+
+    let first = finished(&["run", dir, "--format=jsonl"]);
+    assert!(
+        first.get("previousScore").is_none(),
+        "nothing to compare with: {first}"
+    );
+    let again = finished(&["run", dir, "--format=jsonl"]);
+    assert_eq!(again["previousScore"], first["score"]);
+    assert_eq!(again["sameCodeAsLastRun"], true);
+    assert_eq!(again["sameMutasticAsLastRun"], true);
+    assert_eq!(again["changedSinceLastRun"], serde_json::json!([]));
+    assert_eq!(again["likelyFlaky"], serde_json::json!([]));
+
+    let kept = std::fs::read_to_string(copy.join("target/mutastic/last-run.tsv")).unwrap();
+    let only = finished(&["run", dir, "--format=jsonl", "--only=mb2f8ae57"]);
+    assert!(only.get("previousScore").is_none(), "{only}");
+    let since = finished(&["run", dir, "--format=jsonl", "--since=HEAD"]);
+    assert!(since.get("previousScore").is_none(), "{since}");
+    assert_eq!(
+        std::fs::read_to_string(copy.join("target/mutastic/last-run.tsv")).unwrap(),
+        kept,
+        "a run of one mutant, or of a change, isn't kept"
+    );
+
+    let lib = copy.join("src/lib.rs");
+    let source = std::fs::read_to_string(&lib).unwrap();
+    std::fs::write(&lib, source + "\n// changed\n").unwrap();
+    let changed = finished(&["run", dir, "--format=jsonl"]);
+    assert_eq!(changed["sameCodeAsLastRun"], false);
+    let (_, agent) = mutastic_in(&copy, &["run", dir, "--format=agent"]);
+    assert!(
+        agent.contains("vs last run: 90.9% → 90.9% (same code)\n"),
+        "{agent}"
+    );
+    std::fs::remove_dir_all(&copy).ok();
 }

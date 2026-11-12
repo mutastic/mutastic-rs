@@ -117,6 +117,10 @@ pub struct Report {
     pub flaky: Vec<crate::flaky::Flaky>,
     /// Which share of a split run this is (`--shard`), and what it ran on.
     pub share: Option<crate::shares::Tag>,
+    /// The operators the run used, by id: a score is a share of what they make.
+    pub operators: Vec<&'static str>,
+    /// This run against the last full run under the same operators, when there was one.
+    pub comparison: Option<crate::record::Comparison>,
 }
 
 impl Report {
@@ -367,6 +371,8 @@ pub fn run(
         scope,
         flaky,
         share: None,
+        operators: options.operators.clone(),
+        comparison: None,
     })
 }
 

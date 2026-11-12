@@ -486,6 +486,8 @@ impl Shares {
             scope: None,
             flaky: self.flaky(),
             share: None,
+            operators: options.operators.clone(),
+            comparison: None,
         }
     }
 
