@@ -46,7 +46,7 @@ No test gives a name with spaces round it:
 
 <!-- output: operators/arguments/omit-call -->
 ```text
- [✗ MISSED] tests pass even without .trim() in username()
+  ✗ MISSED  tests pass even without .trim() in username()
    ┌─ src/arguments.rs:4
    │
  3 │ pub fn username(input: &str) -> String {
@@ -110,7 +110,7 @@ With the range turned round, nothing is a percent, and 150 still isn't:
 
 <!-- output: operators/arguments/swap-arguments -->
 ```text
- [✗ MISSED] tests pass even when 0, 100 becomes 100, 0 in is_percent()
+  ✗ MISSED  tests pass even when 0, 100 becomes 100, 0 in is_percent()
     ┌─ src/arguments.rs:12
     │
  11 │ pub fn is_percent(value: i32) -> bool {
@@ -174,7 +174,7 @@ fn full_price_without_a_coupon() {
 
 <!-- output: operators/arguments/null-parameter -->
 ```text
- [✗ MISSED] tests pass even when coupon is None from the start of price_with()
+  ✗ MISSED  tests pass even when coupon is None from the start of price_with()
     ┌─ src/arguments.rs:23
     │
  22 │ 
@@ -241,7 +241,7 @@ fn the_best_comes_first() {
 
 <!-- output: operators/arguments/drop-vararg -->
 ```text
- [✗ MISSED] tests pass even without c in best_of_three()
+  ✗ MISSED  tests pass even without c in best_of_three()
     ┌─ src/arguments.rs:20
     │
  19 │ pub fn best_of_three(a: u32, b: u32, c: u32) -> u32 {
@@ -312,7 +312,7 @@ fn a_calm_greeting() {
 
 <!-- output: operators/arguments/default-parameter -->
 ```text
- [✗ MISSED] tests pass even when excited is Default::default() from the start of greet()
+  ✗ MISSED  tests pass even when excited is Default::default() from the start of greet()
     ┌─ src/arguments.rs:27
     │
  26 │ 

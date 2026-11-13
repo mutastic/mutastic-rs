@@ -48,7 +48,7 @@ fn small_orders_pay_for_delivery() {
 
 <!-- output: operators/conditions/boundary -->
 ```text
- [✗ MISSED] no test checks free_delivery() at total == 50
+  ✗ MISSED  no test checks free_delivery() at total == 50
    ┌─ src/conditions.rs:7
    │
  6 │ pub fn free_delivery(total: u32) -> bool {
@@ -187,7 +187,7 @@ fn members_are_welcomed_back() {
 
 <!-- output: operators/conditions/remove-conditional -->
 ```text
- [✗ MISSED] no test needs member to be false in greeting()
+  ✗ MISSED  no test needs member to be false in greeting()
     ┌─ src/conditions.rs:16
     │
  15 │ pub fn greeting(member: bool) -> &'static str {
@@ -315,7 +315,7 @@ fn ships_when_paid_and_in_stock() {
 
 <!-- output: operators/conditions/logical-connector -->
 ```text
- [✗ MISSED] no test checks can_ship() with one of paid and in_stock true and the other false
+  ✗ MISSED  no test checks can_ship() with one of paid and in_stock true and the other false
     ┌─ src/conditions.rs:24
     │
  23 │ pub fn can_ship(paid: bool, in_stock: bool) -> bool {
@@ -394,7 +394,7 @@ fn restock_when_low() {
 
 <!-- output: operators/conditions/comparison -->
 ```text
- [✗ MISSED] no test checks needs_restock() with stock > low
+  ✗ MISSED  no test checks needs_restock() with stock > low
     ┌─ src/conditions.rs:12
     │
  11 │ pub fn needs_restock(stock: u32, low: u32) -> bool {
@@ -471,7 +471,7 @@ fn weekend_days_are_known() {
 
 <!-- output: operators/conditions/other-comparison -->
 ```text
- [✗ MISSED] tests pass even when matches!(day, 6 | 7) becomes !matches!(day, 6 | 7) in is_weekend()
+  ✗ MISSED  tests pass even when matches!(day, 6 | 7) becomes !matches!(day, 6 | 7) in is_weekend()
     ┌─ src/conditions.rs:29
     │
  28 │ pub fn is_weekend(day: u8) -> bool {

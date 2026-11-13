@@ -101,7 +101,7 @@ words:
 
 <!-- output: reference/configured-card -->
 ```text
- [✗ MISSED] no test passes clean() text with spaces for .trim() to remove
+  ✗ MISSED  no test passes clean() text with spaces for .trim() to remove
    ┌─ src/lib.rs:6
    │
  5 │ pub fn clean(name: &str) -> String {

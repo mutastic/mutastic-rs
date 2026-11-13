@@ -471,8 +471,10 @@ impl Shares {
             rustc,
             threshold: options.threshold,
             setup,
+            build: std::time::Duration::ZERO,
             coverage,
             mutants: took.saturating_sub(setup + coverage),
+            checking: None,
             took,
             unsafe_mode: options.unsafe_mode,
             profile: json!({

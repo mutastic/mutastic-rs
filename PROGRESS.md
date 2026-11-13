@@ -109,6 +109,27 @@ round, its crates done and its last line; while checking, how many it has looked
 the terminal reads a key at a time without echo while the run lasts. Ctrl-C and Ctrl-Z still work,
 and every way out (finishing, an error, Ctrl-C, a kill, Ctrl-Z) leaves it as it was.
 
+## The result ends on the score
+
+The summary's last line is its score, with the verdict beside it, so the line the cursor lands
+under is the one that matters. `Next:`, the commands for the misses, moves above the rows, under
+the misses it's about. The Duration row names every phase it timed.
+
+```text
+ Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+
+     Files  0 clean | 1 with misses (1)
+   Mutants  ✓ 10 caught · ✗ 1 missed (11)
+  Duration  355ms (setup 20ms, build 303ms, coverage 2ms, mutants 8ms, checking 6ms)
+     Score  90.9%  [PASS] 1 missed, above the threshold of 80.  = vs last run (same code)
+```
+
+The verdicts: `[PASS] Every mutant was caught.`, `[PASS] 1 missed, above the threshold of 80.`,
+`[FAIL] Below the threshold of 80: 6 missed, 0 not covered.`, `[PASS] Nothing to measure: no
+mutants to score.`, and with `--fail-on-new`, `[PASS] No new misses: 1 in the baseline.` or
+`[FAIL] 1 new miss, not in the baseline (0 in it): mb2f8ae57.` In colour `[PASS]` is ` PASS ` on
+green, `[FAIL]` on red.
+
 ## Anywhere else: heartbeats
 
 When progress isn't drawn in place, the same fields print as a plain line, without spinner or
@@ -162,6 +183,5 @@ without a line.
 
 ## Later
 
-Still to come in P2: live JSONL `phase-started` and `progress` events, and the summary ending on the
-score. P3 adds OSC 9;4 tab progress, synchronized output and Gradle's footer. A preview of all of it:
+Still to come in P2: live JSONL `phase-started` and `progress` events. P3 adds OSC 9;4 tab progress, synchronized output and Gradle's footer. A preview of all of it:
 https://claude.ai/artifact/EXHy5dovr98tnBYAfBXn2M

@@ -437,19 +437,15 @@ fn the_full_view_is_coloured_as_the_java_editions() {
     );
     shows(&out, "Start at", " \x1b[2m Start at\x1b[0m  ");
     shows(&out, "Duration's parts are dim", "\x1b[2m(setup ");
-    // The fixture runs in place, so a run before this one may have left a last run to compare with.
+    // The score is the last line, with its verdict: PASS on green, and why in green. The fixture
+    // runs in place, so a run before this one may have left a last run to compare with.
     let score = regex::Regex::new(
-        r" \x1b\[2m    Score\x1b\[0m  \x1b\[32m\x1b\[1m90\.9%\x1b\[0m\x1b\[0m(?<delta>\x1b\[2m  = vs last run\x1b\[0m\x1b\[2m \((?<sameness>[a-z ]+)\)\x1b\[0m)?\x1b\[2m  threshold 80\x1b\[0m\n",
+        r" \x1b\[2m    Score\x1b\[0m  \x1b\[32m\x1b\[1m90\.9%\x1b\[0m\x1b\[0m  \x1b\[42;30;1m PASS \x1b\[0m \x1b\[32m1 missed, above the threshold of 80\.\x1b\[0m(?<delta>\x1b\[2m  = vs last run\x1b\[0m\x1b\[2m \((?<sameness>[a-z ]+)\)\x1b\[0m)?\n$",
     )
     .unwrap();
     assert!(
         score.is_match(&out),
-        "a passing score is bold green, its threshold dim: {out:?}"
-    );
-    shows(
-        &out,
-        "PASS on green",
-        "\n \x1b[42;30;1m PASS \x1b[0m \x1b[32m1 missed, above the threshold.\x1b[0m\n",
+        "a passing score is bold green, its verdict PASS on green, last: {out:?}"
     );
 
     let (out, err) = run_with(&dir, "--format=concise", false);
@@ -799,11 +795,10 @@ fn fail_on_new_judges_a_run_by_its_baseline() {
     let (code, out) = with("--format=full");
     assert_eq!(code, 0, "{out}");
     assert!(
-        out.contains("90.9%  threshold not applied (new misses decide)\n"),
-        "{out}"
-    );
-    assert!(
-        out.contains("\n [PASS] No new misses: 1 in the baseline.\n"),
+        out.lines()
+            .last()
+            .is_some_and(|last| last
+                .starts_with("     Score  90.9%  [PASS] No new misses: 1 in the baseline.")),
         "{out}"
     );
     let (code, out) = with("--format=agent");
@@ -835,7 +830,9 @@ fn fail_on_new_judges_a_run_by_its_baseline() {
     let (code, out) = with("--format=full");
     assert_eq!(code, 1, "{out}");
     assert!(
-        out.contains("\n [FAIL] 1 new miss, not in the baseline (0 in it): mb2f8ae57.\n"),
+        out.lines().last().is_some_and(|last| last.starts_with(
+            "     Score  90.9%  [FAIL] 1 new miss, not in the baseline (0 in it): mb2f8ae57."
+        )),
         "{out}"
     );
     let (code, out) = with("--format=agent");
