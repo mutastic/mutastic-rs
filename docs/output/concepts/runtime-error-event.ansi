@@ -6,6 +6,7 @@
   "fingerprint": "9ff2826156a229af",
   "status": "RuntimeError",
   "operator": "mutastic/remove-conditional",
+  "docs": "https://docs.mutastic.io/rust/operators/conditions/#remove-conditional",
   "location": {
     "file": "src/raw.rs",
     "line": 24,
@@ -32,5 +33,5 @@
     ]
   },
   "testsRun": 1,
-  "durationMs": 70
+  "durationMs": 4
 }

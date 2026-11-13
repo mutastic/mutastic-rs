@@ -18,6 +18,7 @@
     [2m=[0m [1;34m[1mchange  [0m[0m  [1mtotal / 10 → (total) * (10)[0m
                 [2mthe code the switch puts in place of the original when this mutant is live[0m
     [2m=[0m [1;34m[1moperator[0m[0m  mutastic/math: `/` becomes `*`
+                [2mdocs: https://docs.mutastic.io/rust/operators/arithmetic/#math[0m
     [2m=[0m [1;34m[1mid      [0m[0m  m95f96847: `m` and the first 8 hex digits of its fingerprint, 95f96847248b0509, a SHA-256 of the crate, function, operator, site and change
                 [2mno line number goes in, so the id stays the same when code above it moves[0m
     [2m=[0m [1;34m[1msite    [0m[0m  `total / 10` in Pricing::discount, line 27, column 26

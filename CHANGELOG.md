@@ -63,6 +63,13 @@ newest come first.
   alert follows its mutant; never a fix. Paths are from the git repository's root. GitHub shows it
   as alerts on a pull request's lines. See [Report files](docs/reference/reports.md#code-scanning).
 
+- **Links to each operator's docs, as in the Java edition.** `explain`'s About this mutant gives
+  the operator's section in the docs, `docs:
+  https://docs.mutastic.io/rust/operators/conditions/#boundary`. On a terminal with links on
+  (`--hyperlinks`), a full card's `^^ changed to` mark links there too, and `--format=jsonl`'s
+  `mutant-finished` carries it as `docs`. A rules file's operator has no section, so no link. See
+  [One mutant, explained](docs/concepts/output.md#one-mutant-explained).
+
 ### Card changes
 
 - **No suggested test of a crate's own function on an input its callers never gave.** A function

@@ -1478,6 +1478,20 @@ fn the_words_colour_and_links_are_chosen_as_the_java_edition_chooses_them() {
     assert!(linked.contains("src/lib.rs:26\x1b]8;;\x1b\\"), "{linked}");
     let (_, plain) = mutastic(&["run", &dir, "--format=concise", "--hyperlinks=never"]);
     assert!(!plain.contains("\x1b]8;;"), "{plain}");
+    // The full card's change mark opens its operator's section in the docs, and the event says
+    // where that is.
+    let boundary = "https://docs.mutastic.io/rust/operators/conditions/#boundary";
+    let (_, full) = mutastic(&["run", &dir, "--format=full", "--hyperlinks=always"]);
+    assert!(
+        full.contains(&format!("\x1b]8;;{boundary}\x1b\\^")),
+        "{full}"
+    );
+    assert!(
+        jsonl.contains(&format!(
+            "\"operator\":\"mutastic/boundary\",\"docs\":\"{boundary}\""
+        )),
+        "{jsonl}"
+    );
 
     for (option, value) in [
         ("--vocabulary", "loud"),

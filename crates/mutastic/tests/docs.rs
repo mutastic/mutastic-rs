@@ -1062,6 +1062,38 @@ fn anchors(text: &str) -> BTreeSet<String> {
     found
 }
 
+/// Every link `explain`, a card and an event give to an operator's docs lands on its section: the
+/// heading on its family's page, the family the operators fixture puts it in.
+#[test]
+fn every_operator_links_to_its_section_in_the_docs() {
+    let page = format!("{}operators/", mutastic::commands::DOCS);
+    let mut broken = Vec::new();
+    for &operator in mutastic::sites::ALL {
+        if operator == mutastic::sites::RETURN_VALUE_EXTENDED {
+            continue;
+        }
+        let Some(url) = mutastic::operator_docs::url(operator) else {
+            broken.push(format!("{operator}: no link"));
+            continue;
+        };
+        let (family, fragment) = url
+            .strip_prefix(&page)
+            .and_then(|rest| rest.split_once("/#"))
+            .unwrap();
+        let text = std::fs::read_to_string(docs().join(format!("operators/{family}.md"))).unwrap();
+        if !anchors(&text).contains(fragment) {
+            broken.push(format!("{operator}: {url} (no such heading)"));
+        }
+        let listed = FAMILIES
+            .iter()
+            .find(|(_, operators)| operators.split(',').any(|listed| listed == operator));
+        if listed.is_some_and(|(listed, _)| *listed != family) {
+            broken.push(format!("{operator}: {url} (its fixture is in {listed:?})"));
+        }
+    }
+    assert!(broken.is_empty(), "{}", broken.join("\n"));
+}
+
 /// The docs site's Rust section, which isn't published yet: until it is, a page links to its copy
 /// here, which GitHub shows, and the site maps that link to its own page.
 const UNPUBLISHED: &str = "https://docs.mutastic.io/rust/";

@@ -38,6 +38,7 @@ pub mod id;
 pub mod ignores;
 pub mod java;
 pub mod nextrun;
+pub mod operator_docs;
 pub mod record;
 pub mod records;
 pub mod report;
