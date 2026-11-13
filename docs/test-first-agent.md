@@ -5,7 +5,7 @@ another matter: a test at an order of 50 passes whether the code says `>= 30` or
 an agent can't get to green, it has ways round that a person would rarely take: it changes what the
 test expects, or changes the code until the test passes for the wrong reason. Where a test
 contradicts its spec, so that any pass is a cheat,
-[ImpossibleBench](https://arxiv.org/abs/2510.20270) found Claude models cheat mostly by editing
+[ImpossibleBench](https://arxiv.org/abs/2510.20270) found some models cheat mostly by editing
 the test.
 
 Working test-first helps. A test that has to fail first is a test that checks something. But red
