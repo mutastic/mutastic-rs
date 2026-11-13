@@ -88,7 +88,7 @@ fn every_card_claim_behaves_as_its_mutant_does() {
     let found = engine::find(&project, sites::ALL);
     assert!(found.mutants.len() > 40, "{} mutants", found.mutants.len());
     let all: BTreeSet<usize> = (0..found.mutants.len()).collect();
-    let built = compile::build(&project, &found, &all, &BTreeSet::new()).unwrap();
+    let built = compile::build(&project, &found, &all, &BTreeSet::new(), &|_| {}).unwrap();
     // Only the operators that lean on the build may make a mutant that doesn't compile.
     let wrongly_unviable: Vec<String> = built
         .unviable

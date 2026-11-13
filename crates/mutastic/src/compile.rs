@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
+use crate::engine::Progress;
 use crate::schema::{self, Emitted};
 use crate::sites::Crate;
 use crate::workspace::{self, Overrides, Project};
@@ -65,6 +66,7 @@ pub fn build(
     found: &Crate,
     live: &BTreeSet<usize>,
     recorders: &BTreeSet<usize>,
+    progress: &(dyn Fn(Progress) + Sync),
 ) -> Result<Built, String> {
     let mut live = live.clone();
     let mut probes: BTreeSet<usize> = recorders
@@ -79,7 +81,7 @@ pub fn build(
         workspace::sync(project, &overrides)?;
         for phase in ["check", "build"] {
             let started = Instant::now();
-            let (succeeded, stdout) = cargo(project, phase)?;
+            let (succeeded, stdout) = cargo(project, phase, rounds.len() + 1, progress)?;
             let took = started.elapsed();
             if !succeeded {
                 let blame = blame(&stdout, &emitted, project);
@@ -151,8 +153,14 @@ pub fn rewrite(
     (overrides, emitted)
 }
 
-/// `cargo check` or `cargo test --no-run` in the copy, with JSON messages on stdout.
-fn cargo(project: &Project, phase: &str) -> Result<(bool, String), String> {
+/// `cargo check` or `cargo test --no-run` in the copy, with JSON messages on stdout. Its output is
+/// read as it comes, so the run can say which crate Cargo is on and how many it has finished.
+fn cargo(
+    project: &Project,
+    phase: &'static str,
+    round: usize,
+    progress: &(dyn Fn(Progress) + Sync),
+) -> Result<(bool, String), String> {
     let mut command = Command::new(workspace::cargo());
     match phase {
         "check" => command.arg("check"),
@@ -165,19 +173,76 @@ fn cargo(project: &Project, phase: &str) -> Result<(bool, String), String> {
         .args(profile_args())
         .current_dir(project.copy_dir());
     environment(&mut command, project);
-    let output = command
+    let mut child = command
         .stdin(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .output()
+        .spawn()
         .map_err(|error| format!("couldn't run cargo: {error}"))?;
-    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    if !output.status.success() && !stdout.contains("\"compiler-message\"") {
-        return Err(format!(
-            "cargo failed in the copy:\n{}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
+    let (Some(out), Some(err)) = (child.stdout.take(), child.stderr.take()) else {
+        return Err("couldn't read cargo's output".into());
+    };
+    let seen = std::sync::Mutex::new((0, String::new()));
+    let tell = |crates: Option<usize>, last: Option<String>| {
+        if let Ok(mut seen) = seen.lock() {
+            seen.0 = crates.map_or(seen.0, |more| seen.0 + more);
+            seen.1 = last.unwrap_or_else(|| seen.1.clone());
+            progress(Progress::Compiling {
+                step: phase,
+                round,
+                crates: seen.0,
+                last: &seen.1,
+            });
+        }
+    };
+    let (stdout, stderr) = std::thread::scope(|scope| {
+        let errors = scope.spawn(|| {
+            read_lines(err, |line| {
+                if let Some(last) = started(line) {
+                    tell(None, Some(last));
+                }
+            })
+        });
+        let messages = read_lines(out, |line| {
+            if line.contains("\"reason\":\"compiler-artifact\"") {
+                tell(Some(1), None);
+            }
+        });
+        (messages, errors.join().unwrap_or_default())
+    });
+    let status = child
+        .wait()
+        .map_err(|error| format!("couldn't run cargo: {error}"))?;
+    if !status.success() && !stdout.contains("\"compiler-message\"") {
+        return Err(format!("cargo failed in the copy:\n{stderr}"));
     }
-    Ok((output.status.success(), stdout))
+    Ok((status.success(), stdout))
+}
+
+/// Every line of `stream`, kept, each shown to `seen` as it arrives.
+fn read_lines(stream: impl std::io::Read, seen: impl Fn(&str)) -> String {
+    use std::io::BufRead as _;
+    let mut text = String::new();
+    for line in std::io::BufReader::new(stream)
+        .lines()
+        .map_while(Result::ok)
+    {
+        seen(&line);
+        text.push_str(&line);
+        text.push('\n');
+    }
+    text
+}
+
+/// Cargo's `   Compiling serde v1.0.219` as `Compiling serde v1.0.219`, without a local crate's
+/// path.
+fn started(line: &str) -> Option<String> {
+    let line = line.trim_start();
+    let verb = ["Checking ", "Compiling "]
+        .into_iter()
+        .find(|verb| line.starts_with(verb))?;
+    let name = line[verb.len()..].split(" (").next()?.trim_end();
+    Some(format!("{verb}{name}"))
 }
 
 /// A profile of mutastic's own, from the `test` profile with line tables only: line numbers in

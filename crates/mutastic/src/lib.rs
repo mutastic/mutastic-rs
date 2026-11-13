@@ -41,6 +41,7 @@ pub mod java;
 pub mod locate;
 pub mod nextrun;
 pub mod operator_docs;
+pub mod progress;
 pub mod record;
 pub mod records;
 pub mod report;

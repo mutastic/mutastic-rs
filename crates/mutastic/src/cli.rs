@@ -6,6 +6,7 @@ use std::process::ExitCode;
 
 use crate::edition::{self, Edition, Route};
 use crate::engine::{self, Options, Status};
+use crate::progress::{Progress, Shown};
 use crate::report::files::Kind;
 use crate::report::{self, Format, Style};
 use crate::shares::EVENTS;
@@ -376,17 +377,9 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
             "color" => parsed.color = choice("--color", value)?,
             "hyperlinks" => parsed.hyperlinks = choice("--hyperlinks", value)?,
             "progress" => {
-                parsed.progress = match value {
-                    "auto" => None,
-                    "bar" => Some(Shown::Bar),
-                    "counter" => Some(Shown::Counter),
-                    "none" => Some(Shown::None),
-                    _ => {
-                        return Err(format!(
-                            "--progress: {value} isn't one of auto, bar, counter or none"
-                        ))
-                    }
-                }
+                parsed.progress = Shown::parse(value).ok_or_else(|| {
+                    format!("--progress: {value} isn't one of auto, bar, counter or none")
+                })?
             }
             // Which edition runs is decided before this one reads its options.
             "edition" => {
@@ -746,187 +739,12 @@ fn style(parsed: &Parsed, terminal: bool) -> Style {
     }
 }
 
-/// How progress is shown while mutants run: `bar`, one line redrawn in place on a terminal;
-/// `counter`, that line printed every so often, for logs; or `none`.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Shown {
-    Bar,
-    Counter,
-    None,
-}
-
-/// What the run is doing, on stderr so stdout stays the result: what it's reading, the build, the
-/// coverage pass, with `files` each source file's line as its last mutant finishes, and the
-/// counter, `[3/11] ✓ 2 caught · ✗ 1 missed · ○ 0 not covered · ⏱ 0 timed out  0:01`, as the
-/// Java edition shows it. Nothing when `quiet`, for agents and tools, who only want the result.
-struct Progress<'a> {
-    package: &'a str,
-    quiet: bool,
-    files: bool,
-    shown: Shown,
-    style: Style,
-    started: std::time::Instant,
-    counter: std::sync::Mutex<Counter>,
-}
-
-#[derive(Default)]
-struct Counter {
-    done: usize,
-    total: usize,
-    caught: usize,
-    missed: usize,
-    not_covered: usize,
-    timed_out: usize,
-    printed: Option<std::time::Instant>,
-}
-
-/// The counter line is printed this often when it can't be redrawn in place.
-const EVERY: std::time::Duration = std::time::Duration::from_secs(10);
-
-/// Clears the line the bar is on.
-const CLEAR: &str = "\r\x1b[2K";
-
-impl<'a> Progress<'a> {
-    fn new(
-        package: &'a str,
-        quiet: bool,
-        files: bool,
-        asked: Option<Shown>,
-        parsed: &Parsed,
-    ) -> Progress<'a> {
-        let terminal = std::io::stderr().is_terminal();
-        let shown = match asked {
-            _ if quiet => Shown::None,
-            Some(shown) => shown,
-            None if terminal => Shown::Bar,
-            None => Shown::Counter,
-        };
-        Progress {
-            package,
-            quiet,
-            files,
-            shown,
-            style: style(parsed, terminal),
-            started: std::time::Instant::now(),
-            counter: std::sync::Mutex::new(Counter::default()),
-        }
-    }
-
-    fn line(&self, counter: &Counter) -> String {
-        let elapsed = self.started.elapsed().as_secs();
-        format!(
-            "[{}/{}] ✓ {} caught · ✗ {} missed · ○ {} not covered · ⏱ {} timed out  {}:{:02}",
-            counter.done,
-            counter.total,
-            counter.caught,
-            counter.missed,
-            counter.not_covered,
-            counter.timed_out,
-            elapsed / 60,
-            elapsed % 60
-        )
-    }
-
-    fn step(&self, step: engine::Progress) {
-        if self.quiet {
-            return;
-        }
-        let Ok(mut counter) = self.counter.lock() else {
-            return;
-        };
-        match step {
-            engine::Progress::Building { mutants } => {
-                stderr_line!("building  {mutants} mutants in one build…")
-            }
-            engine::Progress::Covered {
-                tests,
-                rustc,
-                took,
-                mutants,
-                flaky,
-            } => {
-                counter.total = mutants;
-                stderr_line!(
-                    "coverage  {} on rustc {rustc} in {}{} · {}",
-                    count(tests, "test"),
-                    report::duration(took),
-                    if flaky == 0 {
-                        String::new()
-                    } else {
-                        format!(" ({flaky} flaky, left out)")
-                    },
-                    count(mutants, "mutant")
-                )
-            }
-            engine::Progress::FromShares { summary, mutants } => {
-                counter.total = mutants;
-                stderr_line!("{summary}");
-            }
-            engine::Progress::MutantFinished { status } => {
-                counter.done += 1;
-                match status {
-                    Status::Killed => counter.caught += 1,
-                    Status::Survived => counter.missed += 1,
-                    Status::NoCoverage => counter.not_covered += 1,
-                    Status::Timeout => counter.timed_out += 1,
-                    Status::Ignored | Status::RuntimeError => {}
-                }
-                self.show(&mut counter);
-            }
-            engine::Progress::FileFinished { found, results } if self.files => {
-                let bar = self.shown == Shown::Bar;
-                stderr_text!(
-                    "{}{}{}",
-                    if bar { CLEAR } else { "" },
-                    report::file_finished(self.package, found, results, self.style),
-                    if bar {
-                        self.line(&counter)
-                    } else {
-                        String::new()
-                    }
-                );
-            }
-            engine::Progress::FileFinished { .. } => {}
-        }
-    }
-
-    fn show(&self, counter: &mut Counter) {
-        match self.shown {
-            Shown::Bar => stderr_text!("{CLEAR}{}", self.line(counter)),
-            // With each file's line, a log already shows how far the run is.
-            Shown::Counter if !self.files => {
-                let due = counter.printed.is_none_or(|at| at.elapsed() >= EVERY);
-                if due || counter.done == counter.total {
-                    stderr_line!("{}", self.line(counter));
-                    counter.printed = Some(std::time::Instant::now());
-                }
-            }
-            Shown::Counter | Shown::None => {}
-        }
-    }
-
-    /// Clears the bar, before the result.
-    fn finished(&self) {
-        let done = self.counter.lock().map_or(0, |counter| counter.done);
-        if self.shown == Shown::Bar && done > 0 {
-            stderr_text!("{CLEAR}");
-        }
-    }
-}
-
-/// `1 test`, `3 tests`.
-fn count(number: usize, noun: &str) -> String {
-    format!("{number} {noun}{}", if number == 1 { "" } else { "s" })
-}
-
-/// The first line, before anything slow.
-fn started(quiet: bool) {
-    if !quiet {
-        stderr_line!(
-            "mutastic {} · reading the Cargo package…",
-            env!("CARGO_PKG_VERSION")
-        );
-    }
+/// The run's progress on stderr, started before the package is read, so the first line comes
+/// before anything slow. `files`: each source file's line as its last mutant finishes.
+fn start(parsed: &Parsed, files: bool) -> Progress {
+    let shown = crate::progress::resolve(parsed.progress);
+    let style = style(parsed, std::io::stderr().is_terminal());
+    Progress::start(shown, style, files, parsed.workers)
 }
 
 fn options(parsed: &Parsed, only: Vec<String>) -> Options {
@@ -950,9 +768,9 @@ fn run(parsed: &Parsed) -> Result<ExitCode, String> {
     }
     let dir = parsed.positional.first().map_or(".", String::as_str);
     let format = format(parsed);
-    let quiet = matches!(format, Format::Agent | Format::Jsonl);
-    started(quiet);
+    let progress = start(parsed, true);
     let project = workspace::read(dir)?;
+    progress.package(&project.package);
     // A share's events and report files go in a folder of its own: its report is only its share's,
     // so `explain` and the next whole run never take it for the whole run's.
     let folder = parsed
@@ -968,7 +786,6 @@ fn run(parsed: &Parsed) -> Result<ExitCode, String> {
         }
         _ => None,
     };
-    let progress = Progress::new(&project.package, quiet, true, parsed.progress, parsed);
     let mut options = options(parsed, parsed.only.clone());
     options.suggestions = !parsed.no_suggestions;
     options.shard = parsed.shard;
@@ -1018,10 +835,9 @@ fn from_shards(parsed: &Parsed, shares: &str) -> Result<ExitCode, String> {
         crate::shares::Shares::read(std::path::Path::new(shares), env!("CARGO_PKG_VERSION"))?;
     let dir = parsed.positional.first().map_or(".", String::as_str);
     let format = format(parsed);
-    let quiet = matches!(format, Format::Agent | Format::Jsonl);
-    started(quiet);
+    let progress = start(parsed, true);
     let project = workspace::read(dir)?;
-    let progress = Progress::new(&project.package, quiet, true, parsed.progress, parsed);
+    progress.package(&project.package);
     let code = crate::shares::code(&project)?;
     let report = shares.whole(&project, &code, &options(parsed, Vec::new()), &|step| {
         progress.step(step)
@@ -1119,10 +935,9 @@ fn baseline_command(parsed: &Parsed) -> Result<ExitCode, String> {
         }
         return Ok(ExitCode::FAILURE);
     }
-    let quiet = matches!(format(parsed), Format::Agent | Format::Jsonl);
-    started(quiet);
+    let progress = start(parsed, false);
     let project = workspace::read(dir)?;
-    let progress = Progress::new(&project.package, quiet, false, parsed.progress, parsed);
+    progress.package(&project.package);
     let report = engine::run(&project, &options(parsed, Vec::new()), &|step| {
         progress.step(step)
     })?;
@@ -1157,9 +972,9 @@ fn baseline_command(parsed: &Parsed) -> Result<ExitCode, String> {
 fn next(parsed: &Parsed) -> Result<ExitCode, String> {
     let dir = parsed.positional.first().map_or(".", String::as_str);
     let format = format(parsed);
-    let quiet = matches!(format, Format::Agent | Format::Jsonl);
-    started(quiet);
+    let progress = start(parsed, false);
     let project = workspace::read(dir)?;
+    progress.package(&project.package);
     let folder = project.mutastic_dir();
     let found = engine::find_with(&project, &parsed.operators, parsed.unsafe_mode);
     let key = crate::nextrun::key(
@@ -1177,7 +992,7 @@ fn next(parsed: &Parsed) -> Result<ExitCode, String> {
                 .as_ref()
                 .map(|left| left.uncaught.iter().cloned().collect())
                 .unwrap_or_default();
-            Some(next_pass(parsed, &project, only)?)
+            Some(next_pass(parsed, &project, only, &progress)?)
         }
     };
     if let Some(report) = &report {
@@ -1209,6 +1024,7 @@ fn next(parsed: &Parsed) -> Result<ExitCode, String> {
         top: parsed.top,
     };
     let (text, queued) = report::next::next(report.as_ref(), &asked);
+    progress.finished();
     print!("{text}");
     Ok(if queued {
         ExitCode::FAILURE
@@ -1223,10 +1039,8 @@ fn next_pass(
     parsed: &Parsed,
     project: &workspace::Project,
     only: Vec<String>,
+    progress: &Progress,
 ) -> Result<engine::Report, String> {
-    let format = format(parsed);
-    let quiet = matches!(format, Format::Agent | Format::Jsonl);
-    let progress = Progress::new(&project.package, quiet, false, parsed.progress, parsed);
     let whole = only.is_empty();
     let mut options = options(parsed, only);
     options.suggestions = !parsed.no_suggestions;
@@ -1278,9 +1092,9 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, String> {
         return Err("verify needs a mutant's id: mutastic verify <id> [dir]".into());
     }
     let dir = parsed.positional.get(taken).map_or(".", String::as_str);
-    started(false);
+    let progress = start(parsed, false);
     let project = workspace::read(dir)?;
-    let progress = Progress::new(&project.package, false, false, parsed.progress, parsed);
+    progress.package(&project.package);
     let report = engine::run(&project, &options(parsed, only), &|step| {
         progress.step(step)
     })?;
@@ -1330,9 +1144,9 @@ fn explain(parsed: &Parsed) -> Result<ExitCode, String> {
         ));
     }
     let dir = parsed.positional.get(1).map_or(".", String::as_str);
-    started(false);
+    let progress = start(parsed, false);
     let project = workspace::read(dir)?;
-    let progress = Progress::new(&project.package, false, false, parsed.progress, parsed);
+    progress.package(&project.package);
     let mut options = options(parsed, vec![id.clone()]);
     options.suggestions = !parsed.no_suggestions;
     let report = engine::run(&project, &options, &|step| progress.step(step))?;
@@ -1841,7 +1655,7 @@ fn gate_verdict(
     }
     let mut options = options(parsed, Vec::new());
     options.since = Some(changed);
-    let progress = Progress::new(&project.package, true, false, Some(Shown::None), parsed);
+    let progress = Progress::start(Shown::None, Style::default(), false, parsed.workers);
     let mut report = match engine::run(project, &options, &|step| progress.step(step)) {
         Ok(report) => report,
         Err(error) => return red_verdict(here, state, &error),
@@ -2037,7 +1851,7 @@ fn build(parsed: &Parsed) -> Result<ExitCode, String> {
         .map(|(index, _)| index)
         .collect();
     let started = std::time::Instant::now();
-    let built = crate::compile::build(&project, &found, &live, &Default::default())?;
+    let built = crate::compile::build(&project, &found, &live, &Default::default(), &|_| {})?;
     let rounds: Vec<serde_json::Value> = built
         .rounds
         .iter()

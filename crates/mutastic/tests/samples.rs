@@ -5,8 +5,10 @@
     reason = "a helper here asserts as the tests it serves do: a value that isn't there fails the test"
 )]
 
+use std::io::BufRead as _;
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
@@ -482,31 +484,47 @@ fn missed_mutants_are_ranked_as_the_java_edition_ranks_them() {
     );
 }
 
-/// At a terminal, the counter is one line redrawn in place as each mutant finishes, as the Java
-/// edition's: cleared before a file's line, drawn again after it, and cleared before the result.
+/// At a terminal, the phase's line is a live block redrawn in place, with wrapping off while it's
+/// drawn: each permanent line clears it first and draws it again beneath, and it's cleared before
+/// the result.
 #[test]
-fn the_counter_is_redrawn_in_place() {
+fn the_live_line_is_redrawn_in_place() {
     // A copy of its own: runs of one package side by side share its build in target/mutastic.
     let copy = copy_of("pricing", "counter");
     let dir = copy.display().to_string();
     let (_, err) = run_with(&dir, "--progress=bar", false);
     let clear = "\r\x1b[2K";
-    let counter = regex::Regex::new(
-        r"\[11/11\] ✓ 10 caught · ✗ 1 missed · ○ 0 not covered · ⏱ 0 timed out  \d+:\d\d",
+    let live = regex::Regex::new(
+        r"\x1b\[\?7l[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] mutants   \[\d+/11\] ✓ \d+ caught · ✗ \d missed · ○ 0 not covered · ⏱ 0 timed out · \d+s\x1b\[\?7h",
     )
     .unwrap();
-    assert!(counter.is_match(&err), "the last count: {err:?}");
-    assert!(err.contains(&format!("{clear}[1/11] ✓ ")), "{err:?}");
+    assert!(live.is_match(&err), "the mutants' live line: {err:?}");
+    // A block of any height: the line it's on, then each line above.
+    let cleared_then = |permanent: &str| {
+        regex::Regex::new(&format!(
+            r"\r\x1b\[2K(\x1b\[1A\x1b\[2K)*{}",
+            regex::escape(permanent)
+        ))
+        .unwrap()
+        .is_match(&err)
+    };
+    for permanent in [
+        " ❯ [pricing] src/lib.rs",
+        "built     11 mutants in ",
+        "ran       11 mutants in ",
+    ] {
+        assert!(
+            cleared_then(permanent),
+            "{permanent:?} clears the live block: {err:?}"
+        );
+    }
+    let (drawn, cleared) = (err.rfind("\x1b[?7h").unwrap(), err.rfind(clear).unwrap());
     assert!(
-        err.contains(&format!("{clear} ❯ [pricing] src/lib.rs")),
-        "a file's line clears the counter: {err:?}"
+        drawn < cleared && err.ends_with('\n'),
+        "cleared before the result: {err:?}"
     );
-    assert!(err.ends_with(clear), "cleared before the result: {err:?}");
     let (_, plain) = run_with(&dir, "--progress=none", false);
-    assert!(
-        !plain.contains(clear) && !plain.contains("[1/11]"),
-        "{plain:?}"
-    );
+    assert!(plain.is_empty(), "{plain:?}");
 }
 
 /// A full run writes `mutation.json`, in the mutation-testing report schema as the Java edition
@@ -600,6 +618,8 @@ fn mutastic_in(dir: &Path, args: &[&str]) -> (i32, String) {
         )
         .env_remove("MUTASTIC_FORMAT")
         .env_remove("MUTASTIC_AGENT")
+        // What these runs say is what they find: their progress is tested on its own.
+        .env("MUTASTIC_PROGRESS", "none")
         .env("NO_COLOR", "1")
         .output()
         .unwrap();
@@ -1503,7 +1523,15 @@ fn identical_lines_have_ids_of_their_own() {
 fn a_flaky_test_is_left_out_and_one_that_always_fails_stops_the_run() {
     let dir = copy_of("flaky", "flaky");
     let test = "raffle::a_draw_is_a_place_in_the_raffle";
-    let (code, out) = mutastic_in(&dir, &["run", "--format=full", "--report=none"]);
+    let (code, out) = mutastic_in(
+        &dir,
+        &[
+            "run",
+            "--format=full",
+            "--report=none",
+            "--progress=counter",
+        ],
+    );
     assert_eq!(code, 1, "{out}");
     assert!(out.contains(" (1 flaky, left out) · "), "{out}");
     assert!(
@@ -2526,4 +2554,49 @@ fn no_cargo_on_the_path_is_said_with_how_to_get_one() {
          Install Rust from https://rustup.rs, or add the directory that holds cargo to the PATH. \
          To check it's found:\n  cargo --version\n"
     );
+}
+
+/// A run is never silent. With a heartbeat of a second, a piped stderr gets a line at least every
+/// two seconds, through a build, a coverage pass whose test takes three seconds, and mutants
+/// that take as long; and every phase says something.
+#[test]
+fn a_piped_run_is_never_quiet_for_longer_than_its_heartbeat() {
+    let dir = fixture("sleepy");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+        .args(["run", &dir, "--format=concise", "--report=none"])
+        .env("MUTASTIC_HEARTBEAT", "1")
+        .env("NO_COLOR", "1")
+        .env_remove("MUTASTIC_PROGRESS")
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let started = Instant::now();
+    let lines: Vec<(Duration, String)> = std::io::BufReader::new(child.stderr.take().unwrap())
+        .lines()
+        .map(|line| (started.elapsed(), line.unwrap()))
+        .collect();
+    child.wait().unwrap();
+    let mut last = Duration::ZERO;
+    for (at, line) in &lines {
+        assert!(
+            *at - last <= Duration::from_secs(2),
+            "{:?} without a line before {line:?}:\n{lines:#?}",
+            *at - last
+        );
+        last = *at;
+    }
+    for phase in [
+        "reading",
+        "building ",
+        "built ",
+        "coverage ",
+        "mutants ",
+        "ran ",
+    ] {
+        assert!(
+            lines.iter().any(|(_, line)| line.contains(phase)),
+            "no {phase:?} line:\n{lines:#?}"
+        );
+    }
 }

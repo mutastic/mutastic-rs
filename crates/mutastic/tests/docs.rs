@@ -1435,7 +1435,7 @@ fn every_variable_read_is_declared() {
         .iter()
         .map(|entry| entry.name.split('=').next().unwrap())
         .collect();
-    for source in ["cli.rs", "java.rs", "workspace.rs"] {
+    for source in ["cli.rs", "java.rs", "workspace.rs", "progress.rs"] {
         let text =
             std::fs::read_to_string(root().join("crates/mutastic/src").join(source)).unwrap();
         for found in read.captures_iter(&text) {

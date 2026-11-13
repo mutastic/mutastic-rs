@@ -7,11 +7,20 @@ once, with every mutant in it, and picks which one is live when the tests run. W
 <!-- output: concepts/run-progress -->
 ```text
 mutastic 1.1.0 · reading the Cargo package…
-building  11 mutants in one build…
-coverage  3 tests on rustc 1.98.0 in 5ms · 11 mutants
- ❯ [pricing] src/lib.rs (11 mutants | 1 missed) 61ms
+building  11 mutants in one build · 4 workers
+built     11 mutants in 306ms · 2 rounds (check and build), none withdrawn
+coverage  3 tests on rustc 1.99.1 in 2ms · 11 mutants
+ ❯ [pricing] src/lib.rs (11 mutants | 1 missed) 26ms
    × discount() :26 >= becomes >
+ran       11 mutants in 8ms · ✓ 10 caught · ✗ 1 missed · ○ 0 not covered · ⏱ 0 timed out
+checked   1 missed mutant in 4ms · a test to write for 1
 ```
+
+Each phase says when it ends. While one runs, a terminal shows a line under these, redrawn every
+tenth of a second with the phase's own clock: the crate Cargo is on while it builds, how many tests
+the coverage pass has run, the mutants' counts so far. In a log, in CI or under a coding agent, the
+same line is printed instead whenever 30 seconds pass without one, so a run is never quiet for
+longer. `--progress` chooses.
 
 ## One copy, one build
 
