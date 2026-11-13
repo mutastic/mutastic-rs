@@ -77,7 +77,7 @@ mutastic run fixtures/pricing --since=HEAD
 
  ❯ src/lib.rs  2 missed in 1 function
 
- [✗ MISSED] no test checks loyalty_credit() at total == 30 · m525ce1d2
+  ✗ MISSED  no test checks loyalty_credit() at total == 30 · m525ce1d2
     ┌─ src/lib.rs:42
     │
  41 │     pub fn loyalty_credit(&self, total: u32) -> u32 {
@@ -116,20 +116,19 @@ mutastic run fixtures/pricing --since=HEAD
  Not covered (no test reaches these lines)
    ○ src/lib.rs:45 loyalty_credit() (1 mutant)
 
+ Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+
      Files  0 clean | 1 with misses (1)
    Mutants  ✓ 2 caught · ✗ 2 missed · ○ 1 not covered (5)
    Changed  14 lines in 1 file since HEAD
   Worst at  Pricing::loyalty_credit() 2 ✗
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  4 (16 without coverage selection)
-  Start at  10:45:51
-  Duration  801ms (setup 749ms, coverage 8ms, mutants 18ms)
-     Tests  4 on rustc 1.94.0 · 4 workers
+  Start at  11:56:11
+  Duration  428ms (setup 22ms, build 371ms, coverage 4ms, mutants 2ms, checking 6ms)
+     Tests  4 on rustc 1.99.1 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  40.0%  threshold 80  · 50.0% where tests reach
-
- [FAIL] Score below 80: 2 missed, 1 not covered.
- Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+     Score  40.0%   FAIL  Below the threshold of 80: 2 missed, 1 not covered.  · 50.0% where tests reach
 ```
 
 The one test is at 50, so nothing checks the edge at 30, nothing checks an order below it, and no
@@ -191,13 +190,11 @@ mutastic run fixtures/pricing --since=HEAD
    Changed  24 lines in 1 file since HEAD
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  12 (30 without coverage selection)
-  Start at  10:45:52
-  Duration  763ms (setup 722ms, coverage 9ms, mutants 8ms)
-     Tests  6 on rustc 1.94.0 · 4 workers
+  Start at  11:56:12
+  Duration  401ms (setup 32ms, build 345ms, coverage 4ms, mutants 4ms)
+     Tests  6 on rustc 1.99.1 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  100.0%  threshold 80
-
- [PASS] Every mutant was caught.
+     Score  100.0%   PASS  Every mutant was caught.
 ```
 
 Then commit. The commit is the next cycle's `HEAD`.
