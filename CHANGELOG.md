@@ -5,6 +5,8 @@ newest come first.
 
 ## Unreleased
 
+## 1.1.0 (2026-11-12)
+
 ### Card changes
 
 - **A suggested test is named by where its input sits, not its value,** as in the Java edition. A
@@ -20,71 +22,11 @@ newest come first.
 - **`explain` says `run` or `next` records a last run.** With none kept, its `last run` row said a
   full run records one; `next`'s first pass now does too, and the row says so in the Java edition's
   words.
-
 - **Never change production code to make a mutant go away.** The agent format's `rules:` line now
   says `add or change tests only; never change production code to make a mutant go away: tell the
   person`, and the gate's open and block messages say the same, as in the Java edition. Production
   code changed to pass a test the spec asks for is the task; code changed so a mutant can't exist
   hides what the mutant found, and was the one cheat mutastic's own evals saw.
-
-### Additions
-
-- **`mutastic baseline` and `run --fail-on-new`, as in the Java edition.** `baseline` records every
-  mutant no test catches now in `.mutastic/baseline.yaml`, by id, to commit, in the Java edition's
-  shape; it won't write over one, and `baseline --prune` drops the mutants the tests catch now,
-  never taking in new ones. From then on a miss that isn't in it is new: `next` offers new misses
-  first, with a `baseline` factor and `next-finished`'s `legacy`; the gate holds only new misses,
-  and blocks a task that adds to the baseline itself; and a full run says how many of the
-  baseline's mutants are caught now. `run --fail-on-new` passes while every mutant no test catches
-  is in the baseline and fails on one that isn't, whatever the score, naming each new miss:
-  `[FAIL] 1 new miss, not in the baseline (0 in it): mb2f8ae57.`, the same on the agent format's
-  first line, and `failOnNew`, `newMisses` and `inBaseline` in `run-finished`. Without a baseline
-  it exits 2 before the build. See
-  [Brownfield: fail only on new misses](docs/concepts/how-a-run-works.md#brownfield-fail-only-on-new-misses).
-
-- **`explain --format=jsonl`**, as in the Java edition: the run's events for the one mutant, then
-  a `mutant-explained` event with what "About this mutant" says, a field for each row: the
-  change as it's `applied` (at the `source` level, as `mutation.applied` says it), the `operator`, the `fingerprint` and how the id is
-  made, the `site` and the `lastRun`. `explain` takes `full` and `jsonl`, and refuses another.
-- **`extends:` in `mutastic.yaml`, as in the Java edition.** A package's file adds another's rules
-  and plugins when it says `extends: ../mutastic.yaml`; its own `operators:`, if any, replace the
-  other's. A file names one other, which may extend another in turn. See
-  [In a workspace](docs/reference/configuration.md#in-a-workspace).
-
-- **`mutastic next`: the misses one at a time.** A long list of missed mutants goes unread, so
-  `next` hands over the one most worth a test first: its card, why it's first, the test to write
-  and the `done when` that proves it, as in the Java edition. The queue is in the run's order (a
-  condition or a removal first, then the line more tests run, then where it is), a line's mutants
-  are one item, and `--top=N` shows the first few, at most one a function and two a file. While
-  the code under test is the same, `next` runs only what the last one left uncaught, so a new test
-  in `mod tests` doesn't run everything again; a mutant proposed for ignoring waits on a person,
-  not in the queue. `--format=agent` gives exactly one task; `--format=jsonl` writes `next-item`
-  and `next-finished`. It exits 1 while something is queued and 0 when nothing missed is left.
-  Where there's a baseline, new misses come first. See
-  [Working through misses](docs/concepts/next.md).
-
-- **The output options the Java edition has.** `--format=brief` (each card's head: the code with
-  the change marked and what the run saw) and `--format=grouped` (the missed mutants of each file
-  by function, a line each); `--vocabulary=classic` (killed and survived, in what a person or an
-  agent reads, never in the events) and `MUTASTIC_VOCABULARY`; `--color=auto|always|never`; and
-  `--hyperlinks=auto|always|never`, file locations as links a terminal opens. See
-  [Output](docs/concepts/output.md#formats).
-
-- **`--report=sarif`, for code scanning, as in the Java edition.** It writes `mutation.sarif`,
-  SARIF 2.1.0: a result for each missed mutant (a warning) and each one no test reaches (a note),
-  on its line, with the card's headline, keyed by the mutant's id in `partialFingerprints` so an
-  alert follows its mutant; never a fix. Paths are from the git repository's root. GitHub shows it
-  as alerts on a pull request's lines. See [Report files](docs/reference/reports.md#code-scanning).
-
-- **Links to each operator's docs, as in the Java edition.** `explain`'s About this mutant gives
-  the operator's section in the docs, `docs:
-  https://docs.mutastic.io/rust/operators/conditions/#boundary`. On a terminal with links on
-  (`--hyperlinks`), a full card's `^^ changed to` mark links there too, and `--format=jsonl`'s
-  `mutant-finished` carries it as `docs`. A rules file's operator has no section, so no link. See
-  [One mutant, explained](docs/concepts/output.md#one-mutant-explained).
-
-### Card changes
-
 - **No suggested test of a crate's own function on an input its callers never gave.** A function
   that isn't `pub` (or a trait impl's) gets its inputs from the crate's callers, so a test calling
   it alone on a value none of them passed may test what can't happen: an agent was offered
@@ -116,36 +58,6 @@ newest come first.
   Those mutants, which no test could catch, no longer count as missed, so a score can go up: a
   change to scores, as a minor release may make. See
   [Conditions](docs/operators/conditions.md#boundary).
-
-### Fixes
-
-- **Two runs on one package wait for each other.** Run at once, they rewrote each other's copy and
-  build in `target/mutastic/` in the middle of a run, so a mutant could be judged by the other
-  run's build. The first run now holds the package's work directory until it ends, and a second
-  says it's waiting and runs after it.
-- **A closed stderr no longer loses a run.** `mutastic run … 2>&1 | head` closed stderr under a
-  run, and its first progress line stopped it with a panic. Progress and notes are now dropped
-  when they can't be written, and the run goes on. A worker thread that panics now fails the run;
-  before, its mutants' results went missing and the rest were kept as if it were whole.
-
-- **A workspace that excludes a package its tests run Cargo on can be mutated.** mutastic's copy
-  of the workspace is under its target directory, so Cargo, finding a package the copy's workspace
-  excludes, looked further up, reached the workspace itself and refused it: the tests failed in the
-  copy before any mutant, and the run stopped. In the copy, such a package now stands alone, as it
-  does in the workspace; a package of a workspace nested in it is left as it is.
-
-### Changes
-
-- **Each full run is compared with the last, as in the Java edition.** A run keeps what it found in
-  `target/mutastic/last-run.tsv` (each mutant's result and catching test, the score, and hashes of
-  the code and of mutastic), and the next run under the same operators compares with it: the score
-  line says `= vs last run`, `▲ 2.0 vs last run` or `▼ …`, with `same code`, `code changed` or
-  `mutastic changed`. With the code and mutastic unchanged, a mutant that changed result names the
-  test that caught it as `! likely flaky: …`. The agent format adds `vs last run:` and `likely
-  flaky:` lines, and `run-finished` fills `previousScore`, `sameCodeAsLastRun`,
-  `sameMutasticAsLastRun`, `changedSinceLastRun` and `likelyFlaky`, as the events schema
-  describes. A run of one mutant or of a change neither compares nor is kept, and a share keeps
-  its own. See [Compared with the last run](docs/concepts/how-a-run-works.md#compared-with-the-last-run).
 - **A zero check on a `NonZero*` is skipped as equivalent where it can't differ.** In
   `if parts.get() == 0` with `parts` a `NonZeroU32`, the guard made never true behaves as the code
   does, since `parts` can't hold 0, so it's skipped with its reason (`equivalent: differs only when
@@ -168,6 +80,86 @@ newest come first.
   1.0.28 that's 10 boundary mutants no test could catch, in the defaults, that no longer count as
   missed, so a score can go up: a change to scores, as a minor release may make. See
   [Boundary](docs/operators/conditions.md#boundary).
+
+### Additions
+
+- **`mutastic baseline` and `run --fail-on-new`, as in the Java edition.** `baseline` records every
+  mutant no test catches now in `.mutastic/baseline.yaml`, by id, to commit, in the Java edition's
+  shape; it won't write over one, and `baseline --prune` drops the mutants the tests catch now,
+  never taking in new ones. From then on a miss that isn't in it is new: `next` offers new misses
+  first, with a `baseline` factor and `next-finished`'s `legacy`; the gate holds only new misses,
+  and blocks a task that adds to the baseline itself; and a full run says how many of the
+  baseline's mutants are caught now. `run --fail-on-new` passes while every mutant no test catches
+  is in the baseline and fails on one that isn't, whatever the score, naming each new miss:
+  `[FAIL] 1 new miss, not in the baseline (0 in it): mb2f8ae57.`, the same on the agent format's
+  first line, and `failOnNew`, `newMisses` and `inBaseline` in `run-finished`. Without a baseline
+  it exits 2 before the build. See
+  [Brownfield: fail only on new misses](docs/concepts/how-a-run-works.md#brownfield-fail-only-on-new-misses).
+- **`explain --format=jsonl`**, as in the Java edition: the run's events for the one mutant, then
+  a `mutant-explained` event with what "About this mutant" says, a field for each row: the
+  change as it's `applied` (at the `source` level, as `mutation.applied` says it), the `operator`, the `fingerprint` and how the id is
+  made, the `site` and the `lastRun`. `explain` takes `full` and `jsonl`, and refuses another.
+- **`extends:` in `mutastic.yaml`, as in the Java edition.** A package's file adds another's rules
+  and plugins when it says `extends: ../mutastic.yaml`; its own `operators:`, if any, replace the
+  other's. A file names one other, which may extend another in turn. See
+  [In a workspace](docs/reference/configuration.md#in-a-workspace).
+- **`mutastic next`: the misses one at a time.** A long list of missed mutants goes unread, so
+  `next` hands over the one most worth a test first: its card, why it's first, the test to write
+  and the `done when` that proves it, as in the Java edition. The queue is in the run's order (a
+  condition or a removal first, then the line more tests run, then where it is), a line's mutants
+  are one item, and `--top=N` shows the first few, at most one a function and two a file. While
+  the code under test is the same, `next` runs only what the last one left uncaught, so a new test
+  in `mod tests` doesn't run everything again; a mutant proposed for ignoring waits on a person,
+  not in the queue. `--format=agent` gives exactly one task; `--format=jsonl` writes `next-item`
+  and `next-finished`. It exits 1 while something is queued and 0 when nothing missed is left.
+  Where there's a baseline, new misses come first. See
+  [Working through misses](docs/concepts/next.md).
+- **The output options the Java edition has.** `--format=brief` (each card's head: the code with
+  the change marked and what the run saw) and `--format=grouped` (the missed mutants of each file
+  by function, a line each); `--vocabulary=classic` (killed and survived, in what a person or an
+  agent reads, never in the events) and `MUTASTIC_VOCABULARY`; `--color=auto|always|never`; and
+  `--hyperlinks=auto|always|never`, file locations as links a terminal opens. See
+  [Output](docs/concepts/output.md#formats).
+- **`--report=sarif`, for code scanning, as in the Java edition.** It writes `mutation.sarif`,
+  SARIF 2.1.0: a result for each missed mutant (a warning) and each one no test reaches (a note),
+  on its line, with the card's headline, keyed by the mutant's id in `partialFingerprints` so an
+  alert follows its mutant; never a fix. Paths are from the git repository's root. GitHub shows it
+  as alerts on a pull request's lines. See [Report files](docs/reference/reports.md#code-scanning).
+- **Links to each operator's docs, as in the Java edition.** `explain`'s About this mutant gives
+  the operator's section in the docs, `docs:
+  https://docs.mutastic.io/rust/operators/conditions/#boundary`. On a terminal with links on
+  (`--hyperlinks`), a full card's `^^ changed to` mark links there too, and `--format=jsonl`'s
+  `mutant-finished` carries it as `docs`. A rules file's operator has no section, so no link. See
+  [One mutant, explained](docs/concepts/output.md#one-mutant-explained).
+
+### Changes
+
+- **Each full run is compared with the last, as in the Java edition.** A run keeps what it found in
+  `target/mutastic/last-run.tsv` (each mutant's result and catching test, the score, and hashes of
+  the code and of mutastic), and the next run under the same operators compares with it: the score
+  line says `= vs last run`, `▲ 2.0 vs last run` or `▼ …`, with `same code`, `code changed` or
+  `mutastic changed`. With the code and mutastic unchanged, a mutant that changed result names the
+  test that caught it as `! likely flaky: …`. The agent format adds `vs last run:` and `likely
+  flaky:` lines, and `run-finished` fills `previousScore`, `sameCodeAsLastRun`,
+  `sameMutasticAsLastRun`, `changedSinceLastRun` and `likelyFlaky`, as the events schema
+  describes. A run of one mutant or of a change neither compares nor is kept, and a share keeps
+  its own. See [Compared with the last run](docs/concepts/how-a-run-works.md#compared-with-the-last-run).
+
+### Fixes
+
+- **Two runs on one package wait for each other.** Run at once, they rewrote each other's copy and
+  build in `target/mutastic/` in the middle of a run, so a mutant could be judged by the other
+  run's build. The first run now holds the package's work directory until it ends, and a second
+  says it's waiting and runs after it.
+- **A closed stderr no longer loses a run.** `mutastic run … 2>&1 | head` closed stderr under a
+  run, and its first progress line stopped it with a panic. Progress and notes are now dropped
+  when they can't be written, and the run goes on. A worker thread that panics now fails the run;
+  before, its mutants' results went missing and the rest were kept as if it were whole.
+- **A workspace that excludes a package its tests run Cargo on can be mutated.** mutastic's copy
+  of the workspace is under its target directory, so Cargo, finding a package the copy's workspace
+  excludes, looked further up, reached the workspace itself and refused it: the tests failed in the
+  copy before any mutant, and the run stopped. In the copy, such a package now stands alone, as it
+  does in the workspace; a package of a workspace nested in it is left as it is.
 
 ## 1.0.0 (2026-11-10)
 

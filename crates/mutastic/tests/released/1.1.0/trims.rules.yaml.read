@@ -1,0 +1,9 @@
+id: acme/remove-trim
+explanation: A call that trims a string is removed. It goes unnoticed when no test passes text with spaces around it.
+tier: defaults
+owners: ["str", "String"]
+methods: ["trim", "trim_start", "trim_end"]
+rewrite: Remove
+changed: `.{name}()` removed
+headline: no test passes {method} text with spaces for `.{name}()` to remove
+help: add a test whose input has spaces around it, and assert they're gone
