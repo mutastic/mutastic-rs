@@ -14,13 +14,9 @@ use serde_json::Value;
 mod common;
 use common::schema;
 
-/// A copy of the pricing fixture in a directory of its own, without its `target`.
+/// A copy of the pricing fixture this test process has to itself.
 fn pricing(label: &str) -> PathBuf {
-    let to = std::env::temp_dir().join(format!("mutastic-shares-{label}-{}", std::process::id()));
-    std::fs::remove_dir_all(&to).ok();
-    let from = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pricing");
-    copy(&from, &to, &["target"]);
-    to
+    common::own_copy("pricing", &format!("shares-{label}"))
 }
 
 /// `from` into `to`, leaving out entries named in `skip`.
@@ -283,7 +279,6 @@ fn two_shares_put_together_are_the_whole_run() {
     );
     assert_eq!(code, 0, "{out}{err}");
     assert_eq!(untimed(&out), untimed(&whole[0]));
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 /// A share's events, read to change.
@@ -496,5 +491,4 @@ fn shares_that_arent_one_run_are_refused() {
     }
     let (code, out, err) = mutastic(&dir, &["run", "--from-shards=cases/both", "--format=jsonl"]);
     assert_eq!(code, 0, "the cases' own shares put together: {out}{err}");
-    std::fs::remove_dir_all(&dir).ok();
 }
