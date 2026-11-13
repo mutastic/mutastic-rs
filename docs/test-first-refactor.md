@@ -95,20 +95,19 @@ mutastic run fixtures/pricing --since=HEAD
     reproduce  mutastic run --only=m0d64ba6c fixtures/pricing
     or ignore  mutastic ignore m0d64ba6c --reason="<why>" fixtures/pricing
 
+ Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+
      Files  0 clean | 1 with misses (1)
    Mutants  ✓ 3 caught · ✗ 1 missed (4)
    Changed  10 lines in 1 file since HEAD
   Worst at  Pricing::loyalty_credit() 1 ✗
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  13 (28 without coverage selection)
-  Start at  11:30:37
-  Duration  992ms (setup 942ms, coverage 13ms, mutants 20ms)
+  Start at  12:19:04
+  Duration  1.0s (setup 509ms, build 457ms, coverage 8ms, mutants 4ms, checking 13ms)
      Tests  7 on rustc 1.94.0 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  75.0%  threshold 80
-
- [FAIL] Score below 80: 1 missed, 0 not covered.
- Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+     Score  75.0%  [FAIL] Below the threshold of 80: 1 missed, 0 not covered.
 ```
 
 The new test is at 150, so nothing checks the edge at 100. The new lines' other mutants are caught
@@ -215,20 +214,19 @@ mutastic run fixtures/pricing --since=HEAD
     reproduce  mutastic run --only=m97fbc9b1 fixtures/pricing
     or ignore  mutastic ignore m97fbc9b1 --reason="<why>" fixtures/pricing
 
+ Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+
      Files  0 clean | 1 with misses (1)
    Mutants  ✓ 3 caught · ✗ 1 missed (4)
    Changed  10 lines in 1 file since HEAD
   Worst at  Pricing::loyalty_credit() 1 ✗
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  19 (36 without coverage selection)
-  Start at  11:30:42
-  Duration  968ms (setup 914ms, coverage 15ms, mutants 20ms)
+  Start at  12:19:08
+  Duration  995ms (setup 481ms, build 458ms, coverage 16ms, mutants 4ms, checking 14ms)
      Tests  9 on rustc 1.94.0 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  75.0%  threshold 80
-
- [FAIL] Score below 80: 1 missed, 0 not covered.
- Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+     Score  75.0%  [FAIL] Below the threshold of 80: 1 missed, 0 not covered.
 ```
 
 The same gap, at the new edge. An order of exactly 250 gets 20 off:
@@ -275,13 +273,11 @@ mutastic run fixtures/pricing --since=HEAD
    Changed  15 lines in 1 file since HEAD
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  23 (40 without coverage selection)
-  Start at  11:30:44
-  Duration  890ms (setup 844ms, coverage 18ms, mutants 5ms)
+  Start at  12:19:10
+  Duration  966ms (setup 489ms, build 433ms, coverage 20ms, mutants 4ms)
      Tests  10 on rustc 1.94.0 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  100.0%  threshold 80
-
- [PASS] Every mutant was caught.
+     Score  100.0%  [PASS] Every mutant was caught.
 ```
 
 The four are the new tier's: its `>=` changed to `>`, its condition always true and always false,
@@ -324,13 +320,11 @@ mutastic run fixtures/pricing --since=HEAD
    Changed  19 lines in 1 file since HEAD
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  27 (40 without coverage selection)
-  Start at  11:30:45
-  Duration  942ms (setup 894ms, coverage 17ms, mutants 5ms)
+  Start at  12:19:11
+  Duration  1.0s (setup 500ms, build 466ms, coverage 17ms, mutants 8ms)
      Tests  10 on rustc 1.94.0 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  100.0%  threshold 80
-
- [PASS] Every mutant was caught.
+     Score  100.0%  [PASS] Every mutant was caught.
 ```
 
 The table and the loop are new since `HEAD`, so these are the new shape's mutants. The report,
