@@ -63,8 +63,23 @@ const ROLLBACK: &[&str] = &[
 /// a hundred times a probe's own time on a slow machine.
 const PROBE_LIMIT: Duration = Duration::from_secs(1);
 
+/// How long a probe may run when it's run again, alone, as a probe that disagreed is: on a machine
+/// busy with the other tests' builds, a probe that ends can still take more than `PROBE_LIMIT`,
+/// and a probe stopped for that isn't one that loops.
+const AGAIN_LIMIT: Duration = Duration::from_secs(20);
+
 fn probe(binary: &Binary, cwd: &Path, test: &str, env: &[(&str, String)]) -> Probed {
-    let outcome = testrun::run(binary, cwd, &[test, "--nocapture"], env, PROBE_LIMIT);
+    probe_within(binary, cwd, test, env, PROBE_LIMIT)
+}
+
+fn probe_within(
+    binary: &Binary,
+    cwd: &Path,
+    test: &str,
+    env: &[(&str, String)],
+    limit: Duration,
+) -> Probed {
+    let outcome = testrun::run(binary, cwd, &[test, "--nocapture"], env, limit);
     let lines = outcome
         .stdout
         .lines()
@@ -175,6 +190,21 @@ fn every_card_claim_behaves_as_its_mutant_does() {
         );
         (ordinal, mutant, claim)
     });
+    // A pair that disagrees because one of them was stopped is run again, one probe at a time,
+    // with longer to end: the mutants that loop forever do so both times.
+    let compared: Vec<(u32, Probed, Probed)> = compared
+        .into_iter()
+        .map(|(ordinal, mutant, claim)| {
+            if mutant.agrees(&claim) || (mutant.finished && claim.finished) {
+                return (ordinal, mutant, claim);
+            }
+            let active = [("MUTASTIC_ACTIVE", ordinal.to_string())];
+            let mutant = probe_within(schema, &cwd, "tests::probe", &active, AGAIN_LIMIT);
+            let test = format!("v{ordinal}::tests::probe");
+            let claim = probe_within(&claims_binary, &dir, &test, &[], AGAIN_LIMIT);
+            (ordinal, mutant, claim)
+        })
+        .collect();
     let original = &compared[0].1;
     assert!(
         original.finished && original.lines.len() == 16,
@@ -187,7 +217,15 @@ fn every_card_claim_behaves_as_its_mutant_does() {
             changed += 1;
         }
         if !mutant.agrees(claim) {
-            let m = &found.mutants[*ordinal as usize - 1];
+            let Some(m) = (*ordinal as usize)
+                .checked_sub(1)
+                .map(|i| &found.mutants[i])
+            else {
+                wrong.push(format!(
+                    "the code without a mutant differs from its copy in the claims\n  code:   {mutant:?}\n  claims: {claim:?}"
+                ));
+                continue;
+            };
             wrong.push(format!(
                 "{} {} at line {}: the card says `{}`, but the mutant differs\n  mutant: {:?}\n  claim:  {:?}",
                 m.id,

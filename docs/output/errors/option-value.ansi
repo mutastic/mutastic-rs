@@ -1,0 +1,2 @@
+mutastic: --format takes its value after an =, not a space.
+  mutastic run fixtures/pricing --format=agent

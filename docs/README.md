@@ -52,6 +52,7 @@ page stands alone and links to the others by relative path.
   [environment and exit codes](reference/commands.md#environment).
 - [Report files](reference/reports.md): `mutation.json` and `mutation.html`.
 - [Events](reference/events.md): the `--format=jsonl` stream, and what the Rust edition adds to it.
+- [Errors](reference/errors.md): each error mutastic stops with, its code, and what to run next.
 - [Configuration](reference/configuration.md): `mutastic.yaml`, rules files, and ignoring one mutant.
 - [Compatibility](reference/compatibility.md): what stays the same from one release to the next:
   ids, scores, commands and configuration, the events format, and the two editions' versions.

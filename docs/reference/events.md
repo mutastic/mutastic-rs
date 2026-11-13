@@ -22,6 +22,7 @@ Each event has `schema` (`mutastic.events/v1`), `edition` (`rust`, where the Jav
 | `run-finished` | Last: the totals, the score and the verdict |
 | `next-item` | From `mutastic next`: each item shown, its lead mutant as `mutant-finished` has it, with `ids` and `rank`. See [Working through misses](../concepts/next.md#for-a-tool) |
 | `next-finished` | Last, from `mutastic next`: how many lines and mutants are `queued`, `shown`, and `waiting` on a person |
+| `run-failed` | mutastic couldn't run: last on stdout, whatever came before it. See [When mutastic can't run](#when-mutastic-cant-run) |
 
 This is the pricing fixture's whole stream:
 
@@ -55,6 +56,32 @@ This is the pricing fixture's whole stream:
 Read what you know and let the rest pass: ignore a field you don't know, and an event whose `reason`
 you don't know, and treat a status you don't know as neither caught nor missed. Any release may add
 a field, an event or a value.
+
+## When mutastic can't run
+
+When mutastic can't run, it says why on stderr and exits 2. In `--format=jsonl` and
+`--format=agent`, the same error is the last line on stdout too, as a `run-failed` event, so a tool
+that reads stdout alone isn't left with nothing. This is `mutastic run fixtures/pricing
+--formt=agent`'s:
+
+<!-- output: errors/event -->
+```text
+{"schema":"mutastic.events/v1","edition":"rust","reason":"run-failed","code":"unknown-option","message":"run has no option --formt. There's one called --format.","where":{"directory":"fixtures/pricing","path":"/home/you/project/fixtures/pricing"},"help":[{"applicability":"maybe","command":"mutastic run fixtures/pricing --format=agent"}],"exitCode":2,"rendered":"mutastic: run has no option --formt. There's one called --format.\n  mutastic run fixtures/pricing --format=agent\n"}
+```
+
+- **`code`** is the error's kind, the anchor of its entry on [the errors page](errors.md). A later
+  release may add a code: read one you don't know as `other`.
+- **`message`** is the error's first line, without `mutastic: `; **`rendered`** is the error as
+  stderr has it, every line.
+- **`help`** holds the commands the error ends in, in order. Each one's `applicability` says
+  whether it runs as it is (`exact`), has a part in `<…>` to fill in (`placeholders`), or is a guess
+  at a close name, to check before running (`maybe`).
+- **`where`**, when there, is the directory as typed and its whole path, `null` when there's no
+  such directory.
+- **`exitCode`** is the status mutastic exits with.
+
+A run that fails part way, such as a package that doesn't build, has no `run-finished`, and may
+leave a phase started.
 
 ## What the Rust edition adds
 

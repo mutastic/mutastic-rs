@@ -1,0 +1,1 @@
+mutastic: fixtures/workspace holds no share's events.jsonl: each run with --shard keeps its own in shares/N-of-M, in target/mutastic

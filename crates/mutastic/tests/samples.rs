@@ -730,6 +730,36 @@ fn an_ignore_holds_while_its_line_does() {
     assert_eq!(code, 2, "a reason is needed: {out}");
 }
 
+/// A command that refuses says so on stderr, never stdout, which holds only results: a script
+/// that reads stdout reads nothing it has to tell from them. A refusal that does nothing exits 1;
+/// gate check with no task open exits 2, as declared.
+#[test]
+fn a_refusal_is_on_stderr() {
+    let dir = copy_of("pricing", "refusals");
+    for (words, code) in [
+        (&["ignore", "--remove", "mb2f8ae57"][..], 1),
+        (&["ignore", "--accept", "mb2f8ae57"], 1),
+        (&["baseline", "--prune"], 1),
+        (&["gate", "check"], 2),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+            .args(words)
+            .current_dir(&dir)
+            .env("MUTASTIC_PROGRESS", "none")
+            .env("NO_COLOR", "1")
+            .output()
+            .unwrap();
+        let err = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(output.status.code(), Some(code), "{words:?}: {err}");
+        assert!(
+            output.stdout.is_empty(),
+            "{words:?}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        assert!(err.starts_with("mutastic"), "{words:?}: {err}");
+    }
+}
+
 /// The header `mutastic baseline` writes, the Java edition's.
 const BASELINE_HEADER: &str =
     "# The mutants this project missed when its baseline was taken, written by `mutastic baseline`.
@@ -764,9 +794,20 @@ fn fail_on_new_judges_a_run_by_its_baseline() {
     for format in ["--format=full", "--format=agent", "--format=jsonl"] {
         let (code, out) = with(format);
         assert_eq!(code, 2, "{out}");
+        // In the agent and jsonl formats, the error is first on stdout as a `run-failed` event.
+        let said = if format == "--format=full" {
+            out.as_str()
+        } else {
+            let (event, said) = out.split_once('\n').unwrap_or_default();
+            let event: Value = serde_json::from_str(event).unwrap_or_else(|_| panic!("{out}"));
+            assert_eq!(event["reason"], "run-failed", "{out}");
+            assert_eq!(event["code"], "no-baseline", "{out}");
+            assert_eq!(event["rendered"], said, "{out}");
+            said
+        };
         let shown = std::fs::canonicalize(&dir).unwrap();
         assert_eq!(
-            out,
+            said,
             format!(
                 "mutastic: --fail-on-new needs a baseline to tell new misses from, and {} has no \
                  .mutastic/baseline.yaml: `mutastic baseline` writes one, to commit\n",
@@ -1941,6 +1982,47 @@ fn a_closed_stderr_loses_no_results() {
         closed, open,
         "(exit, record lines) with stderr closed and open"
     );
+}
+
+/// A closed stdout (`mutastic run | head`) ends the run as an open one does, never in a panic and
+/// exit 101: what can't be written is dropped, in every format.
+#[test]
+fn a_closed_stdout_ends_the_run_as_an_open_one() {
+    let copy = copy_of("pricing", "closed-stdout");
+    let run = |format: &str, stdout: Stdio| {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+            .args(["run", copy.to_str().unwrap(), "--report=none"])
+            .arg(format!("--format={format}"))
+            .env("NO_COLOR", "1")
+            .env_remove("MUTASTIC_FORMAT")
+            .env_remove("MUTASTIC_AGENT")
+            .stdout(stdout)
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        drop(child.stdout.take());
+        let output = child.wait_with_output().unwrap();
+        (
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr).contains("panicked"),
+        )
+    };
+    for format in ["full", "agent", "jsonl"] {
+        let open = run(format, Stdio::null());
+        assert_eq!(run(format, Stdio::piped()), open, "--format={format}");
+        assert_eq!(open, (Some(0), false), "--format={format}");
+    }
+    for words in [&["--help"][..], &["run", "--help"], &["mutants", "."]] {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+            .args(words)
+            .current_dir(&copy)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        drop(child.stdout.take());
+        assert_eq!(child.wait().unwrap().code(), Some(0), "{words:?}");
+    }
 }
 
 /// `next`, worked to the end on the ranking fixture: one item at a time in the run's order, exit 1

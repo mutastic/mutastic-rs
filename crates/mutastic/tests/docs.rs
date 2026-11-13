@@ -954,17 +954,22 @@ fn test_first_step(lib: &Path, (kind, code): &(String, String)) {
 
 /// The ids of the pricing fixture's mutants at each step of the test-first pages' cycles: the
 /// pages' `verify` commands name some of them, on code the fixture doesn't have until a page adds
-/// it, and a later step may take away.
+/// it, and a later step may take away. Found once in a process: two tests ask, at once, and each
+/// copying the fixture into the one directory took the other's copy away as it read it.
 fn test_first_ids() -> BTreeSet<String> {
-    let dir = scratch("test-first-ids").join("pricing");
-    common::fresh(&root().join("fixtures/pricing"), &dir);
-    let mut ids = BTreeSet::new();
-    for step in CYCLES.iter().flat_map(|page| cycle_steps(page)) {
-        test_first_step(&dir.join("src/lib.rs"), &step);
-        let project = workspace::read(&dir.display().to_string()).unwrap();
-        ids.extend(engine::find_all(&project).mutants.into_iter().map(|m| m.id));
-    }
-    ids
+    static IDS: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
+    IDS.get_or_init(|| {
+        let dir = scratch("test-first-ids").join("pricing");
+        common::fresh(&root().join("fixtures/pricing"), &dir);
+        let mut ids = BTreeSet::new();
+        for step in CYCLES.iter().flat_map(|page| cycle_steps(page)) {
+            test_first_step(&dir.join("src/lib.rs"), &step);
+            let project = workspace::read(&dir.display().to_string()).unwrap();
+            ids.extend(engine::find_all(&project).mutants.into_iter().map(|m| m.id));
+        }
+        ids
+    })
+    .clone()
 }
 
 /// `git` in `work`, which must succeed, as a person with a name set runs it.
@@ -1249,6 +1254,205 @@ fn section(name: &str, fixtures: &[&str], run: fn(&Path, &mut BTreeMap<String, S
 #[test]
 fn the_docs_show_what_getting_started_prints() {
     section("getting-started", &["pricing"], getting_started);
+}
+
+/// The errors page, under `docs`.
+const ERRORS_PAGE: &str = "reference/errors.md";
+
+/// An error's code, the words that cause it, and the environment they need.
+type Error = (
+    &'static str,
+    &'static [&'static str],
+    &'static [(&'static str, &'static str)],
+);
+
+/// Each error the errors page shows: what triggers it, from `work`; the environment it needs; and
+/// its code, which its `run-failed` event must carry.
+const ERRORS: &[Error] = &[
+    ("no-directory", &["run", "fixtures/pricng"], &[]),
+    ("no-project", &["run", "empty"], &[]),
+    ("workspace-root", &["run", "fixtures/workspace"], &[]),
+    (
+        "no-cargo",
+        &["run", "fixtures/pricing"],
+        &[("CARGO", "/nowhere/cargo")],
+    ),
+    ("unknown-command", &["rnu", "fixtures/pricing"], &[]),
+    (
+        "unknown-option",
+        &["run", "fixtures/pricing", "--formt=agent"],
+        &[],
+    ),
+    (
+        "option-value",
+        &["run", "fixtures/pricing", "--format", "agent"],
+        &[],
+    ),
+    (
+        "option-not-taken",
+        &["verify", "mb2f8ae57", "fixtures/pricing", "--threshold=70"],
+        &[],
+    ),
+    (
+        "extra-words",
+        &["mutants", "fixtures/pricing", "fixtures/workspace"],
+        &[],
+    ),
+    ("needs-id", &["verify", "fixtures/pricing"], &[]),
+    (
+        "unknown-id",
+        &["verify", "mb2f8ae58", "fixtures/pricing"],
+        &[],
+    ),
+    ("config", &["run", "configured"], &[]),
+    (
+        "no-baseline",
+        &["run", "fixtures/pricing", "--fail-on-new"],
+        &[],
+    ),
+    ("git", &["run", "fixtures/pricing", "--since=main"], &[]),
+    (
+        "shards",
+        &[
+            "run",
+            "fixtures/pricing",
+            "--from-shards=fixtures/workspace",
+        ],
+        &[],
+    ),
+    ("both-editions", &["run", "both"], &[]),
+];
+
+/// `said` as a Unix machine prints it, run in `/home/you/project` where it ran in `looked`: the
+/// page's copies are of a Unix run, and on Windows a path mutastic joins has `\` in it.
+fn as_unix(said: &str, looked: &str) -> String {
+    let said = said.replace(looked, "/home/you/project");
+    if cfg!(windows) {
+        said.replace('\\', "/")
+    } else {
+        said
+    }
+}
+
+/// The errors page: each error as stderr has it, and, in the jsonl format, as the `run-failed`
+/// event with its code, valid in the schema. A command an error gives as `exact` is run, and must
+/// get past that error: a printed command that doesn't work is worse than none.
+fn errors(work: &Path, shown: &mut BTreeMap<String, String>) {
+    std::fs::create_dir_all(work.join("empty")).unwrap();
+    std::fs::create_dir_all(work.join("configured")).unwrap();
+    common::fresh(&root().join("fixtures/pricing"), &work.join("configured"));
+    std::fs::write(
+        work.join("configured/mutastic.yaml"),
+        "rulez:\n  - skip: pricing::**\n    reason: generated\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(work.join("both")).unwrap();
+    std::fs::write(work.join("both/Cargo.toml"), "[package]\nname = \"both\"\n").unwrap();
+    std::fs::write(work.join("both/pom.xml"), "<project/>\n").unwrap();
+    let validator = common::schema();
+    let looked = std::fs::canonicalize(work).unwrap().display().to_string();
+    let mut codes = BTreeSet::new();
+    for (code, args, env) in ERRORS {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_mutastic"));
+        command
+            .args(*args)
+            .current_dir(work)
+            .env("MUTASTIC_FORMAT", "jsonl")
+            .env("NO_COLOR", "1")
+            .env_remove("FORCE_COLOR")
+            .env_remove("MUTASTIC_AGENT");
+        for (key, value) in *env {
+            command.env(key, value);
+        }
+        let output = command.output().unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert_eq!(output.status.code(), Some(2), "{code}: {stderr}");
+        let event: Value = serde_json::from_str(stdout.lines().last().unwrap_or_default())
+            .unwrap_or_else(|_| panic!("{code}: no event last: {stdout}"));
+        assert!(validator.is_valid(&event), "{code}: {event}");
+        assert_eq!(event["reason"], "run-failed", "{code}");
+        assert_eq!(event["code"], *code, "{event}");
+        let said = stopped_with(&stderr);
+        assert_eq!(event["rendered"], said, "{code}");
+        for help in event["help"].as_array().unwrap() {
+            let line = help["command"].as_str().unwrap();
+            if help["applicability"] != "exact" || !line.starts_with("mutastic ") {
+                continue;
+            }
+            let words: Vec<&str> = line.split(' ').skip(1).collect();
+            let mut again = Command::new(env!("CARGO_BIN_EXE_mutastic"));
+            again
+                .args(&words)
+                .current_dir(work)
+                .env("MUTASTIC_FORMAT", "jsonl")
+                .env("MUTASTIC_PROGRESS", "none");
+            for (key, value) in *env {
+                again.env(key, value);
+            }
+            let next = again.output().unwrap();
+            let last = String::from_utf8_lossy(&next.stdout);
+            let after: Value =
+                serde_json::from_str(last.lines().last().unwrap_or("{}")).unwrap_or(Value::Null);
+            assert!(
+                after["code"] != *code,
+                "{code}: `{line}` meets the same error: {}",
+                String::from_utf8_lossy(&next.stderr)
+            );
+        }
+        codes.insert(code.to_string());
+        if *code == "unknown-option" {
+            // The events page's example of the event itself.
+            // Its path is slashed, without the `\\?\` Windows puts before it.
+            let line = stdout.lines().last().unwrap_or_default();
+            let path = looked.replace('\\', "/");
+            let path = path.strip_prefix("//?/").unwrap_or(&path);
+            shown.insert(
+                "errors/event".into(),
+                format!("{}\n", line.replace(path, "/home/you/project")),
+            );
+        }
+        shown.insert(format!("errors/{code}"), as_unix(&said, &looked));
+    }
+    // The page has an entry for every code mutastic gives, and only those.
+    let page = std::fs::read_to_string(docs().join(ERRORS_PAGE)).unwrap();
+    let entries: BTreeSet<String> = page
+        .lines()
+        .filter_map(|line| line.strip_prefix("## `"))
+        .filter_map(|line| line.strip_suffix('`'))
+        .map(str::to_string)
+        .collect();
+    let given: BTreeSet<String> = mutastic::failure::CODES
+        .iter()
+        .map(|(code, _)| code.to_string())
+        .chain([mutastic::failure::OTHER.to_string()])
+        .collect();
+    assert_eq!(entries, given, "docs/reference/errors.md's entries");
+    // Each entry's command is the one run above: the page's commands fail on purpose, so the
+    // checks of every other page's commands pass over them, and rest on this.
+    for (code, args, env) in ERRORS {
+        let heading = format!("## `{code}`\n");
+        let at = page
+            .find(&heading)
+            .unwrap_or_else(|| panic!("no entry for {code}"));
+        let rest = &page[at..];
+        let block = blocks(rest)
+            .into_iter()
+            .find(|block| block.language == "sh")
+            .unwrap_or_else(|| panic!("{code}: no command"));
+        let typed: String = env
+            .iter()
+            .map(|(key, value)| format!("{key}={value} "))
+            .chain([format!("mutastic {}", args.join(" "))])
+            .collect();
+        assert_eq!(rest[block.text].trim(), typed, "{code}'s command");
+    }
+    assert!(codes.is_subset(&given));
+}
+
+#[test]
+fn the_docs_show_what_the_errors_print() {
+    section("errors", &["pricing", "workspace"], errors);
 }
 
 #[test]
@@ -1566,6 +1770,10 @@ fn every_command_shown_parses_and_names_real_mutants() {
         );
     }
     for page in pages() {
+        // The errors page's commands fail on purpose; the errors test runs each one.
+        if page == docs().join(ERRORS_PAGE) {
+            continue;
+        }
         let text = std::fs::read_to_string(&page).unwrap();
         for block in blocks(&text) {
             if block.language != "sh" {
@@ -1658,11 +1866,23 @@ fn every_id_in_the_words_is_a_mutant() {
     // The test-first pages name mutants of the code their cycles write, which the fixture hasn't
     // got.
     let cycle: BTreeSet<String> = ids.union(&test_first_ids()).cloned().collect();
+    // The errors page names ids that are no mutant's on purpose, in the commands it runs.
+    let wrong_on_purpose: BTreeSet<String> = ids
+        .iter()
+        .cloned()
+        .chain(
+            ERRORS
+                .iter()
+                .flat_map(|(_, args, _)| args.iter().map(|a| a.to_string())),
+        )
+        .collect();
     let pattern = regex::Regex::new(r"\bm[0-9a-f]{8}\b").unwrap();
     let mut wrong = Vec::new();
     for page in pages() {
         let known = if CYCLES.iter().any(|name| page == docs().join(name)) {
             &cycle
+        } else if page == docs().join(ERRORS_PAGE) {
+            &wrong_on_purpose
         } else {
             &ids
         };

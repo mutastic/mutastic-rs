@@ -1,0 +1,2 @@
+mutastic: mb2f8ae58 isn't a mutant of pricing. There's one called mb2f8ae57. To see its mutants:
+  mutastic mutants fixtures/pricing
