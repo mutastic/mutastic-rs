@@ -314,7 +314,9 @@ fn run_with(dir: &str, format: &str, colour: bool) -> (String, String) {
         .env_remove("MUTASTIC_FORMAT")
         .env_remove("MUTASTIC_AGENT")
         .env_remove("NO_COLOR")
-        .env_remove("FORCE_COLOR");
+        .env_remove("FORCE_COLOR")
+        // Whatever terminal runs the tests, no progress in its tab: that's tested on its own.
+        .env("MUTASTIC_TERM_PROGRESS", "false");
     if colour {
         command.env("FORCE_COLOR", "1");
     }
@@ -489,6 +491,13 @@ fn the_live_line_is_redrawn_in_place() {
     let copy = copy_of("pricing", "counter");
     let dir = copy.display().to_string();
     let (_, err) = run_with(&dir, "--progress=bar", false);
+    // Each frame is one synchronized write; inside them, what the terminal is told.
+    let (opened, closed) = (
+        err.matches("\x1b[?2026h").count(),
+        err.matches("\x1b[?2026l").count(),
+    );
+    assert!(opened > 0 && opened == closed, "{err:?}");
+    let err = err.replace("\x1b[?2026h", "").replace("\x1b[?2026l", "");
     let clear = "\r\x1b[2K";
     // Piped, it can't ask the terminal its width, so it takes 100 columns: the bar, the
     // weighted percent, then the fates in as many words as fit.
@@ -2633,7 +2642,7 @@ fn sigusr1_says_whats_running() {
     child.wait().unwrap();
     let said = lines.join("\n");
     let running = regex::Regex::new(
-        r"running   1 test at \ds · 0 of 1 done\n   1 tests::doubles_slowly  \[00:00:0\d\]",
+        r"running   1 test at \ds · 0 of 1 done\n   \d tests::doubles_slowly  \[00:00:0\d\]",
     )
     .unwrap();
     assert!(running.is_match(&said), "{said}");

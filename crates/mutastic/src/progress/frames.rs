@@ -234,11 +234,13 @@ fn bar(fraction: f64, columns: usize, style: Style) -> String {
 /// narrows, then the fates lose their words.
 fn status(view: &View, columns: usize, frame: usize, style: Style) -> Option<String> {
     let spinner = SPINNER[frame % SPINNER.len()].to_string();
+    // The word bold and its padding not, as the Java edition writes it.
     let lead = |name: &str| {
+        let padding = " ".repeat(10usize.saturating_sub(name.len()));
         format!(
-            "{} {}",
+            "{} {}{padding}",
             paint(style, GREEN, &spinner),
-            paint(style, BOLD, &word(name))
+            paint(style, BOLD, name)
         )
     };
     let clock = clock(view.elapsed);

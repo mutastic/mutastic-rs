@@ -57,7 +57,8 @@ spinner (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`, one frame per redraw) and the phase w
 ⠋ checking  52 missed · looking for a test that would catch each, 18/52 · 38s
 ```
 
-The clock is the phase's own. Before the coverage pass has listed its tests it says `listing the
+The spinner is green (`ESC[32m`), the phase word bold (`ESC[1m`, its padding not), the `└` line
+dim (`ESC[2m`, the whole line), each closed with `ESC[0m`. The clock is the phase's own. Before the coverage pass has listed its tests it says `listing the
 tests`. `└` lines are dim, and show the build tool's latest line: Cargo's `Checking`/`Compiling`
 for the last crate it started (its round counts check and build apart: `cargo build, round 2`),
 Gradle's or Maven's last log line. Java's building line names the tool's task:
@@ -153,8 +154,10 @@ green, `[FAIL]` on red.
 
 ## Anywhere else: heartbeats
 
-When progress isn't drawn in place, the same fields print as a plain line, without spinner or
-colour, whenever 30 seconds have passed since the last progress line of any kind:
+When progress isn't drawn in place, a plain line, without spinner, bar or colour, prints whenever
+30 seconds have passed since the last progress line of any kind. It's the live line's fields in
+their short form: a count in brackets where there's a total (`[18/181 tests]`, `[312/5525]`), and
+checking's count without its step's words:
 
 ```text
 reading   the Cargo package · 30s
