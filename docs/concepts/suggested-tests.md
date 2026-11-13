@@ -6,7 +6,7 @@ would catch it, found by running your code:
 
 <!-- output: concepts/suggested-test -->
 ```text
- [✗ MISSED] no test checks late_fee() at days_late == 7
+  ✗ MISSED  no test checks late_fee() at days_late == 7
    ┌─ src/lib.rs:7
    │
  6 │     pub fn late_fee(days_late: i64) -> i64 {

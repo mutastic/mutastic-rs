@@ -437,19 +437,15 @@ fn the_full_view_is_coloured_as_the_java_editions() {
     );
     shows(&out, "Start at", " \x1b[2m Start at\x1b[0m  ");
     shows(&out, "Duration's parts are dim", "\x1b[2m(setup ");
-    // The fixture runs in place, so a run before this one may have left a last run to compare with.
+    // The score is the last line, with its verdict: PASS on green, and why in green. The fixture
+    // runs in place, so a run before this one may have left a last run to compare with.
     let score = regex::Regex::new(
-        r" \x1b\[2m    Score\x1b\[0m  \x1b\[32m\x1b\[1m90\.9%\x1b\[0m\x1b\[0m(?<delta>\x1b\[2m  = vs last run\x1b\[0m\x1b\[2m \((?<sameness>[a-z ]+)\)\x1b\[0m)?\x1b\[2m  threshold 80\x1b\[0m\n",
+        r" \x1b\[2m    Score\x1b\[0m  \x1b\[32m\x1b\[1m90\.9%\x1b\[0m\x1b\[0m  \x1b\[42;30;1m PASS \x1b\[0m \x1b\[32m1 missed, above the threshold of 80\.\x1b\[0m(?<delta>\x1b\[2m  = vs last run\x1b\[0m\x1b\[2m \((?<sameness>[a-z ]+)\)\x1b\[0m)?\n$",
     )
     .unwrap();
     assert!(
         score.is_match(&out),
-        "a passing score is bold green, its threshold dim: {out:?}"
-    );
-    shows(
-        &out,
-        "PASS on green",
-        "\n \x1b[42;30;1m PASS \x1b[0m \x1b[32m1 missed, above the threshold.\x1b[0m\n",
+        "a passing score is bold green, its verdict PASS on green, last: {out:?}"
     );
 
     let (out, err) = run_with(&dir, "--format=concise", false);
@@ -799,11 +795,10 @@ fn fail_on_new_judges_a_run_by_its_baseline() {
     let (code, out) = with("--format=full");
     assert_eq!(code, 0, "{out}");
     assert!(
-        out.contains("90.9%  threshold not applied (new misses decide)\n"),
-        "{out}"
-    );
-    assert!(
-        out.contains("\n [PASS] No new misses: 1 in the baseline.\n"),
+        out.lines()
+            .last()
+            .is_some_and(|last| last
+                .starts_with("     Score  90.9%  [PASS] No new misses: 1 in the baseline.")),
         "{out}"
     );
     let (code, out) = with("--format=agent");
@@ -835,7 +830,9 @@ fn fail_on_new_judges_a_run_by_its_baseline() {
     let (code, out) = with("--format=full");
     assert_eq!(code, 1, "{out}");
     assert!(
-        out.contains("\n [FAIL] 1 new miss, not in the baseline (0 in it): mb2f8ae57.\n"),
+        out.lines().last().is_some_and(|last| last.starts_with(
+            "     Score  90.9%  [FAIL] 1 new miss, not in the baseline (0 in it): mb2f8ae57."
+        )),
         "{out}"
     );
     let (code, out) = with("--format=agent");
@@ -2603,8 +2600,8 @@ fn a_piped_run_is_never_quiet_for_longer_than_its_heartbeat() {
     }
 }
 
-/// `kill -USR1` asks a run what's running, piped as on a terminal: here, mid-way through the
-/// coverage pass's three-second test, which test it is and how long it's run.
+/// `kill -USR1` asks a run what's running, piped as on a terminal: here, during the coverage
+/// pass's three-second test, which test it is and how long it's run.
 #[cfg(unix)]
 #[test]
 fn sigusr1_says_whats_running() {
@@ -2612,17 +2609,19 @@ fn sigusr1_says_whats_running() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_mutastic"))
         .args(["run", &dir.display().to_string(), "--report=none"])
         .env("MUTASTIC_PROGRESS", "counter")
+        .env("MUTASTIC_HEARTBEAT", "0.5")
         .env("NO_COLOR", "1")
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
     let stderr = std::io::BufReader::new(child.stderr.take().unwrap());
-    let mut lines = Vec::new();
+    let (mut lines, mut asked) = (Vec::new(), false);
     for line in stderr.lines() {
         let line = line.unwrap();
-        if line.starts_with("built ") {
-            std::thread::sleep(Duration::from_millis(1500));
+        // Once a heartbeat says the test is running, however long the machine took to get there.
+        if !asked && line.starts_with("coverage  [0/1 tests] · ") {
+            asked = true;
             let asked = Command::new("kill")
                 .args(["-USR1", &child.id().to_string()])
                 .status()

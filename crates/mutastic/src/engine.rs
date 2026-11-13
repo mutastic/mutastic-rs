@@ -97,9 +97,14 @@ pub struct Report {
     pub workers: usize,
     pub rustc: String,
     pub threshold: f64,
+    /// Reading, building and listing the tests, the build included.
     pub setup: Duration,
+    /// The build alone, of `setup`; zero when it wasn't timed here.
+    pub build: Duration,
     pub coverage: Duration,
     pub mutants: Duration,
+    /// Looking for a test to suggest for each missed mutant.
+    pub checking: Duration,
     pub took: Duration,
     pub unsafe_mode: UnsafeMode,
     /// The settings the user's crate was built with, from Cargo: `opt_level`, `debug_assertions`,
@@ -351,10 +356,11 @@ pub fn run(
         .collect();
     let building = Instant::now();
     let built = compile::build(project, &found, &live, &recorders, progress)?;
+    let build_took = building.elapsed();
     let steps: Vec<&str> = built.rounds.iter().map(|round| round.phase).collect();
     progress(Progress::Built {
         mutants: selected.len(),
-        took: building.elapsed(),
+        took: build_took,
         rounds: &steps,
         withdrawn: built.unviable.len(),
     });
@@ -421,9 +427,9 @@ pub fn run(
         files.finished(&found, &result, (worker, cost.expected), progress);
         result
     });
-    progress(Progress::Ran {
-        took: mutants_started.elapsed(),
-    });
+    let mutants_took = mutants_started.elapsed();
+    progress(Progress::Ran { took: mutants_took });
+    let checking = Instant::now();
     if options.suggestions {
         suggest_all(
             project,
@@ -448,8 +454,10 @@ pub fn run(
         rustc,
         threshold: options.threshold,
         setup,
+        build: build_took,
         coverage: coverage_took,
-        mutants: mutants_started.elapsed(),
+        mutants: mutants_took,
+        checking: checking.elapsed(),
         took: started.elapsed(),
         unsafe_mode: options.unsafe_mode,
         profile: built.profile,

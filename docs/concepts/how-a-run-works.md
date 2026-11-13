@@ -10,7 +10,7 @@ mutastic 1.1.0 · reading the Cargo package…
 building  11 mutants in one build · 4 workers
 built     11 mutants in 306ms · 2 rounds (check and build), none withdrawn
 coverage  3 tests on rustc 1.99.1 in 2ms · 11 mutants
- ❯ [pricing] src/lib.rs (11 mutants | 1 missed) 26ms
+ ❯  pricing  src/lib.rs (11 mutants | 1 missed) 26ms
    × discount() :26 >= becomes >
 ran       11 mutants in 8ms · ✓ 10 caught · ✗ 1 missed · ○ 0 not covered · ⏱ 0 timed out
 checked   1 missed mutant in 4ms · a test to write for 1

@@ -90,14 +90,11 @@ pub fn digits(mut n: u64) -> u64 {
   Worst at  digits() 6 ✗
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  25 (25 without coverage selection)
-  Start at  13:22:11
-  Duration  20.7s (setup 642ms, coverage 4ms, mutants 20.0s)
-     Tests  1 on rustc 1.98.0 · 4 workers
+  Start at  11:03:14
+  Duration  10.1s (setup 19ms, build 20ms, coverage 2ms, mutants 10.0s, checking 8ms)
+     Tests  1 on rustc 1.99.1 · 5 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  76.0%  threshold 80
-
- [FAIL] Score below 80: 6 missed, 0 not covered.
- Next: mutastic verify <id> fixtures/loops · mutastic run --only=<id> fixtures/loops · mutastic explain <id> fixtures/loops
+     Score  76.0%   FAIL  Below the threshold of 80: 6 missed, 0 not covered.
 ```
 
 Nothing needs fixing: those mutants are caught. If the time matters more than the extra mutants,
@@ -230,13 +227,11 @@ pub fn is_absolute(path: &str) -> bool {
   Left out  not built here: `cfg(feature = "simd")` (2), `cfg(windows)` (15)
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  9 (18 without coverage selection)
-  Start at  13:22:32
-  Duration  584ms (setup 539ms, coverage 4ms, mutants 12ms)
-     Tests  2 on rustc 1.98.0 · 4 workers
+  Start at  11:04:59
+  Duration  62ms (setup 20ms, build 18ms, coverage 2ms, mutants 6ms)
+     Tests  2 on rustc 1.99.1 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  100.0%  threshold 80
-
- [PASS] Every mutant was caught.
+     Score  100.0%   PASS  Every mutant was caught.
 ```
 
 What's off is decided as the build decides it: the platform's settings come from `rustc --print cfg`

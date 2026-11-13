@@ -1395,19 +1395,20 @@ fn summary(out: &mut String, report: &Report, style: Style) {
     let rows = rows(report, style);
     let width = rows.iter().map(|(label, _)| label.len()).max().unwrap_or(0);
     out.push('\n');
-    for (label, value) in rows {
-        let _ = writeln!(out, " {}  {value}", style.dim(&format!("{label:>width$}")));
-    }
-    let _ = writeln!(out, "\n {}", verdict(report, style));
+    // What to do next sits under the misses it's about, and the score, with its verdict, is the
+    // last line: the one the cursor lands under.
     if report.count(Status::Survived) > 0 {
         let dir = &report.project.given;
         let _ = writeln!(
             out,
-            "{}",
+            "{}\n",
             style.dim(&format!(
                 " Next: mutastic verify <id> {dir} · mutastic run --only=<id> {dir} · mutastic explain <id> {dir}"
             ))
         );
+    }
+    for (label, value) in rows {
+        let _ = writeln!(out, " {}  {value}", style.dim(&format!("{label:>width$}")));
     }
 }
 
@@ -1477,12 +1478,7 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
         format!(
             "{} {}",
             duration(report.took),
-            style.dim(&format!(
-                "(setup {}, coverage {}, mutants {})",
-                duration(report.setup),
-                duration(report.coverage),
-                duration(report.mutants)
-            ))
+            style.dim(&format!("({})", phases(report)))
         ),
     ));
     rows.push((
@@ -1500,6 +1496,24 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
     }
     rows.push(("Score", score_row(report, style)));
     rows
+}
+
+/// The run's time by phase, `setup 3.5s, build 9m41s, coverage 7m23s, mutants 34m12s, checking
+/// 51.0s`: the build and checking where they were timed.
+fn phases(report: &Report) -> String {
+    let mut parts = vec![format!(
+        "setup {}",
+        duration(report.setup.saturating_sub(report.build))
+    )];
+    if !report.build.is_zero() {
+        parts.push(format!("build {}", duration(report.build)));
+    }
+    parts.push(format!("coverage {}", duration(report.coverage)));
+    parts.push(format!("mutants {}", duration(report.mutants)));
+    if report.checking.as_millis() > 0 {
+        parts.push(format!("checking {}", duration(report.checking)));
+    }
+    parts.join(", ")
 }
 
 /// `0 clean | 1 with misses (1)`: the source files with mutants, by whether any was missed or not
@@ -1662,13 +1676,8 @@ fn test_runs_row(report: &Report, style: Style) -> String {
 }
 
 fn score_row(report: &Report, style: Style) -> String {
-    let threshold = report.threshold;
     let Some(score) = report.score() else {
-        return format!(
-            "{}{}",
-            style.bold("none"),
-            style.dim(&format!(" (no mutants to score)  threshold {threshold}"))
-        );
+        return format!("{}  {}", style.bold("none"), verdict(report, style));
     };
     let score = percent(Some(score));
     let covered = if report.count(Status::NoCoverage) > 0 && report.covered_score().is_some() {
@@ -1680,18 +1689,14 @@ fn score_row(report: &Report, style: Style) -> String {
         String::new()
     };
     format!(
-        "{}{}{}{covered}",
+        "{}  {}{}{covered}",
         if report.passed() {
             style.green(&style.bold(&score))
         } else {
             style.red(&style.bold(&score))
         },
-        delta(report, style),
-        style.dim(&if report.fail_on_new.is_some() {
-            "  threshold not applied (new misses decide)".to_string()
-        } else {
-            format!("  threshold {threshold}")
-        })
+        verdict(report, style),
+        delta(report, style)
     )
 }
 
@@ -1722,7 +1727,7 @@ fn delta(report: &Report, style: Style) -> String {
     format!("  {shown}{sameness}")
 }
 
-/// The last line: PASS or FAIL, and why; with `--fail-on-new`, on the new misses.
+/// PASS or FAIL, and why, on the Score line; with `--fail-on-new`, on the new misses.
 fn verdict(report: &Report, style: Style) -> String {
     let missed = report.count(Status::Survived);
     if let Some(judged) = &report.fail_on_new {
@@ -1741,8 +1746,9 @@ fn verdict(report: &Report, style: Style) -> String {
                 style.words.all_detected().to_string()
             } else {
                 format!(
-                    "{missed} {}, above the threshold.",
-                    style.words.undetected()
+                    "{missed} {}, above the threshold of {}.",
+                    style.words.undetected(),
+                    report.threshold
                 )
             })
         )
@@ -1751,7 +1757,7 @@ fn verdict(report: &Report, style: Style) -> String {
             "{} {}",
             style.label("FAIL", RED),
             style.red(&format!(
-                "Score below {}: {missed} {}, {} {}.",
+                "Below the threshold of {}: {missed} {}, {} {}.",
                 report.threshold,
                 style.words.undetected(),
                 report.count(Status::NoCoverage),

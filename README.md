@@ -35,7 +35,7 @@ On `fixtures/pricing`, a small crate in this repository whose tests reach every 
 
 <!-- output: readme/card -->
 ```text
- [✗ MISSED] no test checks discount() at total == 100
+  ✗ MISSED  no test checks discount() at total == 100
     ┌─ src/lib.rs:26
     │
  25 │     pub fn discount(&self, total: u32) -> u32 {
@@ -60,9 +60,7 @@ On `fixtures/pricing`, a small crate in this repository whose tests reach every 
     done when  mutastic verify mb2f8ae57 fixtures/pricing passes
     reproduce  mutastic run --only=mb2f8ae57 fixtures/pricing
 
-     Score  90.9%  threshold 80
-
- [PASS] 1 missed, above the threshold.
+     Score  90.9%   PASS  1 missed, above the threshold of 80.
 ```
 
 Paste the test the card wrote, once you've checked today's value is the one you want, then prove

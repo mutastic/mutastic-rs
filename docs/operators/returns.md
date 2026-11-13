@@ -62,7 +62,7 @@ The only test spends too little to earn a point, so a function that always retur
 
 <!-- output: operators/returns/return-value -->
 ```text
- [✗ MISSED] no test checks what loyalty_points() returns here
+  ✗ MISSED  no test checks what loyalty_points() returns here
    ┌─ src/returns.rs:5
    │
  4 │ pub fn loyalty_points(spent: u32) -> u32 {
@@ -130,7 +130,7 @@ fn spaces_are_ignored() {
 
 <!-- output: operators/returns/unwrap-try -->
 ```text
- [✗ MISSED] no test makes this ? return its error from parse_quantity()
+  ✗ MISSED  no test makes this ? return its error from parse_quantity()
     ┌─ src/returns.rs:14
     │
  13 │ pub fn parse_quantity(text: &str) -> Result<u32, std::num::ParseIntError> {
@@ -240,7 +240,7 @@ fn a_good_code() {
 
 <!-- output: operators/returns/replace-body -->
 ```text
- [✗ MISSED] tests pass even when is_valid_code() does nothing but return true
+  ✗ MISSED  tests pass even when is_valid_code() does nothing but return true
     ┌─ src/returns.rs:9
     │
   8 │ /// Six digits.
@@ -310,7 +310,7 @@ Without the early return, `"".parse()` fails too, and the test still gets an err
 
 <!-- output: operators/returns/remove-throw -->
 ```text
- [✗ MISSED] no test checks what return Err("no quantity given".into()); does in quantity()
+  ✗ MISSED  no test checks what return Err("no quantity given".into()); does in quantity()
     ┌─ src/returns.rs:20
     │
  19 │     if text.is_empty() {
