@@ -56,6 +56,11 @@ page stands alone and links to the others by relative path.
 - [Compatibility](reference/compatibility.md): what stays the same from one release to the next:
   ids, scores, commands and configuration, the events format, and the two editions' versions.
 
+## Guides
+
+- [Working test-first](test-first.md): one red, green, refactor cycle on a fixture, with mutastic
+  on the cycle's lines, the card's tests proved with `verify`, and a commit.
+
 ## Help
 
 - [Troubleshooting](troubleshooting.md): unviable mutants, slow runs, workspaces, and test code.
@@ -68,7 +73,8 @@ Every block of output on these pages is what mutastic printed on one of the repo
 fixtures, kept in [`output/`](output/). `cargo test` runs each command again and fails while
 mutastic prints anything else; `MUTASTIC_DOCS_WRITE=1 cargo test --test docs` writes the copies
 again after a change to what it prints. Every Rust example is a fixture's own code, quoted word for
-word from a file the tests build, or a test a page adds: the getting-started page's, which the same
-test adds and runs, and each operator's test that catches it, which are added to the operators
-fixture together and must catch every mutant on the cards they follow. Every link between pages,
+word from a file the tests build, or code a page adds: the getting-started page's test, which the
+same test adds and runs; the test-first cycle's code, which it writes step by step in a repository
+of its own, capturing each run; and each operator's test that catches it, which are added to the
+operators fixture together and must catch every mutant on the cards they follow. Every link between pages,
 every command shown and every mutant id named is checked too.
