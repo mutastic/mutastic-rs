@@ -65,6 +65,24 @@ won't change.
 
 ## What the agent sees
 
+### What you type
+
+The agent starts from what you tell it, so tell it what you want, as you'd tell a colleague. For
+the cycle below, the prompt is the spec:
+
+> **Your prompt:** Loyal customers get 5 off orders of 30 or more. Add it to Pricing as loyalty_credit(total), which returns the credit.
+
+It's the spec, and nothing more. It doesn't say "test-first", because the snippet in `AGENTS.md`
+or `CLAUDE.md` says it for every task. With no snippet in the project, start the prompt with the
+snippet's first line:
+
+> **Your prompt, with no snippet:** Work test-first with mutastic, one behaviour of the spec at a
+> time. Loyal customers get 5 off orders of 30 or more. Add it to Pricing as loyalty_credit(total), which returns the credit.
+
+That line asks for the order, and the `mutastic` skill brings the rest of the loop. The snippet's
+steps say more: a commit at the end of each cycle, and a stop to ask you when the spec and a test
+disagree. For those, paste the whole snippet with the spec.
+
 ### When the task starts
 
 The gate opens on your prompt and tells the agent where the task starts:
@@ -194,10 +212,48 @@ and the session's log shows whether the agent kept it.
 
 ## Where you come in
 
-- **Proposed ignores.** When a mutant's case can't happen, the agent proposes an ignore, with its
-  reason, in `.mutastic/proposals.yaml`. Read the reason against the code, then
-  `mutastic ignore --accept ID`, or `mutastic ignore --remove ID` to say no. Until you accept it,
-  it counts as missed.
-- **When the spec and a test disagree.** The agent stops and asks. You say which is right: the
-  spec, and the test keeps its value and the code changes; or the test, and the spec was wrong.
-- **When the gate hands over.** It tells you what's still missed, and why it let the agent stop.
+The agent does the cycle, but some calls are yours: whether a case can happen, what the spec
+meant, and what to do when the agent can't finish. Each one ends with you saying something. The
+replies below are examples, not from a recording: say it in your own words.
+
+### Proposed ignores
+
+When a mutant's case can't happen, the agent proposes an ignore, with its reason, in
+`.mutastic/proposals.yaml`. It counts as missed until you accept it, but it doesn't hold the gate,
+which names it as waiting on a person. Read the reason against the code.
+
+To accept it, run `mutastic ignore --accept ID` yourself, not the agent. Do it when you're done
+with the session, or in the pull request's review: the gate counts the ignores from the session's
+first prompt, so one accepted before you prompt again counts as the task's own, and holds it.
+
+To say no, run `mutastic ignore --remove ID`, and tell the agent why, so it writes the test:
+
+> **Example reply:** I've removed your proposal: an order of exactly 30 does happen, it's the
+> smallest that gets the credit. Write the test its card asks for.
+
+### When the spec and a test disagree
+
+Say the code had `> 30`, so a card's test pins nothing off at 30, where the spec says 5 off. The
+snippet has the agent stop and ask. Say which is right. The spec, and the test keeps the spec's
+value and the code changes:
+
+> **Example reply:** The spec's right: an order of exactly 30 gets 5 off. Write the test for 30
+> with 5, and change the code to pass it.
+
+Or the test, and the spec was wrong:
+
+> **Example reply:** The test's right: the credit starts above 30, not at 30. I'll fix the spec.
+> Keep the test at 30 with nothing off.
+
+When a test that was there before the task fails, the gate itself tells the agent to find out
+whether the change or the test is wrong, and to ask you if it isn't sure. Answer the same way.
+
+### When the gate hands over
+
+The gate tells you what's still missed, and why it let the agent stop: the agent changed
+nothing since it was sent back, or it was sent back a few times in a row without getting there.
+Then it's over to you. Take it from there yourself, or tell the agent what it was missing. The
+gate checks again when it next stops:
+
+> **Example reply:** Orders under 30 get nothing. Write the test at 29 the card asks for, and
+> prove it with the card's verify.
