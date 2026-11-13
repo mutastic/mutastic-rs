@@ -211,3 +211,5 @@ test first, in place of the whole run: see [Working through misses](concepts/nex
 A coding agent runs the same cycle through the [agent format](concepts/output.md#agent) and
 [the gate](reference/commands.md#gate-open), whose one rule for it is the agent format's `rules:`
 line: add or change tests only, and never change production code to make a mutant go away.
+[Working test-first: with an agent](test-first-agent.md) gives an agent this cycle, and shows
+what it sees at each step.

@@ -62,6 +62,8 @@ page stands alone and links to the others by relative path.
   on the cycle's lines, the card's tests proved with `verify`, and a commit.
 - [Working test-first: the refactor](test-first-refactor.md): two more cycles on the same rule, then the
   refactor they call for, with mutastic on the lines before and after it.
+- [Working test-first: with an agent](test-first-agent.md): the same cycle as a coding agent
+  works it, with what mutastic and the gate tell it at each step, and where you come in.
 
 ## Help
 
