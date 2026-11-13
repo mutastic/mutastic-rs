@@ -40,7 +40,7 @@ fn one_late_invoice() {
 
 <!-- output: operators/iterators/swap-match -->
 ```text
- [✗ MISSED] tests pass even when any becomes all in any_overdue()
+  ✗ MISSED  tests pass even when any becomes all in any_overdue()
    ┌─ src/iterators.rs:5
    │
  4 │ pub fn any_overdue(days_late: &[u32]) -> bool {
@@ -106,7 +106,7 @@ No test has an unpaid order to leave out:
 
 <!-- output: operators/iterators/remove-stage -->
 ```text
- [✗ MISSED] tests pass even without .filter(|(_, paid)| *paid) in paid_total()
+  ✗ MISSED  tests pass even without .filter(|(_, paid)| *paid) in paid_total()
     ┌─ src/iterators.rs:12
     │
  11 │         .iter()
@@ -173,7 +173,7 @@ fn totals_add_up() {
 
 <!-- output: operators/iterators/remove-other-stage -->
 ```text
- [✗ MISSED] tests pass even without .inspect(|value| log.push(**value)) in logged_total()
+  ✗ MISSED  tests pass even without .inspect(|value| log.push(**value)) in logged_total()
     ┌─ src/iterators.rs:19
     │
  18 │ pub fn logged_total(values: &[u32], log: &mut Vec<u32>) -> u32 {

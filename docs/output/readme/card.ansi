@@ -15,7 +15,7 @@
 
             // in mod tests
             #[test]
-            fn discount_with_total_100() {
+            fn discount_at_the_total_edge() {
                 assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
             }
             [2mcheck today's value is the one you intend: the test pins what the code does now[0m
@@ -23,6 +23,4 @@
     [2mdone when [0m mutastic verify mb2f8ae57 fixtures/pricing [2mpasses[0m
     [2mreproduce [0m mutastic run --only=mb2f8ae57 fixtures/pricing
 
- [2m    Score[0m  [32m[1m90.9%[0m[0m[2m  threshold 80[0m
-
- [42;30;1m PASS [0m [32m1 missed, above the threshold.[0m
+ [2m    Score[0m  [32m[1m90.9%[0m[0m  [42;30;1m PASS [0m [32m1 missed, above the threshold of 80.[0m

@@ -25,7 +25,7 @@ summary. On the pricing fixture:
 
  ❯ src/lib.rs  1 missed in 1 function
 
- [✗ MISSED] no test checks discount() at total == 100
+  ✗ MISSED  no test checks discount() at total == 100
     ┌─ src/lib.rs:26
     │
  25 │     pub fn discount(&self, total: u32) -> u32 {
@@ -42,7 +42,7 @@ summary. On the pricing fixture:
 
             // in mod tests
             #[test]
-            fn discount_with_total_100() {
+            fn discount_at_the_total_edge() {
                 assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
             }
             check today's value is the one you intend: the test pins what the code does now
@@ -51,19 +51,18 @@ summary. On the pricing fixture:
     reproduce  mutastic run --only=mb2f8ae57 fixtures/pricing
     or ignore  mutastic ignore mb2f8ae57 --reason="<why>" fixtures/pricing
 
+ Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+
      Files  0 clean | 1 with misses (1)
    Mutants  ✓ 10 caught · ✗ 1 missed (11)
   Worst at  Pricing::discount() 1 ✗
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  13 (33 without coverage selection)
-  Start at  03:00:33
-  Duration  2.7s (setup 2.7s, coverage 4ms, mutants 30ms)
-     Tests  3 on rustc 1.98.0 · 4 workers
+  Start at  11:03:14
+  Duration  355ms (setup 20ms, build 303ms, coverage 2ms, mutants 8ms, checking 6ms)
+     Tests  3 on rustc 1.99.1 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  90.9%  threshold 80
-
- [PASS] 1 missed, above the threshold.
- Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+     Score  90.9%   PASS  1 missed, above the threshold of 80.
 ```
 
 See [Getting started](../getting-started.md#3-read-the-card) for how to read a card.
@@ -81,7 +80,7 @@ card. For a person who wants the gaps and not the rest.
 
  ❯ src/lib.rs  1 missed in 1 function
 
- [✗ MISSED] no test checks discount() at total == 100
+  ✗ MISSED  no test checks discount() at total == 100
     ┌─ src/lib.rs:26
     │
  25 │     pub fn discount(&self, total: u32) -> u32 {
@@ -93,19 +92,18 @@ card. For a person who wants the gaps and not the rest.
             inputs seen: 50, 250 (none is 100)
     = id: mb2f8ae57 · mutastic run --only=mb2f8ae57 fixtures/pricing --format=full for the whole card
 
+ Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+
      Files  0 clean | 1 with misses (1)
    Mutants  ✓ 10 caught · ✗ 1 missed (11)
   Worst at  Pricing::discount() 1 ✗
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  13 (33 without coverage selection)
-  Start at  22:29:13
-  Duration  307ms (setup 278ms, coverage 2ms, mutants 13ms)
+  Start at  11:03:14
+  Duration  329ms (setup 19ms, build 277ms, coverage 2ms, mutants 8ms, checking 6ms)
      Tests  3 on rustc 1.99.1 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  90.9%  threshold 80
-
- [PASS] 1 missed, above the threshold.
- Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+     Score  90.9%   PASS  1 missed, above the threshold of 80.
 ```
 
 ### `concise`
@@ -118,19 +116,18 @@ One line for each line with a missed mutant, with its ids, then the summary. For
  Missed ────────────────────────────────────────────────────────────
  ✗ src/lib.rs:26 no test checks discount() at total == 100 mb2f8ae57
 
+ Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+
      Files  0 clean | 1 with misses (1)
    Mutants  ✓ 10 caught · ✗ 1 missed (11)
   Worst at  Pricing::discount() 1 ✗
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  13 (33 without coverage selection)
-  Start at  13:21:36
-  Duration  1.3s (setup 1.2s, coverage 4ms, mutants 29ms)
-     Tests  3 on rustc 1.98.0 · 4 workers
+  Start at  11:03:14
+  Duration  74ms (setup 22ms, build 21ms, coverage 2ms, mutants 8ms, checking 6ms)
+     Tests  3 on rustc 1.99.1 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  90.9%  threshold 80
-
- [PASS] 1 missed, above the threshold.
- Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+     Score  90.9%   PASS  1 missed, above the threshold of 80.
 ```
 
 ### `grouped`
@@ -147,19 +144,18 @@ where they gather.
    discount() 1 missed
      26:18   ✗ no test checks discount() at total == 100 mb2f8ae57
 
+ Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+
      Files  0 clean | 1 with misses (1)
    Mutants  ✓ 10 caught · ✗ 1 missed (11)
   Worst at  Pricing::discount() 1 ✗
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  13 (33 without coverage selection)
-  Start at  22:29:15
-  Duration  69ms (setup 40ms, coverage 2ms, mutants 13ms)
+  Start at  11:03:15
+  Duration  79ms (setup 23ms, build 20ms, coverage 2ms, mutants 9ms, checking 7ms)
      Tests  3 on rustc 1.99.1 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  90.9%  threshold 80
-
- [PASS] 1 missed, above the threshold.
- Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+     Score  90.9%   PASS  1 missed, above the threshold of 80.
 ```
 
 ### `agent`
@@ -184,7 +180,7 @@ decline: if a mutant's case can't happen in practice, or the change is one no ca
    fix: test `discount()` with `total = 100` and assert the result
    test to add in mod tests:
      #[test]
-     fn discount_with_total_100() {
+     fn discount_at_the_total_edge() {
          assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
      }
      // check today's value is the one you intend: the test pins what the code does now
@@ -211,24 +207,37 @@ its entry in the agent format's words.
 
 ### `jsonl`
 
-One JSON object per line, the `mutastic.events/v1` stream, for tools. Progress is off, so stdout is
-only the events. See [Events](../reference/events.md).
+One JSON object per line, the `mutastic.events/v1` stream, for tools: stdout is only the events,
+and progress goes to stderr as lines. As the run goes it says each phase's start and end
+(`phase-started`, `phase-finished`), `run-started` once the build is done, and a `progress` event
+every 30 seconds; then each mutant's result and `run-finished`. See
+[Events](../reference/events.md).
 
 <!-- output: concepts/format-jsonl -->
 ```text
+{"schema":"mutastic.events/v1","edition":"rust","reason":"phase-started","phase":"reading"}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"phase-finished","phase":"reading","durationMs":38}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"phase-started","phase":"building"}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"phase-finished","phase":"building","durationMs":27}
 {"schema":"mutastic.events/v1","edition":"rust","reason":"run-started","project":"pricing","rule":"add or change tests only; never change production code to make a mutant go away: tell the person","decline":"if a mutant's case can't happen in practice, or the change is one no caller can see, don't contrive a test: propose ignoring it, for a person to accept, as the kind it is (equivalent, unreachable, telemetry, deprecated or accepted-risk), with the reason in two sentences: the one case where it differs, and why that can't happen","profile":{"name":"mutastic","optLevel":"0","overflowChecks":true,"debugAssertions":true},"unsafe":"skip"}
-{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"mc9e13290","fingerprint":"c9e13290e7d1ce44","status":"Killed","operator":"mutastic/return-value","location":{"file":"src/lib.rs","line":29,"column":9,"class":"Pricing","method":"discount"},"mutation":{"replacement":"1","description":"returns `1` instead","applied":{"level":"source","text":"0 -> 1"}},"coveredBy":["tests::small_orders_pay_full_price"],"caughtBy":"tests::small_orders_pay_full_price","caughtWith":"panic","inputs":{"total":[50]},"testsRun":1,"durationMs":2}
-{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"mb2f8ae57","fingerprint":"b2f8ae57ca6c48cb","status":"Survived","operator":"mutastic/boundary","location":{"file":"src/lib.rs","line":26,"column":18,"class":"Pricing","method":"discount"},"mutation":{"original":">=","replacement":">","description":"`>=` becomes `>`","applied":{"level":"source","text":"total >= 100 -> (total) > (100)"}},"coveredBy":["tests::small_orders_pay_full_price","pricing::big_orders_get_ten_percent_off"],"inputs":{"total":[50,250]},"testsRun":2,"durationMs":4,"doneWhen":"mutastic verify mb2f8ae57 fixtures/pricing passes","reproduce":"mutastic run --only=mb2f8ae57 fixtures/pricing","ignore":"mutastic ignore mb2f8ae57 --reason=\"<why>\" fixtures/pricing","propose":"mutastic ignore mb2f8ae57 --propose --as=<equivalent|unreachable|…> --reason=\"Differs only when <case>. That can't happen because <why>.\" fixtures/pricing","suggestedTest":{"testClass":"tests","name":"discount_with_total_100","code":"#[test]\nfn discount_with_total_100() {\n    assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0\n}","call":"Pricing::new().discount(100)","today":"10","withMutant":"0"},"suggestion":{"call":"Pricing::new().discount(100)","parameters":["total"],"arguments":[100],"receiver":[{"type":"Pricing","arguments":[]}],"today":"10","withMutant":"0"},"rendered":"missed mb2f8ae57: no test checks `discount()` at `total == 100`\n   at src/lib.rs:26\n   - if total >= 100 {\n   + if total > 100 {\n   covered by: tests::small_orders_pay_full_price, pricing::big_orders_get_ten_percent_off; all still pass with the change\n   evidence: every test calls `discount()` away from the boundary\n   evidence: inputs seen: 50, 250 (none is 100)\n   fix: test `discount()` with `total = 100` and assert the result\n   test to add in mod tests:\n     #[test]\n     fn discount_with_total_100() {\n         assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0\n     }\n     // check today's value is the one you intend: the test pins what the code does now\n   done when: mutastic verify mb2f8ae57 fixtures/pricing passes\n   reproduce: mutastic run --only=mb2f8ae57 fixtures/pricing\n   or propose: mutastic ignore mb2f8ae57 --propose --as=<equivalent|unreachable|…> --reason=\"Differs only when <case>. That can't happen because <why>.\" fixtures/pricing\n"}
-{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"md56e8c39","fingerprint":"d56e8c3934d92f41","status":"Killed","operator":"mutastic/remove-conditional","location":{"file":"src/lib.rs","line":26,"column":12,"class":"Pricing","method":"discount"},"mutation":{"replacement":"true","description":"`total >= 100` is always true","applied":{"level":"source","text":"total >= 100 -> true"}},"coveredBy":["tests::small_orders_pay_full_price","pricing::big_orders_get_ten_percent_off"],"caughtBy":"tests::small_orders_pay_full_price","caughtWith":"panic","inputs":{"total":[50,250]},"testsRun":2,"durationMs":4}
-{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"m1636f6d5","fingerprint":"1636f6d59be655d5","status":"Killed","operator":"mutastic/remove-conditional","location":{"file":"src/lib.rs","line":26,"column":12,"class":"Pricing","method":"discount"},"mutation":{"replacement":"false","description":"`total >= 100` is always false","applied":{"level":"source","text":"total >= 100 -> false"}},"coveredBy":["tests::small_orders_pay_full_price","pricing::big_orders_get_ten_percent_off"],"caughtBy":"pricing::big_orders_get_ten_percent_off","caughtWith":"panic","inputs":{"total":[50,250]},"testsRun":1,"durationMs":2}
-{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"m6d05659f","fingerprint":"6d05659f42679c6c","status":"Killed","operator":"mutastic/return-value","location":{"file":"src/lib.rs","line":27,"column":20,"class":"Pricing","method":"discount"},"mutation":{"replacement":"0","description":"returns `0` instead","applied":{"level":"source","text":"total / 10 -> 0"}},"coveredBy":["pricing::big_orders_get_ten_percent_off"],"caughtBy":"pricing::big_orders_get_ten_percent_off","caughtWith":"panic","inputs":{"total":[250]},"testsRun":1,"durationMs":1}
-{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"m95f96847","fingerprint":"95f96847248b0509","status":"Killed","operator":"mutastic/math","location":{"file":"src/lib.rs","line":27,"column":26,"class":"Pricing","method":"discount"},"mutation":{"original":"/","replacement":"*","description":"`/` becomes `*`","applied":{"level":"source","text":"total / 10 -> (total) * (10)"}},"coveredBy":["pricing::big_orders_get_ten_percent_off"],"caughtBy":"pricing::big_orders_get_ten_percent_off","caughtWith":"panic","inputs":{"total":[250]},"testsRun":1,"durationMs":2}
-{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"m383e0002","fingerprint":"383e0002195614c2","status":"Killed","operator":"mutastic/return-value","location":{"file":"src/lib.rs","line":37,"column":9,"class":"Pricing","method":"shipping"},"mutation":{"replacement":"1","description":"returns `1` instead","applied":{"level":"source","text":"0 -> 1"}},"coveredBy":["tests::shipping_is_free_from_the_threshold"],"caughtBy":"tests::shipping_is_free_from_the_threshold","caughtWith":"panic","inputs":{"total":[39,40]},"testsRun":1,"durationMs":2}
-{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"m7d92063c","fingerprint":"7d92063c80e7deae","status":"Killed","operator":"mutastic/boundary","location":{"file":"src/lib.rs","line":34,"column":18,"class":"Pricing","method":"shipping"},"mutation":{"original":"<","replacement":"<=","description":"`<` becomes `<=`","applied":{"level":"source","text":"total < self.free_shipping_from -> (total) <= (self.free_shipping_from)"}},"coveredBy":["tests::shipping_is_free_from_the_threshold"],"caughtBy":"tests::shipping_is_free_from_the_threshold","caughtWith":"panic","inputs":{"total":[39,40]},"testsRun":1,"durationMs":2}
-{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"m3be6b420","fingerprint":"3be6b420676ea8f8","status":"Killed","operator":"mutastic/remove-conditional","location":{"file":"src/lib.rs","line":34,"column":12,"class":"Pricing","method":"shipping"},"mutation":{"replacement":"true","description":"`total < self.free_shipping_from` is always true","applied":{"level":"source","text":"total < self.free_shipping_from -> true"}},"coveredBy":["tests::shipping_is_free_from_the_threshold"],"caughtBy":"tests::shipping_is_free_from_the_threshold","caughtWith":"panic","inputs":{"total":[39,40]},"testsRun":1,"durationMs":1}
-{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"m89be540d","fingerprint":"89be540de2153650","status":"Killed","operator":"mutastic/remove-conditional","location":{"file":"src/lib.rs","line":34,"column":12,"class":"Pricing","method":"shipping"},"mutation":{"replacement":"false","description":"`total < self.free_shipping_from` is always false","applied":{"level":"source","text":"total < self.free_shipping_from -> false"}},"coveredBy":["tests::shipping_is_free_from_the_threshold"],"caughtBy":"tests::shipping_is_free_from_the_threshold","caughtWith":"panic","inputs":{"total":[39,40]},"testsRun":1,"durationMs":2}
-{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"mbddcd9c4","fingerprint":"bddcd9c42b757c41","status":"Killed","operator":"mutastic/return-value","location":{"file":"src/lib.rs","line":35,"column":20,"class":"Pricing","method":"shipping"},"mutation":{"replacement":"0","description":"returns `0` instead","applied":{"level":"source","text":"5 -> 0"}},"coveredBy":["tests::shipping_is_free_from_the_threshold"],"caughtBy":"tests::shipping_is_free_from_the_threshold","caughtWith":"panic","inputs":{"total":[39,40]},"testsRun":1,"durationMs":1}
-{"schema":"mutastic.events/v1","edition":"rust","reason":"run-finished","toolchain":{"name":"rustc","version":"1.99.1"},"mutants":11,"killed":10,"survived":1,"timeout":0,"noCoverage":0,"ignored":0,"runtimeError":0,"notMutated":{"unsafe":0,"cfg":0},"score":90.9,"threshold":80,"passed":true,"coveredScore":90.9,"tests":3,"workers":4,"workersStarted":4,"coverageMs":2,"flaky":[],"flakyEvidence":[],"likelyFlaky":[],"unrelatedCatches":[],"reports":["target/mutastic/mutation.json","target/mutastic/mutation.html"],"staleIgnores":[],"build":{"rounds":2,"unviable":0,"setupMs":42},"durationMs":72}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"phase-started","phase":"coverage"}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"phase-finished","phase":"coverage","durationMs":23}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"phase-started","phase":"mutants"}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"phase-finished","phase":"mutants","durationMs":8}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"phase-started","phase":"checking"}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"phase-finished","phase":"checking","durationMs":4}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"mc9e13290","fingerprint":"c9e13290e7d1ce44","status":"Killed","operator":"mutastic/return-value","docs":"https://docs.mutastic.io/rust/operators/returns/#return-value","location":{"file":"src/lib.rs","line":29,"column":9,"class":"Pricing","method":"discount"},"mutation":{"replacement":"1","description":"returns `1` instead","applied":{"level":"source","text":"0 -> 1"}},"coveredBy":["tests::small_orders_pay_full_price"],"caughtBy":"tests::small_orders_pay_full_price","caughtWith":"panic","inputs":{"total":[50]},"testsRun":1,"durationMs":2}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"mb2f8ae57","fingerprint":"b2f8ae57ca6c48cb","status":"Survived","operator":"mutastic/boundary","docs":"https://docs.mutastic.io/rust/operators/conditions/#boundary","location":{"file":"src/lib.rs","line":26,"column":18,"class":"Pricing","method":"discount"},"mutation":{"original":">=","replacement":">","description":"`>=` becomes `>`","applied":{"level":"source","text":"total >= 100 -> (total) > (100)"}},"coveredBy":["tests::small_orders_pay_full_price","pricing::big_orders_get_ten_percent_off"],"inputs":{"total":[50,250]},"testsRun":2,"durationMs":4,"doneWhen":"mutastic verify mb2f8ae57 fixtures/pricing passes","reproduce":"mutastic run --only=mb2f8ae57 fixtures/pricing","ignore":"mutastic ignore mb2f8ae57 --reason=\"<why>\" fixtures/pricing","propose":"mutastic ignore mb2f8ae57 --propose --as=<equivalent|unreachable|…> --reason=\"Differs only when <case>. That can't happen because <why>.\" fixtures/pricing","suggestedTest":{"testClass":"tests","name":"discount_at_the_total_edge","code":"#[test]\nfn discount_at_the_total_edge() {\n    assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0\n}","call":"Pricing::new().discount(100)","today":"10","withMutant":"0"},"suggestion":{"call":"Pricing::new().discount(100)","parameters":["total"],"arguments":[100],"receiver":[{"type":"Pricing","arguments":[]}],"today":"10","withMutant":"0"},"rendered":"missed mb2f8ae57: no test checks `discount()` at `total == 100`\n   at src/lib.rs:26\n   - if total >= 100 {\n   + if total > 100 {\n   covered by: tests::small_orders_pay_full_price, pricing::big_orders_get_ten_percent_off; all still pass with the change\n   evidence: every test calls `discount()` away from the boundary\n   evidence: inputs seen: 50, 250 (none is 100)\n   fix: test `discount()` with `total = 100` and assert the result\n   test to add in mod tests:\n     #[test]\n     fn discount_at_the_total_edge() {\n         assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0\n     }\n     // check today's value is the one you intend: the test pins what the code does now\n   done when: mutastic verify mb2f8ae57 fixtures/pricing passes\n   reproduce: mutastic run --only=mb2f8ae57 fixtures/pricing\n   or propose: mutastic ignore mb2f8ae57 --propose --as=<equivalent|unreachable|…> --reason=\"Differs only when <case>. That can't happen because <why>.\" fixtures/pricing\n"}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"md56e8c39","fingerprint":"d56e8c3934d92f41","status":"Killed","operator":"mutastic/remove-conditional","docs":"https://docs.mutastic.io/rust/operators/conditions/#remove-conditional","location":{"file":"src/lib.rs","line":26,"column":12,"class":"Pricing","method":"discount"},"mutation":{"replacement":"true","description":"`total >= 100` is always true","applied":{"level":"source","text":"total >= 100 -> true"}},"coveredBy":["tests::small_orders_pay_full_price","pricing::big_orders_get_ten_percent_off"],"caughtBy":"tests::small_orders_pay_full_price","caughtWith":"panic","inputs":{"total":[50,250]},"testsRun":1,"durationMs":2}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"m1636f6d5","fingerprint":"1636f6d59be655d5","status":"Killed","operator":"mutastic/remove-conditional","docs":"https://docs.mutastic.io/rust/operators/conditions/#remove-conditional","location":{"file":"src/lib.rs","line":26,"column":12,"class":"Pricing","method":"discount"},"mutation":{"replacement":"false","description":"`total >= 100` is always false","applied":{"level":"source","text":"total >= 100 -> false"}},"coveredBy":["tests::small_orders_pay_full_price","pricing::big_orders_get_ten_percent_off"],"caughtBy":"pricing::big_orders_get_ten_percent_off","caughtWith":"panic","inputs":{"total":[50,250]},"testsRun":2,"durationMs":4}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"m6d05659f","fingerprint":"6d05659f42679c6c","status":"Killed","operator":"mutastic/return-value","docs":"https://docs.mutastic.io/rust/operators/returns/#return-value","location":{"file":"src/lib.rs","line":27,"column":20,"class":"Pricing","method":"discount"},"mutation":{"replacement":"0","description":"returns `0` instead","applied":{"level":"source","text":"total / 10 -> 0"}},"coveredBy":["pricing::big_orders_get_ten_percent_off"],"caughtBy":"pricing::big_orders_get_ten_percent_off","caughtWith":"panic","inputs":{"total":[250]},"testsRun":1,"durationMs":2}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"m95f96847","fingerprint":"95f96847248b0509","status":"Killed","operator":"mutastic/math","docs":"https://docs.mutastic.io/rust/operators/arithmetic/#math","location":{"file":"src/lib.rs","line":27,"column":26,"class":"Pricing","method":"discount"},"mutation":{"original":"/","replacement":"*","description":"`/` becomes `*`","applied":{"level":"source","text":"total / 10 -> (total) * (10)"}},"coveredBy":["pricing::big_orders_get_ten_percent_off"],"caughtBy":"pricing::big_orders_get_ten_percent_off","caughtWith":"panic","inputs":{"total":[250]},"testsRun":1,"durationMs":2}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"m383e0002","fingerprint":"383e0002195614c2","status":"Killed","operator":"mutastic/return-value","docs":"https://docs.mutastic.io/rust/operators/returns/#return-value","location":{"file":"src/lib.rs","line":37,"column":9,"class":"Pricing","method":"shipping"},"mutation":{"replacement":"1","description":"returns `1` instead","applied":{"level":"source","text":"0 -> 1"}},"coveredBy":["tests::shipping_is_free_from_the_threshold"],"caughtBy":"tests::shipping_is_free_from_the_threshold","caughtWith":"panic","inputs":{"total":[39,40]},"testsRun":1,"durationMs":2}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"m7d92063c","fingerprint":"7d92063c80e7deae","status":"Killed","operator":"mutastic/boundary","docs":"https://docs.mutastic.io/rust/operators/conditions/#boundary","location":{"file":"src/lib.rs","line":34,"column":18,"class":"Pricing","method":"shipping"},"mutation":{"original":"<","replacement":"<=","description":"`<` becomes `<=`","applied":{"level":"source","text":"total < self.free_shipping_from -> (total) <= (self.free_shipping_from)"}},"coveredBy":["tests::shipping_is_free_from_the_threshold"],"caughtBy":"tests::shipping_is_free_from_the_threshold","caughtWith":"panic","inputs":{"total":[39,40]},"testsRun":1,"durationMs":2}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"m3be6b420","fingerprint":"3be6b420676ea8f8","status":"Killed","operator":"mutastic/remove-conditional","docs":"https://docs.mutastic.io/rust/operators/conditions/#remove-conditional","location":{"file":"src/lib.rs","line":34,"column":12,"class":"Pricing","method":"shipping"},"mutation":{"replacement":"true","description":"`total < self.free_shipping_from` is always true","applied":{"level":"source","text":"total < self.free_shipping_from -> true"}},"coveredBy":["tests::shipping_is_free_from_the_threshold"],"caughtBy":"tests::shipping_is_free_from_the_threshold","caughtWith":"panic","inputs":{"total":[39,40]},"testsRun":1,"durationMs":2}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"m89be540d","fingerprint":"89be540de2153650","status":"Killed","operator":"mutastic/remove-conditional","docs":"https://docs.mutastic.io/rust/operators/conditions/#remove-conditional","location":{"file":"src/lib.rs","line":34,"column":12,"class":"Pricing","method":"shipping"},"mutation":{"replacement":"false","description":"`total < self.free_shipping_from` is always false","applied":{"level":"source","text":"total < self.free_shipping_from -> false"}},"coveredBy":["tests::shipping_is_free_from_the_threshold"],"caughtBy":"tests::shipping_is_free_from_the_threshold","caughtWith":"panic","inputs":{"total":[39,40]},"testsRun":1,"durationMs":2}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"mutant-finished","id":"mbddcd9c4","fingerprint":"bddcd9c42b757c41","status":"Killed","operator":"mutastic/return-value","docs":"https://docs.mutastic.io/rust/operators/returns/#return-value","location":{"file":"src/lib.rs","line":35,"column":20,"class":"Pricing","method":"shipping"},"mutation":{"replacement":"0","description":"returns `0` instead","applied":{"level":"source","text":"5 -> 0"}},"coveredBy":["tests::shipping_is_free_from_the_threshold"],"caughtBy":"tests::shipping_is_free_from_the_threshold","caughtWith":"panic","inputs":{"total":[39,40]},"testsRun":1,"durationMs":2}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"run-finished","toolchain":{"name":"rustc","version":"1.99.1"},"mutants":11,"killed":10,"survived":1,"timeout":0,"noCoverage":0,"ignored":0,"runtimeError":0,"notMutated":{"unsafe":0,"cfg":0},"score":90.9,"threshold":80,"passed":true,"coveredScore":90.9,"tests":3,"workers":4,"workersStarted":4,"coverageMs":2,"flaky":[],"flakyEvidence":[],"likelyFlaky":[],"unrelatedCatches":[],"reports":["target/mutastic/mutation.json","target/mutastic/mutation.html"],"staleIgnores":[],"build":{"rounds":2,"unviable":0,"setupMs":58},"durationMs":92}
 ```
 
 ## Words, colour and links
@@ -252,8 +261,11 @@ keeps only the result.
 
 `mutastic explain <id> [dir]` runs that one mutant and shows its card when it's missed, or what
 became of it otherwise, then what it is: the change, its operator, how its id is made, where it is,
-and how the last full run went for it, from that run's `mutation.json`. On the pricing fixture,
-after a run:
+and how the last run of every mutant went for it, from that run's `mutation.json`, which a full
+`mutastic run` writes, and `mutastic next` when it runs every mutant. Under the operator, `docs:`
+links to its section in these docs, with what it changes and the test that catches it; a rules
+file's operator has none. On a terminal with links on, the card's `^^ changed to` mark opens the
+same section. On the pricing fixture, after a run:
 
 ```sh
 mutastic explain mb2f8ae57 fixtures/pricing
@@ -262,7 +274,7 @@ mutastic explain mb2f8ae57 fixtures/pricing
 <!-- output: concepts/explain-missed -->
 ```text
 
- [✗ MISSED] no test checks discount() at total == 100
+  ✗ MISSED  no test checks discount() at total == 100
     ┌─ src/lib.rs:26
     │
  25 │     pub fn discount(&self, total: u32) -> u32 {
@@ -279,7 +291,7 @@ mutastic explain mb2f8ae57 fixtures/pricing
 
             // in mod tests
             #[test]
-            fn discount_with_total_100() {
+            fn discount_at_the_total_edge() {
                 assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
             }
             check today's value is the one you intend: the test pins what the code does now
@@ -292,6 +304,7 @@ mutastic explain mb2f8ae57 fixtures/pricing
     = change    total >= 100 → (total) > (100)
                 the code the switch puts in place of the original when this mutant is live
     = operator  mutastic/boundary: `>=` becomes `>`
+                docs: https://docs.mutastic.io/rust/operators/conditions/#boundary
     = id        mb2f8ae57: `m` and the first 8 hex digits of its fingerprint, b2f8ae57ca6c48cb, a SHA-256 of the crate, function, operator, site and change
                 no line number goes in, so the id stays the same when code above it moves
     = site      `total >= 100` in Pricing::discount, line 26, column 18
@@ -304,7 +317,7 @@ add:
 <!-- output: concepts/explain-caught -->
 ```text
 
- [✓ CAUGHT] caught by pricing::big_orders_get_ten_percent_off
+  ✓ CAUGHT  caught by pricing::big_orders_get_ten_percent_off
     ┌─ src/lib.rs:27
     │
  26 │         if total >= 100 {
@@ -323,8 +336,16 @@ add:
     = change    total / 10 → (total) * (10)
                 the code the switch puts in place of the original when this mutant is live
     = operator  mutastic/math: `/` becomes `*`
+                docs: https://docs.mutastic.io/rust/operators/arithmetic/#math
     = id        m95f96847: `m` and the first 8 hex digits of its fingerprint, 95f96847248b0509, a SHA-256 of the crate, function, operator, site and change
                 no line number goes in, so the id stays the same when code above it moves
     = site      `total / 10` in Pricing::discount, line 27, column 26
     = last run  caught by pricing::big_orders_get_ten_percent_off
 ```
+
+`--format=jsonl` gives the same as events, for a coding agent or a script: the ones a run's
+`--format=jsonl` writes for that one mutant, then a `mutant-explained` event with what "About this
+mutant" says, a field for each row in the same words, as the Java edition writes it. Its `applied`
+is the change as `mutation.applied` has it, `level` `source` and its `text`, with the `original`
+and `replacement` code; the Java edition's is at the bytecode. `explain` takes `full`, the default,
+and `jsonl`.

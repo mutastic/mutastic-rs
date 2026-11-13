@@ -271,31 +271,48 @@ pub fn language_panic(output: &str) -> Option<String> {
 }
 
 /// Runs `work` on each item on `workers` threads, keeping the items' order in the results.
+/// A panic in `work` is the caller's: it's raised again here, never a shorter result.
 pub fn parallel<T: Sync, R: Send>(
     items: &[T],
     workers: usize,
     work: impl Fn(&T) -> R + Sync,
 ) -> Vec<R> {
+    parallel_on(items, workers, |_, item| work(item))
+}
+
+/// [`parallel`], telling `work` which worker, from 0, runs each item: for a line per worker.
+pub fn parallel_on<T: Sync, R: Send>(
+    items: &[T],
+    workers: usize,
+    work: impl Fn(usize, &T) -> R + Sync,
+) -> Vec<R> {
     let next = AtomicUsize::new(0);
+    let (next, work) = (&next, &work);
     let mut results: Vec<(usize, R)> = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..workers.max(1))
-            .map(|_| {
-                scope.spawn(|| {
+            .map(|worker| {
+                scope.spawn(move || {
                     let mut done = Vec::new();
                     loop {
                         let index = next.fetch_add(1, Ordering::Relaxed);
                         let Some(item) = items.get(index) else {
                             break;
                         };
-                        done.push((index, work(item)));
+                        done.push((index, work(worker, item)));
                     }
                     done
                 })
             })
             .collect();
+        // A worker that panicked takes its results with it: the run fails, rather than going on as
+        // if those items had never been, which a kept record would then compare against.
         handles
             .into_iter()
-            .flat_map(|handle| handle.join().unwrap_or_default())
+            .flat_map(|handle| {
+                handle
+                    .join()
+                    .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+            })
             .collect()
     });
     results.sort_by_key(|(index, _)| *index);
@@ -312,6 +329,26 @@ pub fn default_workers() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A worker's panic isn't a shorter result: every item comes back, or the panic does.
+    #[test]
+    #[should_panic(expected = "the third")]
+    fn a_workers_panic_is_raised_not_dropped() {
+        let items: Vec<usize> = (0..8).collect();
+        let _ = parallel(&items, 3, |&item| {
+            assert!(item != 2, "the third");
+            item
+        });
+    }
+
+    #[test]
+    fn every_item_comes_back_in_order() {
+        let items: Vec<usize> = (0..50).collect();
+        assert_eq!(
+            parallel(&items, 4, |&item| item * 2),
+            (0..50).map(|i| i * 2).collect::<Vec<_>>()
+        );
+    }
 
     /// A Windows crash is named as the same crash is elsewhere: Rust's abort as `SIGABRT`.
     #[test]

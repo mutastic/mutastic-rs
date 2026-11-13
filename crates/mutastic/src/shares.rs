@@ -393,7 +393,7 @@ impl Shares {
         let order: Vec<usize> = (0..found.mutants.len()).collect();
         let files = engine::Files::new(&found, &order);
         for result in &results {
-            files.finished(&found, result, progress);
+            files.finished(&found, result, (0, std::time::Duration::ZERO), progress);
         }
         Ok(self.report(project, found, results, stale_ignores, options))
     }
@@ -471,8 +471,11 @@ impl Shares {
             rustc,
             threshold: options.threshold,
             setup,
+            build: std::time::Duration::ZERO,
             coverage,
             mutants: took.saturating_sub(setup + coverage),
+            checking: None,
+            streamed: false,
             took,
             unsafe_mode: options.unsafe_mode,
             profile: json!({
@@ -488,6 +491,7 @@ impl Shares {
             share: None,
             operators: options.operators.clone(),
             comparison: None,
+            fail_on_new: None,
         }
     }
 

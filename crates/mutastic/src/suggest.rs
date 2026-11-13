@@ -343,6 +343,7 @@ pub fn test(
     suggestion: &Suggestion,
     id: Option<&str>,
     named: Option<&Named>,
+    edge: Option<&Edge>,
 ) -> SuggestedTest {
     let (place, module, prefix, existing) = match &callable.tests {
         Some(tests) => {
@@ -374,7 +375,8 @@ pub fn test(
     let (made_as, call) = made_as_a_test(callable, suggestion, &values, prefix, call);
     let name = match named {
         Some(named) => format!("{}_at_{}", callable.name, named.name.to_lowercase()),
-        None => name(callable, &suggestion.values),
+        None => where_it_sits(callable, &suggestion.values, edge)
+            .unwrap_or_else(|| name(callable, &suggestion.values)),
     };
     let name = free_name(&name, existing);
     let with = id.map_or("this mutant".to_string(), str::to_string);
@@ -456,6 +458,71 @@ fn joined(scope: &str, name: &str) -> String {
     } else {
         format!("{scope}::{name}")
     }
+}
+
+/// The literal a condition compares a parameter with: `total` and 100 in `total >= 100`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Edge {
+    pub parameter: String,
+    pub value: i128,
+}
+
+/// The edge a condition's mutant compares, from its operator and operands; none for another
+/// mutant, whose operands (`amount * 10`) have no edge.
+pub fn edge(operator: &str, operands: &[String]) -> Option<Edge> {
+    let condition = [
+        crate::sites::BOUNDARY,
+        crate::sites::COMPARISON,
+        crate::sites::OTHER_COMPARISON,
+        crate::sites::REMOVE_CONDITIONAL,
+    ]
+    .contains(&operator);
+    let [left, right] = operands else {
+        return None;
+    };
+    let literal = |text: &str| crate::sites::integer_literal(text).map(|(value, _)| value);
+    let (parameter, value) = match (literal(left), literal(right)) {
+        (None, Some(value)) => (left, value),
+        (Some(value), None) => (right, value),
+        _ => return None,
+    };
+    condition.then(|| Edge {
+        parameter: parameter.clone(),
+        value,
+    })
+}
+
+/// The name of a call of one argument, said by where its value sits rather than the value, which
+/// goes stale when the spec moves: zero or below, `fee_when_amount_is_zero`, first, since that's
+/// the call's alone, so every mutant suggesting it names it the same; then the edge of the
+/// literal the condition compares it with, or one either side, `loyalty_credit_at_the_total_edge`,
+/// `…_just_below_the_total_edge`. As the Java edition names it. None otherwise.
+fn where_it_sits(callable: &Callable, values: &[i128], edge: Option<&Edge>) -> Option<String> {
+    let taken = callable
+        .receiver
+        .as_ref()
+        .map_or(0, |receiver| receiver.parameters.len());
+    let ([value], [(parameter, _)]) =
+        (&values[taken.min(values.len())..], &callable.parameters[..])
+    else {
+        return None;
+    };
+    if taken > 0 {
+        return None;
+    }
+    let name = &callable.name;
+    if *value <= 0 {
+        let class = if *value == 0 { "zero" } else { "negative" };
+        return Some(format!("{name}_when_{parameter}_is_{class}"));
+    }
+    let edge = edge.filter(|edge| &edge.parameter == parameter)?;
+    let side = match *value - edge.value {
+        0 => "at",
+        -1 => "just_below",
+        1 => "just_above",
+        _ => return None,
+    };
+    Some(format!("{name}_{side}_the_{parameter}_edge"))
 }
 
 /// `late_fee_with_days_late_7`; `size_result` with no arguments; and the receiver's arguments
@@ -786,6 +853,7 @@ mod tests {
             &found,
             None,
             Some(&named),
+            None,
         );
         assert_eq!(
             written.lines,
@@ -851,7 +919,14 @@ mod tests {
             mutated: "5".into(),
             built_by: None,
         };
-        let written = test(&late_fee(), Path::new("src/lib.rs"), &found, None, None);
+        let written = test(
+            &late_fee(),
+            Path::new("src/lib.rs"),
+            &found,
+            None,
+            None,
+            None,
+        );
         assert_eq!(written.place, "mod rates::tests");
         assert_eq!(
             written.lines,
@@ -887,6 +962,7 @@ mod tests {
             Path::new("src/lib.rs"),
             &open,
             Some("m1234abcd"),
+            None,
             None,
         );
         assert_eq!(written.place, "a new #[cfg(test)] mod tests in src/lib.rs");

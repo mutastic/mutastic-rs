@@ -16,13 +16,7 @@ use std::time::Duration;
 use mutastic::compile::{self, Binary};
 use mutastic::{engine, sites, testrun, workspace};
 
-fn fixture(name: &str) -> String {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures")
-        .join(name)
-        .display()
-        .to_string()
-}
+mod common;
 
 /// What the probe printed, `-3: 2 0 …`, and whether it finished: a mutant can make a loop run
 /// until it overflows, or forever, and how far it gets before then depends on the build's speed.
@@ -64,14 +58,13 @@ const ROLLBACK: &[&str] = &[
     sites::SWAP_PRESENT,
 ];
 
+/// How long a probe may run: a probe takes milliseconds, and the few mutants that loop forever
+/// wait this out, 15 of them on each run, so it's most of what the test takes. A second is still
+/// a hundred times a probe's own time on a slow machine.
+const PROBE_LIMIT: Duration = Duration::from_secs(1);
+
 fn probe(binary: &Binary, cwd: &Path, test: &str, env: &[(&str, String)]) -> Probed {
-    let outcome = testrun::run(
-        binary,
-        cwd,
-        &[test, "--nocapture"],
-        env,
-        Duration::from_secs(3),
-    );
+    let outcome = testrun::run(binary, cwd, &[test, "--nocapture"], env, PROBE_LIMIT);
     let lines = outcome
         .stdout
         .lines()
@@ -90,11 +83,12 @@ fn probe(binary: &Binary, cwd: &Path, test: &str, env: &[(&str, String)]) -> Pro
 #[test]
 fn every_card_claim_behaves_as_its_mutant_does() {
     std::env::set_var("MUTASTIC_EXE", env!("CARGO_BIN_EXE_mutastic"));
-    let project = workspace::read(&fixture("truth")).unwrap();
+    let truth = common::own_copy("truth", "truth");
+    let project = workspace::read(&truth.display().to_string()).unwrap();
     let found = engine::find(&project, sites::ALL);
     assert!(found.mutants.len() > 40, "{} mutants", found.mutants.len());
     let all: BTreeSet<usize> = (0..found.mutants.len()).collect();
-    let built = compile::build(&project, &found, &all, &BTreeSet::new()).unwrap();
+    let built = compile::build(&project, &found, &all, &BTreeSet::new(), &|_| {}).unwrap();
     // Only the operators that lean on the build may make a mutant that doesn't compile.
     let wrongly_unviable: Vec<String> = built
         .unviable
@@ -221,7 +215,8 @@ fn every_card_claim_behaves_as_its_mutant_does() {
 /// are the comparisons inside a guard that their sides differ, and their near misses (a side
 /// reassigned, another side, a guard on other sides, one that doesn't hold, floats) run. So are the
 /// boundaries where both sides give the same value at the edge, and theirs (a branch that isn't a
-/// side, a store of more, floats).
+/// side, a store of more, floats). So are the zero checks on values proved unsigned, and a signed
+/// one's runs; and `cfg!(debug_assertions)` forced true, and forced false runs.
 fn skipped_as_equivalent_behave_as_the_original(
     found: &sites::Crate,
     compared: &[(u32, Probed, Probed)],
@@ -278,9 +273,39 @@ fn skipped_as_equivalent_behave_as_the_original(
         "smaller",
         "fee_floor",
         "raised",
+        "unsigned_zero",
+        "unsigned_more",
+        "debug_checked",
     ] {
         assert!(skipped_in.contains(function), "{function}: {skipped_in:?}");
     }
+    // The signed near miss, `x == 0` made `x <= 0`, runs, and differs below 0.
+    let signed = compared
+        .iter()
+        .skip(1)
+        .find(|(ordinal, ..)| {
+            function_of(*ordinal) == "unsigned_zero"
+                && mutant_of(*ordinal).replacement == "(x) <= (0)"
+        })
+        .expect("unsigned_zero's signed `x == 0` made `<=`");
+    assert!(
+        mutant_of(signed.0).skipped.is_none() && !signed.1.agrees(original),
+        "a signed zero check made `<=` runs, and differs"
+    );
+    // `cfg!(debug_assertions)` forced false, the other way from the profile, runs, and differs.
+    let forced_off = compared
+        .iter()
+        .skip(1)
+        .find(|(ordinal, ..)| {
+            function_of(*ordinal) == "debug_checked"
+                && mutant_of(*ordinal).operator == sites::REMOVE_CONDITIONAL
+                && mutant_of(*ordinal).replacement == "false"
+        })
+        .expect("debug_checked's condition forced false");
+    assert!(
+        mutant_of(forced_off.0).skipped.is_none() && !forced_off.1.agrees(original),
+        "debug_checked's condition forced false runs, and differs"
+    );
     let boundary_in = |function: &str| {
         compared
             .iter()
@@ -328,34 +353,16 @@ fn skipped_as_equivalent_behave_as_the_original(
     }
 }
 
-/// Where the claims crate is built: one place under the workspace's own `target`, written over
-/// by each run, so repeated runs don't grow it and `cargo clean` removes it.
+/// Where the claims crate is built: under the workspace's own `target`, written over by each run,
+/// so repeated runs don't grow it and `cargo clean` removes it; one place for each run of this
+/// test at once.
 fn claims_dir() -> PathBuf {
-    Path::new(env!("CARGO_TARGET_TMPDIR")).join("truth-claims")
+    common::slot(Path::new(env!("CARGO_TARGET_TMPDIR")), "truth-claims").0
 }
 
-/// A copy of a fixture in a directory of its own, without its `target`, to paste tests into.
+/// A copy of a fixture this test process has to itself, to paste tests into.
 fn copy_of(name: &str) -> PathBuf {
-    let to = std::env::temp_dir().join(format!("mutastic-suggested-{name}-{}", std::process::id()));
-    std::fs::remove_dir_all(&to).ok();
-    let from = PathBuf::from(fixture(name));
-    let mut stack = vec![PathBuf::new()];
-    while let Some(relative) = stack.pop() {
-        std::fs::create_dir_all(to.join(&relative)).unwrap();
-        for entry in std::fs::read_dir(from.join(&relative)).unwrap() {
-            let entry = entry.unwrap();
-            let path = relative.join(entry.file_name());
-            if entry.file_name() == "target" {
-                continue;
-            }
-            if entry.file_type().unwrap().is_dir() {
-                stack.push(path);
-            } else {
-                std::fs::copy(from.join(&path), to.join(&path)).unwrap();
-            }
-        }
-    }
-    to
+    common::own_copy(name, &format!("truth-suggested-{name}"))
 }
 
 fn mutastic_in(dir: &Path, args: &[&str]) -> (i32, String) {
@@ -482,7 +489,6 @@ fn every_suggested_test_compiles_and_catches_its_mutant() {
                 .all(|e| e["location"]["method"] != "jitter"),
             "a clock's answer can't be pinned"
         );
-        std::fs::remove_dir_all(&dir).ok();
     }
 }
 

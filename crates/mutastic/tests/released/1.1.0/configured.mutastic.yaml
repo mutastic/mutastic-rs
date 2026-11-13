@@ -1,0 +1,9 @@
+# The project's own say over which mutants run.
+rules:
+  - skip: configured::generated::**
+    reason: written by a code generator
+plugins:
+  - rules/trims.yaml
+operators:
+  - defaults
+  - -mutastic/return-value

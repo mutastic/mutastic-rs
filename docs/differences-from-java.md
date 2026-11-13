@@ -81,7 +81,14 @@ The commands and their output are the Java edition's: the summary, the `Not cove
 counter while mutants run, the report files, `explain`, `ignore` and `--since`. Where Rust differs:
 
 - **`explain`** shows the change as source, `total >= 100 → (total) > (100)`, where the Java edition
-  shows bytecode, and its `last run` comes from the last full run's `mutation.json`.
+  shows bytecode, and its `last run` comes from the `mutation.json` of the last run of every
+  mutant, by `run` or `next`.
+- **`next`** queues the misses as the Java edition does, in the same words and events, new misses
+  before the baseline's. `--top` takes at most one item a function, where Java
+  says a method. Whether the code under test is the same, so that only what the last `next` left
+  uncaught runs, is a hash of the files mutastic mutates with their test code (`#[test]` functions
+  and `#[cfg(test)]` modules) taken out, as Java hashes only the classes under test. See
+  [Working through misses](concepts/next.md).
 - **A function only the crate calls** (not `pub`) gets no suggested test on an input none of its
   callers passed: its card says no caller passed the value, and to test a caller that can, or
   propose the mutant unreachable. A test of it alone on that value could test what can't happen.
@@ -109,7 +116,10 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
   `Display` and the other formatting traits, or on a write to a `Formatter`: no test can make that
   error happen.
   Also a change to a zero check on a `NonZero*` value that differs only at 0: `parts.get() == 0`
-  made never true, where `parts` is a `NonZeroU32`, which can't hold 0.
+  made never true, where `parts` is a `NonZeroU32`, which can't hold 0. And a change to a zero
+  check on an unsigned value that differs only below 0, `n == 0` made `n <= 0`, where `n`'s type
+  is written `usize` or it's cast to one; the Java edition takes lengths and counts from the JDK.
+  And `cfg!(debug_assertions)` forced true, which it always is under mutastic's build.
   Both editions skip a boundary inside a guard that its sides differ, `a < b` made `<=` inside
   `if a != b`; Rust also takes a field of a binding that can't change and the `x` of a `Some(x)`
   (`ver.major > cmp.major` inside `if ver.major != cmp.major`), where Java takes only `int` and

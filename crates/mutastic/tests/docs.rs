@@ -2,9 +2,9 @@
 //! one of the fixtures: it's captured in `docs/output/`, in colour as a terminal shows it, and this
 //! fails while a fresh run prints anything else. A page shows its copy without colour, as GitHub
 //! can't show it; the docs site shows the captured colour.
-//! Every Rust block is either an excerpt of a fixture these runs build, word for word, or the test
-//! the getting-started page adds, which this adds and runs. Every link between pages resolves, every
-//! `mutastic` command a page shows parses, and every id it names is a mutant of its fixture. And
+//! Every Rust block is either an excerpt of a fixture these runs build, word for word, the test
+//! the getting-started page adds, or the test-first pages' cycles, which this writes and runs.
+//! Every link between pages resolves, every `mutastic` command a page shows parses, and every id it names is a mutant of its fixture. And
 //! every missed mutant's card on the operators fixture says something true: written into the
 //! source as the card claims it, the fixture's tests still pass.
 //!
@@ -99,6 +99,7 @@ const BUILT: &[&str] = &[
     "platforms",
     "configured",
     "suggestions",
+    "ranking",
 ];
 
 fn root() -> PathBuf {
@@ -114,21 +115,23 @@ fn writing() -> bool {
 }
 
 /// A directory outside the repository, so Cargo doesn't take a copied fixture for a member of
-/// mutastic's own workspace, kept from run to run so builds there stay warm.
+/// mutastic's own workspace, kept from run to run so builds there stay warm, and this test
+/// process's alone while it runs.
 fn scratch(name: &str) -> PathBuf {
-    std::env::temp_dir().join("mutastic-rs-docs").join(name)
+    common::slot(&std::env::temp_dir().join("mutastic-rs-docs"), name).0
 }
 
-/// Where the fixtures are copied to run, as `fixtures/<name>`, so commands print what a person
-/// types at the repository's root, and the repository's own fixtures are left alone.
-fn work() -> PathBuf {
-    let work = scratch("docs");
-    for name in BUILT.iter().chain(&["workspace"]) {
+/// Where a section's fixtures are copied to run, as `fixtures/<name>`, so commands print what a
+/// person types at the repository's root, and the repository's own fixtures are left alone. Each
+/// section has its own copy, of only the fixtures it runs: the sections run at once, and a mutant
+/// runs only the sections that reach its code, not every section for any of them.
+fn work(section: &str, fixtures: &[&str]) -> PathBuf {
+    let work = scratch(&format!("docs-{section}"));
+    for name in fixtures {
         let fixture = work.join("fixtures").join(name);
-        sync(&root().join("fixtures").join(name), &fixture);
         // The runs a page shows start with no last run to compare with, whatever this copy ran
         // before.
-        forget_last_runs(&fixture);
+        common::fresh(&root().join("fixtures").join(name), &fixture);
     }
     work
 }
@@ -139,27 +142,7 @@ fn forget_last_runs(fixture: &Path) {
     let kept = fixture.join("target/mutastic");
     std::fs::remove_file(kept.join("last-run.tsv")).ok();
     std::fs::remove_dir_all(kept.join("last-runs")).ok();
-}
-
-/// Copies a tree, writing only what changed, so the copy's build stays warm.
-fn sync(from: &Path, to: &Path) {
-    std::fs::create_dir_all(to).unwrap();
-    for entry in std::fs::read_dir(from).unwrap() {
-        let entry = entry.unwrap();
-        let name = entry.file_name();
-        if name == "target" {
-            continue;
-        }
-        let (source, destination) = (from.join(&name), to.join(&name));
-        if entry.file_type().unwrap().is_dir() {
-            sync(&source, &destination);
-        } else {
-            let bytes = std::fs::read(&source).unwrap();
-            if std::fs::read(&destination).ok() != Some(bytes.clone()) {
-                std::fs::write(&destination, bytes).unwrap();
-            }
-        }
-    }
+    std::fs::remove_file(kept.join(mutastic::nextrun::FILE)).ok();
 }
 
 struct Ran {
@@ -206,12 +189,14 @@ const ESCAPES: &str = r"(?:\x1b\[[0-9;]*m)*";
 /// Output as mutastic prints it without colour: a label, black on a block of colour, is `[MISSED]`,
 /// and every other colour is gone.
 fn plain(text: &str) -> String {
-    let label = regex::Regex::new(r"\x1b\[4[0-9];30;1m (?<label>[^\x1b]*) \x1b\[0m").unwrap();
-    let labelled = label.replace_all(text, "[$label]");
-    regex::Regex::new(ESCAPES)
-        .unwrap()
-        .replace_all(&labelled, "")
-        .into_owned()
+    // Compiled once: a section reads every line of a run's output through here, once per card.
+    static LABEL: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"\x1b\[4[0-9];30;1m (?<label>[^\x1b]*) \x1b\[0m").unwrap()
+    });
+    static ESCAPE: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(ESCAPES).unwrap());
+    let labelled = LABEL.replace_all(text, "[$label]");
+    ESCAPE.replace_all(&labelled, "").into_owned()
 }
 
 /// What changes from run to run or machine to machine: timings, when the run started, the
@@ -235,6 +220,8 @@ fn steady(text: &str) -> String {
             r#""name":"rustc","version":…"#,
         ),
         (r"rustc \S+", "rustc …"),
+        // The commit a gate's task starts from, which changes with each repository a run makes.
+        (r"(?<w>from |--since=)[0-9a-f]{7,40}\b", "$w…"),
         (r"(?<c>\x1b\[[0-9;]*m|\b)\d+ workers?\b", "${c}… workers"),
         (r#""workers(?<s>Started)?": ?\d+"#, r#""workers$s":…"#),
     ];
@@ -297,9 +284,19 @@ fn pretty(event: &Value) -> String {
 
 /// The ids of a fixture's mutants in `function` by `operator`.
 fn ids_of(work: &Path, fixture: &str, function: &str, operator: &str) -> BTreeSet<String> {
+    ids_in(&found_in(work, fixture), function, operator)
+}
+
+/// Every mutant of a fixture, found once for all the cards that need it: finding them is the
+/// engine's whole scan, and a section asked for it once per card.
+fn found_in(work: &Path, fixture: &str) -> mutastic::sites::Crate {
     let project =
         workspace::read(&work.join("fixtures").join(fixture).display().to_string()).unwrap();
-    let found = engine::find_all(&project);
+    engine::find_all(&project)
+}
+
+/// The ids of `found`'s mutants in `function` by `operator`.
+fn ids_in(found: &mutastic::sites::Crate, function: &str, operator: &str) -> BTreeSet<String> {
     found
         .mutants
         .iter()
@@ -572,7 +569,11 @@ fn unsafety(work: &Path, shown: &mut BTreeMap<String, String>) {
     );
     let jsonl = ran(work, &["run", "fixtures/unsafety", "--format=jsonl"]);
     let events = events(&jsonl.stdout);
-    shown.insert("concepts/run-started".into(), pretty(&events[0]));
+    let started = events
+        .iter()
+        .find(|e| e["reason"] == "run-started")
+        .unwrap();
+    shown.insert("concepts/run-started".into(), pretty(started));
     let find = |method: &str, replacement: &str| -> Value {
         events
             .iter()
@@ -624,8 +625,9 @@ fn operators(work: &Path, shown: &mut BTreeMap<String, String>) {
         );
         runs.insert(*family, run.stdout);
     }
+    let found = found_in(work, "operators");
     for (family, function, operator) in CARDS {
-        let ids = ids_of(work, "operators", function, operator);
+        let ids = ids_in(&found, function, operator);
         assert!(!ids.is_empty(), "{operator} has no mutant in {function}()");
         let found = card(&runs[family], &ids)
             .unwrap_or_else(|| panic!("no card for {operator} in {function}(): {}", runs[family]));
@@ -734,14 +736,15 @@ fn troubleshooting(work: &Path, shown: &mut BTreeMap<String, String>) {
         .find(|e| e["status"] == "Ignored")
         .expect("omit-call's to_lowercase() is unviable");
     shown.insert("troubleshooting/unviable-event".into(), pretty(&unviable));
-    // Each hanging mutant waits for its time limit: side by side, they wait together.
+    // Each hanging mutant waits for its time limit, at least 10s: one worker for each of the five,
+    // and they wait together, once.
     let loops = ran(
         work,
         &[
             "run",
             "fixtures/loops",
             "--operators=stronger",
-            "--workers=4",
+            "--workers=5",
         ],
     );
     assert!(
@@ -767,6 +770,15 @@ fn troubleshooting(work: &Path, shown: &mut BTreeMap<String, String>) {
     let root = mutastic(work, &["run", "fixtures/workspace"]);
     assert_eq!(root.code, 2, "{}", root.stderr);
     shown.insert("troubleshooting/workspace".into(), root.stderr);
+    // A directory that isn't there, named close to a package: offered, as the command to run. The
+    // page shows the directory mutastic looked in as a reader's, not this copy's.
+    let missing = mutastic(work, &["run", "fixtures/workspace/shpo"]);
+    assert_eq!(missing.code, 2, "{}", missing.stderr);
+    let looked = std::fs::canonicalize(work).unwrap().display().to_string();
+    shown.insert(
+        "troubleshooting/no-directory".into(),
+        missing.stderr.replace(&looked, "/home/you/project"),
+    );
 }
 
 /// The suggested-tests page's card: a test written out for `late_fee`'s boundary.
@@ -781,6 +793,340 @@ fn suggested(work: &Path, shown: &mut BTreeMap<String, String>) {
     shown.insert("concepts/suggested-test".into(), card);
 }
 
+/// `next` on the ranking fixture, from a first pass: the head of the queue for a person, the same
+/// task for an agent, and the events with `--top`, which spreads them over the code.
+fn queue(work: &Path, shown: &mut BTreeMap<String, String>) {
+    let fixture = work.join("fixtures/ranking");
+    let first = |args: &[&str]| {
+        forget_last_runs(&fixture);
+        let next = mutastic(work, &[&["next", "fixtures/ranking"], args].concat());
+        assert_eq!(next.code, 1, "{}{}", next.stdout, next.stderr);
+        next.stdout
+    };
+    let head = first(&[]);
+    shown.insert("concepts/next".into(), head.clone());
+    shown.insert("commands/next".into(), head);
+    shown.insert("concepts/next-agent".into(), first(&["--format=agent"]));
+    let top = first(&["--top=3", "--format=jsonl"]);
+    for event in events(&top) {
+        let errors: Vec<String> = common::schema()
+            .iter_errors(&event)
+            .map(|e| e.to_string())
+            .collect();
+        assert!(errors.is_empty(), "{event}\n{}", errors.join("\n"));
+    }
+    shown.insert("concepts/next-jsonl".into(), top);
+}
+
+/// The pages whose code is a test-first cycle on the pricing fixture, in the order they're worked:
+/// the second starts where the first ends. The agent page adds no code of its own: it names the
+/// first page's mutants, as an agent working that cycle meets them.
+const CYCLES: &[&str] = &[
+    "test-first.md",
+    "test-first-refactor.md",
+    "test-first-agent.md",
+];
+
+/// A test-first page's code, in order: each block marked `added to` or `changed in`, with what it
+/// marks.
+fn cycle_steps(page: &str) -> Vec<(String, String)> {
+    let text = std::fs::read_to_string(docs().join(page)).unwrap();
+    blocks(&text)
+        .into_iter()
+        .filter_map(|b| match b.marker {
+            Some((kind, path)) if kind == "added to" || kind == "changed in" => {
+                assert_eq!(path, "fixtures/pricing/src/lib.rs", "{page} changes {path}");
+                Some((kind, text[b.text].to_string()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// `code`, indented one level, as a line of a module or an `impl` is.
+fn indented(code: &str) -> String {
+    code.lines()
+        .map(|line| match line {
+            "" => "\n".to_string(),
+            _ => format!("    {line}\n"),
+        })
+        .collect()
+}
+
+/// One of the test-first page's steps, made to the pricing fixture's `src/lib.rs` as the page says:
+/// a test is added at the end of the `tests` module, other code at the end of `impl Pricing`, and
+/// a change replaces the function of the same name.
+fn test_first_step(lib: &Path, (kind, code): &(String, String)) {
+    let source = std::fs::read_to_string(lib).unwrap();
+    let changed = if kind == "changed in" {
+        let signature = code.lines().find(|l| l.starts_with("pub fn ")).unwrap();
+        let at = source.find(signature).unwrap();
+        let start = source[..at].rfind("\n\n").unwrap() + 2;
+        let end = at + source[at..].find("\n    }\n").unwrap() + "\n    }\n".len();
+        format!("{}{}{}", &source[..start], indented(code), &source[end..])
+    } else if code.contains("#[test]") {
+        let close = source.trim_end().rfind('}').unwrap();
+        format!("{}\n\n{}}}\n", source[..close].trim_end(), indented(code))
+    } else {
+        let close = source.find("\n}\n\n#[cfg(test)]").unwrap();
+        format!(
+            "{}\n\n{}{}",
+            &source[..close],
+            indented(code).trim_end(),
+            &source[close..]
+        )
+    };
+    std::fs::write(lib, changed).unwrap();
+}
+
+/// The ids of the pricing fixture's mutants at each step of the test-first pages' cycles: the
+/// pages' `verify` commands name some of them, on code the fixture doesn't have until a page adds
+/// it, and a later step may take away.
+fn test_first_ids() -> BTreeSet<String> {
+    let dir = scratch("test-first-ids").join("pricing");
+    common::fresh(&root().join("fixtures/pricing"), &dir);
+    let mut ids = BTreeSet::new();
+    for step in CYCLES.iter().flat_map(|page| cycle_steps(page)) {
+        test_first_step(&dir.join("src/lib.rs"), &step);
+        let project = workspace::read(&dir.display().to_string()).unwrap();
+        ids.extend(engine::find_all(&project).mutants.into_iter().map(|m| m.id));
+    }
+    ids
+}
+
+/// `git` in `work`, which must succeed, as a person with a name set runs it.
+fn git(work: &Path, args: &[&str]) {
+    let status = Command::new("git")
+        .args(args)
+        .current_dir(work)
+        .env("GIT_AUTHOR_NAME", "docs")
+        .env("GIT_AUTHOR_EMAIL", "docs@example.com")
+        .env("GIT_COMMITTER_NAME", "docs")
+        .env("GIT_COMMITTER_EMAIL", "docs@example.com")
+        .output()
+        .unwrap()
+        .status;
+    assert!(status.success(), "git {args:?}");
+}
+
+/// `work` made a repository of its own, as a page's clone is, with what's in it committed, so
+/// `--since=HEAD` is the next cycle's lines.
+fn repository(work: &Path) {
+    std::fs::remove_dir_all(work.join(".git")).ok();
+    std::fs::write(work.join(".gitignore"), "target\n").unwrap();
+    git(work, &["init", "-q"]);
+    commit(work);
+}
+
+/// The end of a cycle: everything committed, so the commit is the next cycle's `HEAD`.
+fn commit(work: &Path) {
+    git(work, &["add", "."]);
+    git(work, &["commit", "-q", "-m", "cycle"]);
+}
+
+/// A run stopped by a failing test, as a cycle's red step makes it: mutastic's message, which
+/// names `test`.
+fn red(work: &Path, test: &str) -> String {
+    let red = mutastic(work, &["run", "fixtures/pricing"]);
+    assert_eq!(red.code, 2, "{}{}", red.stdout, red.stderr);
+    let message: String = red
+        .stderr
+        .lines()
+        .filter(|line| plain(line).starts_with("mutastic: "))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    assert!(plain(&message).contains(test), "{}", red.stderr);
+    message
+}
+
+/// A cycle's run that misses what its code ran ahead of: the run, and the ids its card's `verify`
+/// names, which `page` must show that command for.
+fn missed(work: &Path, page: &str) -> (Ran, String) {
+    let run = ran(work, &["run", "fixtures/pricing", "--since=HEAD"]);
+    assert_eq!(run.code, 1, "{}", run.stdout);
+    let done = plain(&run.stdout)
+        .lines()
+        .find_map(|line| {
+            line.trim_start()
+                .strip_prefix("done when")
+                .map(str::to_string)
+        })
+        .expect("the cycle's run has a card");
+    let ids = done.split_whitespace().nth(2).unwrap().to_string();
+    let text = std::fs::read_to_string(docs().join(page)).unwrap();
+    assert!(
+        text.contains(&format!("mutastic verify {ids} fixtures/pricing\n")),
+        "{page}: verify the card's mutants, {ids}"
+    );
+    (run, ids)
+}
+
+/// A cycle's run that catches every mutant on its lines.
+fn passed(work: &Path) -> String {
+    let run = ran(work, &["run", "fixtures/pricing", "--since=HEAD"]);
+    assert_eq!(run.code, 0, "{}", run.stdout);
+    run.stdout
+}
+
+/// The test-first page's cycle, on the pricing fixture in a repository of its own, from the page's
+/// own code: its failing test and the function's stub stop a run, the code that passes it leaves
+/// the cycle's edge untested, the card's tests make `verify` pass, and the cycle's run passes after.
+fn test_first(work: &Path, shown: &mut BTreeMap<String, String>) {
+    let steps = cycle_steps("test-first.md");
+    let kinds: Vec<&str> = steps.iter().map(|(kind, _)| kind.as_str()).collect();
+    assert_eq!(
+        kinds,
+        ["added to", "added to", "changed in", "added to"],
+        "test-first.md: a test, its stub, the code that passes it, then the card's tests"
+    );
+    repository(work);
+    let lib = work.join("fixtures/pricing/src/lib.rs");
+
+    test_first_step(&lib, &steps[0]);
+    test_first_step(&lib, &steps[1]);
+    let message = red(work, "tests::loyal_customers_get_five_off");
+    shown.insert("test-first/red".into(), message);
+
+    test_first_step(&lib, &steps[2]);
+    let (run, ids) = missed(work, "test-first.md");
+    shown.insert("test-first/run".into(), run.stdout);
+
+    test_first_step(&lib, &steps[3]);
+    let verify = ran(work, &["verify", &ids, "fixtures/pricing"]);
+    assert_eq!(verify.code, 0, "{}", verify.stdout);
+    shown.insert("test-first/verify".into(), verify.stdout);
+    shown.insert("test-first/again".into(), passed(work));
+}
+
+/// One tier's cycle on the refactor page, up to its commit: its failing test, which names the tier,
+/// the `if` that passes it, the run that misses its edge, and the card's test with `verify`.
+fn tier(work: &Path, tier: &str, steps: &[(String, String)], shown: &mut BTreeMap<String, String>) {
+    let lib = work.join("fixtures/pricing/src/lib.rs");
+    test_first_step(&lib, &steps[0]);
+    let test = cycle_test(&steps[0].1);
+    assert!(test.ends_with(&format!("_from_{tier}")), "{test}");
+    shown.insert(
+        format!("test-first-refactor/red-{tier}"),
+        red(work, &format!("tests::{test}")),
+    );
+    test_first_step(&lib, &steps[1]);
+    let (run, ids) = missed(work, "test-first-refactor.md");
+    shown.insert(format!("test-first-refactor/run-{tier}"), run.stdout);
+    test_first_step(&lib, &steps[2]);
+    let verify = ran(work, &["verify", &ids, "fixtures/pricing"]);
+    assert_eq!(verify.code, 0, "{}", verify.stdout);
+    shown.insert(format!("test-first-refactor/verify-{tier}"), verify.stdout);
+}
+
+/// The name of the test a step adds.
+fn cycle_test(code: &str) -> &str {
+    code.lines()
+        .find_map(|line| line.strip_prefix("fn "))
+        .and_then(|rest| rest.split('(').next())
+        .unwrap()
+}
+
+/// The refactor page's cycles, from where the test-first page's ends, committed: for each tier its
+/// failing test, the `if` that passes it, the run that misses its edge, and the card's test with
+/// `verify`; then, before the last commit, the run that starts the refactor, the refactor, and the
+/// run after it, which catches every mutant of the new shape.
+fn refactor(work: &Path, shown: &mut BTreeMap<String, String>) {
+    let page = "test-first-refactor.md";
+    let steps = cycle_steps(page);
+    let kinds: Vec<&str> = steps.iter().map(|(kind, _)| kind.as_str()).collect();
+    assert_eq!(
+        kinds,
+        [
+            "added to",
+            "changed in",
+            "added to",
+            "added to",
+            "changed in",
+            "added to",
+            "changed in"
+        ],
+        "{page}: for two tiers a test, the code that passes it and the card's test, then the \
+         refactor"
+    );
+    let lib = work.join("fixtures/pricing/src/lib.rs");
+    for step in cycle_steps("test-first.md") {
+        test_first_step(&lib, &step);
+    }
+    repository(work);
+
+    tier(work, "100", &steps[0..3], shown);
+    passed(work);
+    commit(work);
+    tier(work, "250", &steps[3..6], shown);
+
+    shown.insert("test-first-refactor/before".into(), passed(work));
+    test_first_step(&lib, &steps[6]);
+    shown.insert("test-first-refactor/after".into(), passed(work));
+}
+
+/// `mutastic` in `work` as an agent's hook runs it: the hook's input on stdin, and no colour, as
+/// the agent reads it.
+fn hooked(work: &Path, args: &[&str]) -> Ran {
+    use std::io::Write as _;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+        .args(args)
+        .current_dir(work)
+        .env_remove("MUTASTIC_AGENT")
+        .env_remove("FORCE_COLOR")
+        .env("NO_COLOR", "1")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(br#"{"session_id":"docs"}"#)
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    Ran {
+        code: output.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    }
+}
+
+/// The agent page's cycle, as the agent and its gate see it: the test-first page's code on the
+/// pricing fixture in a repository of its own, with the gate opened as the plugin's hook opens it,
+/// the agent format's run on the cycle's lines once the code passes, and the gate's check once the
+/// card's tests are in. The page's `verify` is the test-first page's.
+fn test_first_agent(work: &Path, shown: &mut BTreeMap<String, String>) {
+    let steps = cycle_steps("test-first.md");
+    repository(work);
+    let lib = work.join("fixtures/pricing/src/lib.rs");
+    let opened = hooked(work, &["gate", "open", "fixtures/pricing", "--hook=claude"]);
+    assert_eq!(opened.code, 0, "{}{}", opened.stdout, opened.stderr);
+    assert!(opened.stdout.contains("gated from"), "{}", opened.stdout);
+    shown.insert("test-first-agent/open".into(), opened.stdout);
+
+    for step in &steps[..3] {
+        test_first_step(&lib, step);
+    }
+    let run = ran(
+        work,
+        &["run", "fixtures/pricing", "--since=HEAD", "--format=agent"],
+    );
+    assert_eq!(run.code, 1, "{}", run.stdout);
+    shown.insert("test-first-agent/run".into(), run.stdout);
+
+    test_first_step(&lib, &steps[3]);
+    let check = mutastic(work, &["gate", "check", "fixtures/pricing"]);
+    assert_eq!(check.code, 0, "{}{}", check.stdout, check.stderr);
+    assert!(
+        plain(&check.stdout).starts_with("mutastic gate: passed"),
+        "{}",
+        check.stdout
+    );
+    shown.insert("test-first-agent/check".into(), check.stdout);
+}
+
 /// Runs the pages show as a Unix build makes them: code and tests under `cfg(unix)` are in it, and
 /// a Windows build leaves them out, so there they're run but the pages' copies are kept.
 const UNIX_BUILDS: &[&str] = &[
@@ -789,20 +1135,12 @@ const UNIX_BUILDS: &[&str] = &[
     "troubleshooting/platforms",
 ];
 
-#[test]
-fn the_docs_show_what_mutastic_prints() {
-    let work = work();
-    let mut shown = BTreeMap::new();
-    getting_started(&work, &mut shown);
-    reference(&work, &mut shown);
-    unsafety(&work, &mut shown);
-    operators(&work, &mut shown);
-    troubleshooting(&work, &mut shown);
-    suggested(&work, &mut shown);
-
+/// What each section of the docs shows of mutastic's output is what it prints now. Each section is
+/// a test of its own, since what one section runs reaches code another doesn't.
+fn check(shown: &BTreeMap<String, String>) {
     let output = docs().join("output");
     let mut stale = Vec::new();
-    for (name, text) in &shown {
+    for (name, text) in shown {
         if cfg!(windows) && UNIX_BUILDS.contains(&name.as_str()) {
             continue;
         }
@@ -830,51 +1168,68 @@ fn the_docs_show_what_mutastic_prints() {
         "mutastic prints something else now: MUTASTIC_DOCS_WRITE=1 cargo test --test docs\n{}",
         stale.join("\n")
     );
+}
 
-    // Each page's output blocks are the kept copies without their colour, and every copy is on a
-    // page.
-    let mut used = BTreeSet::new();
-    for page in pages() {
-        let mut text = std::fs::read_to_string(&page).unwrap();
-        let mut edits = Vec::new();
-        for block in blocks(&text) {
-            let Some((kind, name)) = &block.marker else {
-                continue;
-            };
-            if kind != "output" {
-                continue;
-            }
-            assert!(
-                shown.contains_key(name),
-                "{}: no run here makes {name}",
-                page.display()
-            );
-            used.insert(name.clone());
-            let kept =
-                plain(&std::fs::read_to_string(output.join(format!("{name}.ansi"))).unwrap());
-            if text[block.text.clone()] != kept {
-                edits.push((block.text.clone(), kept));
-            }
-        }
-        if edits.is_empty() {
-            continue;
-        }
-        assert!(
-            writing(),
-            "{} shows output other than docs/output's: MUTASTIC_DOCS_WRITE=1 cargo test --test docs",
-            page.display()
-        );
-        for (range, kept) in edits.into_iter().rev() {
-            text.replace_range(range, &kept);
-        }
-        std::fs::write(&page, text).unwrap();
-    }
-    // A command's page on the docs site shows its own, `commands/<page>`, from commands.json.
-    for command in mutastic::commands::COMMANDS {
-        used.insert(format!("commands/{}", command.page));
-    }
-    let unused: Vec<&String> = shown.keys().filter(|name| !used.contains(*name)).collect();
-    assert!(unused.is_empty(), "output no page shows: {unused:?}");
+/// A section's captures, run in its own copy of the fixtures it names, then checked.
+fn section(name: &str, fixtures: &[&str], run: fn(&Path, &mut BTreeMap<String, String>)) {
+    let work = work(name, fixtures);
+    let mut shown = BTreeMap::new();
+    run(&work, &mut shown);
+    check(&shown);
+}
+
+#[test]
+fn the_docs_show_what_getting_started_prints() {
+    section("getting-started", &["pricing"], getting_started);
+}
+
+#[test]
+fn the_docs_show_what_the_reference_prints() {
+    section("reference", &["pricing", "configured"], reference);
+}
+
+#[test]
+fn the_docs_show_what_unsafe_code_prints() {
+    section("unsafety", &["unsafety"], unsafety);
+}
+
+#[test]
+fn the_docs_show_what_the_operators_print() {
+    section("operators", &["operators", "truth"], operators);
+}
+
+#[test]
+fn the_docs_show_what_troubleshooting_prints() {
+    section(
+        "troubleshooting",
+        &["operators", "loops", "platforms", "workspace"],
+        troubleshooting,
+    );
+}
+
+#[test]
+fn the_docs_show_what_suggestions_print() {
+    section("suggested", &["suggestions"], suggested);
+}
+
+#[test]
+fn the_docs_show_what_next_prints() {
+    section("queue", &["ranking"], queue);
+}
+
+#[test]
+fn the_docs_show_what_a_test_first_cycle_prints() {
+    section("test-first", &["pricing"], test_first);
+}
+
+#[test]
+fn the_docs_show_what_a_refactor_prints() {
+    section("test-first-refactor", &["pricing"], refactor);
+}
+
+#[test]
+fn the_docs_show_what_an_agent_sees_test_first() {
+    section("test-first-agent", &["pricing"], test_first_agent);
 }
 
 /// The lines of `text` without the indent they share.
@@ -917,18 +1272,22 @@ fn every_rust_example_is_compiled() {
                         .any(|at| dedent(&file[at..at + quoted.len()]) == want);
                     assert!(found, "{place}: isn't in {path} word for word:\n{body}");
                 }
-                Some((kind, path)) if kind == "added to" => {
-                    let catching = page.starts_with(docs().join("operators"))
+                Some((kind, path)) if kind == "added to" || kind == "changed in" => {
+                    let catching = kind == "added to"
+                        && page.starts_with(docs().join("operators"))
                         && path.starts_with("fixtures/operators/src/");
+                    let cycle = CYCLES.iter().any(|name| page == docs().join(name));
+                    let started = kind == "added to" && page == docs().join("getting-started.md");
                     assert!(
-                        path == "fixtures/pricing/src/lib.rs" || catching,
-                        "{place}: only the getting-started test and the operators' tests that \
-                         catch them are added and run"
+                        path == "fixtures/pricing/src/lib.rs" && (started || cycle) || catching,
+                        "{place}: only the getting-started test, the test-first cycles' code and \
+                         the operators' tests that catch them are added and run"
                     );
                 }
                 _ => assert!(
                     block.language != "rust",
-                    "{place}: a Rust block needs <!-- from: … --> or <!-- added to: … -->"
+                    "{place}: a Rust block needs <!-- from: … -->, <!-- added to: … --> or \
+                     <!-- changed in: … -->"
                 ),
             }
         }
@@ -942,7 +1301,7 @@ fn every_rust_example_is_compiled() {
 fn every_test_that_catches_a_card_does() {
     let work = scratch("catching");
     let fixture = work.join("fixtures/operators");
-    sync(&root().join("fixtures/operators"), &fixture);
+    common::fresh(&root().join("fixtures/operators"), &fixture);
     let mut added: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for page in pages() {
         let text = std::fs::read_to_string(&page).unwrap();
@@ -1025,6 +1384,38 @@ fn anchors(text: &str) -> BTreeSet<String> {
     found
 }
 
+/// Every link `explain`, a card and an event give to an operator's docs lands on its section: the
+/// heading on its family's page, the family the operators fixture puts it in.
+#[test]
+fn every_operator_links_to_its_section_in_the_docs() {
+    let page = format!("{}operators/", mutastic::commands::DOCS);
+    let mut broken = Vec::new();
+    for &operator in mutastic::sites::ALL {
+        if operator == mutastic::sites::RETURN_VALUE_EXTENDED {
+            continue;
+        }
+        let Some(url) = mutastic::operator_docs::url(operator) else {
+            broken.push(format!("{operator}: no link"));
+            continue;
+        };
+        let (family, fragment) = url
+            .strip_prefix(&page)
+            .and_then(|rest| rest.split_once("/#"))
+            .unwrap();
+        let text = std::fs::read_to_string(docs().join(format!("operators/{family}.md"))).unwrap();
+        if !anchors(&text).contains(fragment) {
+            broken.push(format!("{operator}: {url} (no such heading)"));
+        }
+        let listed = FAMILIES
+            .iter()
+            .find(|(_, operators)| operators.split(',').any(|listed| listed == operator));
+        if listed.is_some_and(|(listed, _)| *listed != family) {
+            broken.push(format!("{operator}: {url} (its fixture is in {listed:?})"));
+        }
+    }
+    assert!(broken.is_empty(), "{}", broken.join("\n"));
+}
+
 /// The docs site's Rust section, which isn't published yet: until it is, a page links to its copy
 /// here, which GitHub shows, and the site maps that link to its own page.
 const UNPUBLISHED: &str = "https://docs.mutastic.io/rust/";
@@ -1097,6 +1488,15 @@ fn every_command_shown_parses_and_names_real_mutants() {
     let mutant_id = regex::Regex::new(r"^m[0-9a-f]{8}$").unwrap();
     let mut wrong = Vec::new();
     let mut found: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    // The test-first pages name mutants of the code their cycles write, which the fixture hasn't
+    // got.
+    let cycle = test_first_ids();
+    for page in CYCLES {
+        found.insert(
+            format!("{}:fixtures/pricing", docs().join(page).display()),
+            cycle.clone(),
+        );
+    }
     for page in pages() {
         let text = std::fs::read_to_string(&page).unwrap();
         for block in blocks(&text) {
@@ -1148,7 +1548,13 @@ fn every_command_shown_parses_and_names_real_mutants() {
                 let (Some(named), Some(dir)) = (named, dir) else {
                     continue;
                 };
-                let ids = found.entry(dir.clone()).or_insert_with(|| {
+                let mine = format!("{}:{dir}", page.display());
+                let key = if found.contains_key(&mine) {
+                    mine
+                } else {
+                    dir.clone()
+                };
+                let ids = found.entry(key).or_insert_with(|| {
                     let project = workspace::read(&root().join(&dir).display().to_string())
                         .unwrap_or_else(|e| panic!("{}: {line}: {e}", page.display()));
                     engine::find_all(&project)
@@ -1181,9 +1587,17 @@ fn every_id_in_the_words_is_a_mutant() {
         let project = workspace::read(&dir.display().to_string()).unwrap();
         ids.extend(engine::find_all(&project).mutants.into_iter().map(|m| m.id));
     }
+    // The test-first pages name mutants of the code their cycles write, which the fixture hasn't
+    // got.
+    let cycle: BTreeSet<String> = ids.union(&test_first_ids()).cloned().collect();
     let pattern = regex::Regex::new(r"\bm[0-9a-f]{8}\b").unwrap();
     let mut wrong = Vec::new();
     for page in pages() {
+        let known = if CYCLES.iter().any(|name| page == docs().join(name)) {
+            &cycle
+        } else {
+            &ids
+        };
         let mut text = std::fs::read_to_string(&page).unwrap();
         for block in blocks(&text).into_iter().rev() {
             if block
@@ -1195,7 +1609,7 @@ fn every_id_in_the_words_is_a_mutant() {
             }
         }
         for found in pattern.find_iter(&text) {
-            if !ids.contains(found.as_str()) {
+            if !known.contains(found.as_str()) {
                 wrong.push(format!("{}: {}", page.display(), found.as_str()));
             }
         }
@@ -1214,7 +1628,7 @@ fn every_id_in_the_words_is_a_mutant() {
 fn every_missed_card_on_the_operators_fixture_is_true() {
     let work = scratch("claims");
     let fixture = work.join("fixtures/operators");
-    sync(&root().join("fixtures/operators"), &fixture);
+    common::fresh(&root().join("fixtures/operators"), &fixture);
     let jsonl = ran(
         &work,
         &[
@@ -1370,6 +1784,39 @@ fn the_commands_reference_is_the_parsers_declarations() {
     }
 }
 
+/// Unsafe code lives in one module, `terminal`, and every block there says why it's sound.
+#[test]
+fn unsafe_code_stays_in_the_terminal_module() {
+    let allow = regex::Regex::new(r"allow\(\s*unsafe_code").unwrap();
+    let mut stack = vec![root().join("crates/mutastic/src")];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            // The workspace denies unsafe code, so a module needs to allow it to have any.
+            let text = std::fs::read_to_string(&path).unwrap();
+            let allows = allow.is_match(&text);
+            if path.ends_with("terminal.rs") {
+                assert!(allows);
+                assert_eq!(
+                    text.matches("unsafe {").count(),
+                    text.matches("// SAFETY: ").count(),
+                    "an unsafe block without its reason"
+                );
+            } else {
+                assert!(
+                    !allows,
+                    "{} allows unsafe code: it belongs in terminal.rs",
+                    path.display()
+                );
+            }
+        }
+    }
+}
+
 /// Every variable of the environment the command reads is on the reference's environment page.
 #[test]
 fn every_variable_read_is_declared() {
@@ -1378,7 +1825,13 @@ fn every_variable_read_is_declared() {
         .iter()
         .map(|entry| entry.name.split('=').next().unwrap())
         .collect();
-    for source in ["cli.rs", "java.rs", "workspace.rs"] {
+    for source in [
+        "cli.rs",
+        "java.rs",
+        "workspace.rs",
+        "progress.rs",
+        "terminal.rs",
+    ] {
         let text =
             std::fs::read_to_string(root().join("crates/mutastic/src").join(source)).unwrap();
         for found in read.captures_iter(&text) {

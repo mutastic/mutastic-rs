@@ -828,6 +828,36 @@ pub fn guarded(x: i32) -> String {
     )
 }
 
+/// Zero checks on values that can't be below 0, one with its type written and one cast, and a
+/// signed near miss, which can.
+pub fn unsigned_zero(x: i32) -> String {
+    let n: u32 = x.unsigned_abs();
+    let none = n == 0;
+    let some = (x as u8) > 0;
+    let zero = x == 0;
+    format!("{none} {some} {zero}")
+}
+
+/// Zero checks on a `let` from a suffixed literal and on a `Duration`'s count, which can't be below 0.
+pub fn unsigned_more(x: i32) -> String {
+    let step = 2u8;
+    let waited: std::time::Duration =
+        std::time::Duration::from_millis(u64::from(x.unsigned_abs()) * 400);
+    let none = step == 0;
+    let some = waited.as_secs() > 0;
+    format!("{none} {some}")
+}
+
+/// A condition the build profile decides: mutastic builds with debug assertions on, so forcing it
+/// true changes nothing, and forcing it false does.
+pub fn debug_checked(x: i32) -> i32 {
+    if cfg!(debug_assertions) {
+        x + 1
+    } else {
+        x
+    }
+}
+
 /// The boundaries where both sides give the same value at the edge, and their near misses, at
 /// pairs that meet it: `b` is `x` for `x` from 0 to 3, and `fee_floor` gets 10 at `x` = 5.
 pub fn edges(x: i32) -> String {
@@ -850,7 +880,7 @@ mod tests {
     fn probe() {
         for x in -6..10 {
             println!(
-                "{x}: {} | {} | {} | {} | {} | {} | {} | {}",
+                "{x}: {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {}",
                 super::all(x),
                 super::more(x),
                 super::stronger(x),
@@ -858,7 +888,10 @@ mod tests {
                 super::extended(x),
                 super::nonzero(x),
                 super::guarded(x),
-                super::edges(x)
+                super::edges(x),
+                super::unsigned_zero(x),
+                super::debug_checked(x),
+                super::unsigned_more(x)
             );
         }
     }

@@ -41,7 +41,7 @@ against the tests that reach it. One mutant gets past them:
 
  ❯ src/lib.rs  1 missed in 1 function
 
- [✗ MISSED] no test checks discount() at total == 100
+  ✗ MISSED  no test checks discount() at total == 100
     ┌─ src/lib.rs:26
     │
  25 │     pub fn discount(&self, total: u32) -> u32 {
@@ -58,7 +58,7 @@ against the tests that reach it. One mutant gets past them:
 
             // in mod tests
             #[test]
-            fn discount_with_total_100() {
+            fn discount_at_the_total_edge() {
                 assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
             }
             check today's value is the one you intend: the test pins what the code does now
@@ -67,19 +67,18 @@ against the tests that reach it. One mutant gets past them:
     reproduce  mutastic run --only=mb2f8ae57 fixtures/pricing
     or ignore  mutastic ignore mb2f8ae57 --reason="<why>" fixtures/pricing
 
+ Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+
      Files  0 clean | 1 with misses (1)
    Mutants  ✓ 10 caught · ✗ 1 missed (11)
   Worst at  Pricing::discount() 1 ✗
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  13 (33 without coverage selection)
-  Start at  03:00:33
-  Duration  2.7s (setup 2.7s, coverage 4ms, mutants 30ms)
-     Tests  3 on rustc 1.98.0 · 4 workers
+  Start at  11:03:14
+  Duration  355ms (setup 20ms, build 303ms, coverage 2ms, mutants 8ms, checking 6ms)
+     Tests  3 on rustc 1.99.1 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  90.9%  threshold 80
-
- [PASS] 1 missed, above the threshold.
- Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+     Score  90.9%   PASS  1 missed, above the threshold of 80.
 ```
 
 On your own crate, run `cargo mutastic run` inside it, or `mutastic run path/to/crate`.
@@ -111,7 +110,7 @@ The card's test asserts what `discount(100)` gives today, 10. Is that right? The
 <!-- added to: fixtures/pricing/src/lib.rs -->
 ```rust
 #[test]
-fn discount_with_total_100() {
+fn discount_at_the_total_edge() {
     assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
 }
 ```
@@ -130,7 +129,7 @@ mutastic verify mb2f8ae57 fixtures/pricing
 
 <!-- output: getting-started/verify -->
 ```text
-mutastic: mb2f8ae57 is caught by tests::discount_with_total_100
+mutastic: mb2f8ae57 is caught by tests::discount_at_the_total_edge
 ```
 
 The mutant is caught: a test now fails when `>=` becomes `>`. `verify` exits with 0 when every
@@ -150,13 +149,11 @@ mutastic run fixtures/pricing
    Mutants  ✓ 11 caught (11)
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  15 (44 without coverage selection)
-  Start at  20:24:53
-  Duration  308ms (setup 286ms, coverage 2ms, mutants 8ms)
+  Start at  11:04:49
+  Duration  368ms (setup 21ms, build 322ms, coverage 2ms, mutants 8ms)
      Tests  4 on rustc 1.99.1 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  100.0%  ▲ 9.1 vs last run (code changed)  threshold 80
-
- [PASS] Every mutant was caught.
+     Score  100.0%   PASS  Every mutant was caught.  ▲ 9.1 vs last run (code changed)
 ```
 
 Every mutant is caught.

@@ -24,7 +24,7 @@ pub fn run(args: &[OsString]) -> ExitCode {
     match command.status() {
         Ok(status) => ExitCode::from(status.code().unwrap_or(1).clamp(0, 255) as u8),
         Err(error) => {
-            eprintln!(
+            stderr_line!(
                 "mutastic: couldn't run {}: {error}",
                 args[1].to_string_lossy()
             );

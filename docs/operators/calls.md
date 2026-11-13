@@ -56,7 +56,7 @@ The test counts the items, so removing the first `push` is caught. Nothing reads
 
 <!-- output: operators/calls/remove-void-call -->
 ```text
- [✗ MISSED] no test checks what self.history.push(format!("added {item}")); does in add()
+  ✗ MISSED  no test checks what self.history.push(format!("added {item}")); does in add()
     ┌─ src/calls.rs:14
     │
  13 │         self.items.push(item.to_string());
@@ -120,7 +120,7 @@ No test visits twice, so nothing needs the name remembered:
 
 <!-- output: operators/calls/remove-discarded-call -->
 ```text
- [✗ MISSED] no test checks what seen.insert(name.to_string(), 1); does in first_visit()
+  ✗ MISSED  no test checks what seen.insert(name.to_string(), 1); does in first_visit()
     ┌─ src/calls.rs:25
     │
  24 │     let first = !seen.contains_key(name);
@@ -180,7 +180,7 @@ fn no_tip() {
 
 <!-- output: operators/calls/remove-assignment -->
 ```text
- [✗ MISSED] no test checks what total = total + tip; does in with_tip()
+  ✗ MISSED  no test checks what total = total + tip; does in with_tip()
     ┌─ src/calls.rs:31
     │
  30 │     let mut total = bill;
@@ -253,7 +253,7 @@ fn paying_gives_the_total() {
 
 <!-- output: operators/calls/remove-field-write -->
 ```text
- [✗ MISSED] no test checks what self.paid = true; does in pay()
+  ✗ MISSED  no test checks what self.paid = true; does in pay()
     ┌─ src/calls.rs:43
     │
  42 │     pub fn pay(&mut self) -> u32 {
@@ -323,7 +323,7 @@ The test checks what muting keeps, but not that it mutes:
 
 <!-- output: operators/calls/remove-struct-field -->
 ```text
- [✗ MISSED] tests pass even without muted: true in muted()
+  ✗ MISSED  tests pass even without muted: true in muted()
     ┌─ src/calls.rs:56
     │
  55 │     Settings {

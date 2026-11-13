@@ -29,8 +29,10 @@ mod extended;
 mod guarded;
 mod nonzero;
 mod operators;
+mod profile;
 mod rollback;
 mod stronger;
+mod unsigned;
 
 /// The operators, by the ids the Java edition uses.
 pub const BOUNDARY: &str = "mutastic/boundary";
@@ -764,6 +766,31 @@ fn damaged_items(tree: &SourceFile, errors: impl Iterator<Item = TextRange>) -> 
     damaged
 }
 
+/// `text` without its test code: every item marked as a test, or under a `cfg` that needs `test`,
+/// taken out whole. What's left is the code under test, so a test written into a file's `mod
+/// tests` leaves it as it was.
+pub fn without_test_code(text: &str) -> String {
+    let tree = SourceFile::parse(text, Edition::CURRENT).tree();
+    let mut kept = String::with_capacity(text.len());
+    let mut at = 0;
+    let mut walk = tree.syntax().preorder();
+    while let Some(event) = walk.next() {
+        let ra_ap_syntax::WalkEvent::Enter(node) = event else {
+            continue;
+        };
+        let marked = ast::AnyHasAttrs::cast(node.clone())
+            .is_some_and(|item| item.attrs().any(|attr| is_test_attribute(&attr)));
+        if marked {
+            let range = node.text_range();
+            kept.push_str(&text[at..usize::from(range.start())]);
+            at = usize::from(range.end());
+            walk.skip_subtree();
+        }
+    }
+    kept.push_str(&text[at..]);
+    kept
+}
+
 /// Whether a node is test code: a `#[test]`-like function, or under a `cfg` that needs `test`.
 fn is_test_only(node: &SyntaxNode) -> bool {
     node.ancestors().any(|ancestor| {
@@ -1483,8 +1510,10 @@ impl Finder<'_> {
         let column = self.text[self.lines[line - 1]..caret_start].chars().count() + 1;
         let ordinal = self.found.mutants.len() as u32 + 1;
         let skipped = nonzero::never_zero(node, &change)
+            .or_else(|| unsigned::never_negative(node, &change))
             .or_else(|| guarded::never_equal(node, &change, self.module, &self.facts.structs))
-            .or_else(|| edge::same_at_edge(node, &change, self.module, &self.facts.structs));
+            .or_else(|| edge::same_at_edge(node, &change, self.module, &self.facts.structs))
+            .or_else(|| profile::decided_by_profile(node, &change));
         self.found.mutants.push(Mutant {
             ordinal,
             id,

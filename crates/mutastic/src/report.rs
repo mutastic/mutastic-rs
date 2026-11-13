@@ -1,7 +1,7 @@
 //! The formats: `full` cards for people, `concise` lines for logs, `agent` text for coding agents,
 //! and `jsonl`, the `mutastic.events/v1` stream for tools. The words are the Java edition's.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::ops::Range;
 
@@ -14,6 +14,7 @@ use crate::suggest::{self, SuggestedTest};
 use crate::words::{self, Advice};
 
 pub mod files;
+pub mod next;
 pub mod sarif;
 
 pub const SCHEMA: &str = "mutastic.events/v1";
@@ -52,6 +53,18 @@ impl Format {
             "agent" => Some(Format::Agent),
             "jsonl" => Some(Format::Jsonl),
             _ => None,
+        }
+    }
+
+    /// The name `--format` takes for it: `jsonl`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Format::Full => "full",
+            Format::Brief => "brief",
+            Format::Concise => "concise",
+            Format::Grouped => "grouped",
+            Format::Agent => "agent",
+            Format::Jsonl => "jsonl",
         }
     }
 }
@@ -143,16 +156,22 @@ impl Style {
     /// `text` linking to `file`, when links are on, as the Java edition writes them: the line
     /// number stays in the text, as whether terminals honour one in a `file:` URI varies.
     fn link(self, file: &std::path::Path, text: &str) -> String {
-        if !self.links {
-            return text.to_string();
-        }
         let path = crate::workspace::slashed(file).replace('\\', "/");
         let path = if path.starts_with('/') {
             path
         } else {
             format!("/{path}")
         };
-        format!("\x1b]8;;file://{path}\x1b\\{text}\x1b]8;;\x1b\\")
+        self.link_url(&format!("file://{path}"), text)
+    }
+
+    /// `text` linking to `url`, when links are on.
+    fn link_url(self, url: &str, text: &str) -> String {
+        if self.links {
+            format!("\x1b]8;;{url}\x1b\\{text}\x1b]8;;\x1b\\")
+        } else {
+            text.to_string()
+        }
     }
 
     fn paint(self, code: &str, text: &str) -> String {
@@ -300,20 +319,23 @@ impl<'a> View<'a> {
         &self.mutant(result).id
     }
 
-    /// The tests suggested for an entry's mutants, each test once: two mutants of one line can
-    /// have the same call, and pasting it twice wouldn't compile. On a card with others, each
-    /// test's comment names the mutant it was found for.
-    fn suggested(&self, entry: &Entry) -> Vec<SuggestedTest> {
+    /// Each of an entry's mutants in order, with its test: none when there's no suggestion, or
+    /// when an earlier mutant's test is the same call, since pasting it twice wouldn't compile. On
+    /// a card with others, each test's comment names the mutant it was found for.
+    fn each_mutant<'e>(&self, entry: &Entry<'e>) -> Vec<(&'e MutantResult, Option<SuggestedTest>)> {
         let shared = !entry.also.is_empty();
-        let mut tests: Vec<SuggestedTest> = Vec::new();
+        let mut names: Vec<String> = Vec::new();
+        let mut each = Vec::new();
         for result in std::iter::once(entry.main).chain(entry.also.iter().copied()) {
-            if let Some(test) = self.suggested_test(result, shared) {
-                if !tests.iter().any(|kept| kept.name == test.name) {
-                    tests.push(test);
-                }
+            let test = self
+                .suggested_test(result, shared)
+                .filter(|test| !names.contains(&test.call));
+            if let Some(test) = &test {
+                names.push(test.call.clone());
             }
+            each.push((result, test));
         }
-        tests
+        each
     }
 
     fn suggested_test(&self, result: &MutantResult, named: bool) -> Option<SuggestedTest> {
@@ -326,20 +348,27 @@ impl<'a> View<'a> {
             .callable
             .as_ref()?;
         let at = self.named(result);
+        let edge = suggest::edge(mutant.operator, &mutant.operands);
         Some(suggest::test(
             callable,
             &mutant.file,
             suggestion,
             named.then_some(mutant.id.as_str()),
             at.as_ref(),
+            edge.as_ref(),
         ))
     }
 
     /// The missed mutants, a line's together, the line's most telling first.
     fn entries(&self) -> Vec<Entry<'a>> {
+        self.entries_where(|_| true)
+    }
+
+    /// The missed mutants `kept` keeps, a line's together, the line's most telling first.
+    fn entries_where(&self, kept: impl Fn(&MutantResult) -> bool) -> Vec<Entry<'a>> {
         let mut by_line: BTreeMap<(String, usize), Vec<&'a MutantResult>> = BTreeMap::new();
         for result in &self.report.results {
-            if result.status == Status::Survived {
+            if result.status == Status::Survived && kept(result) {
                 let mutant = self.mutant(result);
                 by_line
                     .entry((self.file(mutant), mutant.line))
@@ -394,27 +423,83 @@ impl<'a> View<'a> {
     }
 
     fn command(&self, verb: &str, ids: &str) -> String {
-        let dir = &self.report.project.given;
-        match verb {
-            "verify" => format!("mutastic verify {ids} {dir}"),
-            "explain" => format!("mutastic explain {ids} {dir}"),
-            "ignore" | "propose" => {
-                let how = if verb == "propose" {
-                    format!(" --propose --as=<equivalent|unreachable|…> --reason=\"{REASON}\"")
-                } else {
-                    " --reason=\"<why>\"".to_string()
-                };
-                match ids.split_once(',') {
-                    // One decision each: a card with several mutants names them all.
-                    Some(_) => format!(
-                        "mutastic ignore <id>{how} {dir} for each of {}",
-                        ids.replace(',', ", ")
-                    ),
-                    None => format!("mutastic ignore {ids}{how} {dir}"),
-                }
-            }
-            _ => format!("mutastic run --only={ids} {dir}"),
+        mutant_command(verb, ids, &self.report.project.given)
+    }
+
+    /// Where an entry stands in the order a run ranks its misses.
+    fn standing(&self, entry: &Entry) -> Standing {
+        let mutant = self.mutant(entry.main);
+        Standing {
+            prior: std::iter::once(entry.main)
+                .chain(entry.also.iter().copied())
+                .map(|r| prior(self.mutant(r)))
+                .max()
+                .unwrap_or(1),
+            covering: entry.main.covered_by.len(),
+            file: self.file(mutant),
+            line: mutant.line,
         }
+    }
+}
+
+/// The commands offered with each missed mutant, by the verb [`mutant_command`] takes: what proves
+/// a fix, what explains it, what ignores it or proposes ignoring it, and what runs it again.
+pub const MUTANT_COMMANDS: &[&str] = &["verify", "explain", "ignore", "propose", "run"];
+
+/// The command for `ids` (split by commas) in the package at `dir`, by one of
+/// [`MUTANT_COMMANDS`]: `mutastic verify mb2f8ae57 fixtures/pricing`. Every command the output
+/// offers for a mutant is written here, so a test can check each one parses.
+pub fn mutant_command(verb: &str, ids: &str, dir: &str) -> String {
+    match verb {
+        "verify" => format!("mutastic verify {ids} {dir}"),
+        "explain" => format!("mutastic explain {ids} {dir}"),
+        "ignore" | "propose" => {
+            let how = if verb == "propose" {
+                format!(" --propose --as=<equivalent|unreachable|…> --reason=\"{REASON}\"")
+            } else {
+                " --reason=\"<why>\"".to_string()
+            };
+            match ids.split_once(',') {
+                // One decision each: a card with several mutants names them all.
+                Some(_) => format!(
+                    "mutastic ignore <id>{how} {dir} for each of {}",
+                    ids.replace(',', ", ")
+                ),
+                None => format!("mutastic ignore {ids}{how} {dir}"),
+            }
+        }
+        _ => format!("mutastic run --only={ids} {dir}"),
+    }
+}
+
+/// `mutastic next fixtures/pricing`: what `next` offers to run again, for the next item.
+pub fn next_command(dir: &str) -> String {
+    format!("mutastic next {dir}")
+}
+
+/// Where an entry stands in the order a run ranks its misses, as the Java edition's `Finding.ranked`
+/// orders them and `mutastic next` queues them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Standing {
+    /// 2 for a condition or a removal, 1 for anything else: the best of the line's mutants.
+    pub prior: u8,
+    /// How many tests run the line: many run it and none checks it.
+    pub covering: usize,
+    /// Where it is in the code: its file and line.
+    pub file: String,
+    pub line: usize,
+}
+
+impl Standing {
+    /// The order: a condition or a removal first, then the line more tests run, then where it is
+    /// in the code. Where there's a baseline, `next` puts the lines with a new miss before all of
+    /// these ([`new_first`]).
+    pub fn order(&self, other: &Standing) -> std::cmp::Ordering {
+        other
+            .prior
+            .cmp(&self.prior)
+            .then(other.covering.cmp(&self.covering))
+            .then_with(|| (&self.file, self.line).cmp(&(&other.file, other.line)))
     }
 }
 
@@ -474,22 +559,36 @@ fn prior(mutant: &Mutant) -> u8 {
     }
 }
 
+/// `entries` with those holding a new miss first, then those the baseline already has, each in the
+/// order they were in: as the Java edition's `next` queues them, and `--fail-on-new` lists them.
+fn new_first<'a>(
+    view: &View<'a>,
+    entries: Vec<Entry<'a>>,
+    baseline: &BTreeSet<String>,
+) -> Vec<Entry<'a>> {
+    let (legacy, new): (Vec<Entry<'a>>, Vec<Entry<'a>>) = entries
+        .into_iter()
+        .partition(|entry| is_legacy(view, entry, baseline));
+    new.into_iter().chain(legacy).collect()
+}
+
+/// An entry the baseline knew of: every mutant on it was there already.
+fn is_legacy(view: &View, entry: &Entry, baseline: &BTreeSet<String>) -> bool {
+    std::iter::once(entry.main)
+        .chain(entry.also.iter().copied())
+        .all(|result| baseline.contains(view.id(result)))
+}
+
 /// `entries`, those most worth a test first, as the Java edition's `Finding.ranked`: by the best
 /// prior among an entry's mutants, then the one more tests reach (many tests run it and none checks
-/// it), and in their order otherwise.
-fn ranked<'a>(view: &View<'a>, mut entries: Vec<Entry<'a>>) -> Vec<Entry<'a>> {
-    entries.sort_by_key(|entry| {
-        let best = std::iter::once(entry.main)
-            .chain(entry.also.iter().copied())
-            .map(|r| prior(view.mutant(r)))
-            .max()
-            .unwrap_or(1);
-        (
-            std::cmp::Reverse(best),
-            std::cmp::Reverse(entry.main.covered_by.len()),
-        )
-    });
-    entries
+/// it), then where it is in the code ([`Standing::order`]).
+fn ranked<'a>(view: &View<'a>, entries: Vec<Entry<'a>>) -> Vec<Entry<'a>> {
+    let mut standings: Vec<(Standing, Entry<'a>)> = entries
+        .into_iter()
+        .map(|entry| (view.standing(&entry), entry))
+        .collect();
+    standings.sort_by(|(a, _), (b, _)| a.order(b));
+    standings.into_iter().map(|(_, entry)| entry).collect()
 }
 
 fn covered_by(result: &MutantResult) -> String {
@@ -539,12 +638,25 @@ fn method(found: &Crate, mutant: &Mutant) -> String {
     format!("{}()", found.functions[mutant.function].name)
 }
 
+/// A running mutant, for a worker's line: `src/lib.rs:26 discount() >= becomes >`, its change in
+/// the words a miss line uses.
+pub fn running(found: &Crate, mutant: &Mutant, style: Style) -> String {
+    let name = &found.functions[mutant.function].name;
+    format!(
+        "{}:{} {} {}",
+        mutant.file.display(),
+        mutant.line,
+        style.bold(&method(found, mutant)),
+        style.code(&words::advise(mutant, name, &BTreeMap::new()).change)
+    )
+}
+
 /// One file's line, as its last mutant finishes: `✓` and its count when nothing was missed, `❯`
 /// with each miss under it and each line no test reaches otherwise.
 pub fn file_finished(
     project: &str,
     found: &Crate,
-    results: &[MutantResult],
+    (results, took): (&[MutantResult], std::time::Duration),
     style: Style,
 ) -> String {
     let Some(first) = results.first() else {
@@ -573,7 +685,6 @@ pub fn file_finished(
             style.words.not_covered()
         )));
     }
-    let took: std::time::Duration = results.iter().map(|r| r.took).sum();
     let mut out = format!(
         " {} {} {} {}{}{} {}\n",
         if missed.is_empty() && uncovered.is_empty() {
@@ -778,8 +889,16 @@ fn or_only_flaky(report: &Report) -> &'static str {
 }
 
 /// `┌─ src/lib.rs:26`, then the changed line between the lines either side, the change marked under
-/// it; gives the gutter the rest of the card is indented by.
-fn frame(out: &mut String, view: &View, mutant: &Mutant, advice: &Advice, style: Style) -> String {
+/// it; gives the gutter the rest of the card is indented by. With `docs`, the mark links to its
+/// operator's section in the docs when links are on, as the Java edition's full card does.
+fn frame(
+    out: &mut String,
+    view: &View,
+    mutant: &Mutant,
+    advice: &Advice,
+    docs: Option<&str>,
+    style: Style,
+) -> String {
     let text = view.text(mutant);
     let lines: Vec<&str> = text.lines().collect();
     let width = (mutant.line + 1).to_string().len();
@@ -810,11 +929,12 @@ fn frame(out: &mut String, view: &View, mutant: &Mutant, advice: &Advice, style:
                 .chars()
                 .count()
                 .max(1);
+            let marked = style.red(&format!("{} {}", "^".repeat(caret_width), advice.caret));
             let _ = writeln!(
                 out,
                 "{g}{bar} {}{}",
                 " ".repeat(mutant.column - 1),
-                style.red(&format!("{} {}", "^".repeat(caret_width), advice.caret))
+                docs.map_or_else(|| marked.clone(), |url| style.link_url(url, &marked))
             );
         }
     }
@@ -1030,7 +1150,7 @@ fn brief_card(out: &mut String, view: &View, entry: &Entry, style: Style) {
         ),
         style.code(&advice.headline)
     );
-    let g = frame(out, view, mutant, &advice, style);
+    let g = frame(out, view, mutant, &advice, None, style);
     let equals = style.dim("=");
     for (index, note) in advice.notes.iter().enumerate() {
         if index == 0 {
@@ -1072,7 +1192,8 @@ fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
             String::new()
         }
     );
-    let g = frame(out, view, mutant, &advice, style);
+    let docs = crate::operator_docs::url(mutant.operator);
+    let g = frame(out, view, mutant, &advice, docs.as_deref(), style);
     let equals = style.dim("=");
     before_and_after(out, &g, &view.changed_lines(mutant), style);
     for other in &entry.also {
@@ -1110,23 +1231,7 @@ fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
             let _ = writeln!(out, "{g}        {}", style.dim(&style.code(note)));
         }
     }
-    let _ = writeln!(
-        out,
-        "{g}{equals} {}: {}",
-        style.green(&style.bold("help")),
-        style.code(&advice.help)
-    );
-    let tests = view.suggested(entry);
-    if !tests.is_empty() {
-        let _ = writeln!(out);
-        for test in &tests {
-            let _ = writeln!(out, "{g}        // in {}", test.place);
-            for line in &test.lines {
-                let _ = writeln!(out, "{g}        {line}");
-            }
-        }
-        let _ = writeln!(out, "{g}        {}", style.dim(CHECK_TODAY));
-    }
+    help_and_tests(out, view, entry, &advice.help, &g, style);
     let ids = id_list(view, entry);
     let _ = writeln!(
         out,
@@ -1147,6 +1252,55 @@ fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
         style.dim("or ignore "),
         view.command("ignore", &ids)
     );
+}
+
+/// `= help: the fix`, then each test to add. When the card has a test for more than one of its
+/// mutants, each test comes after its own mutant's fix and id, as the Java edition gives them: the
+/// lead's fix describes only the lead's test.
+fn help_and_tests(out: &mut String, view: &View, entry: &Entry, help: &str, g: &str, style: Style) {
+    let each = view.each_mutant(entry);
+    let own = each.iter().filter(|(_, test)| test.is_some()).count() > 1;
+    let shown = if own {
+        each_help(&each).to_string()
+    } else {
+        style.code(help)
+    };
+    let _ = writeln!(
+        out,
+        "{g}{} {}: {shown}",
+        style.dim("="),
+        style.green(&style.bold("help"))
+    );
+    let mut any = false;
+    for (result, test) in &each {
+        if own {
+            let fix = style.code(&view.advice(result).help);
+            let id = style.dim(&format!(" · {}", view.id(result)));
+            let _ = writeln!(out, "\n{g}        {fix}{id}");
+        }
+        if let Some(test) = test {
+            if !own {
+                let _ = writeln!(out);
+            }
+            any = true;
+            let _ = writeln!(out, "{g}        // in {}", test.place);
+            for line in &test.lines {
+                let _ = writeln!(out, "{g}        {line}");
+            }
+        }
+    }
+    if any {
+        let _ = writeln!(out, "{g}        {}", style.dim(CHECK_TODAY));
+    }
+}
+
+/// What `help:` says when each test has its own fix: one test each, if every mutant has one.
+fn each_help(each: &[(&MutantResult, Option<SuggestedTest>)]) -> &'static str {
+    if each.iter().all(|(_, test)| test.is_some()) {
+        "one test for each mutant"
+    } else {
+        "for each mutant"
+    }
 }
 
 /// Under a suggested test, as the Java edition says it: the value it asserts is what the code
@@ -1240,19 +1394,20 @@ fn summary(out: &mut String, report: &Report, style: Style) {
     let rows = rows(report, style);
     let width = rows.iter().map(|(label, _)| label.len()).max().unwrap_or(0);
     out.push('\n');
-    for (label, value) in rows {
-        let _ = writeln!(out, " {}  {value}", style.dim(&format!("{label:>width$}")));
-    }
-    let _ = writeln!(out, "\n {}", verdict(report, style));
+    // What to do next sits under the misses it's about, and the score, with its verdict, is the
+    // last line: the one the cursor lands under.
     if report.count(Status::Survived) > 0 {
         let dir = &report.project.given;
         let _ = writeln!(
             out,
-            "{}",
+            "{}\n",
             style.dim(&format!(
                 " Next: mutastic verify <id> {dir} · mutastic run --only=<id> {dir} · mutastic explain <id> {dir}"
             ))
         );
+    }
+    for (label, value) in rows {
+        let _ = writeln!(out, " {}  {value}", style.dim(&format!("{label:>width$}")));
     }
 }
 
@@ -1322,12 +1477,7 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
         format!(
             "{} {}",
             duration(report.took),
-            style.dim(&format!(
-                "(setup {}, coverage {}, mutants {})",
-                duration(report.setup),
-                duration(report.coverage),
-                duration(report.mutants)
-            ))
+            style.dim(&format!("({})", phases(report)))
         ),
     ));
     rows.push((
@@ -1345,6 +1495,24 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
     }
     rows.push(("Score", score_row(report, style)));
     rows
+}
+
+/// The run's time by phase, `setup 3.5s, build 9m41s, coverage 7m23s, mutants 34m12s, checking
+/// 51.0s`: the build and checking where they were timed.
+fn phases(report: &Report) -> String {
+    let mut parts = vec![format!(
+        "setup {}",
+        duration(report.setup.saturating_sub(report.build))
+    )];
+    if !report.build.is_zero() {
+        parts.push(format!("build {}", duration(report.build)));
+    }
+    parts.push(format!("coverage {}", duration(report.coverage)));
+    parts.push(format!("mutants {}", duration(report.mutants)));
+    if let Some(checking) = report.checking {
+        parts.push(format!("checking {}", duration(checking)));
+    }
+    parts.join(", ")
 }
 
 /// `0 clean | 1 with misses (1)`: the source files with mutants, by whether any was missed or not
@@ -1507,13 +1675,8 @@ fn test_runs_row(report: &Report, style: Style) -> String {
 }
 
 fn score_row(report: &Report, style: Style) -> String {
-    let threshold = report.threshold;
     let Some(score) = report.score() else {
-        return format!(
-            "{}{}",
-            style.bold("none"),
-            style.dim(&format!(" (no mutants to score)  threshold {threshold}"))
-        );
+        return format!("{}  {}", style.bold("none"), verdict(report, style));
     };
     let score = percent(Some(score));
     let covered = if report.count(Status::NoCoverage) > 0 && report.covered_score().is_some() {
@@ -1525,14 +1688,14 @@ fn score_row(report: &Report, style: Style) -> String {
         String::new()
     };
     format!(
-        "{}{}{}{covered}",
+        "{}  {}{}{covered}",
         if report.passed() {
             style.green(&style.bold(&score))
         } else {
             style.red(&style.bold(&score))
         },
-        delta(report, style),
-        style.dim(&format!("  threshold {threshold}"))
+        verdict(report, style),
+        delta(report, style)
     )
 }
 
@@ -1563,10 +1726,12 @@ fn delta(report: &Report, style: Style) -> String {
     format!("  {shown}{sameness}")
 }
 
-/// The last line: PASS or FAIL, and why.
+/// PASS or FAIL, and why, on the Score line; with `--fail-on-new`, on the new misses.
 fn verdict(report: &Report, style: Style) -> String {
     let missed = report.count(Status::Survived);
-    if report.score().is_none() {
+    if let Some(judged) = &report.fail_on_new {
+        on_new_misses(report, judged, style)
+    } else if report.score().is_none() {
         format!(
             "{} {}",
             style.label("PASS", GREEN),
@@ -1580,8 +1745,9 @@ fn verdict(report: &Report, style: Style) -> String {
                 style.words.all_detected().to_string()
             } else {
                 format!(
-                    "{missed} {}, above the threshold.",
-                    style.words.undetected()
+                    "{missed} {}, above the threshold of {}.",
+                    style.words.undetected(),
+                    report.threshold
                 )
             })
         )
@@ -1590,7 +1756,7 @@ fn verdict(report: &Report, style: Style) -> String {
             "{} {}",
             style.label("FAIL", RED),
             style.red(&format!(
-                "Score below {}: {missed} {}, {} {}.",
+                "Below the threshold of {}: {missed} {}, {} {}.",
                 report.threshold,
                 style.words.undetected(),
                 report.count(Status::NoCoverage),
@@ -1598,6 +1764,29 @@ fn verdict(report: &Report, style: Style) -> String {
             ))
         )
     }
+}
+
+/// With `--fail-on-new`: PASS while every mutant no test catches is in the baseline, else FAIL with
+/// the new ones by id, as the Java edition says it.
+fn on_new_misses(report: &Report, judged: &crate::baseline::FailOnNew, style: Style) -> String {
+    let added = judged.new_misses(report);
+    let known = judged.in_baseline(report);
+    if added.is_empty() {
+        return format!(
+            "{} {}",
+            style.label("PASS", GREEN),
+            style.green(&format!("No new misses: {known} in the baseline."))
+        );
+    }
+    format!(
+        "{} {}",
+        style.label("FAIL", RED),
+        style.red(&format!(
+            "{}: {}.",
+            judged.new_misses_counted(added.len(), known),
+            added.join(", ")
+        ))
+    )
 }
 
 /// "not mutated: unsafe (3), …": the code left alone around unsafe, and how to include it; then
@@ -1632,10 +1821,16 @@ fn agent(report: &Report, style: Style) -> String {
     let dir = &report.project.given;
     let _ = writeln!(
         out,
-        "mutastic: {} · score {} (threshold {}{}) · {missed} {}, {not_covered} {}, {} {} of {} mutants{}",
-        if report.passed() { "PASS" } else { "FAIL" },
-        report.score().map_or("none (no mutants to score)".into(), |s| format!("{s:.1}%")),
-        report.threshold,
+        "mutastic: {} · score {} ({}{}) · {missed} {}, {not_covered} {}, {} {} of {} mutants{}",
+        agent_verdict(report),
+        report
+            .score()
+            .map_or("none (no mutants to score)".into(), |s| format!("{s:.1}%")),
+        if report.fail_on_new.is_some() {
+            "threshold not applied".to_string()
+        } else {
+            format!("threshold {}", report.threshold)
+        },
         if not_covered == 0 || report.covered_score().is_none() {
             String::new()
         } else {
@@ -1688,7 +1883,11 @@ fn agent(report: &Report, style: Style) -> String {
     for line in not_mutated(report) {
         let _ = writeln!(out, "{line}");
     }
-    let entries = ranked(&view, view.entries());
+    let ranked = ranked(&view, view.entries());
+    let entries = match &report.fail_on_new {
+        Some(judged) => new_first(&view, ranked, &judged.baseline),
+        None => ranked,
+    };
     for (index, entry) in entries.iter().take(10).enumerate() {
         let _ = write!(out, "\n{}. {}", index + 1, agent_entry(&view, entry, words));
     }
@@ -1750,6 +1949,15 @@ fn agent(report: &Report, style: Style) -> String {
     out
 }
 
+/// `PASS` or `FAIL`; with `--fail-on-new`, the new misses that decided it.
+fn agent_verdict(report: &Report) -> String {
+    match &report.fail_on_new {
+        Some(judged) => judged.verdict(report),
+        None if report.passed() => "PASS".into(),
+        None => "FAIL".into(),
+    }
+}
+
 fn agent_entry(view: &View, entry: &Entry, words: Vocabulary) -> String {
     let result = entry.main;
     let mutant = view.mutant(result);
@@ -1795,15 +2003,27 @@ fn agent_entry(view: &View, entry: &Entry, words: Vocabulary) -> String {
     for note in &advice.notes {
         let _ = writeln!(out, "   evidence: {note}");
     }
-    let _ = writeln!(out, "   fix: {}", advice.help);
-    let tests = view.suggested(entry);
-    for test in &tests {
-        let _ = writeln!(out, "   test to add in {}:", test.place);
-        for line in &test.lines {
-            let _ = writeln!(out, "     {line}");
+    let each = view.each_mutant(entry);
+    let own = each.iter().filter(|(_, test)| test.is_some()).count() > 1;
+    let fix = if own {
+        each_help(&each)
+    } else {
+        advice.help.as_str()
+    };
+    let _ = writeln!(out, "   fix: {fix}");
+    for (result, test) in &each {
+        if own {
+            let help = &view.advice(result).help;
+            let _ = writeln!(out, "   fix for {}: {help}", view.id(result));
+        }
+        if let Some(test) = test {
+            let _ = writeln!(out, "   test to add in {}:", test.place);
+            for line in &test.lines {
+                let _ = writeln!(out, "     {line}");
+            }
         }
     }
-    if !tests.is_empty() {
+    if each.iter().any(|(_, test)| test.is_some()) {
         let _ = writeln!(out, "     // {CHECK_TODAY}");
     }
     let _ = writeln!(out, "   done when: {} passes", view.command("verify", &ids));
@@ -1812,28 +2032,48 @@ fn agent_entry(view: &View, entry: &Entry, words: Vocabulary) -> String {
     out
 }
 
-/// The `mutastic.events/v1` stream.
-fn jsonl(report: &Report) -> String {
-    let view = View { report };
-    let mut lines = vec![json!({
+/// `run-started`: the package, the rules for agents, and what decides a mutant's meaning, so runs
+/// can be compared: the build's settings, which mutastic forces for overflow checks and debug
+/// assertions, and how unsafe code was treated.
+pub fn run_started(
+    package: &str,
+    profile: &serde_json::Value,
+    unsafe_mode: crate::sites::UnsafeMode,
+    share: Option<serde_json::Value>,
+) -> serde_json::Value {
+    let mut started = json!({
         "schema": SCHEMA,
         "edition": EDITION,
         "reason": "run-started",
-        "project": report.project.package,
+        "project": package,
         "rule": RULE,
         "decline": DECLINE,
-        // What decides a mutant's meaning, so runs can be compared: the build's settings, which
-        // mutastic forces for overflow checks and debug assertions, and how unsafe code was treated.
         "profile": {
             "name": "mutastic",
-            "optLevel": report.profile["opt_level"],
-            "overflowChecks": report.profile["overflow_checks"],
-            "debugAssertions": report.profile["debug_assertions"],
+            "optLevel": profile["opt_level"],
+            "overflowChecks": profile["overflow_checks"],
+            "debugAssertions": profile["debug_assertions"],
         },
-        "unsafe": report.unsafe_mode.name(),
-    })];
-    if let Some(share) = &report.share {
-        lines[0]["share"] = share.json();
+        "unsafe": unsafe_mode.name(),
+    });
+    if let Some(share) = share {
+        started["share"] = share;
+    }
+    started
+}
+
+/// The `mutastic.events/v1` stream.
+fn jsonl(report: &Report) -> String {
+    let view = View { report };
+    let mut lines = Vec::new();
+    // Streamed as the build finished, when the run's progress went out live.
+    if !report.streamed {
+        lines.push(run_started(
+            &report.project.package,
+            &report.profile,
+            report.unsafe_mode,
+            report.share.as_ref().map(crate::shares::Tag::json),
+        ));
     }
     for result in &report.results {
         lines.push(mutant_event(&view, result));
@@ -1866,6 +2106,11 @@ fn jsonl(report: &Report) -> String {
         json!(report.threshold)
     };
     finished["passed"] = json!(report.passed());
+    if let Some(judged) = &report.fail_on_new {
+        finished["failOnNew"] = json!(true);
+        finished["newMisses"] = json!(judged.new_misses(report));
+        finished["inBaseline"] = json!(judged.in_baseline(report));
+    }
     finished["coveredScore"] = report
         .covered_score()
         .map_or(Value::Null, |s| json!(round1(s)));
@@ -2014,6 +2259,17 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
         },
         "mutation": mutation,
     });
+    if let (Some(docs), Some(fields)) = (
+        crate::operator_docs::url(mutant.operator),
+        event.as_object_mut(),
+    ) {
+        // Beside the operator it describes, as the Java edition writes it.
+        let at = fields
+            .keys()
+            .position(|key| key == "operator")
+            .map_or(fields.len(), |operator| operator + 1);
+        fields.shift_insert(at, "docs".to_string(), json!(docs));
+    }
     if let Some(reason) = &result.reason {
         event["statusReason"] = json!(reason);
         if result.status == Status::Ignored {
@@ -2204,7 +2460,8 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
         ),
     };
     let _ = writeln!(out, "\n {label} {}", style.bold(&outcome));
-    let g = frame(out, view, mutant, &advice, style);
+    let docs = crate::operator_docs::url(mutant.operator);
+    let g = frame(out, view, mutant, &advice, docs.as_deref(), style);
     before_and_after(out, &g, &view.changed_lines(mutant), style);
     let mut notes = advice.notes.clone();
     if !result.covered_by.is_empty() {
@@ -2232,6 +2489,80 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
     );
 }
 
+/// What `About this mutant` says, a row at a time, in the words both the text and the
+/// `mutant-explained` event give.
+struct About {
+    /// The code the change replaces, and what's put in its place.
+    from: String,
+    to: String,
+    operator: String,
+    operator_description: String,
+    fingerprint: String,
+    id: String,
+    id_note: &'static str,
+    function: String,
+    site: String,
+    last: Option<LastRun>,
+    last_words: String,
+}
+
+impl About {
+    fn of(view: &View, result: &MutantResult, last: Option<LastRun>) -> About {
+        let mutant = view.mutant(result);
+        let function = &view.report.found.functions[mutant.function];
+        let text = view.text(mutant);
+        let from = sites_plain(&text[mutant.site.clone()]);
+        let operator_description = crate::callrules::find(mutant.operator).map_or_else(
+            || view.advice(result).change,
+            |rule| rule.explanation.clone(),
+        );
+        About {
+            site: format!(
+                "`{from}` in {}, line {}, column {}",
+                function.path, mutant.line, mutant.column
+            ),
+            from,
+            to: mutant.replacement.clone(),
+            operator: mutant.operator.to_string(),
+            operator_description,
+            fingerprint: mutant.fingerprint.clone(),
+            id: format!(
+                "{}: `m` and the first 8 hex digits of its fingerprint, {}, a SHA-256 of the crate, function, operator, site and change",
+                mutant.id, mutant.fingerprint
+            ),
+            id_note: "no line number goes in, so the id stays the same when code above it moves",
+            function: function.path.clone(),
+            last_words: last_words(last.as_ref()),
+            last,
+        }
+    }
+}
+
+/// What the last full run said of the mutant, in words.
+fn last_words(last: Option<&LastRun>) -> String {
+    match last {
+        None => "none yet: `run` or `next` records one".to_string(),
+        Some(run) => match run.status.as_str() {
+            "Killed" => format!(
+                "caught{}",
+                run.caught_by
+                    .as_ref()
+                    .map(|t| format!(" by {t}"))
+                    .unwrap_or_default()
+            ),
+            "Survived" => "missed: every covering test still passed".into(),
+            "Timeout" => "caught: its tests ran out of time".into(),
+            "NoCoverage" => "not covered: no test reached its line".into(),
+            "RuntimeError" => "crashed where a crash proves nothing".into(),
+            _ => "skipped".into(),
+        },
+    }
+}
+
+/// What the change replaces, in the text's words.
+const CHANGE_NOTE: &str =
+    "the code the switch puts in place of the original when this mutant is live";
+
 /// `About this mutant`: the change, the operator, the id, the site, and the last full run.
 fn about(
     out: &mut String,
@@ -2240,8 +2571,7 @@ fn about(
     last: Option<LastRun>,
     style: Style,
 ) {
-    let mutant = view.mutant(result);
-    let function = &view.report.found.functions[mutant.function];
+    let about = About::of(view, result, last);
     let title = " About this mutant ";
     let _ = writeln!(
         out,
@@ -2249,7 +2579,6 @@ fn about(
         style.bold(title),
         style.dim(&"─".repeat(66 - title.len()))
     );
-    let text = view.text(mutant);
     let row = |out: &mut String, label: &str, first: String, rest: Vec<String>| {
         let _ = writeln!(
             out,
@@ -2264,64 +2593,65 @@ fn about(
     row(
         out,
         "change",
-        style.bold(&format!(
-            "{} → {}",
-            sites_plain(&text[mutant.site.clone()]),
-            mutant.replacement
-        )),
-        vec!["the code the switch puts in place of the original when this mutant is live".into()],
+        style.bold(&format!("{} → {}", about.from, about.to)),
+        vec![CHANGE_NOTE.into()],
     );
     row(
         out,
         "operator",
-        format!(
-            "{}: {}",
-            mutant.operator,
-            crate::callrules::find(mutant.operator).map_or_else(
-                || view.advice(result).change,
-                |rule| rule.explanation.clone()
-            )
-        ),
-        Vec::new(),
+        format!("{}: {}", about.operator, about.operator_description),
+        // Where the docs say more, as text to copy in any terminal; a rules file's operator has
+        // no section there.
+        crate::operator_docs::url(&about.operator)
+            .map(|url| format!("docs: {url}"))
+            .into_iter()
+            .collect(),
     );
-    row(
-        out,
-        "id",
-        format!(
-            "{}: `m` and the first 8 hex digits of its fingerprint, {}, a SHA-256 of the crate, function, operator, site and change",
-            mutant.id, mutant.fingerprint
-        ),
-        vec!["no line number goes in, so the id stays the same when code above it moves".into()],
-    );
-    row(
-        out,
-        "site",
-        format!(
-            "`{}` in {}, line {}, column {}",
-            sites_plain(&text[mutant.site.clone()]),
-            function.path,
-            mutant.line,
-            mutant.column
-        ),
-        Vec::new(),
-    );
-    let last = match last {
-        None => "none yet: a full run records one".to_string(),
-        Some(run) => match run.status.as_str() {
-            "Killed" => format!(
-                "caught{}",
-                run.caught_by
-                    .map(|t| format!(" by {t}"))
-                    .unwrap_or_default()
-            ),
-            "Survived" => "missed: every covering test still passed".into(),
-            "Timeout" => "caught: its tests ran out of time".into(),
-            "NoCoverage" => "not covered: no test reached its line".into(),
-            "RuntimeError" => "crashed where a crash proves nothing".into(),
-            _ => "skipped".into(),
-        },
+    row(out, "id", about.id.clone(), vec![about.id_note.into()]);
+    row(out, "site", about.site.clone(), Vec::new());
+    row(out, "last run", about.last_words.clone(), Vec::new());
+}
+
+/// `explain --format=jsonl`: the events a run's `--format=jsonl` writes for the one mutant, then a
+/// `mutant-explained` event with what `About this mutant` says, a field for each row, as the Java
+/// edition writes it: `applied` is at the source level here, where Java's is at the bytecode.
+pub fn explained_jsonl(report: &Report, last: Option<LastRun>) -> String {
+    let view = View { report };
+    let mut out = jsonl(report);
+    let Some(result) = report.results.first() else {
+        return out;
     };
-    row(out, "last run", last, Vec::new());
+    let about = About::of(&view, result, last);
+    let mut event = json!({
+        "schema": SCHEMA,
+        "edition": EDITION,
+        "reason": "mutant-explained",
+        "id": view.id(result),
+        // As `mutation.applied` has it, at the source level, with what that level adds: the
+        // Java edition's has the bytecode's.
+        "applied": {
+            "level": "source",
+            "text": format!("{} -> {}", about.from, about.to),
+            "original": about.from,
+            "replacement": about.to,
+            "description": CHANGE_NOTE,
+        },
+        "operator": { "id": about.operator, "description": about.operator_description },
+        "fingerprint": about.fingerprint,
+        "idDescription": about.id,
+        "idNote": about.id_note,
+        "site": { "method": about.function, "description": about.site },
+    });
+    if let Some(last) = &about.last {
+        let mut run = json!({ "status": last.status, "description": about.last_words });
+        if let Some(caught_by) = &last.caught_by {
+            run["caughtBy"] = json!(caught_by);
+        }
+        event["lastRun"] = run;
+    }
+    out.push_str(&event.to_string());
+    out.push('\n');
+    out
 }
 
 #[cfg(test)]

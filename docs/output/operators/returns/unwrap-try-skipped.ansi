@@ -6,6 +6,7 @@
   "fingerprint": "7e54e30e49188313",
   "status": "Ignored",
   "operator": "mutastic/unwrap-try",
+  "docs": "https://docs.mutastic.io/rust/operators/returns/#unwrap-try",
   "location": {
     "file": "src/returns.rs",
     "line": 30,

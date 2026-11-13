@@ -14,13 +14,9 @@ use serde_json::Value;
 mod common;
 use common::schema;
 
-/// A copy of the pricing fixture in a directory of its own, without its `target`.
+/// A copy of the pricing fixture this test process has to itself.
 fn pricing(label: &str) -> PathBuf {
-    let to = std::env::temp_dir().join(format!("mutastic-shares-{label}-{}", std::process::id()));
-    std::fs::remove_dir_all(&to).ok();
-    let from = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/pricing");
-    copy(&from, &to, &["target"]);
-    to
+    common::own_copy("pricing", &format!("shares-{label}"))
 }
 
 /// `from` into `to`, leaving out entries named in `skip`.
@@ -38,6 +34,17 @@ fn copy(from: &Path, to: &Path, skip: &[&str]) {
             std::fs::copy(entry.path(), path).unwrap();
         }
     }
+}
+
+/// A stream without the events a live run writes as it goes, its phases and progress: shares put
+/// together have none, as nothing runs then.
+fn settled(text: &str) -> String {
+    text.lines()
+        .filter(|line| {
+            !line.contains(r#""reason":"phase-"#) && !line.contains(r#""reason":"progress""#)
+        })
+        .map(|line| format!("{line}\n"))
+        .collect()
 }
 
 /// `mutastic` run in `dir`: its exit status, stdout and stderr.
@@ -209,7 +216,7 @@ fn two_shares_put_together_are_the_whole_run() {
         );
         assert_eq!(code, 0, "{out}{err}");
         if *format == "jsonl" {
-            assert_eq!(untimed(&out), untimed(whole));
+            assert_eq!(untimed(&out), untimed(&settled(whole)));
             // Each result is its share's, to the millisecond.
             for event in events(&out)
                 .iter()
@@ -271,7 +278,11 @@ fn two_shares_put_together_are_the_whole_run() {
     // One share of one is a share too, and is the whole run.
     let (code, out, err) = mutastic(&dir, &["run", "--shard=1/1", "--format=jsonl"]);
     assert_eq!(code, 0, "{out}{err}");
-    assert_eq!(events(&out)[0]["share"]["of"], 1);
+    let started = events(&out)
+        .into_iter()
+        .find(|e| e["reason"] == "run-started")
+        .unwrap();
+    assert_eq!(started["share"]["of"], 1);
     forget_last_runs(&dir);
     let (code, out, err) = mutastic(
         &dir,
@@ -282,8 +293,7 @@ fn two_shares_put_together_are_the_whole_run() {
         ],
     );
     assert_eq!(code, 0, "{out}{err}");
-    assert_eq!(untimed(&out), untimed(&whole[0]));
-    std::fs::remove_dir_all(&dir).ok();
+    assert_eq!(untimed(&out), untimed(&settled(&whole[0])));
 }
 
 /// A share's events, read to change.
@@ -496,5 +506,4 @@ fn shares_that_arent_one_run_are_refused() {
     }
     let (code, out, err) = mutastic(&dir, &["run", "--from-shards=cases/both", "--format=jsonl"]);
     assert_eq!(code, 0, "the cases' own shares put together: {out}{err}");
-    std::fs::remove_dir_all(&dir).ok();
 }

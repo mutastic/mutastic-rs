@@ -5,18 +5,19 @@
     reason = "a helper here asserts as the tests it serves do: a value that isn't there fails the test"
 )]
 
+use std::io::BufRead as _;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
 mod common;
 use common::schema;
 
+/// A fixture to run as it's checked in, in a copy this test process has to itself.
 fn fixture(name: &str) -> String {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures")
-        .join(name)
+    common::own_copy(name, &format!("samples-{name}"))
         .display()
         .to_string()
 }
@@ -93,7 +94,11 @@ fn pricing_misses_only_the_edge_of_the_discount() {
     assert_eq!(finished["reason"], "run-finished");
     assert_eq!(finished["score"], 90.9);
     assert_eq!(finished["killed"], 10);
-    assert_eq!(events[0]["rule"], mutastic::report::RULE);
+    let started = events
+        .iter()
+        .find(|e| e["reason"] == "run-started")
+        .unwrap();
+    assert_eq!(started["rule"], mutastic::report::RULE);
     assert!(events.iter().all(|e| e["edition"] == "rust"), "{stdout}");
     assert_eq!(finished["toolchain"]["name"], "rustc");
     assert!(
@@ -122,7 +127,7 @@ fn pricing_misses_only_the_edge_of_the_discount() {
 
             // in mod tests
             #[test]
-            fn discount_with_total_100() {{
+            fn discount_at_the_total_edge() {{
                 assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
             }}
             check today's value is the one you intend: the test pins what the code does now
@@ -145,7 +150,26 @@ fn pricing_misses_only_the_edge_of_the_discount() {
 #[test]
 fn every_shape_gets_a_card() {
     let dir = fixture("truth");
-    let (_, cards) = mutastic(&["run", &dir, "--format=full"]);
+    let (_, listed) = mutastic(&["mutants", &dir]);
+    // Not the two that make `in_while` count to `i32::MAX` before it overflows, ten seconds each:
+    // neither is missed, so neither has a card, and every mutant of mutastic this test reaches
+    // would wait for them.
+    let endless = ["m417a9a25", "m7539bd4b"];
+    let mutants: Vec<&str> = listed
+        .lines()
+        .filter_map(|line| line.split(' ').next())
+        .filter(|word| word.len() == 9 && word.starts_with('m'))
+        .collect();
+    assert!(
+        endless.iter().all(|id| mutants.contains(id)),
+        "both are still the fixture's: {listed}"
+    );
+    let ids: Vec<&str> = mutants
+        .into_iter()
+        .filter(|id| !endless.contains(id))
+        .collect();
+    let only = format!("--only={}", ids.join(","));
+    let (_, cards) = mutastic(&["run", &dir, "--format=full", &only]);
     assert!(cards.contains("[✗ MISSED]"), "{cards}");
     assert!(
         cards.contains(
@@ -213,7 +237,6 @@ fn a_word_a_command_doesnt_take_stops_it() {
         "{out}"
     );
     assert!(out.contains("mutastic: m0b3873d0 is caught by "), "{out}");
-    std::fs::remove_dir_all(&copy).ok();
 }
 
 /// Unsafe code is left alone, code near it is marked and runs isolated, and a crash counts as caught
@@ -228,7 +251,10 @@ fn unsafe_code_is_fenced_off_and_crashes_are_told_apart() {
         let errors: Vec<String> = schema().iter_errors(event).map(|e| e.to_string()).collect();
         assert!(errors.is_empty(), "{event}\n{}", errors.join("\n"));
     }
-    let started = &events[0];
+    let started = events
+        .iter()
+        .find(|e| e["reason"] == "run-started")
+        .unwrap();
     assert_eq!(started["profile"]["overflowChecks"], true, "{started}");
     assert_eq!(started["profile"]["debugAssertions"], true, "{started}");
     assert_eq!(started["unsafe"], "skip");
@@ -295,7 +321,9 @@ fn run_with(dir: &str, format: &str, colour: bool) -> (String, String) {
         .env_remove("MUTASTIC_FORMAT")
         .env_remove("MUTASTIC_AGENT")
         .env_remove("NO_COLOR")
-        .env_remove("FORCE_COLOR");
+        .env_remove("FORCE_COLOR")
+        // Whatever terminal runs the tests, no progress in its tab: that's tested on its own.
+        .env("MUTASTIC_TERM_PROGRESS", "false");
     if colour {
         command.env("FORCE_COLOR", "1");
     }
@@ -418,19 +446,15 @@ fn the_full_view_is_coloured_as_the_java_editions() {
     );
     shows(&out, "Start at", " \x1b[2m Start at\x1b[0m  ");
     shows(&out, "Duration's parts are dim", "\x1b[2m(setup ");
-    // The fixture runs in place, so a run before this one may have left a last run to compare with.
+    // The score is the last line, with its verdict: PASS on green, and why in green. The fixture
+    // runs in place, so a run before this one may have left a last run to compare with.
     let score = regex::Regex::new(
-        r" \x1b\[2m    Score\x1b\[0m  \x1b\[32m\x1b\[1m90\.9%\x1b\[0m\x1b\[0m(?<delta>\x1b\[2m  = vs last run\x1b\[0m\x1b\[2m \((?<sameness>[a-z ]+)\)\x1b\[0m)?\x1b\[2m  threshold 80\x1b\[0m\n",
+        r" \x1b\[2m    Score\x1b\[0m  \x1b\[32m\x1b\[1m90\.9%\x1b\[0m\x1b\[0m  \x1b\[42;30;1m PASS \x1b\[0m \x1b\[32m1 missed, above the threshold of 80\.\x1b\[0m(?<delta>\x1b\[2m  = vs last run\x1b\[0m\x1b\[2m \((?<sameness>[a-z ]+)\)\x1b\[0m)?\n$",
     )
     .unwrap();
     assert!(
         score.is_match(&out),
-        "a passing score is bold green, its threshold dim: {out:?}"
-    );
-    shows(
-        &out,
-        "PASS on green",
-        "\n \x1b[42;30;1m PASS \x1b[0m \x1b[32m1 missed, above the threshold.\x1b[0m\n",
+        "a passing score is bold green, its verdict PASS on green, last: {out:?}"
     );
 
     let (out, err) = run_with(&dir, "--format=concise", false);
@@ -446,7 +470,6 @@ fn the_full_view_is_coloured_as_the_java_editions() {
         "Worst at, plain",
         "  Worst at  Pricing::discount() 1 ✗\n",
     );
-    std::fs::remove_dir_all(&copy).ok();
 }
 
 /// The agent's list is ranked as the Java edition ranks it: a condition or a removal before
@@ -466,32 +489,56 @@ fn missed_mutants_are_ranked_as_the_java_edition_ranks_them() {
     );
 }
 
-/// At a terminal, the counter is one line redrawn in place as each mutant finishes, as the Java
-/// edition's: cleared before a file's line, drawn again after it, and cleared before the result.
+/// At a terminal, the phase's line is a live block redrawn in place, with wrapping off while it's
+/// drawn: each permanent line clears it first and draws it again beneath, and it's cleared before
+/// the result.
 #[test]
-fn the_counter_is_redrawn_in_place() {
+fn the_live_line_is_redrawn_in_place() {
     // A copy of its own: runs of one package side by side share its build in target/mutastic.
     let copy = copy_of("pricing", "counter");
     let dir = copy.display().to_string();
     let (_, err) = run_with(&dir, "--progress=bar", false);
+    // Each frame is one synchronized write; inside them, what the terminal is told.
+    let (opened, closed) = (
+        err.matches("\x1b[?2026h").count(),
+        err.matches("\x1b[?2026l").count(),
+    );
+    assert!(opened > 0 && opened == closed, "{err:?}");
+    let err = err.replace("\x1b[?2026h", "").replace("\x1b[?2026l", "");
     let clear = "\r\x1b[2K";
-    let counter = regex::Regex::new(
-        r"\[11/11\] ✓ 10 caught · ✗ 1 missed · ○ 0 not covered · ⏱ 0 timed out  \d+:\d\d",
+    // Piped, it can't ask the terminal its width, so it takes 100 columns: the bar, the
+    // weighted percent, then the fates in as many words as fit.
+    let live = regex::Regex::new(
+        r"\x1b\[\?7l[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] mutants   [━─]+  \d+% · \d+/11 · ✓ \d+ caught · ✗ \d missed · ",
     )
     .unwrap();
-    assert!(counter.is_match(&err), "the last count: {err:?}");
-    assert!(err.contains(&format!("{clear}[1/11] ✓ ")), "{err:?}");
+    assert!(live.is_match(&err), "the mutants' live line: {err:?}");
+    // A block of any height: the line it's on, then each line above.
+    let cleared_then = |permanent: &str| {
+        regex::Regex::new(&format!(
+            r"\r\x1b\[2K(\x1b\[1A\x1b\[2K)*{}",
+            regex::escape(permanent)
+        ))
+        .unwrap()
+        .is_match(&err)
+    };
+    for permanent in [
+        " ❯ [pricing] src/lib.rs",
+        "built     11 mutants in ",
+        "ran       11 mutants in ",
+    ] {
+        assert!(
+            cleared_then(permanent),
+            "{permanent:?} clears the live block: {err:?}"
+        );
+    }
+    let (drawn, cleared) = (err.rfind("\x1b[?7h").unwrap(), err.rfind(clear).unwrap());
     assert!(
-        err.contains(&format!("{clear} ❯ [pricing] src/lib.rs")),
-        "a file's line clears the counter: {err:?}"
+        drawn < cleared && err.ends_with('\n'),
+        "cleared before the result: {err:?}"
     );
-    assert!(err.ends_with(clear), "cleared before the result: {err:?}");
     let (_, plain) = run_with(&dir, "--progress=none", false);
-    assert!(
-        !plain.contains(clear) && !plain.contains("[1/11]"),
-        "{plain:?}"
-    );
-    std::fs::remove_dir_all(&copy).ok();
+    assert!(plain.is_empty(), "{plain:?}");
 }
 
 /// A full run writes `mutation.json`, in the mutation-testing report schema as the Java edition
@@ -562,31 +609,11 @@ fn a_full_run_writes_the_report_files() {
         events(&only).pop().unwrap()["reports"],
         serde_json::json!([])
     );
-    std::fs::remove_dir_all(&copy).ok();
 }
 
-/// A copy of a fixture in a directory of its own, to change.
+/// A copy of a fixture this test process has to itself, to change.
 fn copy_of(name: &str, label: &str) -> std::path::PathBuf {
-    let to = std::env::temp_dir().join(format!("mutastic-{label}-{}", std::process::id()));
-    std::fs::remove_dir_all(&to).ok();
-    let from = Path::new(&fixture(name)).to_path_buf();
-    let mut stack = vec![std::path::PathBuf::new()];
-    while let Some(relative) = stack.pop() {
-        std::fs::create_dir_all(to.join(&relative)).unwrap();
-        for entry in std::fs::read_dir(from.join(&relative)).unwrap() {
-            let entry = entry.unwrap();
-            let path = relative.join(entry.file_name());
-            if entry.file_name() == "target" {
-                continue;
-            }
-            if entry.file_type().unwrap().is_dir() {
-                stack.push(path);
-            } else {
-                std::fs::copy(from.join(&path), to.join(&path)).unwrap();
-            }
-        }
-    }
-    to
+    common::own_copy(name, &format!("samples-{label}"))
 }
 
 fn mutastic_in(dir: &Path, args: &[&str]) -> (i32, String) {
@@ -605,6 +632,8 @@ fn mutastic_in(dir: &Path, args: &[&str]) -> (i32, String) {
         )
         .env_remove("MUTASTIC_FORMAT")
         .env_remove("MUTASTIC_AGENT")
+        // What these runs say is what they find: their progress is tested on its own.
+        .env("MUTASTIC_PROGRESS", "none")
         .env("NO_COLOR", "1")
         .output()
         .unwrap();
@@ -699,7 +728,298 @@ fn an_ignore_holds_while_its_line_does() {
     );
     let (code, out) = mutastic_in(&dir, &["ignore", "mb2f8ae57"]);
     assert_eq!(code, 2, "a reason is needed: {out}");
-    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// The header `mutastic baseline` writes, the Java edition's.
+const BASELINE_HEADER: &str =
+    "# The mutants this project missed when its baseline was taken, written by `mutastic baseline`.
+# Commit it. A miss that isn't here is new: the gate holds only new misses. As tests
+# catch these, `mutastic baseline --prune` drops them; it never takes in new misses.
+baseline:
+";
+
+/// The `run-finished` event of a `--format=jsonl` run, each event checked against the schema.
+fn run_finished(jsonl: &str) -> Value {
+    let events = events(jsonl);
+    for event in &events {
+        let errors: Vec<String> = schema().iter_errors(event).map(|e| e.to_string()).collect();
+        assert!(errors.is_empty(), "{event}\n{}", errors.join("\n"));
+    }
+    events.last().unwrap().clone()
+}
+
+/// `baseline` records every mutant no test catches, once; `run --fail-on-new` passes while each is
+/// in it, whatever the score, and fails naming one that isn't, in every format, as the Java
+/// edition says it; with no baseline it's a usage error, before the build.
+#[test]
+fn fail_on_new_judges_a_run_by_its_baseline() {
+    let dir = copy_of("pricing", "fail-on-new");
+    let file = dir.join(".mutastic/baseline.yaml");
+    let judged = ["run", "--fail-on-new", "--threshold=95", "--report=none"];
+    let with = |format: &str| {
+        let mut args = judged.to_vec();
+        args.push(format);
+        mutastic_in(&dir, &args)
+    };
+    for format in ["--format=full", "--format=agent", "--format=jsonl"] {
+        let (code, out) = with(format);
+        assert_eq!(code, 2, "{out}");
+        let shown = std::fs::canonicalize(&dir).unwrap();
+        assert_eq!(
+            out,
+            format!(
+                "mutastic: --fail-on-new needs a baseline to tell new misses from, and {} has no \
+                 .mutastic/baseline.yaml: `mutastic baseline` writes one, to commit\n",
+                shown.display()
+            ),
+            "before anything is read or built"
+        );
+    }
+    let (code, out) = mutastic_in(&dir, &["run", "--fail-on-new", "--only=mb2f8ae57"]);
+    assert_eq!(code, 2, "{out}");
+    assert!(
+        out.starts_with("mutastic: --fail-on-new judges a run of the package on its new misses"),
+        "{out}"
+    );
+
+    let (code, out) = mutastic_in(&dir, &["baseline", "--progress=none"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.starts_with(
+            "mutastic: 1 mutants no test catches are in .mutastic/baseline.yaml: commit it. A miss \
+             that isn't in it is new: the gate holds only new misses, and next offers them first\n"
+        ),
+        "{out}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        format!(
+            "{BASELINE_HEADER}  - id: mb2f8ae57\n    at: 'Pricing::discount, line 26'\n    \
+             change: '`>=` becomes `>`'\n"
+        )
+    );
+    let (code, out) = mutastic_in(&dir, &["baseline"]);
+    assert_eq!(code, 1, "{out}");
+    assert_eq!(
+        out,
+        "mutastic: there's a baseline already, in .mutastic/baseline.yaml. `mutastic baseline \
+         --prune` drops its mutants the tests catch now; it's never rewritten to take in new \
+         misses, which would hide them\n"
+    );
+
+    // 90.9% is below 95, and the run passes: its one miss is in the baseline.
+    let (code, out) = with("--format=full");
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.lines()
+            .last()
+            .is_some_and(|last| last
+                .starts_with("     Score  90.9%  [PASS] No new misses: 1 in the baseline.")),
+        "{out}"
+    );
+    let (code, out) = with("--format=agent");
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.starts_with(
+            "mutastic: PASS · no new misses, 1 in the baseline · score 90.9% (threshold not \
+             applied) · 1 missed, 0 not covered, 10 caught of 11 mutants\n"
+        ),
+        "{out}"
+    );
+    let (code, out) = with("--format=jsonl");
+    assert_eq!(code, 0, "{out}");
+    let finished = run_finished(&out);
+    assert_eq!(finished["passed"], true);
+    assert_eq!(finished["failOnNew"], true);
+    assert_eq!(finished["newMisses"], serde_json::json!([]));
+    assert_eq!(finished["inBaseline"], 1);
+    // Without it, the threshold decides.
+    let (code, out) = mutastic_in(
+        &dir,
+        &["run", "--threshold=95", "--report=none", "--format=jsonl"],
+    );
+    assert_eq!(code, 1, "{out}");
+    assert!(run_finished(&out).get("failOnNew").is_none(), "{out}");
+
+    // Taken out of the baseline, the miss is new.
+    std::fs::write(&file, BASELINE_HEADER).unwrap();
+    let (code, out) = with("--format=full");
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.lines().last().is_some_and(|last| last.starts_with(
+            "     Score  90.9%  [FAIL] 1 new miss, not in the baseline (0 in it): mb2f8ae57."
+        )),
+        "{out}"
+    );
+    let (code, out) = with("--format=agent");
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.starts_with(
+            "mutastic: FAIL · 1 new miss, not in the baseline (0 in it): mb2f8ae57 · score 90.9% \
+             (threshold not applied) · "
+        ),
+        "{out}"
+    );
+    let (code, out) = with("--format=jsonl");
+    assert_eq!(code, 1, "{out}");
+    let finished = run_finished(&out);
+    assert_eq!(finished["passed"], false);
+    assert_eq!(finished["newMisses"], serde_json::json!(["mb2f8ae57"]));
+    assert_eq!(finished["inBaseline"], 0);
+}
+
+/// A function no test checks, for a miss the baseline doesn't have: its return is a condition or
+/// a removal, as the baseline's miss is, but one test reaches it where two reach that one, so the
+/// run's own order puts it second.
+const UNCHECKED: &str = "\npub fn tax(total: u32) -> u32 {\n    total / 5\n}\n";
+
+/// `next` offers a miss the baseline doesn't have before one it does, and says which is which;
+/// `baseline --prune` drops a mutant the tests catch now, and never takes in a new miss.
+#[test]
+fn next_puts_new_misses_first_and_prune_drops_the_caught() {
+    let dir = copy_of("pricing", "baseline-next");
+    let file = dir.join(".mutastic/baseline.yaml");
+    let (code, out) = mutastic_in(&dir, &["baseline", "--prune"]);
+    assert_eq!(code, 1, "{out}");
+    assert_eq!(
+        out,
+        "mutastic: there's no baseline to prune: `mutastic baseline` writes one\n"
+    );
+    let (code, out) = mutastic_in(&dir, &["baseline"]);
+    assert_eq!(code, 0, "{out}");
+
+    let lib = dir.join("src/lib.rs");
+    let text = std::fs::read_to_string(&lib).unwrap();
+    std::fs::write(&lib, format!("{text}{UNCHECKED}")).unwrap();
+    let tests = dir.join("tests/pricing.rs");
+    let kept = std::fs::read_to_string(&tests).unwrap();
+    std::fs::write(
+        &tests,
+        format!("{kept}\n#[test]\nfn tax_runs() {{\n    let _ = pricing::tax(10);\n}}\n"),
+    )
+    .unwrap();
+    let (code, jsonl) = mutastic_in(&dir, &["next", "--format=jsonl", "--top=2"]);
+    assert_eq!(code, 1, "{jsonl}");
+    let events = events(&jsonl);
+    for event in &events {
+        let errors: Vec<String> = schema().iter_errors(event).map(|e| e.to_string()).collect();
+        assert!(errors.is_empty(), "{event}\n{}", errors.join("\n"));
+    }
+    let items: Vec<&Value> = events
+        .iter()
+        .filter(|e| e["reason"] == "next-item")
+        .collect();
+    assert_eq!(items.len(), 2, "{jsonl}");
+    assert_eq!(
+        items[0]["location"]["method"], "tax",
+        "the new miss first: {jsonl}"
+    );
+    assert_eq!(items[0]["rank"]["factors"][0]["signal"], "baseline");
+    assert_eq!(items[0]["rank"]["factors"][0]["value"], "new");
+    assert_eq!(items[1]["id"], "mb2f8ae57", "{jsonl}");
+    assert_eq!(items[1]["rank"]["factors"][0]["value"], "legacy");
+    assert_eq!(events.last().unwrap()["legacy"], 1, "{jsonl}");
+    let (_, out) = mutastic_in(&dir, &["next", "--progress=none"]);
+    assert!(
+        out.contains(
+            "Next: 1 of 2 lines with missed mutants in pricing (1 new, 1 in the baseline)\n"
+        ),
+        "{out}"
+    );
+    assert!(
+        out.contains(" Ranked first because\n   not in the baseline: a new miss\n"),
+        "{out}"
+    );
+
+    // A test for the baseline's miss: a full run says it's caught now, and prune drops it, but
+    // not the new misses.
+    std::fs::write(
+        &tests,
+        format!(
+            "{kept}\n#[test]\nfn at_the_edge() {{\n    assert_eq!(Pricing::new().discount(100), 10);\n}}\n"
+        ),
+    )
+    .unwrap();
+    let (_, out) = mutastic_in(&dir, &["run", "--report=none", "--progress=none"]);
+    assert!(
+        out.contains(
+            "note: 1 of the baseline's mutants are caught now: `mutastic baseline --prune` drops them\n"
+        ),
+        "{out}"
+    );
+    let (code, out) = mutastic_in(&dir, &["baseline", "--prune", "--progress=none"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.starts_with(
+            "mutastic: 1 of the baseline's mutants are caught now, and are dropped from \
+             .mutastic/baseline.yaml\n"
+        ),
+        "{out}"
+    );
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), BASELINE_HEADER);
+}
+
+/// The gate holds only new misses: one the baseline had before the task is the project's
+/// backlog, even on a line the task changed; and the task can't add to the baseline itself.
+#[test]
+fn the_gate_holds_only_new_misses() {
+    let dir = copy_of("pricing", "gate-baseline");
+    let git = |args: &[&str]| {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(&dir)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "git {args:?}");
+    };
+    let (code, out) = mutastic_in(&dir, &["baseline", "--progress=none"]);
+    assert_eq!(code, 0, "{out}");
+    git(&["init", "-q"]);
+    std::fs::write(dir.join(".gitignore"), "target\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "start"]);
+    let (code, out) = mutastic_in(&dir, &["gate", "open"]);
+    assert_eq!(code, 0, "{out}");
+
+    // The baseline's miss is on the line the task changes: it doesn't hold the task.
+    let lib = dir.join("src/lib.rs");
+    let text = std::fs::read_to_string(&lib).unwrap();
+    std::fs::write(
+        &lib,
+        text.replace("if total >= 100 {", "if total >= 100  {"),
+    )
+    .unwrap();
+    let (code, out) = mutastic_in(&dir, &["gate", "check"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains(
+            "; 1, missed before the task and in .mutastic/baseline.yaml, is the project's backlog, \
+             not the task's\n"
+        ),
+        "{out}"
+    );
+
+    // A miss the task added to the baseline itself is a person's call.
+    let file = dir.join(".mutastic/baseline.yaml");
+    let baseline = std::fs::read_to_string(&file).unwrap();
+    std::fs::write(
+        &file,
+        format!("{baseline}  - id: m00000001\n    at: 'x'\n    change: 'y'\n"),
+    )
+    .unwrap();
+    let (code, out) = mutastic_in(&dir, &["gate", "check"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains(
+            "mutastic gate: the task added m00000001 to .mutastic/baseline.yaml itself, and \
+             whether a miss is the project's backlog is a person's call"
+        ),
+        "{out}"
+    );
 }
 
 /// `--since` runs only the mutants on the lines changed since a commit, and says how much changed.
@@ -781,10 +1101,13 @@ fn since_runs_the_changed_lines_mutants() {
         &["run", "--since=HEAD", "--format=jsonl", "--report=none"],
     );
     let arid = events(&jsonl);
-    assert_eq!(arid[1]["statusReason"], "arid: only writes output");
-    assert_eq!(arid[1]["skipKind"], "arid");
+    let skipped = arid
+        .iter()
+        .find(|e| e["reason"] == "mutant-finished")
+        .unwrap();
+    assert_eq!(skipped["statusReason"], "arid: only writes output");
+    assert_eq!(skipped["skipKind"], "arid");
     assert_eq!(arid.last().unwrap()["ignored"], 1);
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 /// `mutastic.yaml` chooses the operators, adds a rules file's, and skips what its rules cover, with
@@ -844,7 +1167,56 @@ fn mutastic_yaml_is_read_as_the_java_editions() {
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr)
         .contains("mutastic.yaml line 2: the rule `skip: x::**` needs a `reason:` under it"));
-    std::fs::remove_dir_all(&copy).ok();
+}
+
+/// A package uses its nearest `mutastic.yaml`, so it gets the same rules from the workspace's top as
+/// from its own directory; once, a run from the top read only the top's file. And a file adds
+/// another's when it says `extends:`.
+#[test]
+fn a_packages_own_mutastic_yaml_applies_from_the_workspaces_top() {
+    let copy = copy_of("workspace", "nearest-yaml");
+    // One package, so the workspace's top runs it.
+    std::fs::write(
+        copy.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"shop\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    let status_reason = |dir: &Path| {
+        let (_, jsonl) = mutastic(&[
+            "run",
+            &dir.display().to_string(),
+            "--format=jsonl",
+            "--report=none",
+        ]);
+        let found = events(&jsonl);
+        let total = found
+            .iter()
+            .find(|e| e["reason"] == "mutant-finished" && e["location"]["method"] == "total")
+            .unwrap_or_else(|| panic!("a mutant in total: {jsonl}"))
+            .clone();
+        total["statusReason"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string()
+    };
+    let own = "user: summed by the till (rule `skip: shop::total`)";
+    std::fs::write(
+        copy.join("shop/mutastic.yaml"),
+        "rules:\n  - skip: shop::total\n    reason: summed by the till\n",
+    )
+    .unwrap();
+    assert_eq!(status_reason(&copy), own);
+    assert_eq!(status_reason(&copy.join("shop")), own);
+    std::fs::write(copy.join("shop/mutastic.yaml"), "extends: ../shared.yaml\n").unwrap();
+    std::fs::write(
+        copy.join("shared.yaml"),
+        "rules:\n  - skip: shop::**\n    reason: shared by the team\n",
+    )
+    .unwrap();
+    assert_eq!(
+        status_reason(&copy),
+        "user: shared by the team (rule `skip: shop::**`)"
+    );
 }
 
 fn mutastic_with_input(dir: &Path, args: &[&str], input: &str) -> (i32, String) {
@@ -1012,7 +1384,6 @@ fn the_gate_holds_a_task_to_its_changed_lines() {
     );
     let (_, out) = mutastic_in(&dir, &["gate", "close"]);
     assert!(out.contains("mutastic gate: closed\n"), "{out}");
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 /// The mutants of one line, from `mutastic mutants`: id, then where it is, as `src/lib.rs:6:5`.
@@ -1162,7 +1533,6 @@ fn identical_lines_have_ids_of_their_own() {
         shifted.iter().all(|(id, _)| !by_step[3].contains(id)),
         "the last step's ids are gone: {shifted:?}"
     );
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 /// A test that fails, then passes when run again on its own, is flaky: the run goes on without it
@@ -1172,7 +1542,15 @@ fn identical_lines_have_ids_of_their_own() {
 fn a_flaky_test_is_left_out_and_one_that_always_fails_stops_the_run() {
     let dir = copy_of("flaky", "flaky");
     let test = "raffle::a_draw_is_a_place_in_the_raffle";
-    let (code, out) = mutastic_in(&dir, &["run", "--format=full", "--report=none"]);
+    let (code, out) = mutastic_in(
+        &dir,
+        &[
+            "run",
+            "--format=full",
+            "--report=none",
+            "--progress=counter",
+        ],
+    );
     assert_eq!(code, 1, "{out}");
     assert!(out.contains(" (1 flaky, left out) · "), "{out}");
     assert!(
@@ -1246,7 +1624,6 @@ fn a_flaky_test_is_left_out_and_one_that_always_fails_stops_the_run() {
     assert!(!out.contains("ignore"), "{out}");
     let log = std::fs::read_to_string(dir.join("target/mutastic/tests.log")).unwrap();
     assert!(log.contains("fails every time"), "{log}");
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 /// Each full run is compared with the last under the same operators, as in the Java edition: its
@@ -1329,7 +1706,6 @@ fn a_full_run_compares_with_the_last_and_is_kept_for_the_next() {
         agent.contains("vs last run: 90.9% → 90.9% (same code)\n"),
         "{agent}"
     );
-    std::fs::remove_dir_all(&copy).ok();
 }
 
 /// `--report=sarif`: SARIF 2.1.0 the schema accepts, a result for the missed mutant on its line
@@ -1388,7 +1764,6 @@ fn the_sarif_report_is_a_result_for_each_miss_keyed_by_its_id() {
         location["region"],
         serde_json::json!({ "startLine": 26, "startColumn": 18, "endColumn": 20 })
     );
-    std::fs::remove_dir_all(&repository).ok();
 }
 
 /// `--vocabulary`, `--color` and `--hyperlinks`, as the Java edition takes them: the classic words
@@ -1427,6 +1802,20 @@ fn the_words_colour_and_links_are_chosen_as_the_java_edition_chooses_them() {
     assert!(linked.contains("src/lib.rs:26\x1b]8;;\x1b\\"), "{linked}");
     let (_, plain) = mutastic(&["run", &dir, "--format=concise", "--hyperlinks=never"]);
     assert!(!plain.contains("\x1b]8;;"), "{plain}");
+    // The full card's change mark opens its operator's section in the docs, and the event says
+    // where that is.
+    let boundary = "https://docs.mutastic.io/rust/operators/conditions/#boundary";
+    let (_, full) = mutastic(&["run", &dir, "--format=full", "--hyperlinks=always"]);
+    assert!(
+        full.contains(&format!("\x1b]8;;{boundary}\x1b\\^")),
+        "{full}"
+    );
+    assert!(
+        jsonl.contains(&format!(
+            "\"operator\":\"mutastic/boundary\",\"docs\":\"{boundary}\""
+        )),
+        "{jsonl}"
+    );
 
     for (option, value) in [
         ("--vocabulary", "loud"),
@@ -1512,5 +1901,825 @@ pub mod repayments {
         agent.contains("test to add in mod rates::tests:"),
         "{agent}"
     );
-    std::fs::remove_dir_all(&copy).ok();
+}
+
+/// A closed stderr (`mutastic run … 2>&1 | head`) loses the progress, never a mutant's result: a
+/// run whose progress can't be written keeps every mutant it had, as one that can.
+#[test]
+fn a_closed_stderr_loses_no_results() {
+    let copy = copy_of("pricing", "closed-stderr");
+    let kept = copy.join("target/mutastic/last-run.tsv");
+    let run = |stderr: Stdio| {
+        std::fs::remove_file(&kept).ok();
+        let mut child = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+            .args(["run", copy.to_str().unwrap(), "--progress=counter"])
+            .env("NO_COLOR", "1")
+            .env_remove("MUTASTIC_FORMAT")
+            .env_remove("MUTASTIC_AGENT")
+            .stdout(Stdio::null())
+            .stderr(stderr)
+            .spawn()
+            .unwrap();
+        // Closed before the run writes anything to it.
+        drop(child.stderr.take());
+        let status = child.wait().unwrap().code();
+        let record = std::fs::read_to_string(&kept).unwrap_or_default();
+        (status, record.lines().count())
+    };
+    let open = run(Stdio::null());
+    let closed = run(Stdio::piped());
+    assert!(open.1 > 1, "the open run kept a record: {open:?}");
+    assert_eq!(
+        closed, open,
+        "(exit, record lines) with stderr closed and open"
+    );
+}
+
+/// `next`, worked to the end on the ranking fixture: one item at a time in the run's order, exit 1
+/// while something is queued; a rerun of only what's still uncaught while the code under test is
+/// the same, a new test in its `mod tests` included; every mutant again once that code changes; a
+/// mutant proposed for ignoring waits on a person, not in the queue; and exit 0, with nothing run,
+/// once nothing missed is left.
+#[test]
+fn next_works_through_the_misses_one_at_a_time() {
+    let copy = copy_of("ranking", "next");
+    let next = |args: &[&str]| mutastic_in(&copy, &[&["next"], args].concat());
+    let add_test = |test: &str| {
+        let lib = copy.join("src/lib.rs");
+        let source = std::fs::read_to_string(&lib).unwrap();
+        let end = source.rfind('}').unwrap();
+        std::fs::write(&lib, format!("{}{test}}}\n", &source[..end])).unwrap();
+    };
+    // How many mutants the run ran, from its coverage line; none when nothing ran.
+    let ran = |out: &str| {
+        out.lines()
+            .find_map(|line| line.strip_prefix("coverage  "))
+            .and_then(|line| line.rsplit(" · ").next())
+            .map(str::to_string)
+    };
+    let jsonl = |out: &str| -> Vec<Value> {
+        let lines: Vec<&str> = out.lines().filter(|l| l.starts_with('{')).collect();
+        let events = events(&lines.join("\n"));
+        for event in &events {
+            let errors: Vec<String> = schema().iter_errors(event).map(|e| e.to_string()).collect();
+            assert!(errors.is_empty(), "{event}\n{}", errors.join("\n"));
+        }
+        events
+    };
+    let ids_of = |event: &Value| -> Vec<String> {
+        event["ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|id| id.as_str().unwrap().to_string())
+            .collect()
+    };
+
+    // The head of the queue: is_small's condition, which three tests run.
+    let (code, out) = next(&["--format=jsonl"]);
+    assert_eq!(code, 1, "{out}");
+    let events = jsonl(&out);
+    assert_eq!(events.len(), 2, "{out}");
+    let head = &events[0];
+    assert_eq!(head["reason"], "next-item");
+    assert_eq!(head["location"]["line"], 15);
+    let ids = ids_of(head);
+    assert_eq!(ids.len(), 3, "{head}");
+    assert_eq!(head["ids"][0], head["id"], "the lead first");
+    assert_eq!(head["rank"]["position"], 1);
+    assert_eq!(head["rank"]["order"], "run-1");
+    let values: Vec<&Value> = head["rank"]["factors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|factor| &factor["value"])
+        .collect();
+    assert_eq!(
+        values,
+        [
+            &serde_json::json!("condition-or-removal"),
+            &serde_json::json!(3)
+        ]
+    );
+    assert_eq!(
+        events[1],
+        serde_json::json!({"schema": "mutastic.events/v1", "edition": "rust", "reason": "next-finished", "queued": 3, "mutants": 7, "shown": 1, "legacy": 0, "waiting": 0})
+    );
+    // That was a run of every mutant, so explain has a last run to say.
+    let (_, explained) = mutastic_in(&copy, &["explain", &ids[0]]);
+    assert!(
+        explained.contains("last run  missed: every covering test still passed"),
+        "{explained}"
+    );
+
+    // Again, with the code as it was: only the seven left uncaught run. --top shows two, as two is
+    // the most from one file.
+    let (code, out) = next(&["--top=3", "--format=concise", "--progress=counter"]);
+    assert_eq!(code, 1, "{out}");
+    assert_eq!(ran(&out).as_deref(), Some("7 mutants"), "{out}");
+    assert!(
+        out.contains("Next: the first 2 of 3 lines with missed mutants in ranking\n"),
+        "{out}"
+    );
+    let places: Vec<&str> = out
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("┌─ "))
+        .collect();
+    assert_eq!(places, ["src/lib.rs:15", "src/lib.rs:11"], "{out}");
+    assert!(
+        out.contains(
+            "\n Ranked first because\n   a condition or a removal: it changes what the code \
+             decides or does\n   3 tests run it, and none checks it\n"
+        ),
+        "{out}"
+    );
+    assert!(out.contains("\n Ranked 2nd because\n"), "{out}");
+    assert!(
+        out.contains("\nThen: mutastic next ., for the next one\n"),
+        "{out}"
+    );
+
+    // For an agent, one task, whole, and every command it offers parses.
+    let (code, agent) = next(&["--format=agent"]);
+    assert_eq!(code, 1, "{agent}");
+    assert!(
+        agent.starts_with(
+            "mutastic next: 1 of 3 lines with missed mutants in ranking; close this one, then ask \
+             for the next\nwhy first: a condition or a removal: it changes what the code decides \
+             or does; 3 tests run it, and none checks it\n"
+        ),
+        "{agent}"
+    );
+    let done_when = format!("mutastic verify {} .", ids.join(","));
+    assert!(
+        agent.contains(&format!(
+            "\nrules: {}, and never delete, disable or loosen a test; it's done when \
+             `{done_when}` passes\ndecline: {} (`mutastic ignore <id> --propose",
+            mutastic::report::RULE,
+            mutastic::report::DECLINE
+        )),
+        "{agent}"
+    );
+    let tasks = agent
+        .lines()
+        .filter(|line| line.starts_with("missed "))
+        .count();
+    assert_eq!(tasks, 1, "one task: {agent}");
+    assert!(
+        agent.ends_with(
+            "\nthen: run `mutastic next .` again for the next one; when it says nothing is left, \
+             you're done\n"
+        ),
+        "{agent}"
+    );
+    for command in [done_when.as_str(), "mutastic next ."] {
+        let words: Vec<String> = command.split(' ').skip(1).map(str::to_string).collect();
+        assert_eq!(mutastic::cli::check(&words), Ok(()), "{command}");
+    }
+
+    // A test for is_small, in mod tests: the code under test is the same, so again only the seven
+    // run, and its line drops out.
+    add_test(
+        "    #[test]\n    fn ten_isnt_small() {\n        assert!(!is_small(10));\n        \
+         assert!(is_small(9));\n    }\n",
+    );
+    let (code, out) = next(&["--top=25", "--format=jsonl"]);
+    assert_eq!(code, 1, "{out}");
+    let events = jsonl(&out);
+    let lines: Vec<&Value> = events
+        .iter()
+        .filter(|e| e["reason"] == "next-item")
+        .map(|e| &e["location"]["line"])
+        .collect();
+    assert_eq!(
+        lines,
+        [&serde_json::json!(11), &serde_json::json!(6)],
+        "{out}"
+    );
+    let doubled = ids_of(&events[1]);
+
+    // doubled's mutants, proposed for ignoring, wait on a person, out of the queue.
+    for id in &doubled {
+        let (code, out) = mutastic_in(&copy, &["ignore", id, "--propose", "--reason=only doubles"]);
+        assert_eq!(code, 0, "{out}");
+    }
+    let waiting = if doubled.len() == 1 {
+        "1 mutant proposed for ignoring, waiting on a person to accept it \
+         (.mutastic/proposals.yaml)"
+            .to_string()
+    } else {
+        format!(
+            "{} mutants proposed for ignoring, waiting on a person to accept them \
+             (.mutastic/proposals.yaml)",
+            doubled.len()
+        )
+    };
+    let (code, out) = next(&["--format=concise", "--progress=counter"]);
+    assert_eq!(code, 1, "{out}");
+    let rerun = format!("{} mutants", 3 + doubled.len());
+    assert_eq!(ran(&out), Some(rerun), "{out}");
+    assert!(
+        out.contains(&format!(
+            "Next: 1 of 1 line with missed mutants in ranking; {waiting}\n"
+        )),
+        "{out}"
+    );
+
+    // A test for is_big leaves only the proposals: nothing is queued, so next exits 0.
+    add_test(
+        "    #[test]\n    fn a_hundred_is_big() {\n        assert!(is_big(100));\n        \
+         assert!(!is_big(99));\n    }\n",
+    );
+    let nothing_but_waiting = format!("Next: nothing missed is left in ranking but {waiting}\n");
+    let (code, out) = next(&["--format=concise"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.starts_with(&nothing_but_waiting), "{out}");
+    let (code, out) = next(&["--format=jsonl"]);
+    assert_eq!(code, 0, "{out}");
+    let events = jsonl(&out);
+    assert_eq!(events.len(), 1, "{out}");
+    assert_eq!(events[0]["queued"], 0);
+    assert_eq!(events[0]["waiting"], doubled.len());
+
+    // The code under test changes: every mutant runs again.
+    let lib = copy.join("src/lib.rs");
+    let source = std::fs::read_to_string(&lib).unwrap();
+    let changed = source.replacen(
+        "#[cfg(test)]",
+        "pub const UNUSED: u32 = 7;\n\n#[cfg(test)]",
+        1,
+    );
+    std::fs::write(&lib, changed).unwrap();
+    let (code, out) = next(&["--format=concise", "--progress=counter"]);
+    assert_eq!(code, 0, "{out}");
+    assert_eq!(ran(&out).as_deref(), Some("12 mutants"), "{out}");
+    assert!(out.starts_with(&nothing_but_waiting), "{out}");
+
+    // Withdrawn, the proposals' mutants are queued again; a test for them, and nothing is left.
+    for id in &doubled {
+        let (code, out) = mutastic_in(&copy, &["ignore", "--remove", id]);
+        assert_eq!(code, 0, "{out}");
+    }
+    let (code, out) = next(&["--format=concise"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("Next: 1 of 1 line with missed mutants in ranking\n"),
+        "{out}"
+    );
+    add_test(
+        "    #[test]\n    fn three_doubled_is_six() {\n        assert_eq!(doubled(3), 6);\n    }\n",
+    );
+    let (code, out) = next(&["--format=concise"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.starts_with("Next: nothing missed is left in ranking\n"),
+        "{out}"
+    );
+    // Nothing was left uncaught, and the code is the same: nothing runs.
+    let (code, out) = next(&["--format=concise", "--progress=counter"]);
+    assert_eq!(code, 0, "{out}");
+    assert_eq!(ran(&out), None, "{out}");
+    assert!(
+        out.starts_with("Next: nothing missed is left in ranking\n"),
+        "{out}"
+    );
+    let (code, agent) = next(&["--format=agent"]);
+    assert_eq!(code, 0, "{agent}");
+    assert_eq!(agent, "mutastic next: nothing missed is left in ranking\n");
+}
+
+/// Two mutants of one line with a test each, as the test-first guide's loyalty credit has: one fix
+/// can't describe both tests, so each comes after its own mutant's fix and id, in the card and the
+/// agent format. Once, the second test came with nothing saying why.
+#[test]
+fn each_suggested_test_comes_after_its_own_mutants_fix() {
+    let dir = copy_of("pricing", "each-fix");
+    let lib = dir.join("src/lib.rs");
+    let text = std::fs::read_to_string(&lib).unwrap();
+    let credit = "    /// 5 off orders of 30 or more, for loyal customers.
+    pub fn loyalty_credit(&self, total: u32) -> u32 {
+        if total >= 30 {
+            return 5;
+        }
+        0
+    }
+
+    /// Free from the threshold up.";
+    let test = "#[cfg(test)]
+mod loyalty {
+    use super::*;
+
+    #[test]
+    fn loyal_customers_get_five_off() {
+        assert_eq!(Pricing::new().loyalty_credit(50), 5);
+    }
+}
+
+#[cfg(test)]";
+    let text = text
+        .replacen("    /// Free from the threshold up.", credit, 1)
+        .replacen("#[cfg(test)]", test, 1);
+    std::fs::write(&lib, text).unwrap();
+
+    let (_, card) = mutastic_in(&dir, &["run", "--format=full"]);
+    let (_, agent) = mutastic_in(&dir, &["run", "--format=agent"]);
+
+    let card = card[card.find("loyalty_credit").expect(&card)..].to_string();
+    assert!(card.contains("help: one test for each mutant"), "{card}");
+    let first = card.find("with total = 30").expect(&card);
+    let second = card.find("is false").expect(&card);
+    let tests: Vec<usize> = card
+        .match_indices("loyalty_credit(")
+        .map(|(at, _)| at)
+        .collect();
+    assert!(
+        tests.iter().any(|&at| at > first && at < second) && tests.iter().any(|&at| at > second),
+        "{card}"
+    );
+    assert!(
+        agent.contains("   fix: one test for each mutant"),
+        "{agent}"
+    );
+    assert!(agent.contains("   fix for m"), "{agent}");
+}
+
+/// Two runs on one package at once each get the whole run's result: the second waits for the
+/// first, which holds the package's work directory, rather than rewriting its copy and build in the
+/// middle of it. Once, the samples' own tests ran on the pricing fixture side by side and got each
+/// other's mutants.
+#[test]
+fn two_runs_at_once_each_get_the_whole_result() {
+    let dir = copy_of("pricing", "at-once");
+    let start = || {
+        Command::new(env!("CARGO_BIN_EXE_mutastic"))
+            .args(["run", "--format=jsonl"])
+            .current_dir(&dir)
+            .env_remove("MUTASTIC_FORMAT")
+            .env_remove("MUTASTIC_AGENT")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap()
+    };
+    let (first, second) = (start(), start());
+    let outputs = [
+        first.wait_with_output().unwrap(),
+        second.wait_with_output().unwrap(),
+    ];
+    for output in &outputs {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let finished: Vec<Value> = events(&stdout)
+            .into_iter()
+            .filter(|e| e["reason"] == "mutant-finished")
+            .collect();
+        let missed = finished
+            .iter()
+            .filter(|e| e["status"] == "Survived")
+            .count();
+        assert_eq!(
+            (finished.len(), missed),
+            (11, 1),
+            "{stdout}{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+/// `explain --format=jsonl`: the events a run writes for the one mutant, then `mutant-explained`
+/// with what `About this mutant` says, each field in the text's words, as the Java edition writes
+/// it; another format is refused.
+#[test]
+fn explain_as_events_says_what_the_text_says() {
+    let dir = copy_of("pricing", "explain-jsonl");
+    mutastic_in(&dir, &["run", "--format=concise"]);
+    let (code, stdout) = mutastic_in(&dir, &["explain", "mb2f8ae57", "--format=jsonl"]);
+    let (_, text) = mutastic_in(&dir, &["explain", "mb2f8ae57"]);
+    let (refused, said) = mutastic_in(&dir, &["explain", "mb2f8ae57", "--format=agent"]);
+    assert_eq!(code, 0, "{stdout}");
+    // Its progress is on stderr, which comes back with it here: the events are the JSON lines.
+    let lines: String = stdout
+        .lines()
+        .filter(|line| line.starts_with('{'))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    let all = events(&lines);
+    let reasons: Vec<&str> = all.iter().map(|e| e["reason"].as_str().unwrap()).collect();
+    assert_eq!(
+        reasons,
+        [
+            "run-started",
+            "mutant-finished",
+            "run-finished",
+            "mutant-explained"
+        ],
+        "{stdout}"
+    );
+    for event in &all {
+        let errors: Vec<String> = schema().iter_errors(event).map(|e| e.to_string()).collect();
+        assert!(errors.is_empty(), "{event}\n{}", errors.join("\n"));
+    }
+    let explained = &all[3];
+    assert_eq!(explained["fingerprint"], "b2f8ae57ca6c48cb");
+    assert_eq!(explained["applied"]["level"], "source");
+    assert_eq!(
+        explained["applied"]["text"], all[1]["mutation"]["applied"]["text"],
+        "the same text as the mutant-finished event's applied"
+    );
+    for words in [
+        &explained["operator"]["description"],
+        &explained["idDescription"],
+        &explained["idNote"],
+        &explained["site"]["description"],
+        &explained["lastRun"]["description"],
+        &explained["applied"]["description"],
+    ] {
+        assert!(
+            text.contains(words.as_str().unwrap()),
+            "{words} isn't in:\n{text}"
+        );
+    }
+    assert_eq!(refused, 2, "{said}");
+    assert!(
+        said.contains("explain takes --format=full or --format=jsonl"),
+        "{said}"
+    );
+}
+
+/// Where a command runs is checked before Cargo runs. A directory that isn't there, a word that's
+/// an option, a workspace's root, no project at all and no Cargo are each said in the person's
+/// words, ending in the command to run instead, and that command runs. A package's name typed
+/// alone runs that package, and says so; below a package, the package runs, with its own
+/// `mutastic.yaml`, ignores and `--since` read from its directory, as from the package itself.
+#[test]
+fn a_command_run_in_the_wrong_place_ends_in_the_one_to_run() {
+    let root = copy_of("workspace", "located");
+    std::fs::create_dir_all(root.join("crates")).unwrap();
+    std::fs::rename(root.join("shop"), root.join("crates/shop")).unwrap();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"billing\", \"crates/shop\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    let real = std::fs::canonicalize(&root).unwrap();
+    let ran = |dir: &Path, args: &[&str], env: &[(&str, &Path)]| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_mutastic"));
+        command.args(args).current_dir(dir).env("NO_COLOR", "1");
+        for (name, value) in env {
+            command.env(name, value);
+        }
+        command.output().unwrap()
+    };
+    let stopped = |dir: &Path, args: &[&str]| {
+        let output = ran(dir, args, &[]);
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        String::from_utf8_lossy(&output.stderr).into_owned()
+    };
+    // Each command a message ends in runs where it was shown.
+    let runs = |dir: &Path, message: &str| {
+        for line in message
+            .lines()
+            .filter_map(|l| l.strip_prefix("  mutastic "))
+        {
+            let (code, out) = mutastic_in(dir, &line.split(' ').collect::<Vec<_>>());
+            assert_eq!(code, 0, "mutastic {line}: {out}");
+        }
+    };
+
+    // The workspace's root: each package, as the command to test it.
+    let listed = stopped(&root, &["mutants", "--operators=defaults"]);
+    assert_eq!(
+        listed,
+        "mutastic: this is a workspace's root, and mutastic tests one package at a time.\n\
+         It has 2 packages. To test one:\n  \
+         mutastic mutants billing --operators=defaults\n  \
+         mutastic mutants crates/shop --operators=defaults\n"
+    );
+    runs(&root, &listed);
+    // A directory in the workspace that's in none of its packages: the same, from where it is.
+    let crates = stopped(&root.join("crates"), &["mutants"]);
+    assert!(
+        crates.starts_with(
+            "mutastic: this directory is in a workspace, but in none of its packages, and \
+             mutastic tests one package at a time.\nIt has 2 packages. To test one:\n  \
+             mutastic mutants ../billing\n  mutastic mutants shop\n"
+        ),
+        "{crates}"
+    );
+    runs(&root.join("crates"), &crates);
+
+    // A name close to a package's, where there's no such directory: offered, never run.
+    let near = stopped(&root, &["mutants", "shpo"]);
+    assert_eq!(
+        near,
+        format!(
+            "mutastic: there's no directory shpo in {}.\n\
+             There's a package called shop, in crates/shop. To test it:\n  \
+             mutastic mutants crates/shop\n",
+            real.display()
+        )
+    );
+    runs(&root, &near);
+    // Close to nothing: the workspace's packages.
+    let far = stopped(&root, &["mutants", "nowhere"]);
+    assert!(
+        far.ends_with(
+            ".\nThis workspace has 2 packages. To test one:\n  \
+             mutastic mutants billing\n  mutastic mutants crates/shop\n"
+        ),
+        "{far}"
+    );
+    // A package's name exactly: that package runs, and the note says where.
+    // shop has no tests, so its run fails: on its score, not with mutastic's 2.
+    let (code, out) = mutastic_in(&root, &["run", "shop", "--report=none"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("mutastic: shop is the package in crates/shop, so mutastic runs there\n"),
+        "{out}"
+    );
+
+    // A word with one dash is an option mutastic doesn't have, never a directory.
+    let short = stopped(&root, &["run", "-v"]);
+    assert_eq!(
+        short,
+        "mutastic: run has no option -v.\n\
+         mutastic's options are long ones, such as --format=full. To see them all:\n  \
+         mutastic --help\n"
+    );
+    let help = ran(&root, &["--help"], &[]);
+    assert_eq!(help.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&help.stdout).contains("\nOptions:\n  --only=<id>"));
+
+    // Below a package, the package runs: its ignores, its mutastic.yaml and --since are read
+    // from its directory.
+    let src = root.join("crates/shop/src");
+    let git = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(&root)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap()
+            .status;
+        assert!(status.success(), "git {args:?}");
+    };
+    git(&["init", "-q"]);
+    std::fs::write(root.join(".gitignore"), "target\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "start"]);
+    let finished = |args: &[&str]| {
+        let (code, jsonl) = mutastic_in(&src, args);
+        assert_ne!(code, 2, "{jsonl}");
+        events(&jsonl)
+            .into_iter()
+            .filter(|e| e["reason"] == "mutant-finished")
+            .collect::<Vec<_>>()
+    };
+    let since = ["run", "--since=HEAD", "--format=jsonl", "--report=none"];
+    assert_eq!(finished(&since).len(), 0);
+    let lib = root.join("crates/shop/src/lib.rs");
+    let text = std::fs::read_to_string(&lib).unwrap();
+    std::fs::write(
+        &lib,
+        text.replace("prices.iter().sum()", "prices.iter().sum::<u32>()"),
+    )
+    .unwrap();
+    let changed = finished(&since);
+    assert!(
+        !changed.is_empty() && changed.iter().all(|e| e["location"]["method"] == "total"),
+        "{changed:?}"
+    );
+    std::fs::write(
+        root.join("crates/shop/mutastic.yaml"),
+        "rules:\n  - skip: shop::total\n    reason: summed by the till\n",
+    )
+    .unwrap();
+    let skipped = finished(&["run", "--format=jsonl", "--report=none"]);
+    assert!(
+        !skipped.is_empty()
+            && skipped
+                .iter()
+                .all(|e| e["statusReason"] == "user: summed by the till (rule `skip: shop::total`)"),
+        "{skipped:?}"
+    );
+    let (_, listing) = mutastic_in(&src, &["mutants"]);
+    let id = listing.split_whitespace().next().unwrap().to_string();
+    let (code, out) = mutastic_in(&src, &["ignore", &id, "--reason=kept"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.ends_with(&format!("to undo: mutastic ignore --remove {id} ..\n")),
+        "{out}"
+    );
+    assert!(root.join("crates/shop/.mutastic/ignores.yaml").is_file());
+    assert!(!src.join(".mutastic").exists());
+
+    // No project at all, in either edition's terms.
+    let empty = std::env::temp_dir().join(format!("mutastic-no-project-{}", std::process::id()));
+    std::fs::create_dir_all(&empty).unwrap();
+    let nothing = stopped(&empty, &["run"]);
+    assert_eq!(
+        nothing,
+        format!(
+            "mutastic: there's no project here for mutastic to test.\n\
+             It looked in {} and every directory above it, for Cargo.toml, pom.xml, \
+             build.gradle(.kts) or settings.gradle(.kts).\n\
+             Go to your project, or name its directory:\n  mutastic run <project directory>\n",
+            std::fs::canonicalize(&empty).unwrap().display()
+        )
+    );
+
+    // No Cargo where the CARGO variable points.
+    let no_cargo = root.join("no-cargo");
+    let output = ran(
+        &root.join("billing"),
+        &["mutants"],
+        &[("CARGO", no_cargo.as_path())],
+    );
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        format!(
+            "mutastic: CARGO is {}, and there's no cargo there.\n\
+             mutastic runs the cargo CARGO names. Point it at one, or unset it to use the cargo on \
+             the PATH:\n  unset CARGO\n",
+            no_cargo.display()
+        )
+    );
+    std::fs::remove_dir_all(&empty).ok();
+    std::fs::remove_dir_all(&root).ok();
+}
+
+/// No Cargo on the PATH, and no CARGO variable to say where one is.
+#[cfg(unix)]
+#[test]
+fn no_cargo_on_the_path_is_said_with_how_to_get_one() {
+    let output = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+        .args(["mutants", &fixture("pricing")])
+        .env_remove("CARGO")
+        .env("PATH", "/nonexistent")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "mutastic: there's no cargo on the PATH, and mutastic reads a Rust package with it.\n\
+         Install Rust from https://rustup.rs, or add the directory that holds cargo to the PATH. \
+         To check it's found:\n  cargo --version\n"
+    );
+}
+
+/// A run is never silent. With a heartbeat of a second, a piped stderr gets a line at least every
+/// two seconds, through a build, a coverage pass whose test takes three seconds, and mutants
+/// that take as long; and every phase says something.
+#[test]
+fn a_piped_run_is_never_quiet_for_longer_than_its_heartbeat() {
+    let dir = fixture("sleepy");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+        .args(["run", &dir, "--format=concise", "--report=none"])
+        .env("MUTASTIC_HEARTBEAT", "1")
+        .env("NO_COLOR", "1")
+        .env_remove("MUTASTIC_PROGRESS")
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let started = Instant::now();
+    let lines: Vec<(Duration, String)> = std::io::BufReader::new(child.stderr.take().unwrap())
+        .lines()
+        .map(|line| (started.elapsed(), line.unwrap()))
+        .collect();
+    child.wait().unwrap();
+    let mut last = Duration::ZERO;
+    for (at, line) in &lines {
+        assert!(
+            *at - last <= Duration::from_secs(2),
+            "{:?} without a line before {line:?}:\n{lines:#?}",
+            *at - last
+        );
+        last = *at;
+    }
+    for phase in [
+        "reading",
+        "building ",
+        "built ",
+        "coverage ",
+        "mutants ",
+        "ran ",
+    ] {
+        assert!(
+            lines.iter().any(|(_, line)| line.contains(phase)),
+            "no {phase:?} line:\n{lines:#?}"
+        );
+    }
+}
+
+/// `kill -USR1` asks a run what's running, piped as on a terminal: here, during the coverage
+/// pass's three-second test, which test it is and how long it's run.
+#[cfg(unix)]
+#[test]
+fn sigusr1_says_whats_running() {
+    let dir = copy_of("sleepy", "sigusr1");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+        .args(["run", &dir.display().to_string(), "--report=none"])
+        .env("MUTASTIC_PROGRESS", "counter")
+        .env("MUTASTIC_HEARTBEAT", "0.5")
+        .env("NO_COLOR", "1")
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let stderr = std::io::BufReader::new(child.stderr.take().unwrap());
+    let (mut lines, mut asked) = (Vec::new(), false);
+    for line in stderr.lines() {
+        let line = line.unwrap();
+        // Once a heartbeat says the test is running, however long the machine took to get there.
+        if !asked && line.starts_with("coverage  [0/1 tests] · ") {
+            asked = true;
+            let asked = Command::new("kill")
+                .args(["-USR1", &child.id().to_string()])
+                .status()
+                .unwrap();
+            assert!(asked.success());
+        }
+        lines.push(line);
+    }
+    child.wait().unwrap();
+    let said = lines.join("\n");
+    let running = regex::Regex::new(
+        r"running   1 test at \ds · 0 of 1 done\n   \d tests::doubles_slowly  \[00:00:0\d\]",
+    )
+    .unwrap();
+    assert!(running.is_match(&said), "{said}");
+}
+
+/// `--format=jsonl` streams the run's phases and progress as they happen: `run-started` once, as
+/// the build finishes, with only phase events before it; `progress` on the heartbeat's cadence;
+/// and every event as the schema has it.
+#[test]
+fn jsonl_streams_phases_and_progress_as_they_happen() {
+    let dir = copy_of("sleepy", "live-events");
+    let started = std::time::Instant::now();
+    let output = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+        .args([
+            "run",
+            &dir.display().to_string(),
+            "--format=jsonl",
+            "--report=none",
+        ])
+        .env("MUTASTIC_HEARTBEAT", "0.5")
+        .env("MUTASTIC_PROGRESS", "none")
+        .output()
+        .unwrap();
+    assert!(
+        started.elapsed() > Duration::from_secs(3),
+        "the fixture's test sleeps"
+    );
+    let events = events(&String::from_utf8_lossy(&output.stdout));
+    let schema = schema();
+    for event in &events {
+        let errors: Vec<String> = schema.iter_errors(event).map(|e| e.to_string()).collect();
+        assert!(errors.is_empty(), "{event}\n{}", errors.join("\n"));
+    }
+    let reasons: Vec<&str> = events
+        .iter()
+        .map(|e| e["reason"].as_str().unwrap())
+        .collect();
+    let run_started = reasons.iter().position(|&r| r == "run-started").unwrap();
+    assert_eq!(reasons.iter().filter(|&&r| r == "run-started").count(), 1);
+    assert!(
+        reasons[..run_started]
+            .iter()
+            .all(|r| r.starts_with("phase-")),
+        "{reasons:?}"
+    );
+    let phases: Vec<&str> = events
+        .iter()
+        .filter(|e| e["reason"] == "phase-started")
+        .map(|e| e["phase"].as_str().unwrap())
+        .collect();
+    assert_eq!(phases, ["reading", "building", "coverage", "mutants"]);
+    let progress: Vec<&Value> = events
+        .iter()
+        .filter(|e| e["reason"] == "progress")
+        .collect();
+    assert!(
+        progress
+            .iter()
+            .any(|e| e["phase"] == "coverage" && e["total"] == 1),
+        "{progress:#?}"
+    );
+    assert!(
+        progress
+            .iter()
+            .any(|e| e["phase"] == "mutants" && e["running"].as_u64() > Some(0)),
+        "{progress:#?}"
+    );
+    assert_eq!(reasons.last(), Some(&"run-finished"));
 }

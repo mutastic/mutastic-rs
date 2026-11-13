@@ -80,14 +80,11 @@ end of `mutastic run fixtures/unsafety`:
    Crashes  1 caught only because the test process crashed, not by a test's check
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  15 (90 without coverage selection)
-  Start at  13:21:41
-  Duration  1.4s (setup 1.2s, coverage 9ms, mutants 144ms)
-     Tests  6 on rustc 1.98.0 · 4 workers
+  Start at  11:03:14
+  Duration  334ms (setup 20ms, build 279ms, coverage 3ms, mutants 10ms, checking 6ms)
+     Tests  6 on rustc 1.99.1 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  35.7%  threshold 80  · 41.7% where tests reach
-
- [FAIL] Score below 80: 7 missed, 2 not covered.
- Next: mutastic verify <id> fixtures/unsafety · mutastic run --only=<id> fixtures/unsafety · mutastic explain <id> fixtures/unsafety
+     Score  35.7%   FAIL  Below the threshold of 80: 7 missed, 2 not covered.  · 41.7% where tests reach
 ```
 
 A safe function with an `unsafe` block is left alone because it usually exists to uphold what the
@@ -126,6 +123,7 @@ Near-unsafe mutants run differently:
   "fingerprint": "9ff2826156a229af",
   "status": "RuntimeError",
   "operator": "mutastic/remove-conditional",
+  "docs": "https://docs.mutastic.io/rust/operators/conditions/#remove-conditional",
   "location": {
     "file": "src/raw.rs",
     "line": 24,
@@ -152,7 +150,7 @@ Near-unsafe mutants run differently:
     ]
   },
   "testsRun": 1,
-  "durationMs": 70
+  "durationMs": 4
 }
 ```
 
@@ -176,6 +174,7 @@ stops it. That's std's catch, not a test's, so it's a `RuntimeError` too, wherev
   "fingerprint": "71ecfa0fc15036f8",
   "status": "RuntimeError",
   "operator": "mutastic/return-value",
+  "docs": "https://docs.mutastic.io/rust/operators/returns/#return-value",
   "location": {
     "file": "src/raw.rs",
     "line": 5,
@@ -202,7 +201,7 @@ stops it. That's std's catch, not a test's, so it's a `RuntimeError` too, wherev
     ]
   },
   "testsRun": 1,
-  "durationMs": 47
+  "durationMs": 4
 }
 ```
 

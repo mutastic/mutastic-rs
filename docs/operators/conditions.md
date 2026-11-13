@@ -48,7 +48,7 @@ fn small_orders_pay_for_delivery() {
 
 <!-- output: operators/conditions/boundary -->
 ```text
- [✗ MISSED] no test checks free_delivery() at total == 50
+  ✗ MISSED  no test checks free_delivery() at total == 50
    ┌─ src/conditions.rs:7
    │
  6 │ pub fn free_delivery(total: u32) -> bool {
@@ -65,7 +65,7 @@ fn small_orders_pay_for_delivery() {
 
            // in mod conditions::tests
            #[test]
-           fn free_delivery_with_total_50() {
+           fn free_delivery_at_the_total_edge() {
                assert!(free_delivery(50)); // today true · with this mutant false
            }
            check today's value is the one you intend: the test pins what the code does now
@@ -122,6 +122,7 @@ pub fn is_newer(major: u32, minor: u32, than_major: u32, than_minor: u32) -> boo
   "fingerprint": "be0ed92fc9d72e1b",
   "status": "Ignored",
   "operator": "mutastic/boundary",
+  "docs": "https://docs.mutastic.io/rust/operators/conditions/#boundary",
   "location": {
     "file": "src/conditions.rs",
     "line": 44,
@@ -186,7 +187,7 @@ fn members_are_welcomed_back() {
 
 <!-- output: operators/conditions/remove-conditional -->
 ```text
- [✗ MISSED] no test needs member to be false in greeting()
+  ✗ MISSED  no test needs member to be false in greeting()
     ┌─ src/conditions.rs:16
     │
  15 │ pub fn greeting(member: bool) -> &'static str {
@@ -242,6 +243,7 @@ pub fn share(total: u32, parts: NonZeroU32) -> u32 {
   "fingerprint": "497f89e437964e71",
   "status": "Ignored",
   "operator": "mutastic/remove-conditional",
+  "docs": "https://docs.mutastic.io/rust/operators/conditions/#remove-conditional",
   "location": {
     "file": "src/conditions.rs",
     "line": 34,
@@ -264,6 +266,23 @@ pub fn share(total: u32, parts: NonZeroU32) -> u32 {
   "durationMs": 0
 }
 ```
+
+A value that can't be below 0 is the same: an unsigned one compared with 0 skips the changes that
+differ only below 0, `n == 0` becoming `n <= 0` and `n > 0` becoming `n != 0`, while `n != 0`, the
+check made never true and the rest run. Only what the source proves counts: a name or a field whose
+type is written `u8` to `u128` or `usize`, a cast `as` one of them, a call of a function declared
+beside it to return one, the index a `for` loop takes from `.enumerate()`, a `let` from a literal
+with an unsigned suffix (`let n = 5u32;`), a whole-number count of a `Duration` the source names
+(`d.as_secs()`, `d.subsec_nanos()`), or arithmetic on those.
+An inferred or generic type, or a type of the project's own with one of those names, and the
+mutants run.
+
+`cfg!(debug_assertions)` is always true under mutastic, which builds with debug assertions on, as
+the test profile does, whatever the project's own profiles say. So the mutant that forces it true
+is skipped as equivalent, alone, under `!` or as one side of `&&`, and the one that forces it false
+runs: that's the build without them, which the tests can tell apart. Only `cfg!(debug_assertions)`
+itself is taken: `cfg!(all(debug_assertions, unix))`, or a name it was stored in, and the mutants
+run.
 
 **Edition notes:** the Java edition has this operator too, `mutastic/remove-conditional`, for every
 condition the bytecode jumps on, `&&` and `||`'s sides among them.
@@ -296,7 +315,7 @@ fn ships_when_paid_and_in_stock() {
 
 <!-- output: operators/conditions/logical-connector -->
 ```text
- [✗ MISSED] no test checks can_ship() with one of paid and in_stock true and the other false
+  ✗ MISSED  no test checks can_ship() with one of paid and in_stock true and the other false
     ┌─ src/conditions.rs:24
     │
  23 │ pub fn can_ship(paid: bool, in_stock: bool) -> bool {
@@ -375,7 +394,7 @@ fn restock_when_low() {
 
 <!-- output: operators/conditions/comparison -->
 ```text
- [✗ MISSED] no test checks needs_restock() with stock > low
+  ✗ MISSED  no test checks needs_restock() with stock > low
     ┌─ src/conditions.rs:12
     │
  11 │ pub fn needs_restock(stock: u32, low: u32) -> bool {
@@ -452,7 +471,7 @@ fn weekend_days_are_known() {
 
 <!-- output: operators/conditions/other-comparison -->
 ```text
- [✗ MISSED] tests pass even when matches!(day, 6 | 7) becomes !matches!(day, 6 | 7) in is_weekend()
+  ✗ MISSED  tests pass even when matches!(day, 6 | 7) becomes !matches!(day, 6 | 7) in is_weekend()
     ┌─ src/conditions.rs:29
     │
  28 │ pub fn is_weekend(day: u8) -> bool {

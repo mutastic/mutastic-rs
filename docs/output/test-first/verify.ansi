@@ -1,0 +1,2 @@
+mutastic: m525ce1d2 is caught by tests::loyalty_credit_at_the_total_edge
+mutastic: m076d6006 is caught by tests::loyalty_credit_just_below_the_total_edge

@@ -6,6 +6,17 @@
 //! withdrawing mutants that don't compile; [`engine`] records what each test reaches and runs
 //! each mutant against those tests; [`report`] prints the result.
 
+/// A line to stderr that can't panic. Progress and notes go to stderr, and stderr can close mid-run
+/// (`mutastic run … 2>&1 | head`): `eprintln!` would panic there, in a worker thread, and take its
+/// results with it. What can't be shown is dropped; the run goes on.
+macro_rules! stderr_line {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stderr(), $($arg)*);
+    }};
+}
+
+pub mod baseline;
 pub mod callrules;
 pub mod cfg;
 pub mod cli;
@@ -19,14 +30,20 @@ pub mod gate;
 pub mod id;
 pub mod ignores;
 pub mod java;
+pub mod locate;
+pub mod nextrun;
+pub mod operator_docs;
+pub mod progress;
 pub mod record;
 pub mod records;
 pub mod report;
 pub mod schema;
 pub mod shares;
+pub mod similar;
 pub mod since;
 pub mod sites;
 pub mod suggest;
+pub mod terminal;
 pub mod testrun;
 pub mod words;
 pub mod workspace;

@@ -6,7 +6,7 @@ would catch it, found by running your code:
 
 <!-- output: concepts/suggested-test -->
 ```text
- [✗ MISSED] no test checks late_fee() at days_late == 7
+  ✗ MISSED  no test checks late_fee() at days_late == 7
    ┌─ src/lib.rs:7
    │
  6 │     pub fn late_fee(days_late: i64) -> i64 {
@@ -23,7 +23,7 @@ would catch it, found by running your code:
 
            // in mod rates::tests
            #[test]
-           fn late_fee_with_days_late_7() {
+           fn late_fee_at_the_days_late_edge() {
                assert_eq!(late_fee(7), 0); // today 0 · with this mutant 5
            }
            check today's value is the one you intend: the test pins what the code does now
@@ -63,8 +63,13 @@ another call changed. Each call is made twice, and any difference means no sugge
 ## Where it goes
 
 The test goes in the test module beside the function, `mod tests` with `use super::*;` as `cargo
-new` writes it, and is named for its call (`discount_with_total_100`), with a number added if the
-module already has a test by that name. When the module has no `use super::*;`, the call is written
+new` writes it, with a number added to its name if the module already has a test by that name.
+The name says where the input sits, not its value, which goes stale when the spec moves: the number
+stays in the call. For a call of one argument, a zero or negative input says so,
+`fee_when_amount_is_zero`; otherwise, at the edge of the literal the condition compares it with,
+or one either side, by the parameter's name: `discount_at_the_total_edge` for 100 in
+`total >= 100`, `discount_just_below_the_total_edge` for 99. Anything else is named for its
+arguments, `postage_with_kilos_3`, as is a call of more than one. When the module has no `use super::*;`, the call is written
 with `super::`. When there's no test module, the card says where a new one goes, and the call is
 written with `super::` too.
 

@@ -4,7 +4,7 @@ exclude = ["fixtures"]
 resolver = "2"
 
 [workspace.package]
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/mutastic/mutastic-rs"
@@ -18,7 +18,9 @@ categories = ["development-tools::testing", "development-tools::cargo-plugins", 
 rust-version = "1.91"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# Denied everywhere but `terminal`, which asks the C library for the terminal's width, its input
+# mode and signals, rather than take a dependency for a handful of calls; a test keeps it there.
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
@@ -27,3 +29,10 @@ all = { level = "warn", priority = -1 }
 unwrap_used = "warn"
 allow_attributes_without_reason = "warn"
 set_contains_or_insert = "warn"
+
+# Dependencies optimised in dev and test builds, mutastic's own crate not: the integration tests
+# run mutastic hundreds of times, and its parsing, regexes and JSON unoptimised made each run five
+# times slower (0.87s to 0.16s on the pricing fixture). Dependencies build once and stay cached; a
+# change to mutastic itself, and each of its mutants in a self-run, builds as fast as before.
+[profile.dev.package."*"]
+opt-level = 3

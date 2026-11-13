@@ -44,48 +44,120 @@ impl Project {
     }
 }
 
-/// Reads the package in `dir` (or the only package of the workspace there).
-pub fn read(dir: &str) -> Result<Project, String> {
-    let output = Command::new(cargo())
-        .args(["metadata", "--no-deps", "--format-version", "1"])
-        .current_dir(dir)
-        .output()
-        .map_err(|error| format!("couldn't run cargo: {error}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!(
-            "{dir} isn't a Cargo project: {}",
-            stderr.lines().last().unwrap_or_default()
-        ));
-    }
-    let metadata: Value = serde_json::from_slice(&output.stdout)
-        .map_err(|error| format!("couldn't read cargo metadata: {error}"))?;
-    let workspace = PathBuf::from(metadata["workspace_root"].as_str().unwrap_or(dir));
-    let target = PathBuf::from(metadata["target_directory"].as_str().unwrap_or("target"));
-    let here = std::fs::canonicalize(dir).map_err(|error| format!("{dir}: {error}"))?;
-    let packages = metadata["packages"].as_array().cloned().unwrap_or_default();
-    let manifest_dir = |package: &Value| {
-        PathBuf::from(package["manifest_path"].as_str().unwrap_or_default())
-            .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_default()
-    };
-    let package = packages
-        .iter()
-        .find(|package| {
-            std::fs::canonicalize(manifest_dir(package)).is_ok_and(|found| found == here)
+/// What `cargo metadata` says of the workspace that holds a directory: its root, its target
+/// directory, and its packages.
+pub struct Metadata {
+    pub workspace: PathBuf,
+    pub target: PathBuf,
+    packages: Vec<Value>,
+}
+
+impl Metadata {
+    /// Asks Cargo about the workspace that holds `dir`, a directory there is.
+    pub fn read(dir: &str) -> Result<Metadata, String> {
+        let output = Command::new(cargo())
+            .args(["metadata", "--no-deps", "--format-version", "1"])
+            .current_dir(dir)
+            .output()
+            .map_err(no_cargo)?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!(
+                "{dir} isn't a Cargo project: {}",
+                stderr.lines().last().unwrap_or_default()
+            ));
+        }
+        let metadata: Value = serde_json::from_slice(&output.stdout)
+            .map_err(|error| format!("couldn't read cargo metadata: {error}"))?;
+        Ok(Metadata {
+            workspace: PathBuf::from(metadata["workspace_root"].as_str().unwrap_or(dir)),
+            target: PathBuf::from(metadata["target_directory"].as_str().unwrap_or("target")),
+            packages: metadata["packages"].as_array().cloned().unwrap_or_default(),
         })
-        .or_else(|| (packages.len() == 1).then(|| &packages[0]))
-        .ok_or_else(|| {
-            let names: Vec<&str> = packages
-                .iter()
-                .filter_map(|package| package["name"].as_str())
-                .collect();
-            format!(
-                "{dir} is a workspace: run mutastic in one of its packages ({})",
-                names.join(", ")
-            )
-        })?;
+    }
+
+    /// Each package's name and directory, the directory as the filesystem names it, in the
+    /// directories' order.
+    pub fn members(&self) -> Vec<(String, PathBuf)> {
+        let mut members: Vec<(String, PathBuf)> = self
+            .packages
+            .iter()
+            .map(|package| {
+                let dir = manifest_dir(package);
+                let real = std::fs::canonicalize(&dir).unwrap_or(dir);
+                let name = package["name"].as_str().unwrap_or_default().to_string();
+                (name, real)
+            })
+            .collect();
+        members.sort_by(|a, b| a.1.cmp(&b.1));
+        members
+    }
+
+    /// The directory of the package that holds `here`, as Cargo finds it: the package's own
+    /// directory or the nearest above it. `here` is as the filesystem names it.
+    pub fn enclosing(&self, here: &Path) -> Option<PathBuf> {
+        self.members()
+            .into_iter()
+            .map(|(_, dir)| dir)
+            .filter(|dir| here.starts_with(dir))
+            .max_by_key(|dir| dir.components().count())
+    }
+
+    /// The package `here` runs: the one that holds it, or the workspace's only one.
+    fn package(&self, here: &Path) -> Option<&Value> {
+        let enclosing = self.enclosing(here);
+        self.packages
+            .iter()
+            .find(|package| {
+                let dir = manifest_dir(package);
+                enclosing.is_some() && std::fs::canonicalize(dir).ok() == enclosing
+            })
+            .or_else(|| (self.packages.len() == 1).then(|| &self.packages[0]))
+    }
+}
+
+/// The directory of a package's `Cargo.toml`, as `cargo metadata` gives it.
+fn manifest_dir(package: &Value) -> PathBuf {
+    PathBuf::from(package["manifest_path"].as_str().unwrap_or_default())
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default()
+}
+
+/// Why Cargo didn't start: there's none where mutastic looked, the `CARGO` variable or the PATH,
+/// or something else, said as the system says it.
+fn no_cargo(error: std::io::Error) -> String {
+    if error.kind() != std::io::ErrorKind::NotFound {
+        return format!("couldn't run {}: {error}", cargo());
+    }
+    match std::env::var("CARGO") {
+        Ok(set) => format!(
+            "CARGO is {set}, and there's no cargo there.\n\
+             mutastic runs the cargo CARGO names. Point it at one, or unset it to use the cargo on \
+             the PATH:\n  unset CARGO"
+        ),
+        Err(_) => "there's no cargo on the PATH, and mutastic reads a Rust package with it.\n\
+                   Install Rust from https://rustup.rs, or add the directory that holds cargo to \
+                   the PATH. To check it's found:\n  cargo --version"
+            .to_string(),
+    }
+}
+
+/// Reads the package in `dir`: the one that holds it, or the only package of the workspace there.
+pub fn read(dir: &str) -> Result<Project, String> {
+    if !Path::new(dir).is_dir() {
+        return Err(format!("there's no directory {dir}"));
+    }
+    let metadata = Metadata::read(dir)?;
+    let here = std::fs::canonicalize(dir).map_err(|error| format!("{dir}: {error}"))?;
+    let package = metadata.package(&here).cloned().ok_or_else(|| {
+        crate::locate::not_a_package(dir, &here, &metadata, &crate::locate::Line::new("run", &[]))
+    })?;
+    let Metadata {
+        workspace,
+        target,
+        packages,
+    } = metadata;
     let workspace_real = std::fs::canonicalize(&workspace).unwrap_or(workspace.clone());
     let relative = |path: &Path| {
         let real = std::fs::canonicalize(path).unwrap_or(path.to_path_buf());
@@ -124,7 +196,7 @@ pub fn read(dir: &str) -> Result<Project, String> {
         .collect();
     Ok(Project {
         given: dir.to_string(),
-        package_dir: relative(&manifest_dir(package)),
+        package_dir: relative(&manifest_dir(&package)),
         workspace: workspace_real,
         target,
         package: package["name"].as_str().unwrap_or_default().to_string(),
@@ -134,6 +206,50 @@ pub fn read(dir: &str) -> Result<Project, String> {
         features: crate::cfg::default_features(&package["features"]),
         members,
     })
+}
+
+/// Holds `dir`, mutastic's work directory for a package, for this process from its first write to
+/// the copy until it exits. Two runs on one package at once would rewrite each other's copy and
+/// build in the middle of a run, so a mutant could be judged by the other run's build: a false
+/// catch. A second run waits for the first, and says so. The lock is the process's, taken once
+/// however many times it builds there, since a lock asked for again from the same process would
+/// wait on itself.
+fn hold(dir: &Path) -> Result<(), String> {
+    static HELD: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::BTreeMap<PathBuf, std::fs::File>>,
+    > = std::sync::OnceLock::new();
+    let mut held = HELD
+        .get_or_init(Default::default)
+        .lock()
+        .map_err(|_| "a run's lock was poisoned".to_string())?;
+    if held.contains_key(dir) {
+        return Ok(());
+    }
+    std::fs::create_dir_all(dir)
+        .map_err(|error| format!("couldn't make {}: {error}", dir.display()))?;
+    let path = dir.join("lock");
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .map_err(|error| format!("couldn't open {}: {error}", path.display()))?;
+    match file.try_lock() {
+        Ok(()) => {}
+        Err(std::fs::TryLockError::WouldBlock) => {
+            stderr_line!(
+                "mutastic: waiting for another mutastic run on this package to finish ({})",
+                path.display()
+            );
+            file.lock()
+                .map_err(|error| format!("couldn't lock {}: {error}", path.display()))?;
+        }
+        Err(std::fs::TryLockError::Error(error)) => {
+            return Err(format!("couldn't lock {}: {error}", path.display()));
+        }
+    }
+    held.insert(dir.to_path_buf(), file);
+    Ok(())
 }
 
 pub fn cargo() -> String {
@@ -146,6 +262,7 @@ pub type Overrides = std::collections::BTreeMap<PathBuf, String>;
 /// Brings the copy up to date with the workspace, writing only what changed, with `overrides` in
 /// place of the originals.
 pub fn sync(project: &Project, overrides: &Overrides) -> Result<(), String> {
+    hold(&project.mutastic_dir())?;
     let copy = project.copy_dir();
     let mut kept = std::collections::BTreeSet::new();
     copy_tree(

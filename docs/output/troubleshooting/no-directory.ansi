@@ -1,0 +1,3 @@
+mutastic: there's no directory fixtures/workspace/shpo in /home/you/project.
+There's a package called shop, in fixtures/workspace/shop. To test it:
+  mutastic run fixtures/workspace/shop

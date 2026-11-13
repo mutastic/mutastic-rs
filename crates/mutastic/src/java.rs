@@ -319,7 +319,7 @@ pub fn engine() -> Result<PathBuf, String> {
         Err(error) => {
             match meanwhile(OWN, wanted().is_some(), &kept(&home)) {
                 Some(kept) => {
-                    eprintln!("mutastic: {error}\nmutastic: running the Java edition {kept}, kept, meanwhile");
+                    stderr_line!("mutastic: {error}\nmutastic: running the Java edition {kept}, kept, meanwhile");
                     Ok(launcher(&home, &kept))
                 }
                 None => Err(error),
@@ -343,11 +343,25 @@ fn meanwhile(own: &str, asked: bool, kept: &[String]) -> Option<String> {
 pub fn forward(command: &Path, args: &[String]) -> ExitCode {
     let mut process = Command::new(command);
     process.args(args);
+    // The JDK can ask whether stdin and stdout are a terminal, not stderr, where progress goes: so
+    // it's told, unless whoever ran this already said.
+    if std::env::var_os("MUTASTIC_STDERR_TTY").is_none() {
+        use std::io::IsTerminal as _;
+        let terminal = std::io::stderr().is_terminal();
+        process.env("MUTASTIC_STDERR_TTY", if terminal { "1" } else { "0" });
+    }
+    // Nor its width, which a live block fits.
+    if let (None, Some(columns)) = (
+        std::env::var_os("MUTASTIC_COLUMNS"),
+        crate::terminal::width(),
+    ) {
+        process.env("MUTASTIC_COLUMNS", columns.to_string());
+    }
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
         let error = process.exec();
-        eprintln!(
+        stderr_line!(
             "mutastic: couldn't run the Java edition at {}: {error}",
             command.display()
         );
@@ -357,7 +371,7 @@ pub fn forward(command: &Path, args: &[String]) -> ExitCode {
     match process.status() {
         Ok(status) => ExitCode::from(status.code().unwrap_or(2).clamp(0, 255) as u8),
         Err(error) => {
-            eprintln!(
+            stderr_line!(
                 "mutastic: couldn't run the Java edition at {}: {error}",
                 command.display()
             );
@@ -448,7 +462,7 @@ pub fn listed(sums: &str, name: &str) -> Option<String> {
 fn verify(tar: &Path, name: &str, version: &str, releases: &str) -> Result<(), String> {
     let sums = tar.with_file_name("SHA256SUMS");
     if !download(&format!("{releases}/download/v{version}/SHA256SUMS"), &sums)? {
-        eprintln!("mutastic: this release has no checksums to check the download against");
+        stderr_line!("mutastic: this release has no checksums to check the download against");
         return Ok(());
     }
     let text = std::fs::read_to_string(&sums).map_err(|e| e.to_string())?;
@@ -463,7 +477,7 @@ fn verify(tar: &Path, name: &str, version: &str, releases: &str) -> Result<(), S
 
 /// Downloads, checks and unpacks a release into `home`, where it's kept.
 fn fetch(home: &Path, version: &str, releases: &str) -> Result<(), String> {
-    eprintln!(
+    stderr_line!(
         "mutastic: this is a Java project, so mutastic fetches its Java edition, {version}, into \
          {}: once",
         home.display()

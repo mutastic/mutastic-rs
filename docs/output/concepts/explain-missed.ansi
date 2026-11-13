@@ -16,7 +16,7 @@
 
             // in mod tests
             #[test]
-            fn discount_with_total_100() {
+            fn discount_at_the_total_edge() {
                 assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
             }
             [2mcheck today's value is the one you intend: the test pins what the code does now[0m
@@ -29,6 +29,7 @@
     [2m=[0m [1;34m[1mchange  [0m[0m  [1mtotal >= 100 → (total) > (100)[0m
                 [2mthe code the switch puts in place of the original when this mutant is live[0m
     [2m=[0m [1;34m[1moperator[0m[0m  mutastic/boundary: `>=` becomes `>`
+                [2mdocs: https://docs.mutastic.io/rust/operators/conditions/#boundary[0m
     [2m=[0m [1;34m[1mid      [0m[0m  mb2f8ae57: `m` and the first 8 hex digits of its fingerprint, b2f8ae57ca6c48cb, a SHA-256 of the crate, function, operator, site and change
                 [2mno line number goes in, so the id stays the same when code above it moves[0m
     [2m=[0m [1;34m[1msite    [0m[0m  `total >= 100` in Pricing::discount, line 26, column 18

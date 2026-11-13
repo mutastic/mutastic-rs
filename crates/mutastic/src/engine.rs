@@ -97,9 +97,16 @@ pub struct Report {
     pub workers: usize,
     pub rustc: String,
     pub threshold: f64,
+    /// Reading, building and listing the tests, the build included.
     pub setup: Duration,
+    /// The build alone, of `setup`; zero when it wasn't timed here.
+    pub build: Duration,
     pub coverage: Duration,
     pub mutants: Duration,
+    /// Looking for a test to suggest for each missed mutant, when there were any to look for.
+    pub checking: Option<Duration>,
+    /// Whether `run-started` went out live, with the run's progress, rather than with the rest.
+    pub streamed: bool,
     pub took: Duration,
     pub unsafe_mode: UnsafeMode,
     /// The settings the user's crate was built with, from Cargo: `opt_level`, `debug_assertions`,
@@ -121,6 +128,9 @@ pub struct Report {
     pub operators: Vec<&'static str>,
     /// This run against the last full run under the same operators, when there was one.
     pub comparison: Option<crate::record::Comparison>,
+    /// With `--fail-on-new`, the baseline the run is judged by: it passes on the misses the
+    /// baseline doesn't hold, not on its score.
+    pub fail_on_new: Option<crate::baseline::FailOnNew>,
 }
 
 impl Report {
@@ -147,8 +157,13 @@ impl Report {
         (scored > 0).then(|| 100.0 * detected as f64 / scored as f64)
     }
 
+    /// Whether the run passes: with `--fail-on-new`, when no mutant no test catches is new;
+    /// otherwise when the score reaches the threshold.
     pub fn passed(&self) -> bool {
-        self.score().is_none_or(|score| score >= self.threshold)
+        match &self.fail_on_new {
+            Some(judged) => judged.passes(self),
+            None => self.score().is_none_or(|score| score >= self.threshold),
+        }
     }
 }
 
@@ -215,6 +230,27 @@ pub fn find_all(project: &Project) -> Crate {
 pub enum Progress<'a> {
     /// The one build of every mutant is starting.
     Building { mutants: usize },
+    /// Cargo is at work: its step (`check` or `build`), the round, the crates finished in it, and
+    /// its latest `Checking`/`Compiling` line.
+    Compiling {
+        step: &'a str,
+        round: usize,
+        crates: usize,
+        last: &'a str,
+    },
+    /// The build is done: each round's step, the mutants withdrawn as they didn't compile, and
+    /// the profile Cargo built with.
+    Built {
+        mutants: usize,
+        took: Duration,
+        rounds: &'a [&'a str],
+        withdrawn: usize,
+        profile: &'a serde_json::Value,
+    },
+    /// A worker of the coverage pass starts a test.
+    TestStarted { worker: usize, name: &'a str },
+    /// The coverage pass has run `done` of its `total` tests.
+    Tested { done: usize, total: usize },
     /// The tests ran once each, recording what they reach; the mutants run next.
     Covered {
         tests: usize,
@@ -223,15 +259,44 @@ pub enum Progress<'a> {
         mutants: usize,
         /// The tests left out because they failed, then passed when run again.
         flaky: usize,
+        /// What the mutants should take, all told: each the time its covering tests took.
+        cost: Duration,
     },
     /// The results are the shares' (`--from-shards`): none run here.
     FromShares { summary: &'a str, mutants: usize },
-    /// One mutant has its result.
-    MutantFinished { status: Status },
-    /// Every mutant of one source file has its result, in the order found.
+    /// A worker starts a mutant, expected to take `expected`, as its covering tests did; it's
+    /// slow past `slow`.
+    MutantStarted {
+        worker: usize,
+        found: &'a Crate,
+        mutant: usize,
+        expected: Duration,
+        slow: Duration,
+        /// The tests that cover it.
+        tests: usize,
+    },
+    /// One mutant has its result; `cost` is what it was expected to take.
+    MutantFinished {
+        status: Status,
+        worker: usize,
+        cost: Duration,
+    },
+    /// Every mutant of one source file has its result, in the order found, `took` after its first
+    /// started.
     FileFinished {
         found: &'a Crate,
         results: &'a [MutantResult],
+        took: Duration,
+    },
+    /// Every mutant has its result.
+    Ran { took: Duration },
+    /// Looking for a test that catches each missed mutant: `done` of `total` looked at.
+    Checking { done: usize, total: usize },
+    /// The look is over: a test was found for `found` of the `missed` mutants.
+    Checked {
+        missed: usize,
+        took: Duration,
+        found: usize,
     },
 }
 
@@ -295,13 +360,23 @@ pub fn run(
         .copied()
         .filter(|&m| found.mutants[m].skipped.is_none())
         .collect();
-    let built = compile::build(project, &found, &live, &recorders)?;
+    let building = Instant::now();
+    let built = compile::build(project, &found, &live, &recorders, progress)?;
+    let build_took = building.elapsed();
+    let steps: Vec<&str> = built.rounds.iter().map(|round| round.phase).collect();
+    progress(Progress::Built {
+        mutants: selected.len(),
+        took: build_took,
+        rounds: &steps,
+        withdrawn: built.unviable.len(),
+        profile: &built.profile,
+    });
     let cwd = project.copy_dir().join(&project.package_dir);
     let listed = testrun::list(&built.binaries, &cwd)?;
     let setup = started.elapsed();
 
     let coverage_started = Instant::now();
-    let covered = coverage(project, &built.binaries, &listed, options.workers)?;
+    let covered = coverage(project, &built.binaries, &listed, options.workers, progress)?;
     let flaky: Vec<crate::flaky::Flaky> = covered
         .flaky
         .iter()
@@ -326,26 +401,55 @@ pub fn run(
         .unzip();
     let coverage_took = coverage_started.elapsed();
     let rustc = rustc_version();
+    let order: Vec<usize> = selected.iter().copied().collect();
+    let first = first_at_site(&found, &live, &built);
+    let costs: Vec<Cost> = order
+        .iter()
+        .map(|&mutant| cost(&found, mutant, first[mutant], &built, &tests, &reach))
+        .collect();
     progress(Progress::Covered {
         tests: tests.len(),
         rustc: &rustc,
         took: coverage_took,
         mutants: selected.len(),
         flaky: flaky.len(),
+        cost: costs.iter().map(|cost| cost.expected).sum(),
     });
 
     let mutants_started = Instant::now();
-    let order: Vec<usize> = selected.iter().copied().collect();
-    let first = first_at_site(&found, &live, &built);
     let files = Files::new(&found, &order);
-    let mut results = testrun::parallel(&order, options.workers, |&mutant| {
+    let indexed: Vec<(usize, &Cost)> = order.iter().copied().zip(&costs).collect();
+    let mut results = testrun::parallel_on(&indexed, options.workers, |worker, &(mutant, cost)| {
+        if cost.expected > Duration::ZERO {
+            progress(Progress::MutantStarted {
+                worker,
+                found: &found,
+                mutant,
+                expected: cost.expected,
+                slow: cost.slow,
+                tests: cost.tests,
+            });
+        }
+        files.started(&found, mutant);
         let result = result(&found, mutant, first[mutant], &built, &tests, &reach, &cwd);
-        files.finished(&found, &result, progress);
+        files.finished(&found, &result, (worker, cost.expected), progress);
         result
     });
+    let mutants_took = mutants_started.elapsed();
+    progress(Progress::Ran { took: mutants_took });
+    let looking = Instant::now();
+    let checked = options.suggestions && results.iter().any(|r| r.status == Status::Survived);
     if options.suggestions {
-        suggest_all(project, &found, &built, &mut results, options.workers);
+        suggest_all(
+            project,
+            &found,
+            &built,
+            &mut results,
+            options.workers,
+            progress,
+        );
     }
+    let checking = checked.then(|| looking.elapsed());
     // The tests run against mutants; the coverage pass's runs aren't counted, as in the Java
     // edition, so the count compares with running every test on every mutant.
     let test_runs = results.iter().map(|r| r.tests_run).sum::<usize>();
@@ -360,8 +464,11 @@ pub fn run(
         rustc,
         threshold: options.threshold,
         setup,
+        build: build_took,
         coverage: coverage_took,
-        mutants: mutants_started.elapsed(),
+        mutants: mutants_took,
+        checking,
+        streamed: false,
         took: started.elapsed(),
         unsafe_mode: options.unsafe_mode,
         profile: built.profile,
@@ -373,6 +480,7 @@ pub fn run(
         share: None,
         operators: options.operators.clone(),
         comparison: None,
+        fail_on_new: None,
     })
 }
 
@@ -495,20 +603,38 @@ pub fn source_line(found: &Crate, index: usize) -> String {
 /// Each source file's mutants still running, and the results of those done, so a file's line can
 /// be shown the moment its last mutant finishes.
 pub(crate) struct Files {
-    state: std::sync::Mutex<BTreeMap<PathBuf, (usize, Vec<MutantResult>)>>,
+    state: std::sync::Mutex<BTreeMap<PathBuf, FileState>>,
+}
+
+/// A file's mutants still to finish, the results of those done, and when its first started.
+#[derive(Default)]
+pub(crate) struct FileState {
+    left: usize,
+    done: Vec<MutantResult>,
+    first: Option<Instant>,
 }
 
 impl Files {
     pub(crate) fn new(found: &Crate, order: &[usize]) -> Files {
-        let mut state: BTreeMap<PathBuf, (usize, Vec<MutantResult>)> = BTreeMap::new();
+        let mut state: BTreeMap<PathBuf, FileState> = BTreeMap::new();
         for &index in order {
             state
                 .entry(found.mutants[index].file.clone())
                 .or_default()
-                .0 += 1;
+                .left += 1;
         }
         Files {
             state: std::sync::Mutex::new(state),
+        }
+    }
+
+    /// Notes when a file's first mutant starts, so its line says how long the file took, not the
+    /// sum of its mutants' times across the workers.
+    pub(crate) fn started(&self, found: &Crate, mutant: usize) {
+        if let Ok(mut state) = self.state.lock() {
+            if let Some(file) = state.get_mut(&found.mutants[mutant].file) {
+                file.first.get_or_insert_with(Instant::now);
+            }
         }
     }
 
@@ -518,24 +644,29 @@ impl Files {
         &self,
         found: &Crate,
         result: &MutantResult,
+        (worker, cost): (usize, Duration),
         progress: &(dyn Fn(Progress) + Sync),
     ) {
         let Ok(mut state) = self.state.lock() else {
             return;
         };
-        let Some((left, done)) = state.get_mut(&found.mutants[result.mutant].file) else {
+        let Some(file) = state.get_mut(&found.mutants[result.mutant].file) else {
             return;
         };
-        done.push(result.clone());
-        *left -= 1;
+        file.done.push(result.clone());
+        file.left -= 1;
         progress(Progress::MutantFinished {
             status: result.status,
+            worker,
+            cost,
         });
-        if *left == 0 {
-            done.sort_by_key(|r| r.mutant);
+        if file.left == 0 {
+            file.done.sort_by_key(|r| r.mutant);
+            let summed = || file.done.iter().map(|r| r.took).sum();
             progress(Progress::FileFinished {
                 found,
-                results: done,
+                results: &file.done,
+                took: file.first.map_or_else(summed, |first| first.elapsed()),
             });
         }
     }
@@ -569,6 +700,7 @@ fn coverage(
     binaries: &[Binary],
     tests: &[Test],
     workers: usize,
+    progress: &(dyn Fn(Progress) + Sync),
 ) -> Result<Covered, String> {
     let dir = project.mutastic_dir().join("coverage");
     std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
@@ -587,7 +719,23 @@ fn coverage(
         (outcome, read_reach(&text))
     };
     let indexed: Vec<(usize, &Test)> = tests.iter().enumerate().collect();
-    let mut reached = testrun::parallel(&indexed, workers, |&(index, test)| cover(index, test));
+    let tested = std::sync::atomic::AtomicUsize::new(0);
+    progress(Progress::Tested {
+        done: 0,
+        total: tests.len(),
+    });
+    let mut reached = testrun::parallel_on(&indexed, workers, |worker, &(index, test)| {
+        progress(Progress::TestStarted {
+            worker,
+            name: &test.display,
+        });
+        let covered = cover(index, test);
+        progress(Progress::Tested {
+            done: tested.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1,
+            total: tests.len(),
+        });
+        covered
+    });
     let mut flaky = Vec::new();
     let mut failing = Vec::new();
     for (index, test) in tests.iter().enumerate() {
@@ -692,6 +840,57 @@ fn first_at_site(found: &Crate, selected: &BTreeSet<usize>, built: &compile::Bui
         .collect()
 }
 
+/// What a mutant should take, and when it's slow: the time its covering tests took in the coverage
+/// pass, and three times that or half its timeout, whichever comes first. One no test reaches, or
+/// that isn't run, costs nothing.
+pub(crate) struct Cost {
+    expected: Duration,
+    slow: Duration,
+    tests: usize,
+}
+
+fn cost(
+    found: &Crate,
+    index: usize,
+    site: u32,
+    built: &compile::Built,
+    tests: &[Test],
+    reach: &[Reach],
+) -> Cost {
+    let none = Cost {
+        expected: Duration::ZERO,
+        slow: Duration::ZERO,
+        tests: 0,
+    };
+    if found.mutants[index].skipped.is_some() || built.unviable.contains_key(&index) {
+        return none;
+    }
+    let mut by_binary: BTreeMap<usize, Duration> = BTreeMap::new();
+    let mut covering = 0;
+    for (t, test) in tests.iter().enumerate() {
+        if reach[t].hits.contains(&site) {
+            *by_binary.entry(test.binary).or_default() += reach[t].took;
+            covering += 1;
+        }
+    }
+    let expected: Duration = by_binary.values().sum();
+    let timeout: Duration = by_binary.values().map(|&baseline| timeout(baseline)).sum();
+    if by_binary.is_empty() {
+        return none;
+    }
+    Cost {
+        expected,
+        slow: (expected * 3).min(timeout / 2),
+        tests: covering,
+    }
+}
+
+/// How long a binary's covering tests may run against a mutant: five times what they took, and a
+/// second, or ten seconds.
+fn timeout(baseline: Duration) -> Duration {
+    (baseline * 5 + Duration::from_secs(1)).max(Duration::from_secs(10))
+}
+
 fn result(
     found: &Crate,
     index: usize,
@@ -777,7 +976,7 @@ fn result(
         if mutant.near_unsafe.is_some() {
             names.push("--test-threads=1");
         }
-        let timeout = (baseline * 5 + Duration::from_secs(1)).max(Duration::from_secs(10));
+        let timeout = timeout(baseline);
         let active = [("MUTASTIC_ACTIVE", mutant.ordinal.to_string())];
         let outcome: Outcome = testrun::run(&built.binaries[binary], cwd, &names, &active, timeout);
         result.tests_run += group.len();
@@ -824,6 +1023,7 @@ fn suggest_all(
     built: &compile::Built,
     results: &mut [MutantResult],
     workers: usize,
+    progress: &(dyn Fn(Progress) + Sync),
 ) {
     let cwd = project.copy_dir().join(&project.package_dir);
     let dir = project.mutastic_dir().join("probes");
@@ -839,7 +1039,7 @@ fn suggest_all(
         return;
     }
     let probes = testrun::probes(&built.binaries, &cwd);
-    let found_tests = testrun::parallel(&missed, workers, |&index| {
+    let look = |index: usize| {
         let result = &results[index];
         let mutant = &found.mutants[result.mutant];
         let function = &found.functions[mutant.function];
@@ -880,6 +1080,22 @@ fn suggest_all(
                 .map(|made| made.test);
             found
         })
+    };
+    let checking = Instant::now();
+    let (looked, total) = (std::sync::atomic::AtomicUsize::new(0), missed.len());
+    progress(Progress::Checking { done: 0, total });
+    let found_tests = testrun::parallel(&missed, workers, |&index| {
+        let found = look(index);
+        progress(Progress::Checking {
+            done: looked.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1,
+            total,
+        });
+        found
+    });
+    progress(Progress::Checked {
+        missed: total,
+        took: checking.elapsed(),
+        found: found_tests.iter().filter(|found| found.is_some()).count(),
     });
     for (index, suggestion) in missed.into_iter().zip(found_tests) {
         results[index].suggestion = suggestion;

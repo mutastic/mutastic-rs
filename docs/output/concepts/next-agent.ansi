@@ -1,0 +1,28 @@
+mutastic next: 1 of 3 lines with missed mutants in ranking; close this one, then ask for the next
+why first: a condition or a removal: it changes what the code decides or does; 3 tests run it, and none checks it
+rules: add or change tests only; never change production code to make a mutant go away: tell the person, and never delete, disable or loosen a test; it's done when `mutastic verify md0d6db64,m2e329a72,m729a5380 fixtures/ranking` passes
+decline: if a mutant's case can't happen in practice, or the change is one no caller can see, don't contrive a test: propose ignoring it, for a person to accept, as the kind it is (equivalent, unreachable, telemetry, deprecated or accepted-risk), with the reason in two sentences: the one case where it differs, and why that can't happen (`mutastic ignore <id> --propose --as=<equivalent|unreachable|…> --reason="Differs only when <case>. That can't happen because <why>." fixtures/ranking`, for each of md0d6db64, m2e329a72, m729a5380)
+
+missed md0d6db64: no test checks `is_small()` at `n == 10`
+   at src/lib.rs:15
+   - n < 10
+   + n <= 10
+   also missed m2e329a72: no test checks `is_small()` returning `false` here
+     + true
+   also missed m729a5380: no test needs `n < 10` to be false in `is_small()`
+     + true
+   covered by: tests::five_doubled_is_more_than_one_and_small, tests::four_doubled_is_more_than_one_and_small, tests::six_doubled_is_more_than_one_and_small; all still pass with the change
+   evidence: every test calls `is_small()` away from the boundary
+   evidence: inputs seen: 4, 5, 6 (none is 10)
+   fix: test `is_small()` with `n = 10` and assert the result
+   test to add in mod tests:
+     #[test]
+     fn is_small_at_the_n_edge() {
+         assert!(!is_small(10)); // today false · with md0d6db64 true
+     }
+     // check today's value is the one you intend: the test pins what the code does now
+   done when: mutastic verify md0d6db64,m2e329a72,m729a5380 fixtures/ranking passes
+   reproduce: mutastic run --only=md0d6db64,m2e329a72,m729a5380 fixtures/ranking
+   or propose: mutastic ignore <id> --propose --as=<equivalent|unreachable|…> --reason="Differs only when <case>. That can't happen because <why>." fixtures/ranking for each of md0d6db64, m2e329a72, m729a5380
+
+then: run `mutastic next fixtures/ranking` again for the next one; when it says nothing is left, you're done

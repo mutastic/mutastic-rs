@@ -6,6 +6,7 @@
   "fingerprint": "be0ed92fc9d72e1b",
   "status": "Ignored",
   "operator": "mutastic/boundary",
+  "docs": "https://docs.mutastic.io/rust/operators/conditions/#boundary",
   "location": {
     "file": "src/conditions.rs",
     "line": 44,

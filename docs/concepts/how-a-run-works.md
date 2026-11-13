@@ -6,12 +6,21 @@ once, with every mutant in it, and picks which one is live when the tests run. W
 
 <!-- output: concepts/run-progress -->
 ```text
-mutastic 1.0.0 · reading the Cargo package…
-building  11 mutants in one build…
-coverage  3 tests on rustc 1.98.0 in 5ms · 11 mutants
- ❯ [pricing] src/lib.rs (11 mutants | 1 missed) 61ms
+mutastic 1.1.0 · reading the Cargo package…
+building  11 mutants in one build · 4 workers
+built     11 mutants in 306ms · 2 rounds (check and build), none withdrawn
+coverage  3 tests on rustc 1.99.1 in 2ms · 11 mutants
+ ❯  pricing  src/lib.rs (11 mutants | 1 missed) 26ms
    × discount() :26 >= becomes >
+ran       11 mutants in 8ms · ✓ 10 caught · ✗ 1 missed · ○ 0 not covered · ⏱ 0 timed out
+checked   1 missed mutant in 4ms · a test to write for 1
 ```
+
+Each phase says when it ends. While one runs, a terminal shows a line under these, redrawn every
+tenth of a second with the phase's own clock: the crate Cargo is on while it builds, how many tests
+the coverage pass has run, the mutants' counts so far. In a log, in CI or under a coding agent, the
+same line is printed instead whenever 30 seconds pass without one, so a run is never quiet for
+longer. `--progress` chooses.
 
 ## One copy, one build
 
@@ -236,3 +245,40 @@ last job fails if the whole score is below the threshold. The last job builds no
 a release and puts the shares together. For a member of a workspace, name its directory in both
 commands (`mutastic run crates/core --shard=…`) and upload the share from the workspace's
 `target/mutastic/shares/…`.
+
+## Brownfield: fail only on new misses
+
+A package that comes to mutastic with years of code may have a score far below any threshold worth
+holding, and a job that fails on every run is soon ignored. `--fail-on-new` fails the run only on
+misses that are new: it passes while every mutant no test catches, missed or reached by none, is in
+the package's [baseline](next.md#a-baseline-for-older-misses), and fails on any that isn't,
+whatever the score. The threshold isn't applied; the score is still shown.
+
+Take the baseline once, from `main`, and commit `.mutastic/baseline.yaml`:
+
+```sh
+mutastic baseline
+```
+
+Then CI runs with `--fail-on-new`:
+
+```sh
+mutastic run --fail-on-new
+```
+
+A failed run names each new miss by id: `[FAIL] 2 new misses, not in the baseline (12 in it): …`
+in the summary, the same on the first line of `--format=agent`, whose entries put the new misses
+first, and `failOnNew`, `newMisses` and `inBaseline` in `--format=jsonl`'s `run-finished`. Write
+the test, or for a case that can't happen, [ignore](../reference/commands.md#ignore) the mutant:
+the baseline is never rewritten to take in a new miss, which would hide it. Without a baseline,
+`--fail-on-new` stops with exit status 2 and says `mutastic baseline` writes one, rather than guess
+which misses are new.
+
+As tests catch the baseline's mutants, a full run says how many, and `mutastic baseline --prune`
+drops them, so the file shrinks and a mutant caught once can't be missed again unnoticed. Commit
+the pruned file as you would any other change.
+
+With `--since`, a run is judged on the new misses on the lines a pull request changed. A share of a
+[split run](#one-run-across-ci-jobs) is judged on its own mutants, and `--from-shards`, given
+`--fail-on-new`, judges the whole. `--fail-on-new` judges a run of the package, so it isn't taken
+with `--only`.

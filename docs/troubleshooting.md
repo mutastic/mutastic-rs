@@ -28,6 +28,7 @@ the function returns a `String`:
   "fingerprint": "4db96a5721e0ee95",
   "status": "Ignored",
   "operator": "mutastic/omit-call",
+  "docs": "https://docs.mutastic.io/rust/operators/arguments/#omit-call",
   "location": {
     "file": "src/arguments.rs",
     "line": 4,
@@ -89,14 +90,11 @@ pub fn digits(mut n: u64) -> u64 {
   Worst at  digits() 6 ✗
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  25 (25 without coverage selection)
-  Start at  13:22:11
-  Duration  20.7s (setup 642ms, coverage 4ms, mutants 20.0s)
-     Tests  1 on rustc 1.98.0 · 4 workers
+  Start at  11:03:14
+  Duration  10.1s (setup 19ms, build 20ms, coverage 2ms, mutants 10.0s, checking 8ms)
+     Tests  1 on rustc 1.99.1 · 5 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  76.0%  threshold 80
-
- [FAIL] Score below 80: 6 missed, 0 not covered.
- Next: mutastic verify <id> fixtures/loops · mutastic run --only=<id> fixtures/loops · mutastic explain <id> fixtures/loops
+     Score  76.0%   FAIL  Below the threshold of 80: 6 missed, 0 not covered.
 ```
 
 Nothing needs fixing: those mutants are caught. If the time matters more than the extra mutants,
@@ -126,17 +124,23 @@ test reaches by running it alone.
 
 ## A workspace
 
-mutastic runs one package at a time. Pointed at a workspace's root, it stops and names the
-members:
+mutastic runs one package at a time. Pointed at a workspace's root, it stops and gives the command
+for each member, from where you are:
 
 <!-- output: troubleshooting/workspace -->
 ```text
-mutastic 1.0.0 · reading the Cargo package…
-mutastic: fixtures/workspace is a workspace: run mutastic in one of its packages (billing, shop)
+mutastic: fixtures/workspace is a workspace's root, and mutastic tests one package at a time.
+It has 2 packages. To test one:
+  mutastic run fixtures/workspace/billing
+  mutastic run fixtures/workspace/shop
 ```
 
-Point it at the member instead: `mutastic run shop`, or `cargo mutastic run` inside `shop`. A root
-package that is also the workspace's root runs as itself. Today:
+Run one of them, or `cargo mutastic run` inside the member. A workspace of more than ten packages
+is listed by name, with the command to fill in. Anywhere inside a member, such as its `src`,
+mutastic runs that member, as Cargo would, and reads its `mutastic.yaml`, ignores and baseline from
+the member's directory. A member's package name typed where there's no directory of that name,
+`mutastic run shop` with `shop` in `crates/shop`, runs that member, and a note says which
+directory it used. A root package that is also the workspace's root runs as itself. Today:
 
 - **Only the package's own tests count.** A test in another member that calls the package's code
   doesn't reach its mutants, so that code may show as not covered. Move or copy such tests into the
@@ -144,6 +148,25 @@ package that is also the workspace's root runs as itself. Today:
 - **The whole workspace is copied,** so path dependencies on other members build as usual, but
   only the package named is mutated.
 - **A proc-macro crate** can't be mutated yet: mutastic says so and stops.
+
+## mutastic says there's no directory, or no project
+
+A directory mutastic is pointed at is checked before anything runs there. One that isn't there is
+named as you typed it, with where mutastic looked. A package or directory whose name is close to it
+is offered, never run, and the message ends in the command to run instead:
+
+<!-- output: troubleshooting/no-directory -->
+```text
+mutastic: there's no directory fixtures/workspace/shpo in /home/you/project.
+There's a package called shop, in fixtures/workspace/shop. To test it:
+  mutastic run fixtures/workspace/shop
+```
+
+With no build file in the directory or any above it, `Cargo.toml` for Rust or `pom.xml`,
+`build.gradle(.kts)` or `settings.gradle(.kts)` for Java, there's no project to test. Go to your
+project, or name its directory. mutastic's options are all long ones, as `--format=full`: a word
+such as `-v` is an option it doesn't have, and `mutastic --help` lists them. When there's no
+`cargo` to run, mutastic says where it looked: the `CARGO` variable, when it's set, or the PATH.
 
 ## Test code isn't mutated
 
@@ -204,13 +227,11 @@ pub fn is_absolute(path: &str) -> bool {
   Left out  not built here: `cfg(feature = "simd")` (2), `cfg(windows)` (15)
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  9 (18 without coverage selection)
-  Start at  13:22:32
-  Duration  584ms (setup 539ms, coverage 4ms, mutants 12ms)
-     Tests  2 on rustc 1.98.0 · 4 workers
+  Start at  11:04:59
+  Duration  62ms (setup 20ms, build 18ms, coverage 2ms, mutants 6ms)
+     Tests  2 on rustc 1.99.1 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  100.0%  threshold 80
-
- [PASS] Every mutant was caught.
+     Score  100.0%   PASS  Every mutant was caught.
 ```
 
 What's off is decided as the build decides it: the platform's settings come from `rustc --print cfg`

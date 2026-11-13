@@ -35,7 +35,7 @@ On `fixtures/pricing`, a small crate in this repository whose tests reach every 
 
 <!-- output: readme/card -->
 ```text
- [✗ MISSED] no test checks discount() at total == 100
+  ✗ MISSED  no test checks discount() at total == 100
     ┌─ src/lib.rs:26
     │
  25 │     pub fn discount(&self, total: u32) -> u32 {
@@ -52,7 +52,7 @@ On `fixtures/pricing`, a small crate in this repository whose tests reach every 
 
             // in mod tests
             #[test]
-            fn discount_with_total_100() {
+            fn discount_at_the_total_edge() {
                 assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
             }
             check today's value is the one you intend: the test pins what the code does now
@@ -60,9 +60,7 @@ On `fixtures/pricing`, a small crate in this repository whose tests reach every 
     done when  mutastic verify mb2f8ae57 fixtures/pricing passes
     reproduce  mutastic run --only=mb2f8ae57 fixtures/pricing
 
-     Score  90.9%  threshold 80
-
- [PASS] 1 missed, above the threshold.
+     Score  90.9%   PASS  1 missed, above the threshold of 80.
 ```
 
 Paste the test the card wrote, once you've checked today's value is the one you want, then prove
@@ -74,7 +72,7 @@ mutastic verify mb2f8ae57 fixtures/pricing
 
 <!-- output: getting-started/verify -->
 ```text
-mutastic: mb2f8ae57 is caught by tests::discount_with_total_100
+mutastic: mb2f8ae57 is caught by tests::discount_at_the_total_edge
 ```
 
 ## Install
@@ -121,7 +119,8 @@ mutastic run fixtures/pricing
 
 On your own crate, run `cargo mutastic run` inside it, or `mutastic run path/to/crate`. Each card
 ends with the commands for its mutant: `done when` passes once a test catches it, and `reproduce`
-runs it alone. `mutastic mutants` lists the mutants without building or running anything.
+runs it alone. `mutastic next` hands the missed mutants over one at a time, the one most worth a
+test first. `mutastic mutants` lists the mutants without building or running anything.
 
 [Getting started](docs/getting-started.md) walks through the card, the test, and the proof.
 
@@ -131,8 +130,8 @@ runs it alone. `mutastic mutants` lists the mutants without building or running 
 [docs.mutastic.io](https://docs.mutastic.io):
 
 - [How a run works](docs/concepts/how-a-run-works.md), [results and the score](docs/concepts/results.md),
-  [unsafe code](docs/concepts/unsafe.md), [profiles](docs/concepts/profiles.md) and
-  [mutant ids](docs/concepts/ids.md);
+  [unsafe code](docs/concepts/unsafe.md), [profiles](docs/concepts/profiles.md),
+  [mutant ids](docs/concepts/ids.md) and [working through misses](docs/concepts/next.md);
 - [operators](docs/operators.md), with a page and a real card for each family;
 - [commands](docs/reference/commands.md), [report files](docs/reference/reports.md), [events](docs/reference/events.md) and
   [configuration](docs/reference/configuration.md);
