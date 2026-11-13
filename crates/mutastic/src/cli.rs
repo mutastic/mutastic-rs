@@ -93,18 +93,56 @@ pub fn main(args: Vec<OsString>) -> ExitCode {
     {
         Ok((Some(code), _)) => return code,
         Ok((None, args)) => args,
-        Err(message) => {
-            stderr_line!("mutastic: {message}");
-            return ExitCode::from(2);
-        }
+        Err(message) => return failed(&args, &message),
     };
     match dispatch(&args) {
         Ok(code) => code,
-        Err(message) => {
-            stderr_line!("mutastic: {message}");
-            ExitCode::from(2)
-        }
+        Err(message) => failed(&args, &message),
     }
+}
+
+/// mutastic couldn't run: why, on stderr; and in the agent and jsonl formats, the same as the
+/// stream's last event, `run-failed`, on stdout, which is all a tool reading the stream reads.
+fn failed(args: &[String], message: &str) -> ExitCode {
+    const EXIT: u8 = 2;
+    stderr_line!("mutastic: {message}");
+    if streams_events(args) {
+        stdout_line!(
+            "{}",
+            crate::failure::event(message, &directory_typed(args), EXIT)
+        );
+    }
+    ExitCode::from(EXIT)
+}
+
+/// Whether the command line, or the environment, asks for the agent or jsonl format, which end in
+/// an event when mutastic can't run.
+fn streams_events(args: &[String]) -> bool {
+    let given = args
+        .iter()
+        .rev()
+        .find_map(|arg| arg.strip_prefix("--format="))
+        .map(str::to_string)
+        .or_else(|| std::env::var("MUTASTIC_FORMAT").ok());
+    match given.as_deref() {
+        Some(format) => matches!(format, "agent" | "jsonl"),
+        None => std::env::var_os("MUTASTIC_AGENT").is_some_and(|v| v == "1"),
+    }
+}
+
+/// The directory the command was run on, as typed: its last word that isn't an option, a mutant's
+/// id or the command's own, or `.`.
+fn directory_typed(args: &[String]) -> String {
+    let actions = ["open", "check", "close"];
+    args.iter()
+        .skip(1)
+        .rfind(|word| {
+            !word.starts_with('-')
+                && !ids(word).all(|id| is_mutant_id(&id))
+                && !(args[0] == "gate" && actions.contains(&word.as_str()))
+        })
+        .cloned()
+        .unwrap_or_else(|| ".".to_string())
 }
 
 /// Hands the command to the Java edition when the project it points at is a Maven or Gradle
@@ -664,11 +702,11 @@ fn configured_dir(given: &str) -> Option<std::path::PathBuf> {
 
 fn dispatch(args: &[String]) -> Result<ExitCode, String> {
     let Some(command) = args.first() else {
-        println!("{USAGE}");
+        stdout_line!("{USAGE}");
         return Ok(ExitCode::from(2));
     };
     if let Some(help) = help(args)? {
-        println!("{help}");
+        stdout_line!("{help}");
         return Ok(ExitCode::SUCCESS);
     }
     if !crate::mistyped::COMMANDS.contains(&command.as_str())
@@ -704,7 +742,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, String> {
         // For measuring the schema itself: build with a share of the mutants, and say how it went.
         "build" => build(&parsed),
         "--version" | "-V" => {
-            println!("{}", versions());
+            stdout_line!("{}", versions());
             Ok(ExitCode::SUCCESS)
         }
         _ => Err(crate::mistyped::command(args)),
@@ -961,7 +999,7 @@ fn finish(
         report.streamed = streamed;
     }
     report.fail_on_new = judged_on_new(parsed);
-    print!(
+    stdout_text!(
         "{}",
         report::render(
             &report,
@@ -984,7 +1022,7 @@ fn baseline_note(report: &engine::Report) {
     let older = baseline::ids(std::path::Path::new(&report.project.given));
     let caught = baseline::caught_now(report, &older).len();
     if !older.is_empty() && caught > 0 {
-        println!(
+        stdout_line!(
             "note: {caught} of the baseline's mutants are caught now: `mutastic baseline --prune` drops them"
         );
     }
@@ -998,9 +1036,9 @@ fn baseline_command(parsed: &Parsed) -> Result<ExitCode, String> {
     let here = std::path::Path::new(dir);
     if parsed.prune != baseline::exists(here) {
         if parsed.prune {
-            println!("mutastic: there's no baseline to prune: `mutastic baseline` writes one");
+            stderr_line!("mutastic: there's no baseline to prune: `mutastic baseline` writes one");
         } else {
-            println!(
+            stderr_line!(
                 "mutastic: there's a baseline already, in {}. `mutastic baseline --prune` drops its \
                  mutants the tests catch now; it's never rewritten to take in new misses, which \
                  would hide them",
@@ -1019,14 +1057,14 @@ fn baseline_command(parsed: &Parsed) -> Result<ExitCode, String> {
     if parsed.prune {
         let caught = baseline::caught_now(&report, &baseline::ids(here));
         let dropped = baseline::prune(here, &caught)?;
-        println!(
+        stdout_line!(
             "mutastic: {dropped} of the baseline's mutants are caught now, and are dropped from {}",
             baseline::FILE
         );
     } else {
         let entries = baseline::entries(&report);
         baseline::write(here, &entries)?;
-        println!(
+        stdout_line!(
             "mutastic: {} mutants no test catches are in {}: commit it. A miss that isn't in it is \
              new: the gate holds only new misses, and next offers them first",
             entries.len(),
@@ -1099,7 +1137,7 @@ fn next(parsed: &Parsed) -> Result<ExitCode, String> {
     };
     let (text, queued) = report::next::next(report.as_ref(), &asked);
     progress.finished();
-    print!("{text}");
+    stdout_text!("{text}");
     Ok(if queued {
         ExitCode::FAILURE
     } else {
@@ -1192,7 +1230,7 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, String> {
         };
         settled &= result.status.detected()
             || matches!(result.status, Status::Ignored | Status::RuntimeError);
-        println!("mutastic: {} {fate}", mutant.id);
+        stdout_line!("mutastic: {} {fate}", mutant.id);
     }
     Ok(if settled {
         ExitCode::SUCCESS
@@ -1235,7 +1273,7 @@ fn explain(parsed: &Parsed) -> Result<ExitCode, String> {
             style(parsed, std::io::stdout().is_terminal()),
         )
     };
-    print!("{shown}");
+    stdout_text!("{shown}");
     Ok(ExitCode::SUCCESS)
 }
 
@@ -1286,7 +1324,7 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, String> {
     };
     let mutant = &found.mutants[index];
     if let Some(skipped) = &mutant.skipped {
-        println!("mutastic: {id} doesn't run anyway ({skipped}): nothing to ignore");
+        stdout_line!("mutastic: {id} doesn't run anyway ({skipped}): nothing to ignore");
         return Ok(ExitCode::SUCCESS);
     }
     let function = &found.functions[mutant.function];
@@ -1306,7 +1344,7 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, String> {
         let mut proposals = proposals;
         proposals.push(entry);
         ignores::propose(here, &proposals)?;
-        println!(
+        stdout_line!(
             "mutastic: {id} is proposed for ignoring: {reason}\n  recorded in {}: it counts as missed until a person accepts it\n  to accept: {}\n  to withdraw: {}",
             ignores::PROPOSALS,
             command(&["--accept", &id]),
@@ -1322,7 +1360,7 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, String> {
     ignores::write(here, &entries)?;
     // Decided now: a proposal for it is settled.
     ignores::propose(here, &proposals)?;
-    println!(
+    stdout_line!(
         "mutastic: {id} is ignored: {reason}\n  recorded in {}: commit it, as a decision to review\n  to undo: {}",
         ignores::FILE,
         command(&["--remove", &id])
@@ -1362,7 +1400,7 @@ fn accept(
 ) -> Result<ExitCode, String> {
     let proposals = ignores::proposed(here)?;
     let Some(proposal) = proposals.iter().find(|entry| entry.id == id).cloned() else {
-        println!(
+        stderr_line!(
             "mutastic: {id} isn't proposed in {}: nothing to accept",
             ignores::PROPOSALS
         );
@@ -1376,7 +1414,7 @@ fn accept(
     ignores::write(here, &entries)?;
     let left: Vec<ignores::Entry> = proposals.into_iter().filter(|e| e.id != id).collect();
     ignores::propose(here, &left)?;
-    println!(
+    stdout_line!(
         "mutastic: {id} is ignored, as proposed: {}\n  recorded in {}: commit it, as a decision to review\n  to undo: {}",
         proposal.reason,
         ignores::FILE,
@@ -1408,7 +1446,7 @@ fn remove(
     if let Some(removed) = entries.iter().find(|entry| entry.id == id) {
         let kept: Vec<ignores::Entry> = entries.iter().filter(|e| e.id != id).cloned().collect();
         ignores::write(here, &kept)?;
-        println!(
+        stdout_line!(
             "mutastic: {id} is no longer ignored: it runs again\n  removed from {}\n  to undo: {}",
             ignores::FILE,
             again(removed, false)
@@ -1419,18 +1457,18 @@ fn remove(
     if let Some(proposal) = proposals.iter().find(|entry| entry.id == id) {
         let left: Vec<ignores::Entry> = proposals.iter().filter(|e| e.id != id).cloned().collect();
         ignores::propose(here, &left)?;
-        println!(
+        stdout_line!(
             "mutastic: {id} is no longer proposed\n  removed from {}\n  to undo: {}",
             ignores::PROPOSALS,
             again(proposal, true)
         );
         return Ok(ExitCode::SUCCESS);
     }
-    println!(
+    stderr_line!(
         "mutastic: {id} isn't ignored in {}: nothing to remove",
         ignores::FILE
     );
-    Ok(ExitCode::SUCCESS)
+    Ok(ExitCode::FAILURE)
 }
 
 /// `ignore --prune`: takes away every ignore whose line has changed since it was made.
@@ -1449,13 +1487,13 @@ fn prune(dir: &str) -> Result<ExitCode, String> {
     let (kept, stale): (Vec<ignores::Entry>, Vec<ignores::Entry>) =
         entries.into_iter().partition(holds);
     if stale.is_empty() {
-        println!("mutastic: every ignore still holds: nothing to remove");
+        stdout_line!("mutastic: every ignore still holds: nothing to remove");
         return Ok(ExitCode::SUCCESS);
     }
     ignores::write(here, &kept)?;
     let mut ids: Vec<&str> = stale.iter().map(|entry| entry.id.as_str()).collect();
     ids.sort();
-    println!(
+    stdout_line!(
         "mutastic: removed {} ignore{} that no longer hold: {}\n  from {}\n  to undo: git checkout -- {}",
         stale.len(),
         if stale.len() == 1 { "" } else { "s" },
@@ -1482,7 +1520,7 @@ fn gate_command(parsed: &Parsed) -> Result<ExitCode, String> {
         return Err("gate needs open, check or close: mutastic gate open [dir]".into());
     };
     if parsed.help {
-        println!("{}", gate_help(&action)?);
+        stdout_line!("{}", gate_help(&action)?);
         return Ok(ExitCode::SUCCESS);
     }
     let dir = parsed.positional.get(1).map_or(".", String::as_str);
@@ -1508,7 +1546,7 @@ fn gate_command(parsed: &Parsed) -> Result<ExitCode, String> {
         "close" => {
             let closed = gate::State::close(&work);
             if !hooked {
-                println!(
+                stdout_line!(
                     "{}",
                     if closed {
                         "mutastic gate: closed"
@@ -1564,7 +1602,7 @@ fn gate_open(
         ..gate::State::default()
     };
     state.write(work)?;
-    println!(
+    stdout_line!(
         "mutastic gate: this task is gated from {}: before you finish, check the lines it changes with `mutastic run --since={base} --format=agent`; {}. {}",
         &base[..base.len().min(7)],
         if hooked {
@@ -1594,7 +1632,7 @@ fn gate_check(
     let hooked = !parsed.hook.is_empty();
     let Some(open) = gate::State::read(work) else {
         if !hooked {
-            println!("mutastic gate: none open here: `mutastic gate open` starts one");
+            stderr_line!("mutastic gate: none open here: `mutastic gate open` starts one");
         }
         // Nothing gated: a hooked agent may stop.
         return Ok(ExitCode::from(if hooked { 0 } else { 2 }));
@@ -1662,10 +1700,10 @@ fn for_the_person(
 /// The verdict, as the hook's answer, or printed, with the exit status.
 fn gate_answer(hooked: bool, verdict: &gate::Verdict) -> ExitCode {
     if hooked {
-        println!("{}", gate::claude_hook(verdict));
+        stdout_line!("{}", gate::claude_hook(verdict));
         return ExitCode::SUCCESS;
     }
-    println!("{}", verdict.text);
+    stdout_line!("{}", verdict.text);
     if verdict.passes {
         ExitCode::SUCCESS
     } else {
@@ -1877,7 +1915,7 @@ fn mutants(parsed: &Parsed) -> Result<ExitCode, String> {
     let found = engine::find_with(&project, &parsed.operators, parsed.unsafe_mode);
     for mutant in &found.mutants {
         let function = &found.functions[mutant.function];
-        println!(
+        stdout_line!(
             "{} {}:{}:{} {} {} in {}{}",
             mutant.id,
             mutant.file.display(),
@@ -1894,15 +1932,15 @@ fn mutants(parsed: &Parsed) -> Result<ExitCode, String> {
                 .unwrap_or_default()
         );
     }
-    println!("{} mutants", found.mutants.len());
+    stdout_line!("{} mutants", found.mutants.len());
     if found.not_mutated_unsafe > 0 {
-        println!(
+        stdout_line!(
             "not mutated: unsafe ({}): --unsafe=enclosing or --unsafe=all includes them",
             found.not_mutated_unsafe
         );
     }
     for (cfg, count) in &found.not_built {
-        println!("not built here: `{cfg}` ({count})");
+        stdout_line!("not built here: `{cfg}` ({count})");
     }
     Ok(ExitCode::SUCCESS)
 }
@@ -1956,7 +1994,7 @@ fn build(parsed: &Parsed) -> Result<ExitCode, String> {
             })
         })
         .collect();
-    println!(
+    stdout_line!(
         "{}",
         serde_json::json!({
             "sites": sites.len(),

@@ -1,0 +1,3 @@
+mutastic: there's no directory fixtures/pricng in /home/you/project.
+There's a directory called fixtures/pricing. To test it:
+  mutastic run fixtures/pricing

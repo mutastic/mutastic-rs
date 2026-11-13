@@ -1,0 +1,2 @@
+mutastic: run has no option --formt. There's one called --format.
+  mutastic run fixtures/pricing --format=agent

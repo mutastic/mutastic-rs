@@ -1,0 +1,1 @@
+mutastic: verify doesn't take --threshold: mutastic verify <id>[,<id>…] [<id>…] [dir]

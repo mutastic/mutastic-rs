@@ -1,0 +1,4 @@
+mutastic: there's no project in empty for mutastic to test.
+It looked in /home/you/project/empty and every directory above it, for Cargo.toml, pom.xml, build.gradle(.kts) or settings.gradle(.kts).
+Go to your project, or name its directory:
+  mutastic run <project directory>

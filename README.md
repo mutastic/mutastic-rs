@@ -133,7 +133,8 @@ test first. `mutastic mutants` lists the mutants without building or running any
   [unsafe code](docs/concepts/unsafe.md), [profiles](docs/concepts/profiles.md),
   [mutant ids](docs/concepts/ids.md) and [working through misses](docs/concepts/next.md);
 - [operators](docs/operators.md), with a page and a real card for each family;
-- [commands](docs/reference/commands.md), [report files](docs/reference/reports.md), [events](docs/reference/events.md) and
+- [commands](docs/reference/commands.md), [report files](docs/reference/reports.md),
+  [events](docs/reference/events.md), [errors](docs/reference/errors.md) and
   [configuration](docs/reference/configuration.md);
 - [troubleshooting](docs/troubleshooting.md) and the
   [differences from the Java edition](docs/differences-from-java.md).

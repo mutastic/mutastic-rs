@@ -1,0 +1,3 @@
+mutastic: CARGO is /nowhere/cargo, and there's no cargo there.
+mutastic runs the cargo CARGO names. Point it at one, or unset it to use the cargo on the PATH:
+  unset CARGO

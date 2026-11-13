@@ -1,0 +1,1 @@
+mutastic: --fail-on-new needs a baseline to tell new misses from, and /home/you/project/fixtures/pricing has no .mutastic/baseline.yaml: `mutastic baseline` writes one, to commit
