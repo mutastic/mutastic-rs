@@ -499,14 +499,23 @@ fn the_live_line_is_redrawn_in_place() {
     )
     .unwrap();
     assert!(live.is_match(&err), "the mutants' live line: {err:?}");
+    // A block of any height: the line it's on, then each line above.
+    let cleared_then = |permanent: &str| {
+        regex::Regex::new(&format!(
+            r"\r\x1b\[2K(\x1b\[1A\x1b\[2K)*{}",
+            regex::escape(permanent)
+        ))
+        .unwrap()
+        .is_match(&err)
+    };
     for permanent in [
         " ❯ [pricing] src/lib.rs",
         "built     11 mutants in ",
         "ran       11 mutants in ",
     ] {
         assert!(
-            err.contains(&format!("{clear}{permanent}")),
-            "{permanent:?} clears the live line: {err:?}"
+            cleared_then(permanent),
+            "{permanent:?} clears the live block: {err:?}"
         );
     }
     let (drawn, cleared) = (err.rfind("\x1b[?7h").unwrap(), err.rfind(clear).unwrap());
