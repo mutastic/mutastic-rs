@@ -744,7 +744,9 @@ fn style(parsed: &Parsed, terminal: bool) -> Style {
 fn start(parsed: &Parsed, files: bool) -> Progress {
     let shown = crate::progress::resolve(parsed.progress);
     let style = style(parsed, std::io::stderr().is_terminal());
-    Progress::start(shown, style, files, parsed.workers)
+    // With --fail-on-new the new misses decide, not the score.
+    let threshold = (!parsed.fail_on_new).then_some(parsed.threshold);
+    Progress::start(shown, style, (files, parsed.workers), threshold)
 }
 
 fn options(parsed: &Parsed, only: Vec<String>) -> Options {
@@ -1655,7 +1657,7 @@ fn gate_verdict(
     }
     let mut options = options(parsed, Vec::new());
     options.since = Some(changed);
-    let progress = Progress::start(Shown::None, Style::default(), false, parsed.workers);
+    let progress = Progress::start(Shown::None, Style::default(), (false, parsed.workers), None);
     let mut report = match engine::run(project, &options, &|step| progress.step(step)) {
         Ok(report) => report,
         Err(error) => return red_verdict(here, state, &error),

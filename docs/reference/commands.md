@@ -431,6 +431,7 @@ mutastic verify mb2f8ae57 --edition=rust
 - `FORCE_COLOR`: Colour even off a terminal. Set to anything, it turns colour on where mutastic can't tell a person is reading, such as a CI log that shows colour. It wins over `NO_COLOR`.
 - `TERM=dumb`: No colour, unless `FORCE_COLOR` is set, and progress as lines.
 - `MUTASTIC_PROGRESS`: auto, bar, counter or none, when --progress isn't given. For a Gradle or Maven build, or a CI job, that always wants the same.
+- `MUTASTIC_TERM_PROGRESS`: true or false: whether the terminal's tab shows the run's progress. Unset, it does in Windows Terminal, ConEmu, Ghostty and WezTerm, which say they draw it. Cargo's `CARGO_TERM_PROGRESS_TERM_INTEGRATION` is read too.
 - `MUTASTIC_HEARTBEAT`: Seconds a log may go without a progress line. 30 unless set. Off a terminal, a line with the phase, its counts and its clock is printed whenever this long has passed since the last.
 - `CI`: Progress as lines, not redrawn in place. Set to anything but `false` or `0`; as are `TF_BUILD`, `GITHUB_ACTIONS`, `GITLAB_CI`, `BUILDKITE`, `JENKINS_URL`, `TEAMCITY_VERSION` and `CIRCLECI`, since some CI services pretend to be a terminal.
 - `CLAUDECODE`: Progress as lines, for a coding agent. As are `CLAUDE_CODE`, `GEMINI_CLI`, `CODEX_SANDBOX`, `CODEX_THREAD_ID`, `OPENCODE`, `COPILOT_AGENT`, `COPILOT_CLI`, `CURSOR_AGENT`, `REPL_ID`, `JUNIE_DATA`, `GOOSE_PROVIDER` and `AUGMENT_AGENT`, which coding agents set. Only progress changes: the format is still `--format`'s.
@@ -439,6 +440,7 @@ mutastic verify mb2f8ae57 --edition=rust
 - `MUTASTIC_VERSION`: In a Maven or Gradle project, the Java edition's release to use. Such as `0.5.0`, fetched if it isn't kept. Unset, from 1.0.0 it's the newest release of this mutastic's own major and minor version.
 - `MUTASTIC_HOME`: Where the Java edition's releases are kept. `~/.mutastic` unless set.
 - `MUTASTIC_STDERR_TTY`: Whether stderr is a terminal, 1 or 0, for the Java edition. The JDK can't tell, so `mutastic` sets it when it runs the Java edition, unless it's set already.
+- `MUTASTIC_COLUMNS`: The terminal's width, for the Java edition. The JDK can't ask the terminal, so `mutastic` sets it when it runs the Java edition on a terminal, unless it's set already.
 - `MUTASTIC_JAVA_ENGINE`: A Java edition's `bin/mutastic` to run instead, such as one built from its source. Nothing is fetched.
 - `MUTASTIC_JAVA_RELEASES`: Where the Java edition's releases are downloaded from, for a mirror. GitHub's releases of `mutastic/mutastic` unless set.
 - `JAVA_HOME`: The JDK the Java edition runs on. `java` on the `PATH` unless set.

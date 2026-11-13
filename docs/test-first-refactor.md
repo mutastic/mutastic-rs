@@ -69,7 +69,7 @@ mutastic run fixtures/pricing --since=HEAD
 
  ❯ src/lib.rs  1 missed in 1 function
 
- [✗ MISSED] no test checks loyalty_credit() at total == 100
+  ✗ MISSED  no test checks loyalty_credit() at total == 100
     ┌─ src/lib.rs:42
     │
  41 │     pub fn loyalty_credit(&self, total: u32) -> u32 {
@@ -95,20 +95,19 @@ mutastic run fixtures/pricing --since=HEAD
     reproduce  mutastic run --only=m0d64ba6c fixtures/pricing
     or ignore  mutastic ignore m0d64ba6c --reason="<why>" fixtures/pricing
 
+ Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+
      Files  0 clean | 1 with misses (1)
    Mutants  ✓ 3 caught · ✗ 1 missed (4)
    Changed  10 lines in 1 file since HEAD
   Worst at  Pricing::loyalty_credit() 1 ✗
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  13 (28 without coverage selection)
-  Start at  11:30:37
-  Duration  992ms (setup 942ms, coverage 13ms, mutants 20ms)
-     Tests  7 on rustc 1.94.0 · 4 workers
+  Start at  12:17:40
+  Duration  418ms (setup 29ms, build 358ms, coverage 4ms, mutants 4ms, checking 6ms)
+     Tests  7 on rustc 1.99.1 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  75.0%  threshold 80
-
- [FAIL] Score below 80: 1 missed, 0 not covered.
- Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+     Score  75.0%   FAIL  Below the threshold of 80: 1 missed, 0 not covered.
 ```
 
 The new test is at 150, so nothing checks the edge at 100. The new lines' other mutants are caught
@@ -189,7 +188,7 @@ mutastic run fixtures/pricing --since=HEAD
 
  ❯ src/lib.rs  1 missed in 1 function
 
- [✗ MISSED] no test checks loyalty_credit() at total == 250
+  ✗ MISSED  no test checks loyalty_credit() at total == 250
     ┌─ src/lib.rs:42
     │
  41 │     pub fn loyalty_credit(&self, total: u32) -> u32 {
@@ -215,20 +214,19 @@ mutastic run fixtures/pricing --since=HEAD
     reproduce  mutastic run --only=m97fbc9b1 fixtures/pricing
     or ignore  mutastic ignore m97fbc9b1 --reason="<why>" fixtures/pricing
 
+ Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+
      Files  0 clean | 1 with misses (1)
    Mutants  ✓ 3 caught · ✗ 1 missed (4)
    Changed  10 lines in 1 file since HEAD
   Worst at  Pricing::loyalty_credit() 1 ✗
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  19 (36 without coverage selection)
-  Start at  11:30:42
-  Duration  968ms (setup 914ms, coverage 15ms, mutants 20ms)
-     Tests  9 on rustc 1.94.0 · 4 workers
+  Start at  12:17:42
+  Duration  339ms (setup 25ms, build 285ms, coverage 6ms, mutants 2ms, checking 6ms)
+     Tests  9 on rustc 1.99.1 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  75.0%  threshold 80
-
- [FAIL] Score below 80: 1 missed, 0 not covered.
- Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
+     Score  75.0%   FAIL  Below the threshold of 80: 1 missed, 0 not covered.
 ```
 
 The same gap, at the new edge. An order of exactly 250 gets 20 off:
@@ -275,13 +273,11 @@ mutastic run fixtures/pricing --since=HEAD
    Changed  15 lines in 1 file since HEAD
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  23 (40 without coverage selection)
-  Start at  11:30:44
-  Duration  890ms (setup 844ms, coverage 18ms, mutants 5ms)
-     Tests  10 on rustc 1.94.0 · 4 workers
+  Start at  12:17:43
+  Duration  327ms (setup 21ms, build 283ms, coverage 6ms, mutants 2ms)
+     Tests  10 on rustc 1.99.1 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  100.0%  threshold 80
-
- [PASS] Every mutant was caught.
+     Score  100.0%   PASS  Every mutant was caught.
 ```
 
 The four are the new tier's: its `>=` changed to `>`, its condition always true and always false,
@@ -324,13 +320,11 @@ mutastic run fixtures/pricing --since=HEAD
    Changed  19 lines in 1 file since HEAD
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  27 (40 without coverage selection)
-  Start at  11:30:45
-  Duration  942ms (setup 894ms, coverage 17ms, mutants 5ms)
-     Tests  10 on rustc 1.94.0 · 4 workers
+  Start at  12:17:43
+  Duration  339ms (setup 22ms, build 291ms, coverage 6ms, mutants 4ms)
+     Tests  10 on rustc 1.99.1 · 4 workers
    Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
-     Score  100.0%  threshold 80
-
- [PASS] Every mutant was caught.
+     Score  100.0%   PASS  Every mutant was caught.
 ```
 
 The table and the loop are new since `HEAD`, so these are the new shape's mutants. The report,

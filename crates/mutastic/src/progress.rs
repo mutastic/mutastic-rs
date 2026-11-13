@@ -116,7 +116,7 @@ impl Counts {
             Status::Survived => self.missed += 1,
             Status::NoCoverage => self.not_covered += 1,
             Status::Timeout => self.timed_out += 1,
-            Status::Ignored | Status::RuntimeError => {}
+            Status::Ignored | Status::RuntimeError => self.unscored += 1,
         }
     }
 }
@@ -151,6 +151,8 @@ struct State {
     frame: usize,
     stopped: bool,
     package: String,
+    /// Whether the score has fallen below the threshold: the tab stays red from then.
+    red: bool,
 }
 
 struct Inner {
@@ -162,6 +164,10 @@ struct Inner {
     heartbeat: Duration,
     /// Whether `t` asks what's running: on a terminal that's also stdin.
     keys: bool,
+    /// Whether the tab shows progress (OSC 9;4): on a terminal that draws it.
+    tab: bool,
+    /// The score below which the tab turns red; none when the threshold doesn't decide.
+    threshold: Option<f64>,
     state: Mutex<State>,
     wake: Condvar,
 }
@@ -172,13 +178,22 @@ pub struct Progress {
     inner: Arc<Inner>,
     ticker: Mutex<Option<std::thread::JoinHandle<()>>>,
     keys: Mutex<Option<terminal::Keys>>,
+    guard: Mutex<Option<terminal::Guard>>,
 }
 
 impl Progress {
-    /// Starts the run's progress: its first line, before anything slow, and the ticker.
-    pub fn start(shown: Shown, style: Style, files: bool, workers: usize) -> Progress {
+    /// Starts the run's progress: its first line, before anything slow, and the ticker. Below
+    /// `threshold`, the tab's progress turns red.
+    pub fn start(
+        shown: Shown,
+        style: Style,
+        (files, workers): (bool, usize),
+        threshold: Option<f64>,
+    ) -> Progress {
         let now = Instant::now();
+        let guard = (shown == Shown::Bar).then(terminal::Guard::take);
         let keys = (shown == Shown::Bar).then(terminal::Keys::listen);
+        let tab = shown == Shown::Bar && terminal::tab_progress(|name| std::env::var(name).ok());
         let inner = Arc::new(Inner {
             shown,
             style,
@@ -186,6 +201,8 @@ impl Progress {
             workers,
             heartbeat: heartbeat(),
             keys: keys.as_ref().is_some_and(terminal::Keys::listening),
+            tab,
+            threshold,
             state: Mutex::new(State {
                 phase: Phase::Reading,
                 since: now,
@@ -198,6 +215,7 @@ impl Progress {
                 frame: 0,
                 stopped: shown == Shown::None,
                 package: String::new(),
+                red: false,
             }),
             wake: Condvar::new(),
         });
@@ -205,6 +223,7 @@ impl Progress {
             inner: Arc::clone(&inner),
             ticker: Mutex::new(None),
             keys: Mutex::new(keys),
+            guard: Mutex::new(guard),
         };
         if shown == Shown::None {
             return progress;
@@ -250,7 +269,14 @@ impl Progress {
     pub fn finished(&self) {
         if let Some(mut state) = self.inner.lock() {
             state.stopped = true;
-            Inner::send(&self.inner.clear(&mut state));
+            let tab = if self.inner.tab {
+                terminal::TAB_CLEARED
+            } else {
+                ""
+            };
+            self.inner
+                .send(&format!("{}{tab}", self.inner.clear(&mut state)));
+            terminal::tab_shown(false);
             self.inner.wake.notify_all();
         }
         let ticker = self.ticker.lock().ok().and_then(|mut ticker| ticker.take());
@@ -259,6 +285,9 @@ impl Progress {
         }
         if let Ok(mut keys) = self.keys.lock() {
             keys.take();
+        }
+        if let Ok(mut guard) = self.guard.lock() {
+            guard.take();
         }
     }
 }
@@ -467,14 +496,44 @@ impl Inner {
             return;
         }
         let out = format!("{}{text}\n{}", self.clear(state), self.draw(state));
-        Self::send(&out);
+        self.send(&out);
         state.printed = Instant::now();
     }
 
-    fn send(out: &str) {
+    /// One write to stderr. On a terminal the frame is wrapped in synchronized output (mode 2026),
+    /// so a terminal that knows it paints the frame at once; one that doesn't ignores it.
+    fn send(&self, out: &str) {
+        if out.is_empty() {
+            return;
+        }
+        let out = if self.shown == Shown::Bar {
+            format!("\x1b[?2026h{out}\x1b[?2026l")
+        } else {
+            out.to_string()
+        };
         let mut stderr = std::io::stderr().lock();
         let _ = stderr.write_all(out.as_bytes());
         let _ = stderr.flush();
+    }
+
+    /// The tab's progress for now (OSC 9;4): busy while building, covering and checking; the
+    /// mutants' weighted percent, red once the score has fallen below the threshold.
+    fn tab(&self, state: &mut State, weighted: Option<f64>) -> String {
+        if !self.tab || state.stopped {
+            return String::new();
+        }
+        terminal::tab_shown(true);
+        if state.phase != Phase::Mutants {
+            return "\x1b]9;4;3;0\x1b\\".to_string();
+        }
+        let counts = &state.counts;
+        let scored = counts.done - counts.unscored;
+        if let (Some(threshold), true) = (self.threshold, scored >= 20) {
+            let score = 100.0 * (counts.caught + counts.timed_out) as f64 / scored as f64;
+            state.red |= score < threshold;
+        }
+        let percent = (weighted.unwrap_or(0.0) * 100.0).floor() as u32;
+        format!("\x1b]9;4;{};{percent}\x1b\\", if state.red { 2 } else { 1 })
     }
 
     /// What clears the live block: the line it ends on, then each line above.
@@ -508,10 +567,11 @@ impl Inner {
         let columns = terminal::width().unwrap_or(100);
         let lines = frames::live(&view, columns, state.frame, self.style);
         state.drawn = lines.len();
+        let tab = self.tab(state, weighted);
         if lines.is_empty() {
-            return String::new();
+            return tab;
         }
-        format!("\x1b[?7l{}\x1b[?7h", lines.join("\n"))
+        format!("{tab}\x1b[?7l{}\x1b[?7h", lines.join("\n"))
     }
 
     /// What's running, above the live block, when someone asks.
@@ -573,7 +633,7 @@ impl Inner {
             if self.shown == Shown::Bar {
                 state.frame += 1;
                 let out = format!("{}{}", self.clear(&mut state), self.draw(&mut state));
-                Self::send(&out);
+                self.send(&out);
             } else if state.printed.elapsed() >= self.heartbeat {
                 let workers = Self::workers(&state);
                 let (weighted, left) = Self::estimate(&state);
@@ -598,6 +658,34 @@ impl Inner {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_tab_shows_progress_only_where_the_terminal_says_it_draws_it() {
+        let with = |vars: &[(&str, &str)]| {
+            terminal::tab_progress(|name| {
+                vars.iter()
+                    .find(|(var, _)| *var == name)
+                    .map(|(_, value)| value.to_string())
+            })
+        };
+        assert!(with(&[("WT_SESSION", "f00")]));
+        assert!(with(&[("TERM_PROGRAM", "ghostty")]));
+        assert!(with(&[("TERM_PROGRAM", "WezTerm")]));
+        assert!(with(&[("TERM", "xterm-ghostty")]));
+        assert!(with(&[("ConEmuANSI", "ON")]));
+        // iTerm2 takes `ESC ] 9` for a notification: nothing unless asked.
+        assert!(!with(&[("TERM_PROGRAM", "iTerm.app")]));
+        assert!(with(&[
+            ("TERM_PROGRAM", "iTerm.app"),
+            ("MUTASTIC_TERM_PROGRESS", "true")
+        ]));
+        assert!(!with(&[
+            ("WT_SESSION", "f00"),
+            ("MUTASTIC_TERM_PROGRESS", "false")
+        ]));
+        assert!(with(&[("CARGO_TERM_PROGRESS_TERM_INTEGRATION", "true")]));
+        assert!(!with(&[]));
+    }
 
     #[test]
     fn auto_follows_what_was_asked() {

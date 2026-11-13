@@ -38,6 +38,8 @@ pub struct Counts {
     pub missed: usize,
     pub not_covered: usize,
     pub timed_out: usize,
+    /// Skipped, or a runtime error: in no fate, and not scored.
+    pub unscored: usize,
 }
 
 /// What a worker is running: a test in the coverage pass, a mutant after it.
@@ -232,11 +234,13 @@ fn bar(fraction: f64, columns: usize, style: Style) -> String {
 /// narrows, then the fates lose their words.
 fn status(view: &View, columns: usize, frame: usize, style: Style) -> Option<String> {
     let spinner = SPINNER[frame % SPINNER.len()].to_string();
+    // The word bold and its padding not, as the Java edition writes it.
     let lead = |name: &str| {
+        let padding = " ".repeat(10usize.saturating_sub(name.len()));
         format!(
-            "{} {}",
+            "{} {}{padding}",
             paint(style, GREEN, &spinner),
-            paint(style, BOLD, &word(name))
+            paint(style, BOLD, name)
         )
     };
     let clock = clock(view.elapsed);
@@ -556,6 +560,7 @@ mod tests {
             missed: 41,
             not_covered: 214,
             timed_out: 6,
+            unscored: 0,
         }
     }
 

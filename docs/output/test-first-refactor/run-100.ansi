@@ -29,17 +29,16 @@
     [2mreproduce [0m mutastic run --only=m0d64ba6c fixtures/pricing
     [2mor ignore [0m mutastic ignore m0d64ba6c --reason="<why>" fixtures/pricing
 
+[2m Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing[0m
+
  [2m    Files[0m  [32m[1m0 clean[0m[0m[2m | [0m[1;31m[1m1 with misses[0m[0m[2m (1)[0m
  [2m  Mutants[0m  [32m✓ [1m3 caught[0m[0m[2m · [0m[1;31m✗ [1m1 missed[0m[0m[2m (4)[0m
  [2m  Changed[0m  10 lines in 1 file since HEAD
  [2m Worst at[0m  Pricing::loyalty_credit() 1 ✗
  [2m    Build[0m  one build of every mutant, 2 rounds (check and build)
  [2mTest runs[0m  13[2m (28 without coverage selection)[0m
- [2m Start at[0m  11:30:37
- [2m Duration[0m  992ms [2m(setup 942ms, coverage 13ms, mutants 20ms)[0m
- [2m    Tests[0m  7 on rustc 1.94.0 · 4 workers
+ [2m Start at[0m  12:17:40
+ [2m Duration[0m  418ms [2m(setup 29ms, build 358ms, coverage 4ms, mutants 4ms, checking 6ms)[0m
+ [2m    Tests[0m  7 on rustc 1.99.1 · 4 workers
  [2m  Reports[0m  target/mutastic/mutation.json[2m · [0mtarget/mutastic/mutation.html
- [2m    Score[0m  [1;31m[1m75.0%[0m[0m[2m  threshold 80[0m
-
- [41;30;1m FAIL [0m [1;31mScore below 80: 1 missed, 0 not covered.[0m
-[2m Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing[0m
+ [2m    Score[0m  [1;31m[1m75.0%[0m[0m  [41;30;1m FAIL [0m [1;31mBelow the threshold of 80: 1 missed, 0 not covered.[0m

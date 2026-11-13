@@ -57,7 +57,8 @@ spinner (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`, one frame per redraw) and the phase w
 ⠋ checking  52 missed · looking for a test that would catch each, 18/52 · 38s
 ```
 
-The clock is the phase's own. Before the coverage pass has listed its tests it says `listing the
+The spinner is green (`ESC[32m`), the phase word bold (`ESC[1m`, its padding not), the `└` line
+dim (`ESC[2m`, the whole line), each closed with `ESC[0m`. The clock is the phase's own. Before the coverage pass has listed its tests it says `listing the
 tests`. `└` lines are dim, and show the build tool's latest line: Cargo's `Checking`/`Compiling`
 for the last crate it started (its round counts check and build apart: `cargo build, round 2`),
 Gradle's or Maven's last log line. Java's building line names the tool's task:
@@ -91,6 +92,27 @@ under it, in one write, so the terminal never shows the block half gone. The blo
 before the result.
 
 Clock form: `38s` under a minute, then `3m12s`, `1h02m`.
+
+## The tab: OSC 9;4
+
+Where the terminal draws progress in its tab or taskbar, the run shows it there too, with
+`ESC ] 9 ; 4 ; state ; percent ESC \`: busy (state 3) while reading, building, covering and
+checking; the mutants' weighted percent (state 1) while they run; red (state 2) from the moment
+the score, over the mutants run so far and once twenty have, falls below the threshold, and red
+it stays; and nothing (state 0) on every way out: the result, an error, Ctrl-C, a kill or Ctrl-Z.
+Missed mutants are normal, so a miss alone never turns it red. With `--fail-on-new` the score
+doesn't decide, and it never does.
+
+It's sent only to terminals that say they draw it, as some take `ESC ] 9` for a notification:
+Windows Terminal (`WT_SESSION`), ConEmu (`ConEmuANSI=ON`), Ghostty (`TERM_PROGRAM=ghostty` or
+`TERM=xterm-ghostty`) and WezTerm (`TERM_PROGRAM=WezTerm`). `MUTASTIC_TERM_PROGRESS=true|false`, or
+Cargo's `CARGO_TERM_PROGRESS_TERM_INTEGRATION`, decides instead.
+
+## Flicker: synchronized output
+
+On a terminal, each frame (the block cleared, any permanent lines, the block drawn again) is one
+write wrapped in `ESC [ ? 2026 h` … `ESC [ ? 2026 l`, so a terminal that knows synchronized output
+paints it at once. One that doesn't ignores the two sequences.
 
 ## What's running: `t`, Ctrl-T, SIGUSR1
 
@@ -132,8 +154,10 @@ green, `[FAIL]` on red.
 
 ## Anywhere else: heartbeats
 
-When progress isn't drawn in place, the same fields print as a plain line, without spinner or
-colour, whenever 30 seconds have passed since the last progress line of any kind:
+When progress isn't drawn in place, a plain line, without spinner, bar or colour, prints whenever
+30 seconds have passed since the last progress line of any kind. It's the live line's fields in
+their short form: a count in brackets where there's a total (`[18/181 tests]`, `[312/5525]`), and
+checking's count without its step's words:
 
 ```text
 reading   the Cargo package · 30s
@@ -181,7 +205,31 @@ fixture whose test sleeps through more than one heartbeat, stderr piped, every l
 It fails if two lines are further apart than the heartbeat plus a second, or if a phase passes
 without a line.
 
+## Live events: `--format=jsonl`
+
+Three events join `mutastic.events/v1`, additive, so a consumer that ignores reasons it doesn't
+know reads the stream as before. They go to stdout as they happen, among the others:
+
+```json
+{"schema":"mutastic.events/v1","edition":"rust","reason":"phase-started","phase":"building"}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"progress","phase":"mutants","elapsedMs":1450000,"done":2871,"total":5525,"weighted":0.52,"leftMs":1260000,"caught":2610,"missed":41,"notCovered":214,"timedOut":6,"running":8}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"phase-finished","phase":"building","durationMs":581000}
+```
+
+- `phase`: `reading`, `building`, `coverage`, `mutants` or `checking`.
+- `phase-started` when a phase begins; `phase-finished`, with `durationMs`, when it ends.
+- `progress` on the heartbeat's cadence (30 s, `MUTASTIC_HEARTBEAT`), whatever the format of
+  stderr, with what the phase knows: always `elapsedMs` (the phase's own); `done` and `total`
+  where there's a count (tests in coverage, mutants, missed mutants looked at in checking);
+  `round` and `crates` while Cargo builds; for mutants, `weighted` (0 to 1, three decimals),
+  `leftMs` once there's an estimate, the four fates' counts, and `running`, the busy workers.
+
+`run-started` stays where each edition has it (Rust's carries the build's profile, so it comes once
+the build is done), and the events before it are phase events only.
+
 ## Later
 
-Still to come in P2: live JSONL `phase-started` and `progress` events. P3 adds OSC 9;4 tab progress, synchronized output and Gradle's footer. A preview of all of it:
+Still to come: Gradle's footer (P3, the Java edition's alone): the plugin reads the child's
+`progress` events and drives Gradle's own progress line, falling back to heartbeat lines where
+Gradle's internal API isn't there. A preview of all of it:
 https://claude.ai/artifact/EXHy5dovr98tnBYAfBXn2M

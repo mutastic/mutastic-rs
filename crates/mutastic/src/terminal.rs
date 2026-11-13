@@ -1,6 +1,7 @@
 //! What only the operating system can say about the terminal, and the one key and signal a run
 //! listens for: the terminal's width, so a live block fits it; `t`, Ctrl-T (SIGINFO, on macOS and
-//! the BSDs) or SIGUSR1, for what's running now.
+//! the BSDs) or SIGUSR1, for what's running now; and every way out leaving the terminal as it was,
+//! its input in lines and its tab without progress.
 //!
 //! This is the one module allowed unsafe code. It calls the C library directly rather than take a
 //! dependency for a handful of calls, and each `unsafe` block says why it's sound. Everything here
@@ -19,6 +20,50 @@ static ASKED: AtomicBool = AtomicBool::new(false);
 /// Whether someone asked what's running since the last time this was called.
 pub fn asked() -> bool {
     ASKED.swap(false, Ordering::Relaxed)
+}
+
+/// Set while the tab shows progress: every way out clears it, Ctrl-C and kills included.
+static TAB: AtomicBool = AtomicBool::new(false);
+
+/// What clears the tab's progress (OSC 9;4, state 0).
+pub const TAB_CLEARED: &str = "\x1b]9;4;0\x1b\\";
+
+/// Whether the tab shows progress now, for the ways out that must clear it.
+pub fn tab_shown(shown: bool) {
+    TAB.store(shown, Ordering::Relaxed);
+}
+
+/// Whether the terminal draws progress in its tab, from what it says of itself: Windows Terminal,
+/// ConEmu, Ghostty and WezTerm do. Others ignore the sequence, but some take `ESC ] 9` for a
+/// notification, so it's only sent where it's known. `MUTASTIC_TERM_PROGRESS` (or Cargo's
+/// `CARGO_TERM_PROGRESS_TERM_INTEGRATION`), `true` or `false`, decides instead.
+pub fn tab_progress(var: impl Fn(&str) -> Option<String>) -> bool {
+    if let Some(asked) =
+        var("MUTASTIC_TERM_PROGRESS").or_else(|| var("CARGO_TERM_PROGRESS_TERM_INTEGRATION"))
+    {
+        return matches!(asked.as_str(), "true" | "1" | "always");
+    }
+    var("WT_SESSION").is_some()
+        || var("ConEmuANSI").as_deref() == Some("ON")
+        || var("TERM").as_deref() == Some("xterm-ghostty")
+        || matches!(var("TERM_PROGRAM").as_deref(), Some("ghostty" | "WezTerm"))
+}
+
+/// While this lives, Ctrl-C, a kill or Ctrl-Z leave the terminal as it was before the signal's
+/// own action: its input back to lines if `Keys` took it, its tab without progress.
+pub struct Guard;
+
+impl Guard {
+    pub fn take() -> Guard {
+        sys::guard(true);
+        Guard
+    }
+}
+
+impl Drop for Guard {
+    fn drop(&mut self) {
+        sys::guard(false);
+    }
 }
 
 /// stderr's width in columns, when it's a terminal that says.
@@ -91,7 +136,7 @@ impl Drop for Keys {
 #[cfg(unix)]
 mod sys {
     use std::os::raw::{c_int, c_ulong, c_ushort};
-    use std::sync::atomic::Ordering;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::OnceLock;
 
     #[repr(C)]
@@ -134,6 +179,7 @@ mod sys {
         fn raise(signum: c_int) -> c_int;
         fn tcgetattr(fd: c_int, termios: *mut Termios) -> c_int;
         fn tcsetattr(fd: c_int, when: c_int, termios: *const Termios) -> c_int;
+        fn write(fd: c_int, buf: *const std::ffi::c_void, count: usize) -> isize;
     }
 
     pub fn width() -> Option<usize> {
@@ -212,6 +258,8 @@ mod sys {
 
     /// The terminal's settings before the run took it, and the run's own, for every way back.
     static SAVED: OnceLock<(Termios, Termios)> = OnceLock::new();
+    /// Whether the run's settings are the terminal's now.
+    static TAKEN: AtomicBool = AtomicBool::new(false);
 
     fn set(termios: &Termios) {
         // SAFETY: `termios` is a whole `struct termios` as this C library lays it out, read by
@@ -220,17 +268,34 @@ mod sys {
         unsafe { tcsetattr(0, TCSANOW, termios) };
     }
 
-    /// The terminal as it was, then the signal's own action, for Ctrl-C, a kill or Ctrl-Z; and the
-    /// run's settings again when a stopped run continues.
-    extern "C" fn on_leave(signum: c_int) {
-        let Some((before, during)) = SAVED.get() else {
-            return;
-        };
-        if signum == SIGCONT {
+    /// The terminal as the run found it: its input back to lines, no progress in its tab. Only
+    /// async-signal-safe calls, as the signal handlers call it.
+    fn leave() {
+        if let (true, Some((before, _))) = (TAKEN.load(Ordering::Relaxed), SAVED.get()) {
+            set(before);
+        }
+        if super::TAB.load(Ordering::Relaxed) {
+            let cleared = super::TAB_CLEARED.as_bytes();
+            // SAFETY: write is async-signal-safe and reads `cleared.len()` bytes of a static.
+            unsafe { write(2, cleared.as_ptr().cast(), cleared.len()) };
+        }
+    }
+
+    /// The run's settings again, when a stopped run continues; its tab is drawn at the next tick.
+    fn resume() {
+        if let (true, Some((_, during))) = (TAKEN.load(Ordering::Relaxed), SAVED.get()) {
             set(during);
+        }
+    }
+
+    /// Ctrl-C, a kill or Ctrl-Z: the terminal as it was, then the signal's own action; and the
+    /// run's settings again when it continues.
+    extern "C" fn on_leave(signum: c_int) {
+        if signum == SIGCONT {
+            resume();
             return;
         }
-        set(before);
+        leave();
         // SAFETY: signal and raise are async-signal-safe. The default action is the one this
         // process had: mutastic sets no other for these signals.
         unsafe {
@@ -239,9 +304,23 @@ mod sys {
         }
         if signum == SIGTSTP {
             // Continued: listen again for the next Ctrl-Z.
-            // SAFETY: as when it was first set, in `Held::take`.
+            // SAFETY: as when it was first set, in `guard`.
             unsafe { signal(SIGTSTP, on_leave as extern "C" fn(c_int) as usize) };
-            set(during);
+            resume();
+        }
+    }
+
+    /// Ctrl-C, a kill and Ctrl-Z go through `on_leave` while `on`, and to their default after.
+    pub fn guard(on: bool) {
+        let handler = if on {
+            on_leave as extern "C" fn(c_int) as usize
+        } else {
+            SIG_DFL
+        };
+        for signum in [SIGINT, SIGTERM, SIGTSTP, SIGCONT] {
+            // SAFETY: `on_leave` is an `extern "C" fn(c_int)` that makes only async-signal-safe
+            // calls, and SIG_DFL is each signal's default; mutastic handles none of these itself.
+            unsafe { signal(signum, handler) };
         }
     }
 
@@ -267,11 +346,7 @@ mod sys {
             if SAVED.set((before, during)).is_err() {
                 return None;
             }
-            for signum in [SIGINT, SIGTERM, SIGTSTP, SIGCONT] {
-                // SAFETY: `on_leave` is an `extern "C" fn(c_int)` that does only async-signal-safe
-                // calls; mutastic handles none of these signals itself.
-                unsafe { signal(signum, on_leave as extern "C" fn(c_int) as usize) };
-            }
+            TAKEN.store(true, Ordering::Relaxed);
             set(&during);
             Some(Held)
         }
@@ -279,12 +354,9 @@ mod sys {
 
     impl Drop for Held {
         fn drop(&mut self) {
+            TAKEN.store(false, Ordering::Relaxed);
             if let Some((before, _)) = SAVED.get() {
                 set(before);
-            }
-            for signum in [SIGINT, SIGTERM, SIGTSTP, SIGCONT] {
-                // SAFETY: back to each signal's default action, as before the run took them.
-                unsafe { signal(signum, SIG_DFL) };
             }
         }
     }
@@ -354,6 +426,30 @@ mod sys {
     /// Windows has no Ctrl-T; `t` still asks.
     pub fn listen_for_signals() {}
 
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn SetConsoleCtrlHandler(
+            handler: Option<extern "system" fn(u32) -> c_int>,
+            add: c_int,
+        ) -> c_int;
+    }
+
+    /// Ctrl-C or the console closing: the tab without progress, then Windows's own action. It runs
+    /// on a thread of its own, not in a signal, so it can write as any thread does.
+    extern "system" fn on_leave(_: u32) -> c_int {
+        if super::TAB.load(std::sync::atomic::Ordering::Relaxed) {
+            use std::io::Write as _;
+            let _ = std::io::stderr().write_all(super::TAB_CLEARED.as_bytes());
+        }
+        0
+    }
+
+    pub fn guard(on: bool) {
+        // SAFETY: `on_leave` has the handler's type and returns FALSE, so the next handler, the
+        // default, still ends the process.
+        unsafe { SetConsoleCtrlHandler(Some(on_leave), c_int::from(on)) };
+    }
+
     /// The console needs no mode for `_kbhit`: nothing to hold.
     pub struct Held;
 
@@ -380,6 +476,7 @@ mod sys {
         None
     }
     pub fn listen_for_signals() {}
+    pub fn guard(_: bool) {}
     pub struct Held;
     impl Held {
         pub fn take() -> Option<Held> {
