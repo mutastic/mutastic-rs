@@ -1322,6 +1322,17 @@ const ERRORS: &[Error] = &[
     ("both-editions", &["run", "both"], &[]),
 ];
 
+/// `said` as a Unix machine prints it, run in `/home/you/project` where it ran in `looked`: the
+/// page's copies are of a Unix run, and on Windows a path mutastic joins has `\` in it.
+fn as_unix(said: &str, looked: &str) -> String {
+    let said = said.replace(looked, "/home/you/project");
+    if cfg!(windows) {
+        said.replace('\\', "/")
+    } else {
+        said
+    }
+}
+
 /// The errors page: each error as stderr has it, and, in the jsonl format, as the `run-failed`
 /// event with its code, valid in the schema. A command an error gives as `exact` is run, and must
 /// get past that error: a printed command that doesn't work is worse than none.
@@ -1391,16 +1402,16 @@ fn errors(work: &Path, shown: &mut BTreeMap<String, String>) {
         codes.insert(code.to_string());
         if *code == "unknown-option" {
             // The events page's example of the event itself.
+            // Its path is slashed, without the `\\?\` Windows puts before it.
             let line = stdout.lines().last().unwrap_or_default();
+            let path = looked.replace('\\', "/");
+            let path = path.strip_prefix("//?/").unwrap_or(&path);
             shown.insert(
                 "errors/event".into(),
-                format!("{}\n", line.replace(&looked, "/home/you/project")),
+                format!("{}\n", line.replace(path, "/home/you/project")),
             );
         }
-        shown.insert(
-            format!("errors/{code}"),
-            said.replace(&looked, "/home/you/project"),
-        );
+        shown.insert(format!("errors/{code}"), as_unix(&said, &looked));
     }
     // The page has an entry for every code mutastic gives, and only those.
     let page = std::fs::read_to_string(docs().join(ERRORS_PAGE)).unwrap();

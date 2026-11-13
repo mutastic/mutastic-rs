@@ -196,9 +196,13 @@ pub fn help(message: &str) -> Vec<String> {
 /// The `run-failed` event for `message`, as mutastic prints it after `mutastic: `, which ended
 /// a command run on `directory`, as typed, with `exit` as its status.
 pub fn event(message: &str, directory: &str, exit: u8) -> Value {
-    let path = std::fs::canonicalize(directory)
-        .ok()
-        .map(|path| crate::workspace::slashed(&path));
+    // Windows canonicalizes to a verbatim path, `\\?\C:\…`, which no one types.
+    let path = std::fs::canonicalize(directory).ok().map(|path| {
+        let shown = crate::workspace::slashed(&path);
+        shown
+            .strip_prefix("//?/")
+            .map_or_else(|| shown.clone(), str::to_string)
+    });
     let help: Vec<Value> = help(message)
         .into_iter()
         .map(|command| {
