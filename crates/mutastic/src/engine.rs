@@ -281,10 +281,12 @@ pub enum Progress<'a> {
         worker: usize,
         cost: Duration,
     },
-    /// Every mutant of one source file has its result, in the order found.
+    /// Every mutant of one source file has its result, in the order found, `took` after its first
+    /// started.
     FileFinished {
         found: &'a Crate,
         results: &'a [MutantResult],
+        took: Duration,
     },
     /// Every mutant has its result.
     Ran { took: Duration },
@@ -428,6 +430,7 @@ pub fn run(
                 tests: cost.tests,
             });
         }
+        files.started(&found, mutant);
         let result = result(&found, mutant, first[mutant], &built, &tests, &reach, &cwd);
         files.finished(&found, &result, (worker, cost.expected), progress);
         result
@@ -600,20 +603,38 @@ pub fn source_line(found: &Crate, index: usize) -> String {
 /// Each source file's mutants still running, and the results of those done, so a file's line can
 /// be shown the moment its last mutant finishes.
 pub(crate) struct Files {
-    state: std::sync::Mutex<BTreeMap<PathBuf, (usize, Vec<MutantResult>)>>,
+    state: std::sync::Mutex<BTreeMap<PathBuf, FileState>>,
+}
+
+/// A file's mutants still to finish, the results of those done, and when its first started.
+#[derive(Default)]
+pub(crate) struct FileState {
+    left: usize,
+    done: Vec<MutantResult>,
+    first: Option<Instant>,
 }
 
 impl Files {
     pub(crate) fn new(found: &Crate, order: &[usize]) -> Files {
-        let mut state: BTreeMap<PathBuf, (usize, Vec<MutantResult>)> = BTreeMap::new();
+        let mut state: BTreeMap<PathBuf, FileState> = BTreeMap::new();
         for &index in order {
             state
                 .entry(found.mutants[index].file.clone())
                 .or_default()
-                .0 += 1;
+                .left += 1;
         }
         Files {
             state: std::sync::Mutex::new(state),
+        }
+    }
+
+    /// Notes when a file's first mutant starts, so its line says how long the file took, not the
+    /// sum of its mutants' times across the workers.
+    pub(crate) fn started(&self, found: &Crate, mutant: usize) {
+        if let Ok(mut state) = self.state.lock() {
+            if let Some(file) = state.get_mut(&found.mutants[mutant].file) {
+                file.first.get_or_insert_with(Instant::now);
+            }
         }
     }
 
@@ -629,21 +650,23 @@ impl Files {
         let Ok(mut state) = self.state.lock() else {
             return;
         };
-        let Some((left, done)) = state.get_mut(&found.mutants[result.mutant].file) else {
+        let Some(file) = state.get_mut(&found.mutants[result.mutant].file) else {
             return;
         };
-        done.push(result.clone());
-        *left -= 1;
+        file.done.push(result.clone());
+        file.left -= 1;
         progress(Progress::MutantFinished {
             status: result.status,
             worker,
             cost,
         });
-        if *left == 0 {
-            done.sort_by_key(|r| r.mutant);
+        if file.left == 0 {
+            file.done.sort_by_key(|r| r.mutant);
+            let summed = || file.done.iter().map(|r| r.took).sum();
             progress(Progress::FileFinished {
                 found,
-                results: done,
+                results: &file.done,
+                took: file.first.map_or_else(summed, |first| first.elapsed()),
             });
         }
     }
