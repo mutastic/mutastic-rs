@@ -474,7 +474,7 @@ impl Shares {
             build: std::time::Duration::ZERO,
             coverage,
             mutants: took.saturating_sub(setup + coverage),
-            checking: std::time::Duration::ZERO,
+            checking: None,
             took,
             unsafe_mode: options.unsafe_mode,
             profile: json!({

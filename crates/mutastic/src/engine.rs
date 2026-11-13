@@ -103,8 +103,8 @@ pub struct Report {
     pub build: Duration,
     pub coverage: Duration,
     pub mutants: Duration,
-    /// Looking for a test to suggest for each missed mutant.
-    pub checking: Duration,
+    /// Looking for a test to suggest for each missed mutant, when there were any to look for.
+    pub checking: Option<Duration>,
     pub took: Duration,
     pub unsafe_mode: UnsafeMode,
     /// The settings the user's crate was built with, from Cargo: `opt_level`, `debug_assertions`,
@@ -429,7 +429,8 @@ pub fn run(
     });
     let mutants_took = mutants_started.elapsed();
     progress(Progress::Ran { took: mutants_took });
-    let checking = Instant::now();
+    let looking = Instant::now();
+    let checked = options.suggestions && results.iter().any(|r| r.status == Status::Survived);
     if options.suggestions {
         suggest_all(
             project,
@@ -440,6 +441,7 @@ pub fn run(
             progress,
         );
     }
+    let checking = checked.then(|| looking.elapsed());
     // The tests run against mutants; the coverage pass's runs aren't counted, as in the Java
     // edition, so the count compares with running every test on every mutant.
     let test_runs = results.iter().map(|r| r.tests_run).sum::<usize>();
@@ -457,7 +459,7 @@ pub fn run(
         build: build_took,
         coverage: coverage_took,
         mutants: mutants_took,
-        checking: checking.elapsed(),
+        checking,
         took: started.elapsed(),
         unsafe_mode: options.unsafe_mode,
         profile: built.profile,

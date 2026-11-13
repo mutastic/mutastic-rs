@@ -1510,8 +1510,8 @@ fn phases(report: &Report) -> String {
     }
     parts.push(format!("coverage {}", duration(report.coverage)));
     parts.push(format!("mutants {}", duration(report.mutants)));
-    if report.checking.as_millis() > 0 {
-        parts.push(format!("checking {}", duration(report.checking)));
+    if let Some(checking) = report.checking {
+        parts.push(format!("checking {}", duration(checking)));
     }
     parts.join(", ")
 }
