@@ -343,6 +343,13 @@ fn meanwhile(own: &str, asked: bool, kept: &[String]) -> Option<String> {
 pub fn forward(command: &Path, args: &[String]) -> ExitCode {
     let mut process = Command::new(command);
     process.args(args);
+    // The JDK can ask whether stdin and stdout are a terminal, not stderr, where progress goes: so
+    // it's told, unless whoever ran this already said.
+    if std::env::var_os("MUTASTIC_STDERR_TTY").is_none() {
+        use std::io::IsTerminal as _;
+        let terminal = std::io::stderr().is_terminal();
+        process.env("MUTASTIC_STDERR_TTY", if terminal { "1" } else { "0" });
+    }
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;

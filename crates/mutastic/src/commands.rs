@@ -480,9 +480,10 @@ pub const OPTIONS: &[CliOption] = &[
         kind: Kind::Value,
         group: "Output",
         choices: &["auto", "bar", "counter", "none"],
-        help: "Progress on stderr: a bar on a terminal, counter lines in logs, none for agents",
+        help: "Progress on stderr: redrawn in place on a terminal, a line every 30 s in logs, CI and \
+               agents' runs, or none",
         commands: &["run", "verify", "explain", "next", "baseline"],
-        environment: "",
+        environment: "MUTASTIC_PROGRESS",
         example: "--progress=counter",
     },
     CliOption {
@@ -614,8 +615,8 @@ pub const ENVIRONMENT: &[Entry] = &[
     Entry {
         name: "MUTASTIC_AGENT=1",
         meaning: "The agent format, for coding agents",
-        detail: "Coding agents set it, so mutastic answers in the format they read best. \
-                 `MUTASTIC_FORMAT` still wins.",
+        detail: "Coding agents set it, so mutastic answers in the format they read best, with \
+                 progress as lines. `MUTASTIC_FORMAT` still wins.",
     },
     Entry {
         name: "MUTASTIC_VOCABULARY",
@@ -636,8 +637,34 @@ pub const ENVIRONMENT: &[Entry] = &[
     },
     Entry {
         name: "TERM=dumb",
-        meaning: "No colour, unless `FORCE_COLOR` is set",
+        meaning: "No colour, unless `FORCE_COLOR` is set, and progress as lines",
         detail: "",
+    },
+    Entry {
+        name: "MUTASTIC_PROGRESS",
+        meaning: "auto, bar, counter or none, when --progress isn't given",
+        detail: "For a Gradle or Maven build, or a CI job, that always wants the same.",
+    },
+    Entry {
+        name: "MUTASTIC_HEARTBEAT",
+        meaning: "Seconds a log may go without a progress line",
+        detail: "30 unless set. Off a terminal, a line with the phase, its counts and its clock is \
+                 printed whenever this long has passed since the last.",
+    },
+    Entry {
+        name: "CI",
+        meaning: "Progress as lines, not redrawn in place",
+        detail: "Set to anything but `false` or `0`; as are `TF_BUILD`, `GITHUB_ACTIONS`, \
+                 `GITLAB_CI`, `BUILDKITE`, `JENKINS_URL`, `TEAMCITY_VERSION` and `CIRCLECI`, \
+                 since some CI services pretend to be a terminal.",
+    },
+    Entry {
+        name: "CLAUDECODE",
+        meaning: "Progress as lines, for a coding agent",
+        detail: "As are `CLAUDE_CODE`, `GEMINI_CLI`, `CODEX_SANDBOX`, `CODEX_THREAD_ID`, \
+                 `OPENCODE`, `COPILOT_AGENT`, `COPILOT_CLI`, `CURSOR_AGENT`, `REPL_ID`, \
+                 `JUNIE_DATA`, `GOOSE_PROVIDER` and `AUGMENT_AGENT`, which coding agents set. \
+                 Only progress changes: the format is still `--format`'s.",
     },
     Entry {
         name: "CARGO",
@@ -658,6 +685,12 @@ pub const ENVIRONMENT: &[Entry] = &[
         name: "MUTASTIC_HOME",
         meaning: "Where the Java edition's releases are kept",
         detail: "`~/.mutastic` unless set.",
+    },
+    Entry {
+        name: "MUTASTIC_STDERR_TTY",
+        meaning: "Whether stderr is a terminal, 1 or 0, for the Java edition",
+        detail: "The JDK can't tell, so `mutastic` sets it when it runs the Java edition, unless \
+                 it's set already.",
     },
     Entry {
         name: "MUTASTIC_JAVA_ENGINE",

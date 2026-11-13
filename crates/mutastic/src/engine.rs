@@ -223,6 +223,23 @@ pub fn find_all(project: &Project) -> Crate {
 pub enum Progress<'a> {
     /// The one build of every mutant is starting.
     Building { mutants: usize },
+    /// Cargo is at work: its step (`check` or `build`), the round, the crates finished in it, and
+    /// its latest `Checking`/`Compiling` line.
+    Compiling {
+        step: &'a str,
+        round: usize,
+        crates: usize,
+        last: &'a str,
+    },
+    /// The build is done: each round's step, and the mutants withdrawn as they didn't compile.
+    Built {
+        mutants: usize,
+        took: Duration,
+        rounds: &'a [&'a str],
+        withdrawn: usize,
+    },
+    /// The coverage pass has run `done` of its `total` tests.
+    Tested { done: usize, total: usize },
     /// The tests ran once each, recording what they reach; the mutants run next.
     Covered {
         tests: usize,
@@ -240,6 +257,16 @@ pub enum Progress<'a> {
     FileFinished {
         found: &'a Crate,
         results: &'a [MutantResult],
+    },
+    /// Every mutant has its result.
+    Ran { took: Duration },
+    /// Looking for a test that catches each missed mutant: `done` of `total` looked at.
+    Checking { done: usize, total: usize },
+    /// The look is over: a test was found for `found` of the `missed` mutants.
+    Checked {
+        missed: usize,
+        took: Duration,
+        found: usize,
     },
 }
 
@@ -303,13 +330,21 @@ pub fn run(
         .copied()
         .filter(|&m| found.mutants[m].skipped.is_none())
         .collect();
-    let built = compile::build(project, &found, &live, &recorders)?;
+    let building = Instant::now();
+    let built = compile::build(project, &found, &live, &recorders, progress)?;
+    let steps: Vec<&str> = built.rounds.iter().map(|round| round.phase).collect();
+    progress(Progress::Built {
+        mutants: selected.len(),
+        took: building.elapsed(),
+        rounds: &steps,
+        withdrawn: built.unviable.len(),
+    });
     let cwd = project.copy_dir().join(&project.package_dir);
     let listed = testrun::list(&built.binaries, &cwd)?;
     let setup = started.elapsed();
 
     let coverage_started = Instant::now();
-    let covered = coverage(project, &built.binaries, &listed, options.workers)?;
+    let covered = coverage(project, &built.binaries, &listed, options.workers, progress)?;
     let flaky: Vec<crate::flaky::Flaky> = covered
         .flaky
         .iter()
@@ -351,8 +386,18 @@ pub fn run(
         files.finished(&found, &result, progress);
         result
     });
+    progress(Progress::Ran {
+        took: mutants_started.elapsed(),
+    });
     if options.suggestions {
-        suggest_all(project, &found, &built, &mut results, options.workers);
+        suggest_all(
+            project,
+            &found,
+            &built,
+            &mut results,
+            options.workers,
+            progress,
+        );
     }
     // The tests run against mutants; the coverage pass's runs aren't counted, as in the Java
     // edition, so the count compares with running every test on every mutant.
@@ -578,6 +623,7 @@ fn coverage(
     binaries: &[Binary],
     tests: &[Test],
     workers: usize,
+    progress: &(dyn Fn(Progress) + Sync),
 ) -> Result<Covered, String> {
     let dir = project.mutastic_dir().join("coverage");
     std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
@@ -596,7 +642,19 @@ fn coverage(
         (outcome, read_reach(&text))
     };
     let indexed: Vec<(usize, &Test)> = tests.iter().enumerate().collect();
-    let mut reached = testrun::parallel(&indexed, workers, |&(index, test)| cover(index, test));
+    let tested = std::sync::atomic::AtomicUsize::new(0);
+    progress(Progress::Tested {
+        done: 0,
+        total: tests.len(),
+    });
+    let mut reached = testrun::parallel(&indexed, workers, |&(index, test)| {
+        let covered = cover(index, test);
+        progress(Progress::Tested {
+            done: tested.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1,
+            total: tests.len(),
+        });
+        covered
+    });
     let mut flaky = Vec::new();
     let mut failing = Vec::new();
     for (index, test) in tests.iter().enumerate() {
@@ -833,6 +891,7 @@ fn suggest_all(
     built: &compile::Built,
     results: &mut [MutantResult],
     workers: usize,
+    progress: &(dyn Fn(Progress) + Sync),
 ) {
     let cwd = project.copy_dir().join(&project.package_dir);
     let dir = project.mutastic_dir().join("probes");
@@ -848,7 +907,7 @@ fn suggest_all(
         return;
     }
     let probes = testrun::probes(&built.binaries, &cwd);
-    let found_tests = testrun::parallel(&missed, workers, |&index| {
+    let look = |index: usize| {
         let result = &results[index];
         let mutant = &found.mutants[result.mutant];
         let function = &found.functions[mutant.function];
@@ -889,6 +948,22 @@ fn suggest_all(
                 .map(|made| made.test);
             found
         })
+    };
+    let checking = Instant::now();
+    let (looked, total) = (std::sync::atomic::AtomicUsize::new(0), missed.len());
+    progress(Progress::Checking { done: 0, total });
+    let found_tests = testrun::parallel(&missed, workers, |&index| {
+        let found = look(index);
+        progress(Progress::Checking {
+            done: looked.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1,
+            total,
+        });
+        found
+    });
+    progress(Progress::Checked {
+        missed: total,
+        took: checking.elapsed(),
+        found: found_tests.iter().filter(|found| found.is_some()).count(),
     });
     for (index, suggestion) in missed.into_iter().zip(found_tests) {
         results[index].suggestion = suggestion;
