@@ -29,6 +29,19 @@ newest come first.
 
 ### Additions
 
+- **`mutastic baseline` and `run --fail-on-new`, as in the Java edition.** `baseline` records every
+  mutant no test catches now in `.mutastic/baseline.yaml`, by id, to commit, in the Java edition's
+  shape; it won't write over one, and `baseline --prune` drops the mutants the tests catch now,
+  never taking in new ones. From then on a miss that isn't in it is new: `next` offers new misses
+  first, with a `baseline` factor and `next-finished`'s `legacy`; the gate holds only new misses,
+  and blocks a task that adds to the baseline itself; and a full run says how many of the
+  baseline's mutants are caught now. `run --fail-on-new` passes while every mutant no test catches
+  is in the baseline and fails on one that isn't, whatever the score, naming each new miss:
+  `[FAIL] 1 new miss, not in the baseline (0 in it): mb2f8ae57.`, the same on the agent format's
+  first line, and `failOnNew`, `newMisses` and `inBaseline` in `run-finished`. Without a baseline
+  it exits 2 before the build. See
+  [Brownfield: fail only on new misses](docs/concepts/how-a-run-works.md#brownfield-fail-only-on-new-misses).
+
 - **`explain --format=jsonl`**, as in the Java edition: the run's events for the one mutant, then
   a `mutant-explained` event with what "About this mutant" says, a field for each row: the
   change as it's `applied` (at the `source` level, as `mutation.applied` says it), the `operator`, the `fingerprint` and how the id is
@@ -47,7 +60,7 @@ newest come first.
   in `mod tests` doesn't run everything again; a mutant proposed for ignoring waits on a person,
   not in the queue. `--format=agent` gives exactly one task; `--format=jsonl` writes `next-item`
   and `next-finished`. It exits 1 while something is queued and 0 when nothing missed is left.
-  There's no baseline yet, so no new misses first. See
+  Where there's a baseline, new misses come first. See
   [Working through misses](docs/concepts/next.md).
 
 - **The output options the Java edition has.** `--format=brief` (each card's head: the code with

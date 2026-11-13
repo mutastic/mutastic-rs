@@ -702,6 +702,300 @@ fn an_ignore_holds_while_its_line_does() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// The header `mutastic baseline` writes, the Java edition's.
+const BASELINE_HEADER: &str =
+    "# The mutants this project missed when its baseline was taken, written by `mutastic baseline`.
+# Commit it. A miss that isn't here is new: the gate holds only new misses. As tests
+# catch these, `mutastic baseline --prune` drops them; it never takes in new misses.
+baseline:
+";
+
+/// The `run-finished` event of a `--format=jsonl` run, each event checked against the schema.
+fn run_finished(jsonl: &str) -> Value {
+    let events = events(jsonl);
+    for event in &events {
+        let errors: Vec<String> = schema().iter_errors(event).map(|e| e.to_string()).collect();
+        assert!(errors.is_empty(), "{event}\n{}", errors.join("\n"));
+    }
+    events.last().unwrap().clone()
+}
+
+/// `baseline` records every mutant no test catches, once; `run --fail-on-new` passes while each is
+/// in it, whatever the score, and fails naming one that isn't, in every format, as the Java
+/// edition says it; with no baseline it's a usage error, before the build.
+#[test]
+fn fail_on_new_judges_a_run_by_its_baseline() {
+    let dir = copy_of("pricing", "fail-on-new");
+    let file = dir.join(".mutastic/baseline.yaml");
+    let judged = ["run", "--fail-on-new", "--threshold=95", "--report=none"];
+    let with = |format: &str| {
+        let mut args = judged.to_vec();
+        args.push(format);
+        mutastic_in(&dir, &args)
+    };
+    for format in ["--format=full", "--format=agent", "--format=jsonl"] {
+        let (code, out) = with(format);
+        assert_eq!(code, 2, "{out}");
+        let shown = std::fs::canonicalize(&dir).unwrap();
+        assert_eq!(
+            out,
+            format!(
+                "mutastic: --fail-on-new needs a baseline to tell new misses from, and {} has no \
+                 .mutastic/baseline.yaml: `mutastic baseline` writes one, to commit\n",
+                shown.display()
+            ),
+            "before anything is read or built"
+        );
+    }
+    let (code, out) = mutastic_in(&dir, &["run", "--fail-on-new", "--only=mb2f8ae57"]);
+    assert_eq!(code, 2, "{out}");
+    assert!(
+        out.starts_with("mutastic: --fail-on-new judges a run of the package on its new misses"),
+        "{out}"
+    );
+
+    let (code, out) = mutastic_in(&dir, &["baseline", "--progress=none"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.starts_with(
+            "mutastic: 1 mutants no test catches are in .mutastic/baseline.yaml: commit it. A miss \
+             that isn't in it is new: the gate holds only new misses, and next offers them first\n"
+        ),
+        "{out}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        format!(
+            "{BASELINE_HEADER}  - id: mb2f8ae57\n    at: 'Pricing::discount, line 26'\n    \
+             change: '`>=` becomes `>`'\n"
+        )
+    );
+    let (code, out) = mutastic_in(&dir, &["baseline"]);
+    assert_eq!(code, 1, "{out}");
+    assert_eq!(
+        out,
+        "mutastic: there's a baseline already, in .mutastic/baseline.yaml. `mutastic baseline \
+         --prune` drops its mutants the tests catch now; it's never rewritten to take in new \
+         misses, which would hide them\n"
+    );
+
+    // 90.9% is below 95, and the run passes: its one miss is in the baseline.
+    let (code, out) = with("--format=full");
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains("90.9%  threshold not applied (new misses decide)\n"),
+        "{out}"
+    );
+    assert!(
+        out.contains("\n [PASS] No new misses: 1 in the baseline.\n"),
+        "{out}"
+    );
+    let (code, out) = with("--format=agent");
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.starts_with(
+            "mutastic: PASS · no new misses, 1 in the baseline · score 90.9% (threshold not \
+             applied) · 1 missed, 0 not covered, 10 caught of 11 mutants\n"
+        ),
+        "{out}"
+    );
+    let (code, out) = with("--format=jsonl");
+    assert_eq!(code, 0, "{out}");
+    let finished = run_finished(&out);
+    assert_eq!(finished["passed"], true);
+    assert_eq!(finished["failOnNew"], true);
+    assert_eq!(finished["newMisses"], serde_json::json!([]));
+    assert_eq!(finished["inBaseline"], 1);
+    // Without it, the threshold decides.
+    let (code, out) = mutastic_in(
+        &dir,
+        &["run", "--threshold=95", "--report=none", "--format=jsonl"],
+    );
+    assert_eq!(code, 1, "{out}");
+    assert!(run_finished(&out).get("failOnNew").is_none(), "{out}");
+
+    // Taken out of the baseline, the miss is new.
+    std::fs::write(&file, BASELINE_HEADER).unwrap();
+    let (code, out) = with("--format=full");
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("\n [FAIL] 1 new miss, not in the baseline (0 in it): mb2f8ae57.\n"),
+        "{out}"
+    );
+    let (code, out) = with("--format=agent");
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.starts_with(
+            "mutastic: FAIL · 1 new miss, not in the baseline (0 in it): mb2f8ae57 · score 90.9% \
+             (threshold not applied) · "
+        ),
+        "{out}"
+    );
+    let (code, out) = with("--format=jsonl");
+    assert_eq!(code, 1, "{out}");
+    let finished = run_finished(&out);
+    assert_eq!(finished["passed"], false);
+    assert_eq!(finished["newMisses"], serde_json::json!(["mb2f8ae57"]));
+    assert_eq!(finished["inBaseline"], 0);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// A function no test checks, for a miss the baseline doesn't have: its return is a condition or
+/// a removal, as the baseline's miss is, but one test reaches it where two reach that one, so the
+/// run's own order puts it second.
+const UNCHECKED: &str = "\npub fn tax(total: u32) -> u32 {\n    total / 5\n}\n";
+
+/// `next` offers a miss the baseline doesn't have before one it does, and says which is which;
+/// `baseline --prune` drops a mutant the tests catch now, and never takes in a new miss.
+#[test]
+fn next_puts_new_misses_first_and_prune_drops_the_caught() {
+    let dir = copy_of("pricing", "baseline-next");
+    let file = dir.join(".mutastic/baseline.yaml");
+    let (code, out) = mutastic_in(&dir, &["baseline", "--prune"]);
+    assert_eq!(code, 1, "{out}");
+    assert_eq!(
+        out,
+        "mutastic: there's no baseline to prune: `mutastic baseline` writes one\n"
+    );
+    let (code, out) = mutastic_in(&dir, &["baseline"]);
+    assert_eq!(code, 0, "{out}");
+
+    let lib = dir.join("src/lib.rs");
+    let text = std::fs::read_to_string(&lib).unwrap();
+    std::fs::write(&lib, format!("{text}{UNCHECKED}")).unwrap();
+    let tests = dir.join("tests/pricing.rs");
+    let kept = std::fs::read_to_string(&tests).unwrap();
+    std::fs::write(
+        &tests,
+        format!("{kept}\n#[test]\nfn tax_runs() {{\n    let _ = pricing::tax(10);\n}}\n"),
+    )
+    .unwrap();
+    let (code, jsonl) = mutastic_in(&dir, &["next", "--format=jsonl", "--top=2"]);
+    assert_eq!(code, 1, "{jsonl}");
+    let events = events(&jsonl);
+    for event in &events {
+        let errors: Vec<String> = schema().iter_errors(event).map(|e| e.to_string()).collect();
+        assert!(errors.is_empty(), "{event}\n{}", errors.join("\n"));
+    }
+    let items: Vec<&Value> = events
+        .iter()
+        .filter(|e| e["reason"] == "next-item")
+        .collect();
+    assert_eq!(items.len(), 2, "{jsonl}");
+    assert_eq!(
+        items[0]["location"]["method"], "tax",
+        "the new miss first: {jsonl}"
+    );
+    assert_eq!(items[0]["rank"]["factors"][0]["signal"], "baseline");
+    assert_eq!(items[0]["rank"]["factors"][0]["value"], "new");
+    assert_eq!(items[1]["id"], "mb2f8ae57", "{jsonl}");
+    assert_eq!(items[1]["rank"]["factors"][0]["value"], "legacy");
+    assert_eq!(events.last().unwrap()["legacy"], 1, "{jsonl}");
+    let (_, out) = mutastic_in(&dir, &["next", "--progress=none"]);
+    assert!(
+        out.contains(
+            "Next: 1 of 2 lines with missed mutants in pricing (1 new, 1 in the baseline)\n"
+        ),
+        "{out}"
+    );
+    assert!(
+        out.contains(" Ranked first because\n   not in the baseline: a new miss\n"),
+        "{out}"
+    );
+
+    // A test for the baseline's miss: a full run says it's caught now, and prune drops it, but
+    // not the new misses.
+    std::fs::write(
+        &tests,
+        format!(
+            "{kept}\n#[test]\nfn at_the_edge() {{\n    assert_eq!(Pricing::new().discount(100), 10);\n}}\n"
+        ),
+    )
+    .unwrap();
+    let (_, out) = mutastic_in(&dir, &["run", "--report=none", "--progress=none"]);
+    assert!(
+        out.contains(
+            "note: 1 of the baseline's mutants are caught now: `mutastic baseline --prune` drops them\n"
+        ),
+        "{out}"
+    );
+    let (code, out) = mutastic_in(&dir, &["baseline", "--prune", "--progress=none"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.starts_with(
+            "mutastic: 1 of the baseline's mutants are caught now, and are dropped from \
+             .mutastic/baseline.yaml\n"
+        ),
+        "{out}"
+    );
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), BASELINE_HEADER);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// The gate holds only new misses: one the baseline had before the task is the project's
+/// backlog, even on a line the task changed; and the task can't add to the baseline itself.
+#[test]
+fn the_gate_holds_only_new_misses() {
+    let dir = copy_of("pricing", "gate-baseline");
+    let git = |args: &[&str]| {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(&dir)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "git {args:?}");
+    };
+    let (code, out) = mutastic_in(&dir, &["baseline", "--progress=none"]);
+    assert_eq!(code, 0, "{out}");
+    git(&["init", "-q"]);
+    std::fs::write(dir.join(".gitignore"), "target\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "start"]);
+    let (code, out) = mutastic_in(&dir, &["gate", "open"]);
+    assert_eq!(code, 0, "{out}");
+
+    // The baseline's miss is on the line the task changes: it doesn't hold the task.
+    let lib = dir.join("src/lib.rs");
+    let text = std::fs::read_to_string(&lib).unwrap();
+    std::fs::write(
+        &lib,
+        text.replace("if total >= 100 {", "if total >= 100  {"),
+    )
+    .unwrap();
+    let (code, out) = mutastic_in(&dir, &["gate", "check"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains(
+            "; 1, missed before the task and in .mutastic/baseline.yaml, is the project's backlog, \
+             not the task's\n"
+        ),
+        "{out}"
+    );
+
+    // A miss the task added to the baseline itself is a person's call.
+    let file = dir.join(".mutastic/baseline.yaml");
+    let baseline = std::fs::read_to_string(&file).unwrap();
+    std::fs::write(
+        &file,
+        format!("{baseline}  - id: m00000001\n    at: 'x'\n    change: 'y'\n"),
+    )
+    .unwrap();
+    let (code, out) = mutastic_in(&dir, &["gate", "check"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains(
+            "mutastic gate: the task added m00000001 to .mutastic/baseline.yaml itself, and \
+             whether a miss is the project's backlog is a person's call"
+        ),
+        "{out}"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 /// `--since` runs only the mutants on the lines changed since a commit, and says how much changed.
 #[test]
 fn since_runs_the_changed_lines_mutants() {

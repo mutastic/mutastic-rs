@@ -10,7 +10,7 @@ use crate::report::files::Kind;
 use crate::report::{self, Format, Style};
 use crate::shares::EVENTS;
 use crate::sites::UnsafeMode;
-use crate::{commands, gate, ignores, java, sites, testrun, workspace, wrapper};
+use crate::{baseline, commands, gate, ignores, java, sites, testrun, workspace, wrapper};
 
 const USAGE: &str = "\
 mutastic: find the tests that run your code but don't check it
@@ -31,6 +31,9 @@ Usage:
                                      (--hook=claude answers as Claude Code's hooks, --tries=<n>),
                                      close forgets it; gate <action> --help says more
   mutastic mutants [dir]             List the mutants, without running anything
+  mutastic baseline [dir]            Record every mutant missed now in .mutastic/baseline.yaml, so
+                                     later misses are told from them; --prune drops those the
+                                     tests catch now
   mutastic next [dir]                The missed mutant most worth a test first, why, and the test
                                      to write; while the code under test is the same, it runs only
                                      what the last next left uncaught
@@ -39,6 +42,8 @@ Options:
   --only=<id>[,<id>…]   Run only these mutants
   --format=<format>     full (default at a terminal), brief, concise, grouped, agent or jsonl
   --threshold=<score>   The score a run must reach to pass (default 80)
+  --fail-on-new         Pass when every mutant no test catches is in .mutastic/baseline.yaml,
+                        and fail on one that isn't, whatever the score
   --operators=<set>     defaults, stronger or extended, or operator ids separated by commas
   --workers=<n>         Tests run side by side (default half the cores, at most 4)
   --unsafe=<mode>       skip (default): leave unsafe code and functions holding an unsafe block
@@ -188,6 +193,8 @@ struct Parsed {
     from_shards: Option<String>,
     /// `--top`: how many of `next`'s queue to show.
     top: usize,
+    /// `--fail-on-new`: the run passes on the misses the baseline doesn't hold, not its score.
+    fail_on_new: bool,
 }
 
 /// The command as it's declared: `gate open` for `gate` and its action. `None` for one that isn't,
@@ -234,6 +241,7 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
         shard: None,
         from_shards: None,
         top: 1,
+        fail_on_new: false,
     };
     for arg in args {
         let Some(option) = arg.strip_prefix("--") else {
@@ -310,6 +318,7 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
             "accept" => parsed.accept = true,
             "remove" => parsed.remove = true,
             "prune" => parsed.prune = true,
+            "fail-on-new" => parsed.fail_on_new = true,
             "since" => parsed.since = Some(value.to_string()),
             "help" => parsed.help = true,
             "no-suggestions" => parsed.no_suggestions = true,
@@ -399,8 +408,8 @@ pub fn check(args: &[String]) -> Result<(), String> {
         return Err("no command".into());
     };
     match command.as_str() {
-        "run" | "verify" | "explain" | "ignore" | "gate" | "mutants" | "next" | "help"
-        | "--help" | "-h" | "--version" | "-V" => {
+        "run" | "verify" | "explain" | "ignore" | "gate" | "mutants" | "next" | "baseline"
+        | "help" | "--help" | "-h" | "--version" | "-V" => {
             let parsed = parse(command, &args[1..])?;
             arguments(command, &parsed)?;
             match &parsed.operators_given {
@@ -418,7 +427,7 @@ pub fn check(args: &[String]) -> Result<(), String> {
 fn arguments(command: &str, parsed: &Parsed) -> Result<(), String> {
     let synopsis = |name: &str| commands::command(name).map_or("", |command| command.synopsis);
     let (usage, takes_id, most) = match command {
-        "run" | "mutants" | "next" => (synopsis(command), false, 1),
+        "run" | "mutants" | "next" | "baseline" => (synopsis(command), false, 1),
         "build" => ("mutastic build [dir] --fraction=<share>", false, 1),
         "verify" => (
             synopsis(command),
@@ -433,6 +442,13 @@ fn arguments(command: &str, parsed: &Parsed) -> Result<(), String> {
     };
     if command == "run" {
         sharing(parsed)?;
+        if parsed.fail_on_new && !parsed.only.is_empty() {
+            return Err(
+                "--fail-on-new judges a run of the package on its new misses: not with \
+                        --only, whose mutants each pass when they're caught"
+                    .into(),
+            );
+        }
     }
     if takes_id {
         if let Some(given) = parsed.positional.first() {
@@ -535,7 +551,7 @@ fn operators(value: &str) -> Result<Vec<&'static str>, String> {
 /// operators, and the operators it chooses, unless `--operators` chose.
 fn configure(command: &str, parsed: &mut Parsed) -> Result<(), String> {
     let at = match command {
-        "run" | "mutants" | "next" => 0,
+        "run" | "mutants" | "next" | "baseline" => 0,
         "ignore" if parsed.prune => 0,
         "verify" => verify_ids(&parsed.positional).1,
         _ => 1,
@@ -584,7 +600,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, String> {
     arguments(command, &parsed)?;
     if matches!(
         command.as_str(),
-        "run" | "verify" | "explain" | "ignore" | "mutants" | "gate" | "next"
+        "run" | "verify" | "explain" | "ignore" | "mutants" | "gate" | "next" | "baseline"
     ) {
         configure(command, &mut parsed)?;
     }
@@ -596,6 +612,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, String> {
         "gate" => gate_command(&parsed),
         "mutants" => mutants(&parsed),
         "next" => next(&parsed),
+        "baseline" => baseline_command(&parsed),
         // For measuring the schema itself: build with a share of the mutants, and say how it went.
         "build" => build(&parsed),
         "--help" | "-h" | "help" => {
@@ -865,6 +882,7 @@ fn options(parsed: &Parsed, only: Vec<String>) -> Options {
 }
 
 fn run(parsed: &Parsed) -> Result<ExitCode, String> {
+    no_baseline_to_fail_on(parsed)?;
     if let Some(shares) = &parsed.from_shards {
         return from_shards(parsed, shares);
     }
@@ -902,6 +920,32 @@ fn run(parsed: &Parsed) -> Result<ExitCode, String> {
     report.share = share;
     progress.finished();
     finish(parsed, report, format, folder.as_deref())
+}
+
+/// `--fail-on-new` with no baseline to tell new misses from: every miss would be new, or none, and
+/// either would be a guess. Said before the package is read.
+fn no_baseline_to_fail_on(parsed: &Parsed) -> Result<(), String> {
+    let dir = parsed.positional.first().map_or(".", String::as_str);
+    if !parsed.fail_on_new || baseline::exists(std::path::Path::new(dir)) {
+        return Ok(());
+    }
+    let shown = std::fs::canonicalize(dir)
+        .map_or_else(|_| dir.to_string(), |path| path.display().to_string());
+    Err(format!(
+        "--fail-on-new needs a baseline to tell new misses from, and {shown} has no {}: \
+         `mutastic baseline` writes one, to commit",
+        baseline::FILE
+    ))
+}
+
+/// With `--fail-on-new`, how the run is judged: on the misses the package's baseline doesn't hold.
+/// A share's are judged against it as the whole run's are, and a run made of shares judges the
+/// whole.
+fn judged_on_new(parsed: &Parsed) -> Option<baseline::FailOnNew> {
+    let dir = parsed.positional.first().map_or(".", String::as_str);
+    parsed.fail_on_new.then(|| baseline::FailOnNew {
+        baseline: baseline::ids(std::path::Path::new(dir)),
+    })
 }
 
 /// `run --from-shards`: no mutant runs; the shares' results, put together, are the whole run's,
@@ -964,6 +1008,7 @@ fn finish(
             &report::render(&report, Format::Jsonl, Style::default()),
         )?;
     }
+    report.fail_on_new = judged_on_new(parsed);
     print!(
         "{}",
         report::render(
@@ -972,11 +1017,72 @@ fn finish(
             style(parsed, std::io::stdout().is_terminal())
         )
     );
+    if format != Format::Jsonl && parsed.only.is_empty() && report.scope.is_none() {
+        baseline_note(&report);
+    }
     Ok(if report.passed() {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
     })
+}
+
+/// After a full run, how many of the baseline's mutants it found caught: they can be pruned.
+fn baseline_note(report: &engine::Report) {
+    let older = baseline::ids(std::path::Path::new(&report.project.given));
+    let caught = baseline::caught_now(report, &older).len();
+    if !older.is_empty() && caught > 0 {
+        println!(
+            "note: {caught} of the baseline's mutants are caught now: `mutastic baseline --prune` drops them"
+        );
+    }
+}
+
+/// `baseline`: every mutant no test catches, written for the package to commit; or with `--prune`,
+/// the baseline's mutants the tests catch now dropped. Never rewritten whole once there, as taking
+/// in new misses would hide them.
+fn baseline_command(parsed: &Parsed) -> Result<ExitCode, String> {
+    let dir = parsed.positional.first().map_or(".", String::as_str);
+    let here = std::path::Path::new(dir);
+    if parsed.prune != baseline::exists(here) {
+        if parsed.prune {
+            println!("mutastic: there's no baseline to prune: `mutastic baseline` writes one");
+        } else {
+            println!(
+                "mutastic: there's a baseline already, in {}. `mutastic baseline --prune` drops its \
+                 mutants the tests catch now; it's never rewritten to take in new misses, which \
+                 would hide them",
+                baseline::FILE
+            );
+        }
+        return Ok(ExitCode::FAILURE);
+    }
+    let quiet = matches!(format(parsed), Format::Agent | Format::Jsonl);
+    started(quiet);
+    let project = workspace::read(dir)?;
+    let progress = Progress::new(&project.package, quiet, false, parsed.progress, parsed);
+    let report = engine::run(&project, &options(parsed, Vec::new()), &|step| {
+        progress.step(step)
+    })?;
+    progress.finished();
+    if parsed.prune {
+        let caught = baseline::caught_now(&report, &baseline::ids(here));
+        let dropped = baseline::prune(here, &caught)?;
+        println!(
+            "mutastic: {dropped} of the baseline's mutants are caught now, and are dropped from {}",
+            baseline::FILE
+        );
+    } else {
+        let entries = baseline::entries(&report);
+        baseline::write(here, &entries)?;
+        println!(
+            "mutastic: {} mutants no test catches are in {}: commit it. A miss that isn't in it is \
+             new: the gate holds only new misses, and next offers them first",
+            entries.len(),
+            baseline::FILE
+        );
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 /// `next`: the head of the queue of missed mutants, or with `--top` the first few, as the format
@@ -1030,8 +1136,10 @@ fn next(parsed: &Parsed) -> Result<ExitCode, String> {
             .into_iter()
             .map(|entry| entry.id)
             .collect();
+    let older = baseline::ids(std::path::Path::new(dir));
     let asked = report::next::Asked {
         proposed: &proposed,
+        baseline: &older,
         project: &project.package,
         dir: &project.given,
         format,
@@ -1648,6 +1756,20 @@ fn gate_verdict(
             added.join(", ")
         )));
     }
+    let older = baseline::ids(here);
+    let baselined: Vec<String> = older
+        .difference(&baseline::ids_at(here, &state.base))
+        .cloned()
+        .collect();
+    if !baselined.is_empty() {
+        let one = baselined.len() == 1;
+        return Ok(gate::Verdict::block(format!(
+            "mutastic gate: the task added {} to {} itself, and whether a miss is the project's backlog is a person's call. Take {} out, and write the test, or propose ignoring it: `mutastic ignore ID --propose --as=KIND --reason=\"…\"`",
+            baselined.join(", "),
+            baseline::FILE,
+            if one { "it" } else { "them" }
+        )));
+    }
     let (before, now) = (state.shape, gate::Shape::of(here));
     if now.fewer_than(&before) {
         return Ok(gate::Verdict::block(format!(
@@ -1666,14 +1788,22 @@ fn gate_verdict(
         .into_iter()
         .map(|entry| entry.id)
         .collect();
+    // A miss the baseline had before the task is the project's backlog, not the task's.
     let ids_with = |status: Status| -> Vec<String> {
         report
             .results
             .iter()
             .filter(|r| r.status == status)
             .map(|r| report.found.mutants[r.mutant].id.clone())
+            .filter(|id| !older.contains(id))
             .collect()
     };
+    let backlog = report
+        .results
+        .iter()
+        .filter(|r| baseline::uncaught(r))
+        .filter(|r| older.contains(&report.found.mutants[r.mutant].id))
+        .count();
     let (survived, uncovered) = (ids_with(Status::Survived), ids_with(Status::NoCoverage));
     let missed: Vec<String> = survived.iter().chain(&uncovered).cloned().collect();
     let open = |ids: &[String]| -> Vec<String> {
@@ -1694,8 +1824,17 @@ fn gate_verdict(
                 missed.join(", ")
             )
         };
+        let backlog = if backlog == 0 {
+            String::new()
+        } else {
+            format!(
+                "; {backlog}, missed before the task and in {}, {} the project's backlog, not the task's",
+                baseline::FILE,
+                if backlog == 1 { "is" } else { "are" }
+            )
+        };
         return Ok(gate::Verdict::pass(format!(
-            "mutastic gate: passed: the tests catch {caught} of the {scored} mutants on the lines the task changed{waiting}"
+            "mutastic gate: passed: the tests catch {caught} of the {scored} mutants on the lines the task changed{waiting}{backlog}"
         )));
     }
     let waiting: Vec<String> = missed
@@ -1705,8 +1844,10 @@ fn gate_verdict(
         .collect();
     // The cards are for what holds the gate: a proposed mutant waits on a person, not the agent.
     report.results.retain(|r| {
-        !proposed.contains(&report.found.mutants[r.mutant].id)
-            || !matches!(r.status, Status::Survived | Status::NoCoverage)
+        let id = &report.found.mutants[r.mutant].id;
+        !older.contains(id)
+            && (!proposed.contains(id)
+                || !matches!(r.status, Status::Survived | Status::NoCoverage))
     });
     let cards: String = report::render(&report, Format::Agent, Style::default())
         .lines()

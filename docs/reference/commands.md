@@ -9,6 +9,7 @@ Every command `mutastic` takes, with its options, the environment it reads and t
 - [`mutastic explain`](#explain): Everything known of one mutant, with its tests run
 - [`mutastic ignore`](#ignore): Record a decision not to test one mutant
 - [`mutastic next`](#next): Show the missed mutant most worth a test first, and why
+- [`mutastic baseline`](#baseline): Record every mutant missed now, so later misses are told from them
 - [`mutastic gate open`](#gate-open): Start gating a coding agent's task: keep where it starts
 - [`mutastic gate check`](#gate-check): Say whether a gated task is done: its changed lines' mutants caught
 - [`mutastic gate close`](#gate-close): Stop gating a task: forget where it started
@@ -19,20 +20,21 @@ Every command `mutastic` takes, with its options, the environment it reads and t
 
 `mutastic run [dir] [options]`
 
-Mutate the package and run its tests against each mutant. dir is the package's directory, here unless given; in a workspace, a member's. The run passes when the score reaches the threshold. A full run, one without --only, writes report files, and offers the commands to work on each missed mutant. Its progress goes to stderr, so stdout holds only the result. --shard runs one share of the mutants, for splitting a run across CI jobs, and --from-shards puts the shares back together as the whole run.
+Mutate the package and run its tests against each mutant. dir is the package's directory, here unless given; in a workspace, a member's. The run passes when the score reaches the threshold, or with --fail-on-new when every mutant no test catches is in the baseline. A full run, one without --only, writes report files, and offers the commands to work on each missed mutant. Its progress goes to stderr, so stdout holds only the result. --shard runs one share of the mutants, for splitting a run across CI jobs, and --from-shards puts the shares back together as the whole run.
 
 ```sh
 mutastic run
 mutastic run fixtures/pricing --threshold=70
 mutastic run --since=main
+mutastic run --fail-on-new
 mutastic run fixtures/pricing --operators=stronger
 mutastic run --shard=2/4 --threshold=0
 mutastic run --from-shards=shares --threshold=70
 ```
 
-**Options:** [`--threshold=N`](#--threshold), [`--since[=REF]`](#--since), [`--only=ID`](#--only), [`--workers=N`](#--workers), [`--no-suggestions`](#--no-suggestions), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--report=KIND[:PATH]`](#--report), [`--shard=N/M`](#--shard), [`--from-shards=DIR`](#--from-shards), [`--format=FORMAT`](#--format), [`--vocabulary=WORDS`](#--vocabulary), [`--color=WHEN`](#--color), [`--hyperlinks=WHEN`](#--hyperlinks), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
+**Options:** [`--threshold=N`](#--threshold), [`--fail-on-new`](#--fail-on-new), [`--since[=REF]`](#--since), [`--only=ID`](#--only), [`--workers=N`](#--workers), [`--no-suggestions`](#--no-suggestions), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--report=KIND[:PATH]`](#--report), [`--shard=N/M`](#--shard), [`--from-shards=DIR`](#--from-shards), [`--format=FORMAT`](#--format), [`--vocabulary=WORDS`](#--vocabulary), [`--color=WHEN`](#--color), [`--hyperlinks=WHEN`](#--hyperlinks), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
 
-**Exit status:** 0 when the score reaches the threshold, 1 when it doesn't.
+**Exit status:** 0 when the score reaches the threshold, 1 when it doesn't; with --fail-on-new, 0 when every mutant no test catches is in the baseline, 1 when one isn't.
 
 ## verify
 
@@ -87,7 +89,7 @@ mutastic ignore --prune
 
 `mutastic next [dir] [options]`
 
-Show the missed mutant most worth a test first, and why. The missed mutants as a queue, one line's at a time, in the order a run ranks them: its card, why it's first, and the command that says when it's done. --top shows the first few, spread over the code. While the code under test is the same, it runs only the mutants the last next left uncaught, so any a new test catches drop out; once that code changes, it runs every mutant again. A mutant proposed for ignoring isn't queued: it waits on a person. For an agent, one task, and to run next again after it.
+Show the missed mutant most worth a test first, and why. The missed mutants as a queue, one line's at a time, in the order a run ranks them: its card, why it's first, and the command that says when it's done. --top shows the first few, spread over the code. With a baseline, new misses come before the baseline's. While the code under test is the same, it runs only the mutants the last next left uncaught, so any a new test catches drop out; once that code changes, it runs every mutant again. A mutant proposed for ignoring isn't queued: it waits on a person. For an agent, one task, and to run next again after it.
 
 ```sh
 mutastic next
@@ -98,6 +100,21 @@ mutastic next --format=agent
 **Options:** [`--since[=REF]`](#--since), [`--workers=N`](#--workers), [`--no-suggestions`](#--no-suggestions), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--format=FORMAT`](#--format), [`--vocabulary=WORDS`](#--vocabulary), [`--color=WHEN`](#--color), [`--hyperlinks=WHEN`](#--hyperlinks), [`--progress=STYLE`](#--progress), [`--top=N`](#--top), [`--edition=EDITION`](#--edition).
 
 **Exit status:** 0 when nothing missed is left, or only mutants proposed for ignoring; 1 while something is queued.
+
+## baseline
+
+`mutastic baseline [dir] [options]`
+
+Record every mutant missed now, so later misses are told from them. Runs the mutants and writes each one missed or not covered, by id, to .mutastic/baseline.yaml in the package's directory, to commit. From then on a miss that isn't in it is new: gate holds only new misses, next offers them first, and run --fail-on-new fails only on them. It's never rewritten to take in new misses: --prune runs the mutants and drops the baseline's that are caught now.
+
+```sh
+mutastic baseline
+mutastic baseline --prune
+```
+
+**Options:** [`--workers=N`](#--workers), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--progress=STYLE`](#--progress), [`--prune`](#--prune), [`--edition=EDITION`](#--edition).
+
+**Exit status:** 0 when the baseline is written or pruned; 1 when there's one already and --prune isn't given, or --prune is given and there's none.
 
 ## gate open
 
@@ -168,6 +185,14 @@ mutastic mutants fixtures/pricing --operators=stronger
 mutastic run --threshold=70
 ```
 
+### `--fail-on-new`
+
+`--fail-on-new`, for [`run`](#run). Pass when every mutant no test catches is in .mutastic/baseline.yaml, and fail on one that isn't, whatever the score: the threshold isn't applied. For a package whose score can't reach it yet; mutastic baseline writes the file.
+
+```sh
+mutastic run --fail-on-new
+```
+
 ### `--since`
 
 `--since[=REF]`, for [`next`](#next), [`run`](#run). Mutate only the lines changed since the merge-base of HEAD and REF, uncommitted and new files included; the default branch without one.
@@ -187,9 +212,10 @@ mutastic run --only=mb2f8ae57
 
 ### `--workers`
 
-`--workers=N`, for [`explain`](#explain), [`next`](#next), [`run`](#run), [`verify`](#verify). How many mutants run side by side; half the cores, from 1 to 4, unless set.
+`--workers=N`, for [`baseline`](#baseline), [`explain`](#explain), [`next`](#next), [`run`](#run), [`verify`](#verify). How many mutants run side by side; half the cores, from 1 to 4, unless set.
 
 ```sh
+mutastic baseline --workers=2
 mutastic explain mb2f8ae57 --workers=2
 mutastic next --workers=2
 mutastic run --workers=2
@@ -208,9 +234,10 @@ mutastic run --no-suggestions
 
 ### `--operators`
 
-`--operators=OPERATORS`, for [`mutants`](#mutants), [`next`](#next), [`run`](#run). Which operators run: a set (defaults, stronger or extended), or operator ids split by commas, in place of mutastic.yaml's operators; defaults unless set.
+`--operators=OPERATORS`, for [`baseline`](#baseline), [`mutants`](#mutants), [`next`](#next), [`run`](#run). Which operators run: a set (defaults, stronger or extended), or operator ids split by commas, in place of mutastic.yaml's operators; defaults unless set.
 
 ```sh
+mutastic baseline --operators=stronger
 mutastic mutants --operators=stronger
 mutastic next --operators=stronger
 mutastic run --operators=stronger
@@ -218,9 +245,10 @@ mutastic run --operators=stronger
 
 ### `--unsafe`
 
-`--unsafe=MODE`, for [`mutants`](#mutants), [`next`](#next), [`run`](#run). Which unsafe code is mutated: skip leaves unsafe code and the functions holding an unsafe block alone, enclosing mutates those functions too, all unsafe code as well; skip unless set. One of `skip`, `enclosing`, `all`.
+`--unsafe=MODE`, for [`baseline`](#baseline), [`mutants`](#mutants), [`next`](#next), [`run`](#run). Which unsafe code is mutated: skip leaves unsafe code and the functions holding an unsafe block alone, enclosing mutates those functions too, all unsafe code as well; skip unless set. One of `skip`, `enclosing`, `all`.
 
 ```sh
+mutastic baseline --unsafe=enclosing
 mutastic mutants --unsafe=enclosing
 mutastic next --unsafe=enclosing
 mutastic run --unsafe=enclosing
@@ -292,9 +320,10 @@ mutastic run --hyperlinks=never
 
 ### `--progress`
 
-`--progress=STYLE`, for [`explain`](#explain), [`next`](#next), [`run`](#run), [`verify`](#verify). Progress on stderr: a bar on a terminal, counter lines in logs, none for agents. One of `auto`, `bar`, `counter`, `none`.
+`--progress=STYLE`, for [`baseline`](#baseline), [`explain`](#explain), [`next`](#next), [`run`](#run), [`verify`](#verify). Progress on stderr: a bar on a terminal, counter lines in logs, none for agents. One of `auto`, `bar`, `counter`, `none`.
 
 ```sh
+mutastic baseline --progress=counter
 mutastic explain mb2f8ae57 --progress=counter
 mutastic next --progress=counter
 mutastic run --progress=counter
@@ -351,9 +380,10 @@ mutastic ignore --accept mb2f8ae57
 
 ### `--prune`
 
-`--prune`, for [`ignore`](#ignore). Take away every ignore whose line has changed.
+`--prune`, for [`baseline`](#baseline), [`ignore`](#ignore). Take away every ignore whose line has changed; with baseline, every mutant the tests catch now.
 
 ```sh
+mutastic baseline --prune
 mutastic ignore --prune
 ```
 
@@ -377,9 +407,10 @@ mutastic gate check --hook=claude --tries=5
 
 ### `--edition`
 
-`--edition=EDITION`, for [`explain`](#explain), [`gate check`](#gate-check), [`gate close`](#gate-close), [`gate open`](#gate-open), [`ignore`](#ignore), [`mutants`](#mutants), [`next`](#next), [`run`](#run), [`verify`](#verify). Which edition runs; unless set, the build file in dir, or the nearest above it: Cargo.toml for rust, pom.xml, build.gradle or settings.gradle for java. One of `rust`, `java`.
+`--edition=EDITION`, for [`baseline`](#baseline), [`explain`](#explain), [`gate check`](#gate-check), [`gate close`](#gate-close), [`gate open`](#gate-open), [`ignore`](#ignore), [`mutants`](#mutants), [`next`](#next), [`run`](#run), [`verify`](#verify). Which edition runs; unless set, the build file in dir, or the nearest above it: Cargo.toml for rust, pom.xml, build.gradle or settings.gradle for java. One of `rust`, `java`.
 
 ```sh
+mutastic baseline --edition=rust
 mutastic explain mb2f8ae57 --edition=rust
 mutastic gate check --edition=rust
 mutastic gate close --edition=rust
@@ -409,6 +440,6 @@ mutastic verify mb2f8ae57 --edition=rust
 
 ## Exit codes
 
-- **0**: The score reaches the threshold; for verify, each mutant named is caught, skipped, or crashed where a crash proves nothing; for gate check, the task is done; for next, nothing missed is left but what's proposed for ignoring.
-- **1**: The score is below the threshold; for verify, a mutant named is still missed or not covered; for gate check, the task isn't done; for ignore --accept, the mutant isn't proposed; for next, something is queued.
-- **2**: mutastic couldn't run: an unknown option, a word the command doesn't take, not a Cargo package, a workspace's root, a test that fails with no mutant in, an id that isn't a mutant of the package, shares --from-shards can't put together as one run, or no task open for gate check.
+- **0**: The score reaches the threshold, or with --fail-on-new no miss is new; for verify, each mutant named is caught, skipped, or crashed where a crash proves nothing; for gate check, the task is done; for next, nothing missed is left but what's proposed for ignoring.
+- **1**: The score is below the threshold, or with --fail-on-new a miss is new; for verify, a mutant named is still missed or not covered; for gate check, the task isn't done; for ignore --accept, the mutant isn't proposed; for next, something is queued; for baseline, there's one already, or none to prune.
+- **2**: mutastic couldn't run: an unknown option, a word the command doesn't take, not a Cargo package, a workspace's root, a test that fails with no mutant in, an id that isn't a mutant of the package, shares --from-shards can't put together as one run, --fail-on-new with no baseline, or no task open for gate check.

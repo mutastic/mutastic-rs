@@ -87,7 +87,8 @@ impl CliOption {
         if self.example.starts_with("mutastic ") {
             return self.example.to_string();
         }
-        let id = if command.takes_mutant_id {
+        // `ignore --prune` names no mutant: it takes away every ignore that has lapsed.
+        let id = if command.takes_mutant_id && self.name != "prune" {
             format!(" {ID}")
         } else {
             String::new()
@@ -113,6 +114,7 @@ const EVERY_COMMAND: &[&str] = &[
     "gate close",
     "mutants",
     "next",
+    "baseline",
 ];
 
 pub const COMMANDS: &[Command] = &[
@@ -122,17 +124,20 @@ pub const COMMANDS: &[Command] = &[
         synopsis: "mutastic run [dir] [options]",
         summary: "Mutate the package and run its tests against each mutant",
         detail: "dir is the package's directory, here unless given; in a workspace, a member's. The \
-                 run passes when the score reaches the threshold. A full run, one without --only, \
+                 run passes when the score reaches the threshold, or with --fail-on-new when every \
+                 mutant no test catches is in the baseline. A full run, one without --only, \
                  writes report files, and offers the commands to work on each missed mutant. Its \
                  progress goes to stderr, so stdout holds only the result. --shard runs one share \
                  of the mutants, for splitting a run across CI jobs, and --from-shards puts the \
                  shares back together as the whole run.",
-        exits: "0 when the score reaches the threshold, 1 when it doesn't.",
+        exits: "0 when the score reaches the threshold, 1 when it doesn't; with --fail-on-new, 0 \
+                when every mutant no test catches is in the baseline, 1 when one isn't.",
         takes_mutant_id: false,
         examples: &[
             "mutastic run",
             "mutastic run fixtures/pricing --threshold=70",
             "mutastic run --since=main",
+            "mutastic run --fail-on-new",
             "mutastic run fixtures/pricing --operators=stronger",
             "mutastic run --shard=2/4 --threshold=0",
             "mutastic run --from-shards=shares --threshold=70",
@@ -203,7 +208,8 @@ pub const COMMANDS: &[Command] = &[
         summary: "Show the missed mutant most worth a test first, and why",
         detail: "The missed mutants as a queue, one line's at a time, in the order a run ranks \
                  them: its card, why it's first, and the command that says when it's done. --top \
-                 shows the first few, spread over the code. While the code under test is the same, \
+                 shows the first few, spread over the code. With a baseline, new misses come before \
+                 the baseline's. While the code under test is the same, \
                  it runs only the mutants the last next left uncaught, so any a new test catches \
                  drop out; once that code changes, it runs every mutant again. A mutant proposed \
                  for ignoring isn't queued: it waits on a person. For an agent, one task, and to \
@@ -216,6 +222,21 @@ pub const COMMANDS: &[Command] = &[
             "mutastic next --top=5",
             "mutastic next --format=agent",
         ],
+    },
+    Command {
+        name: "baseline",
+        page: "baseline",
+        synopsis: "mutastic baseline [dir] [options]",
+        summary: "Record every mutant missed now, so later misses are told from them",
+        detail: "Runs the mutants and writes each one missed or not covered, by id, to \
+                 .mutastic/baseline.yaml in the package's directory, to commit. From then on a \
+                 miss that isn't in it is new: gate holds only new misses, next offers them first, \
+                 and run --fail-on-new fails only on them. It's never rewritten to take in new \
+                 misses: --prune runs the mutants and drops the baseline's that are caught now.",
+        exits: "0 when the baseline is written or pruned; 1 when there's one already and --prune \
+                isn't given, or --prune is given and there's none.",
+        takes_mutant_id: false,
+        examples: &["mutastic baseline", "mutastic baseline --prune"],
     },
     Command {
         name: "gate open",
@@ -288,6 +309,19 @@ pub const OPTIONS: &[CliOption] = &[
         example: "--threshold=70",
     },
     CliOption {
+        name: "fail-on-new",
+        value: "",
+        kind: Kind::Flag,
+        group: "Running",
+        choices: &[],
+        help: "Pass when every mutant no test catches is in .mutastic/baseline.yaml, and fail on \
+               one that isn't, whatever the score: the threshold isn't applied. For a package whose \
+               score can't reach it yet; mutastic baseline writes the file",
+        commands: &["run"],
+        environment: "",
+        example: "--fail-on-new",
+    },
+    CliOption {
         name: "since",
         value: "REF",
         kind: Kind::OptionalValue,
@@ -317,7 +351,7 @@ pub const OPTIONS: &[CliOption] = &[
         group: "Running",
         choices: &[],
         help: "How many mutants run side by side; half the cores, from 1 to 4, unless set",
-        commands: &["run", "verify", "explain", "next"],
+        commands: &["run", "verify", "explain", "next", "baseline"],
         environment: "",
         example: "--workers=2",
     },
@@ -341,7 +375,7 @@ pub const OPTIONS: &[CliOption] = &[
         choices: &[],
         help: "Which operators run: a set (defaults, stronger or extended), or operator ids split \
                by commas, in place of mutastic.yaml's operators; defaults unless set",
-        commands: &["run", "mutants", "next"],
+        commands: &["run", "mutants", "next", "baseline"],
         environment: "",
         example: "--operators=stronger",
     },
@@ -354,7 +388,7 @@ pub const OPTIONS: &[CliOption] = &[
         help: "Which unsafe code is mutated: skip leaves unsafe code and the functions holding \
                an unsafe block alone, enclosing mutates those functions too, all unsafe code as \
                well; skip unless set",
-        commands: &["run", "mutants", "next"],
+        commands: &["run", "mutants", "next", "baseline"],
         environment: "",
         example: "--unsafe=enclosing",
     },
@@ -447,7 +481,7 @@ pub const OPTIONS: &[CliOption] = &[
         group: "Output",
         choices: &["auto", "bar", "counter", "none"],
         help: "Progress on stderr: a bar on a terminal, counter lines in logs, none for agents",
-        commands: &["run", "verify", "explain", "next"],
+        commands: &["run", "verify", "explain", "next", "baseline"],
         environment: "",
         example: "--progress=counter",
     },
@@ -528,10 +562,11 @@ pub const OPTIONS: &[CliOption] = &[
         kind: Kind::Flag,
         group: "Ignoring",
         choices: &[],
-        help: "Take away every ignore whose line has changed",
-        commands: &["ignore"],
+        help: "Take away every ignore whose line has changed; with baseline, every mutant the \
+               tests catch now",
+        commands: &["ignore", "baseline"],
         environment: "",
-        example: "mutastic ignore --prune",
+        example: "--prune",
     },
     CliOption {
         name: "hook",
@@ -645,16 +680,17 @@ pub const ENVIRONMENT: &[Entry] = &[
 pub const EXIT_CODES: &[Entry] = &[
     Entry {
         name: "0",
-        meaning: "The score reaches the threshold; for verify, each mutant named is caught, \
+        meaning: "The score reaches the threshold, or with --fail-on-new no miss is new; for verify, each mutant named is caught, \
                   skipped, or crashed where a crash proves nothing; for gate check, the task is \
                   done; for next, nothing missed is left but what's proposed for ignoring",
         detail: "",
     },
     Entry {
         name: "1",
-        meaning: "The score is below the threshold; for verify, a mutant named is still missed or \
+        meaning: "The score is below the threshold, or with --fail-on-new a miss is new; for verify, a mutant named is still missed or \
                   not covered; for gate check, the task isn't done; for ignore --accept, the \
-                  mutant isn't proposed; for next, something is queued",
+                  mutant isn't proposed; for next, something is queued; for baseline, there's one \
+                  already, or none to prune",
         detail: "",
     },
     Entry {
@@ -662,7 +698,7 @@ pub const EXIT_CODES: &[Entry] = &[
         meaning: "mutastic couldn't run: an unknown option, a word the command doesn't take, not \
                   a Cargo package, a workspace's root, a test that fails with no mutant in, an id \
                   that isn't a mutant of the package, shares --from-shards can't put together as one \
-                  run, or no task open for gate check",
+                  run, --fail-on-new with no baseline, or no task open for gate check",
         detail: "",
     },
 ];

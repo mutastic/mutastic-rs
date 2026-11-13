@@ -21,7 +21,8 @@ page stands alone and links to the others by relative path.
 ## Concepts
 
 - [How a run works](concepts/how-a-run-works.md): one build for every mutant, switches, what
-  happens to a mutant that doesn't compile, and one run split across CI jobs.
+  happens to a mutant that doesn't compile, one run split across CI jobs, and CI that fails only
+  on new misses.
 - [Results and the score](concepts/results.md): caught, missed, timed out, not covered, skipped,
   and the crashes that prove nothing.
 - [Unsafe code](concepts/unsafe.md): what's left alone, what's marked, and when to reach for Miri.
@@ -31,7 +32,7 @@ page stands alone and links to the others by relative path.
   found by running your code.
 - [Output](concepts/output.md): each format, for people, coding agents and tools, and `explain`.
 - [Working through misses](concepts/next.md): `mutastic next`, the missed mutants as a queue, one
-  at a time, the one most worth a test first.
+  at a time, the one most worth a test first, and a baseline for older misses.
 
 ## Operators
 

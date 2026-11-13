@@ -77,9 +77,48 @@ each item says why it's where it is:
 The mutants on one line are one item, as they share a card. `--top` shows at most one item for a
 function and two for a file, so one function with many misses can't fill the list.
 
-The Java edition puts new misses first, where a baseline says which misses a project already had.
-The Rust edition has no baseline yet: see
-[Differences from the Java edition](../differences-from-java.md#commands).
+Where the package has a [baseline](#a-baseline-for-older-misses), new misses come before all of
+these, and each item says whether it's a new miss or in the baseline.
+
+## A baseline for older misses
+
+`mutastic baseline` records every mutant no test catches now, missed or not covered, in
+`.mutastic/baseline.yaml` in the package's directory, by its id, to commit. From then on, a miss
+that isn't in the baseline is new:
+
+- **`gate`** holds only new misses on the lines a task changed: an older miss a task happens to
+  touch is the project's backlog, not the task's. A task can't add to the baseline itself: like an
+  ignore, that's a person's call.
+- **`next`** offers new misses first, and the baseline's after them.
+- **`run`** says how many of the baseline's mutants are caught now, and `mutastic baseline --prune`
+  drops them, so the file shrinks as tests are written. It's never rewritten to take in new
+  misses: that would hide them.
+- **`run --fail-on-new`** passes while every mutant no test catches is in the baseline and fails
+  on one that isn't, whatever the score: CI for a package whose score can't reach the threshold
+  yet. [Brownfield: fail only on new misses](how-a-run-works.md#brownfield-fail-only-on-new-misses)
+  sets it up.
+
+```sh
+mutastic baseline
+mutastic baseline --prune
+```
+
+The file is the Java edition's, each entry with where the mutant is and what it changes for
+whoever reads a diff of it:
+
+```yaml
+# The mutants this project missed when its baseline was taken, written by `mutastic baseline`.
+# Commit it. A miss that isn't here is new: the gate holds only new misses. As tests
+# catch these, `mutastic baseline --prune` drops them; it never takes in new misses.
+baseline:
+  - id: mb2f8ae57
+    at: 'Pricing::discount, line 26'
+    change: '`>=` becomes `>`'
+```
+
+`mutastic baseline` won't write over a baseline that's there, and `--prune` won't make one. A
+mutant's id is a hash of what it is, without its line, so the baseline holds while code around a
+mutant moves. A mutant whose change is different is a different mutant, and new.
 
 ## For an agent
 

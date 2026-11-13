@@ -488,6 +488,7 @@ impl Shares {
             share: None,
             operators: options.operators.clone(),
             comparison: None,
+            fail_on_new: None,
         }
     }
 

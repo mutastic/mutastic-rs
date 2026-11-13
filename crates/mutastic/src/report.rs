@@ -1,7 +1,7 @@
 //! The formats: `full` cards for people, `concise` lines for logs, `agent` text for coding agents,
 //! and `jsonl`, the `mutastic.events/v1` stream for tools. The words are the Java edition's.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::ops::Range;
 
@@ -492,8 +492,8 @@ pub struct Standing {
 
 impl Standing {
     /// The order: a condition or a removal first, then the line more tests run, then where it is
-    /// in the code. The Java edition puts the misses a baseline doesn't have before all of these:
-    /// that step goes first here once the Rust edition has `mutastic baseline`.
+    /// in the code. Where there's a baseline, `next` puts the lines with a new miss before all of
+    /// these ([`new_first`]).
     pub fn order(&self, other: &Standing) -> std::cmp::Ordering {
         other
             .prior
@@ -557,6 +557,26 @@ fn prior(mutant: &Mutant) -> u8 {
         | sites::REMOVE_STRUCT_FIELD => 2,
         _ => 1,
     }
+}
+
+/// `entries` with those holding a new miss first, then those the baseline already has, each in the
+/// order they were in: as the Java edition's `next` queues them, and `--fail-on-new` lists them.
+fn new_first<'a>(
+    view: &View<'a>,
+    entries: Vec<Entry<'a>>,
+    baseline: &BTreeSet<String>,
+) -> Vec<Entry<'a>> {
+    let (legacy, new): (Vec<Entry<'a>>, Vec<Entry<'a>>) = entries
+        .into_iter()
+        .partition(|entry| is_legacy(view, entry, baseline));
+    new.into_iter().chain(legacy).collect()
+}
+
+/// An entry the baseline knew of: every mutant on it was there already.
+fn is_legacy(view: &View, entry: &Entry, baseline: &BTreeSet<String>) -> bool {
+    std::iter::once(entry.main)
+        .chain(entry.also.iter().copied())
+        .all(|result| baseline.contains(view.id(result)))
 }
 
 /// `entries`, those most worth a test first, as the Java edition's `Finding.ranked`: by the best
@@ -1654,7 +1674,11 @@ fn score_row(report: &Report, style: Style) -> String {
             style.red(&style.bold(&score))
         },
         delta(report, style),
-        style.dim(&format!("  threshold {threshold}"))
+        style.dim(&if report.fail_on_new.is_some() {
+            "  threshold not applied (new misses decide)".to_string()
+        } else {
+            format!("  threshold {threshold}")
+        })
     )
 }
 
@@ -1685,10 +1709,12 @@ fn delta(report: &Report, style: Style) -> String {
     format!("  {shown}{sameness}")
 }
 
-/// The last line: PASS or FAIL, and why.
+/// The last line: PASS or FAIL, and why; with `--fail-on-new`, on the new misses.
 fn verdict(report: &Report, style: Style) -> String {
     let missed = report.count(Status::Survived);
-    if report.score().is_none() {
+    if let Some(judged) = &report.fail_on_new {
+        on_new_misses(report, judged, style)
+    } else if report.score().is_none() {
         format!(
             "{} {}",
             style.label("PASS", GREEN),
@@ -1720,6 +1746,29 @@ fn verdict(report: &Report, style: Style) -> String {
             ))
         )
     }
+}
+
+/// With `--fail-on-new`: PASS while every mutant no test catches is in the baseline, else FAIL with
+/// the new ones by id, as the Java edition says it.
+fn on_new_misses(report: &Report, judged: &crate::baseline::FailOnNew, style: Style) -> String {
+    let added = judged.new_misses(report);
+    let known = judged.in_baseline(report);
+    if added.is_empty() {
+        return format!(
+            "{} {}",
+            style.label("PASS", GREEN),
+            style.green(&format!("No new misses: {known} in the baseline."))
+        );
+    }
+    format!(
+        "{} {}",
+        style.label("FAIL", RED),
+        style.red(&format!(
+            "{}: {}.",
+            judged.new_misses_counted(added.len(), known),
+            added.join(", ")
+        ))
+    )
 }
 
 /// "not mutated: unsafe (3), …": the code left alone around unsafe, and how to include it; then
@@ -1754,10 +1803,16 @@ fn agent(report: &Report, style: Style) -> String {
     let dir = &report.project.given;
     let _ = writeln!(
         out,
-        "mutastic: {} · score {} (threshold {}{}) · {missed} {}, {not_covered} {}, {} {} of {} mutants{}",
-        if report.passed() { "PASS" } else { "FAIL" },
-        report.score().map_or("none (no mutants to score)".into(), |s| format!("{s:.1}%")),
-        report.threshold,
+        "mutastic: {} · score {} ({}{}) · {missed} {}, {not_covered} {}, {} {} of {} mutants{}",
+        agent_verdict(report),
+        report
+            .score()
+            .map_or("none (no mutants to score)".into(), |s| format!("{s:.1}%")),
+        if report.fail_on_new.is_some() {
+            "threshold not applied".to_string()
+        } else {
+            format!("threshold {}", report.threshold)
+        },
         if not_covered == 0 || report.covered_score().is_none() {
             String::new()
         } else {
@@ -1810,7 +1865,11 @@ fn agent(report: &Report, style: Style) -> String {
     for line in not_mutated(report) {
         let _ = writeln!(out, "{line}");
     }
-    let entries = ranked(&view, view.entries());
+    let ranked = ranked(&view, view.entries());
+    let entries = match &report.fail_on_new {
+        Some(judged) => new_first(&view, ranked, &judged.baseline),
+        None => ranked,
+    };
     for (index, entry) in entries.iter().take(10).enumerate() {
         let _ = write!(out, "\n{}. {}", index + 1, agent_entry(&view, entry, words));
     }
@@ -1870,6 +1929,15 @@ fn agent(report: &Report, style: Style) -> String {
         }
     }
     out
+}
+
+/// `PASS` or `FAIL`; with `--fail-on-new`, the new misses that decided it.
+fn agent_verdict(report: &Report) -> String {
+    match &report.fail_on_new {
+        Some(judged) => judged.verdict(report),
+        None if report.passed() => "PASS".into(),
+        None => "FAIL".into(),
+    }
 }
 
 fn agent_entry(view: &View, entry: &Entry, words: Vocabulary) -> String {
@@ -2000,6 +2068,11 @@ fn jsonl(report: &Report) -> String {
         json!(report.threshold)
     };
     finished["passed"] = json!(report.passed());
+    if let Some(judged) = &report.fail_on_new {
+        finished["failOnNew"] = json!(true);
+        finished["newMisses"] = json!(judged.new_misses(report));
+        finished["inBaseline"] = json!(judged.in_baseline(report));
+    }
     finished["coveredScore"] = report
         .covered_score()
         .map_or(Value::Null, |s| json!(round1(s)));
