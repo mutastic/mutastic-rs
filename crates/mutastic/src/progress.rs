@@ -135,6 +135,10 @@ struct Running {
 /// A test in the coverage pass is SLOW after a minute: there's nothing to measure it against yet.
 const SLOW_TEST: Duration = Duration::from_secs(60);
 
+/// Nothing is SLOW before two seconds: a mutant whose tests take milliseconds would otherwise be
+/// marked for being a little slower than that, and the mark would flash on every line.
+const SLOW_FLOOR: Duration = Duration::from_secs(2);
+
 struct State {
     phase: Phase,
     since: Instant,
@@ -477,8 +481,13 @@ impl Inner {
                     *slot = None;
                 }
             }
-            engine::Progress::FileFinished { found, results } if self.files => {
-                let line = report::file_finished(&state.package, found, results, self.style);
+            engine::Progress::FileFinished {
+                found,
+                results,
+                took,
+            } if self.files => {
+                let line =
+                    report::file_finished(&state.package, found, (results, took), self.style);
                 self.write(state, line.trim_end_matches('\n'));
             }
             engine::Progress::FileFinished { .. } => {}
@@ -593,7 +602,7 @@ impl Inner {
                     Worker {
                         doing: running.doing.clone(),
                         elapsed,
-                        slow: elapsed > running.slow,
+                        slow: elapsed > running.slow.max(SLOW_FLOOR),
                     }
                 })
             })

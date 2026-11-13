@@ -656,7 +656,7 @@ pub fn running(found: &Crate, mutant: &Mutant, style: Style) -> String {
 pub fn file_finished(
     project: &str,
     found: &Crate,
-    results: &[MutantResult],
+    (results, took): (&[MutantResult], std::time::Duration),
     style: Style,
 ) -> String {
     let Some(first) = results.first() else {
@@ -685,7 +685,6 @@ pub fn file_finished(
             style.words.not_covered()
         )));
     }
-    let took: std::time::Duration = results.iter().map(|r| r.took).sum();
     let mut out = format!(
         " {} {} {} {}{}{} {}\n",
         if missed.is_empty() && uncovered.is_empty() {
