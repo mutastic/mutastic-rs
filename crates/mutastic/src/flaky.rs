@@ -220,37 +220,132 @@ fn varying_fields(found: &Crate, path: &str, code: &SyntaxNode) -> BTreeSet<Stri
     names
 }
 
-/// `the tests fail without any mutant: a::b (it timed out), c; their output is in <log>`: the
-/// Java edition's words for tests that fail each time they run.
-pub fn failed_message(failing: &[(String, bool)], log: &Path) -> String {
+/// A test that fails each time it runs with no mutant in: as it's shown, how it failed, and the
+/// command that runs it alone.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Red {
+    pub display: String,
+    pub timed_out: bool,
+    /// The panic's message, on one line: `assertion `left == right` failed: left: 3, right: 4`.
+    pub panic: Option<String>,
+    pub rerun: String,
+}
+
+/// How many failing tests are named with how they failed, and given a command.
+const RED_SHOWN: usize = 3;
+
+/// `tests::t fails without any mutant, so mutastic can't judge one.`, how each failed, why a test
+/// that passes under `cargo test` may fail here, where its output is, and the command that runs it
+/// alone, as the Java edition says it. [`failing_tests`] reads the names back.
+pub fn failed_message(failing: &[Red], log: &Path) -> String {
     let named: Vec<String> = failing
         .iter()
-        .map(|(test, timed_out)| {
-            if *timed_out {
-                format!("{test} (it timed out)")
+        .map(|red| {
+            if red.timed_out {
+                format!("{} (it timed out)", red.display)
             } else {
-                test.clone()
+                red.display.clone()
             }
         })
         .collect();
-    format!(
-        "{FAILED}{}; their output is in {}",
+    let one = failing.len() == 1;
+    let how: Vec<String> = failing
+        .iter()
+        .take(RED_SHOWN)
+        .filter_map(|red| {
+            let panic = red.panic.as_ref()?;
+            Some(if one {
+                format!("It panicked: {panic}")
+            } else {
+                format!("{} panicked: {panic}", red.display)
+            })
+        })
+        .collect();
+    let commands: Vec<String> = failing
+        .iter()
+        .take(RED_SHOWN)
+        .map(|red| format!("  {}", red.rerun))
+        .collect();
+    let (its, it) = if one {
+        ("Its", "it")
+    } else {
+        ("Their", "each")
+    };
+    let mut lines = vec![format!(
+        "{} {} without any mutant, so mutastic can't judge one.",
         named.join(", "),
+        if one { "fails" } else { "fail" }
+    )];
+    lines.extend(how);
+    lines.push(
+        "mutastic runs each test alone: a test that passes with the others, but fails alone, \
+         leans on one of them."
+            .into(),
+    );
+    lines.push(format!(
+        "{its} output is in {}. To run {it} alone:",
         log.display()
-    )
+    ));
+    lines.extend(commands);
+    lines.join("\n")
 }
 
-const FAILED: &str = "the tests fail without any mutant: ";
+const FAILS: &str = " without any mutant, so mutastic can't judge one.";
 
-/// The tests [`failed_message`] names, if `error` is one.
-pub fn failing_tests(error: &str) -> Option<Vec<String>> {
-    let rest = error.strip_prefix(FAILED)?;
-    let (list, _) = rest.split_once("; their output is in ")?;
-    Some(
-        list.split(", ")
-            .map(|test| test.trim_end_matches(" (it timed out)").to_string())
-            .collect(),
-    )
+/// The tests [`failed_message`] names, if `error` is one, and the same in the Java edition's one
+/// line, `the tests fail without any mutant: a::b (it timed out), c; their output is in <log>`,
+/// as the gate quotes it.
+pub fn failing_tests(error: &str) -> Option<(Vec<String>, String)> {
+    let headline = error.lines().next()?;
+    let list = headline
+        .strip_suffix(FAILS)?
+        .strip_suffix(" fails")
+        .or_else(|| headline.strip_suffix(FAILS)?.strip_suffix(" fail"))?;
+    let log = error
+        .lines()
+        .find_map(|line| line.split_once(" output is in ")?.1.split_once(". To run "))
+        .map(|(log, _)| log)?;
+    let names = list
+        .split(", ")
+        .map(|test| test.trim_end_matches(" (it timed out)").to_string())
+        .collect();
+    Some((
+        names,
+        format!("the tests fail without any mutant: {list}; their output is in {log}"),
+    ))
+}
+
+/// The panic in a test's output, on one line: `thread 't' panicked at src/lib.rs:3:5:` is followed
+/// by its message, whose lines are joined, up to the note that follows. Where it panicked isn't
+/// kept: it's a line of mutastic's copy, where a mutant's code can move it.
+pub fn panic_message(output: &str) -> Option<String> {
+    let mut lines = output.lines();
+    // `thread 't' panicked at`, or in newer Rust with the thread's id, `thread 't' (12345) panicked at`.
+    let first = lines
+        .by_ref()
+        .find(|line| line.starts_with("thread '") && line.contains(" panicked at "))?;
+    // Before Rust 1.73: `thread 't' panicked at 'message', src/lib.rs:3:5`.
+    if let Some(rest) = first.split_once(" panicked at '").map(|(_, rest)| rest) {
+        return rest
+            .rsplit_once("', ")
+            .map(|(message, _)| message.to_string());
+    }
+    let message: Vec<&str> = lines
+        .take_while(|line| !line.starts_with("note:") && !line.trim().is_empty())
+        .map(str::trim)
+        .collect();
+    let (head, rest) = message.split_first()?;
+    let said = if rest.is_empty() {
+        head.to_string()
+    } else {
+        format!("{head}: {}", rest.join(", "))
+    };
+    const MOST: usize = 300;
+    Some(if said.chars().count() > MOST {
+        format!("{}…", said.chars().take(MOST).collect::<String>())
+    } else {
+        said
+    })
 }
 
 #[cfg(test)]
@@ -259,19 +354,65 @@ mod tests {
 
     #[test]
     fn the_failing_tests_are_read_back_from_their_message() {
+        let red = |display: &str, timed_out: bool, panic: Option<&str>| Red {
+            display: display.into(),
+            timed_out,
+            panic: panic.map(str::to_string),
+            rerun: format!("cargo test -p red --lib -- --exact {display}"),
+        };
+        let log = Path::new("target/mutastic/tests.log");
         let message = failed_message(
-            &[("a::b".into(), true), ("c".into(), false)],
-            Path::new("target/mutastic/tests.log"),
+            &[red("a::b", true, None), red("c", false, Some("boom"))],
+            log,
         );
         assert_eq!(
             message,
-            "the tests fail without any mutant: a::b (it timed out), c; their output is in target/mutastic/tests.log"
+            "a::b (it timed out), c fail without any mutant, so mutastic can't judge one.\n\
+             c panicked: boom\n\
+             mutastic runs each test alone: a test that passes with the others, but fails alone, \
+             leans on one of them.\n\
+             Their output is in target/mutastic/tests.log. To run each alone:\n  \
+             cargo test -p red --lib -- --exact a::b\n  \
+             cargo test -p red --lib -- --exact c"
         );
         assert_eq!(
             failing_tests(&message),
-            Some(vec!["a::b".into(), "c".into()])
+            Some((
+                vec!["a::b".into(), "c".into()],
+                "the tests fail without any mutant: a::b (it timed out), c; their output is in \
+                 target/mutastic/tests.log"
+                    .into()
+            ))
         );
+        let one = failed_message(&[red("t", false, Some("boom"))], log);
+        assert!(
+            one.starts_with(
+                "t fails without any mutant, so mutastic can't judge one.\nIt panicked: boom\n"
+            ),
+            "{one}"
+        );
+        assert_eq!(failing_tests(&one).unwrap().0, ["t"]);
         assert_eq!(failing_tests("couldn't build"), None);
+    }
+
+    #[test]
+    fn a_panic_is_read_on_one_line() {
+        let output = "running 1 test\n\nthread 'tests::t' panicked at src/lib.rs:20:9:\n\
+                      assertion `left == right` failed\n  left: 3\n right: 4\n\
+                      note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n";
+        assert_eq!(
+            panic_message(output).as_deref(),
+            Some("assertion `left == right` failed: left: 3, right: 4")
+        );
+        let numbered =
+            "thread 'sums_up' (48095868) panicked at tests/sums.rs:3:5:\ntwo and two make 4\n";
+        assert_eq!(
+            panic_message(numbered).as_deref(),
+            Some("two and two make 4")
+        );
+        let old = "thread 't' panicked at 'fails every time', tests/raffle.rs:9:5\n";
+        assert_eq!(panic_message(old).as_deref(), Some("fails every time"));
+        assert_eq!(panic_message("test t ... ok\n"), None);
     }
 
     #[test]

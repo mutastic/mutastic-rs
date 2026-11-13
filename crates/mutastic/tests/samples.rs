@@ -1617,7 +1617,15 @@ fn a_flaky_test_is_left_out_and_one_that_always_fails_stops_the_run() {
     assert_eq!(code, 2, "{out}");
     assert!(
         out.contains(&format!(
-            "mutastic: the tests fail without any mutant: {test}; their output is in target/mutastic/tests.log\n"
+            "mutastic: {test} fails without any mutant, so mutastic can't judge one.\n\
+             It panicked: fails every time\n"
+        )),
+        "{out}"
+    );
+    let rerun = "cargo test -p raffle --test raffle -- --exact a_draw_is_a_place_in_the_raffle";
+    assert!(
+        out.contains(&format!(
+            "Its output is in target/mutastic/tests.log. To run it alone:\n  {rerun}\n"
         )),
         "{out}"
     );
@@ -2439,6 +2447,11 @@ fn a_command_run_in_the_wrong_place_ends_in_the_one_to_run() {
     assert_eq!(code, 1, "{out}");
     assert!(
         out.contains("mutastic: shop is the package in crates/shop, so mutastic runs there\n"),
+        "{out}"
+    );
+    // A package with no tests says so, in place of a score below the threshold.
+    assert!(
+        out.contains("Found no tests, so no mutant can be caught: "),
         "{out}"
     );
 

@@ -764,11 +764,23 @@ fn coverage(
             })
             .collect();
         std::fs::write(&log, output).map_err(|error| error.to_string())?;
-        let named: Vec<(String, bool)> = failing
+        let named: Vec<crate::flaky::Red> = failing
             .iter()
-            .map(|&index| (tests[index].display.clone(), reached[index].0.timed_out))
+            .map(|&index| {
+                let test = &tests[index];
+                let outcome = &reached[index].0;
+                let output = format!("{}\n{}", outcome.stdout, outcome.stderr);
+                crate::flaky::Red {
+                    display: test.display.clone(),
+                    timed_out: outcome.timed_out,
+                    panic: crate::flaky::panic_message(&output),
+                    rerun: rerun(project, &binaries[test.binary], &test.name),
+                }
+            })
             .collect();
-        let shown = crate::report::files::shown(&project.workspace, &log);
+        // From where the person is, as they'd open it.
+        let here = std::env::current_dir().unwrap_or_else(|_| project.workspace.clone());
+        let shown = crate::report::files::shown(&here, &log);
         return Err(crate::flaky::failed_message(
             &named,
             std::path::Path::new(&shown),
@@ -782,6 +794,15 @@ fn coverage(
         })
         .collect();
     Ok(Covered { reach, flaky })
+}
+
+/// The command that runs one test alone, as Cargo runs it: its target, then its exact name.
+fn rerun(project: &Project, binary: &crate::compile::Binary, name: &str) -> String {
+    let target = match binary.kind.as_str() {
+        "lib" => "--lib".to_string(),
+        kind => format!("--{kind} {}", binary.target),
+    };
+    project.cargo_command("test", &format!("{target} -- --exact {name}"))
 }
 
 fn read_reach(text: &str) -> Reach {

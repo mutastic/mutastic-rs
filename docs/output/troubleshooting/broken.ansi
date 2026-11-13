@@ -1,0 +1,4 @@
+mutastic: pricing doesn't build, before any mutant is in it.
+The error is in src/lib.rs, line 27: cannot divide `u32` by `&str`.
+To see it in full:
+  cargo test --no-run --manifest-path fixtures/pricing/Cargo.toml -p pricing

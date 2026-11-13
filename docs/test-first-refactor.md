@@ -36,7 +36,11 @@ mutastic run fixtures/pricing
 
 <!-- output: test-first-refactor/red-100 -->
 ```text
-mutastic: the tests fail without any mutant: tests::loyal_customers_get_ten_off_from_100; their output is in target/mutastic/tests.log
+mutastic: tests::loyal_customers_get_ten_off_from_100 fails without any mutant, so mutastic can't judge one.
+It panicked: assertion `left == right` failed: left: 5, right: 10
+mutastic runs each test alone: a test that passes with the others, but fails alone, leans on one of them.
+Its output is in fixtures/pricing/target/mutastic/tests.log. To run it alone:
+  cargo test --manifest-path fixtures/pricing/Cargo.toml -p pricing --lib -- --exact tests::loyal_customers_get_ten_off_from_100
 ```
 
 The least code that passes is a second `if`, above the first, as the higher tier wins. In place of
@@ -155,7 +159,11 @@ mutastic run fixtures/pricing
 
 <!-- output: test-first-refactor/red-250 -->
 ```text
-mutastic: the tests fail without any mutant: tests::loyal_customers_get_twenty_off_from_250; their output is in target/mutastic/tests.log
+mutastic: tests::loyal_customers_get_twenty_off_from_250 fails without any mutant, so mutastic can't judge one.
+It panicked: assertion `left == right` failed: left: 10, right: 20
+mutastic runs each test alone: a test that passes with the others, but fails alone, leans on one of them.
+Its output is in fixtures/pricing/target/mutastic/tests.log. To run it alone:
+  cargo test --manifest-path fixtures/pricing/Cargo.toml -p pricing --lib -- --exact tests::loyal_customers_get_twenty_off_from_250
 ```
 
 A third `if`, above the others:

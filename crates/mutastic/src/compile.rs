@@ -86,10 +86,7 @@ pub fn build(
             if !succeeded {
                 let blame = blame(&stdout, &emitted, project);
                 if blame.mutants.is_empty() && blame.probes.is_empty() {
-                    return Err(format!(
-                        "the build fails, and not because of a mutant:\n{}",
-                        blame.unattributed.join("\n")
-                    ));
+                    return Err(unbuilt(project, &blame.unattributed));
                 }
                 rounds.push(Round {
                     phase,
@@ -217,6 +214,141 @@ fn cargo(
         return Err(format!("cargo failed in the copy:\n{stderr}"));
     }
     Ok((status.success(), stdout))
+}
+
+/// How many of the package's own errors a message names; `cargo test --no-run` shows them all.
+const ERRORS_NAMED: usize = 3;
+
+/// The build of mutastic's copy fails, and no mutant is to blame. Where it was, and what, is
+/// said of the package as the person wrote it, from Cargo's check of the package itself: the
+/// copy's columns, and even its lines where a mutant's expression spans several, are mutastic's.
+/// When the package builds and only the copy doesn't, that's mutastic's doing, and said so.
+fn unbuilt(project: &Project, copy_errors: &[String]) -> String {
+    let rerun = project.cargo_command("test --no-run", "");
+    match own_errors(project) {
+        Some(errors) if errors.is_empty() => format!(
+            "mutastic's copy of {package} doesn't build, though {package} does: that's a bug in \
+             mutastic, not in your code. The copy is in {copy}. Its first error:\n{first}\n\
+             To report it, with the error above:\n  https://github.com/mutastic/mutastic-rs/issues",
+            package = project.package,
+            copy = crate::report::files::shown(
+                &std::env::current_dir().unwrap_or_else(|_| project.workspace.clone()),
+                &project.copy_dir()
+            ),
+            first = copy_errors.first().map_or("", |error| error.trim_end()),
+        ),
+        Some(errors) => {
+            let said = match errors.as_slice() {
+                [only] => format!("The error is in {}.", only.said()),
+                _ => {
+                    let shown: Vec<String> = errors
+                        .iter()
+                        .take(ERRORS_NAMED)
+                        .map(Located::said)
+                        .collect();
+                    let which = if errors.len() > ERRORS_NAMED {
+                        format!("Its first {ERRORS_NAMED} errors, of {}:", errors.len())
+                    } else {
+                        "Its errors:".to_string()
+                    };
+                    format!("{which}\n{}", shown.join("\n"))
+                }
+            };
+            let whole = if errors.len() == 1 { "it" } else { "them" };
+            format!(
+                "{} doesn't build, before any mutant is in it.\n{said}\n\
+                 To see {whole} in full:\n  {rerun}",
+                project.package,
+            )
+        }
+        None => format!(
+            "the build fails, and not because of a mutant:\n{}\nTo see it in your own code:\n  \
+             {rerun}",
+            copy_errors.join("\n")
+        ),
+    }
+}
+
+/// An error where the person wrote it: the file, from the package's directory, its line, and
+/// what's wrong.
+#[derive(Debug, PartialEq, Eq)]
+struct Located {
+    file: String,
+    line: u64,
+    message: String,
+}
+
+impl Located {
+    /// `src/lib.rs, line 6: cannot add `&str` to `i32``.
+    fn said(&self) -> String {
+        format!("{}, line {}: {}", self.file, self.line, self.message)
+    }
+}
+
+/// The package's own errors, from `cargo check --tests` on its source as it is, in mutastic's
+/// build directory and profile, so its dependencies aren't checked again. `None` when Cargo
+/// couldn't say: it didn't run, or failed without a compiler's error.
+fn own_errors(project: &Project) -> Option<Vec<Located>> {
+    let output = Command::new(workspace::cargo())
+        .args([
+            "check",
+            "--tests",
+            "--keep-going",
+            "--message-format=json",
+            "-p",
+        ])
+        .arg(&project.package)
+        .args(profile_args())
+        .current_dir(project.workspace.join(&project.package_dir))
+        .env("CARGO_TARGET_DIR", project.build_dir())
+        .env("CARGO_TERM_COLOR", "never")
+        .env_remove("RUSTC_WORKSPACE_WRAPPER")
+        .env_remove(crate::wrapper::MARKER)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let errors = located(&stdout, &project.package_dir);
+    if output.status.success() || !errors.is_empty() {
+        Some(errors)
+    } else {
+        None
+    }
+}
+
+/// The errors in Cargo's JSON messages, each at its primary span, in the order Cargo gave them,
+/// with files from `package_dir`, the package's directory in the workspace.
+fn located(stdout: &str, package_dir: &Path) -> Vec<Located> {
+    let mut errors = Vec::new();
+    for line in stdout.lines() {
+        let Ok(message) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        let diagnostic = &message["message"];
+        if message["reason"] != "compiler-message" || diagnostic["level"] != "error" {
+            continue;
+        }
+        let spans = diagnostic["spans"].as_array().cloned().unwrap_or_default();
+        let Some(span) = spans.iter().find(|span| span["is_primary"] == true) else {
+            continue;
+        };
+        let file = Path::new(span["file_name"].as_str().unwrap_or_default());
+        let file = file.strip_prefix(package_dir).unwrap_or(file);
+        let error = Located {
+            file: workspace::slashed(file),
+            line: span["line_start"].as_u64().unwrap_or(0),
+            message: diagnostic["message"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+        };
+        // Cargo gives an error once for each target that has it: the library, then its tests.
+        if !errors.contains(&error) {
+            errors.push(error);
+        }
+    }
+    errors
 }
 
 /// Every line of `stream`, kept, each shown to `seen` as it arrives.
@@ -514,4 +646,45 @@ fn binaries(stdout: &str, project: &Project) -> Vec<Binary> {
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An error's place is its primary span's, from the package's directory, once however many
+    /// targets have it.
+    #[test]
+    fn an_error_is_located_where_its_primary_span_is() {
+        let message = |file: &str, line: u64| {
+            serde_json::json!({
+                "reason": "compiler-message",
+                "message": {
+                    "level": "error",
+                    "message": "mismatched types",
+                    "spans": [
+                        {"file_name": "elsewhere.rs", "line_start": 1, "is_primary": false},
+                        {"file_name": file, "line_start": line, "is_primary": true},
+                    ],
+                },
+            })
+            .to_string()
+        };
+        let stdout = [
+            message("crates/shop/src/lib.rs", 10),
+            message("crates/shop/src/lib.rs", 10),
+            r#"{"reason":"compiler-message","message":{"level":"warning","spans":[]}}"#.into(),
+            message("crates/shop/tests/t.rs", 3),
+        ]
+        .join("\n");
+        let errors = located(&stdout, Path::new("crates/shop"));
+        let said: Vec<String> = errors.iter().map(Located::said).collect();
+        assert_eq!(
+            said,
+            [
+                "src/lib.rs, line 10: mismatched types",
+                "tests/t.rs, line 3: mismatched types"
+            ]
+        );
+    }
 }

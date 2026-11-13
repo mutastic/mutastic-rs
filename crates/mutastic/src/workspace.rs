@@ -42,6 +42,28 @@ impl Project {
     pub fn build_dir(&self) -> PathBuf {
         self.mutastic_dir().join("target")
     }
+
+    /// `cargo <words> -p <package> <after>`, as the person runs it from where they ran mutastic:
+    /// with the package's manifest when they named its directory, so it runs from there too.
+    pub fn cargo_command(&self, words: &str, after: &str) -> String {
+        let manifest = if self.given == "." {
+            String::new()
+        } else {
+            let path = format!("{}/Cargo.toml", self.given.trim_end_matches('/'));
+            let quoted = if path.contains([' ', '\'', '"']) {
+                format!("\"{path}\"")
+            } else {
+                path
+            };
+            format!(" --manifest-path {quoted}")
+        };
+        let after = if after.is_empty() {
+            String::new()
+        } else {
+            format!(" {after}")
+        };
+        format!("cargo {words}{manifest} -p {}{after}", self.package)
+    }
 }
 
 /// What `cargo metadata` says of the workspace that holds a directory: its root, its target
