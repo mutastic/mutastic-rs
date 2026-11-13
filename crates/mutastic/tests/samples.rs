@@ -2603,8 +2603,8 @@ fn a_piped_run_is_never_quiet_for_longer_than_its_heartbeat() {
     }
 }
 
-/// `kill -USR1` asks a run what's running, piped as on a terminal: here, mid-way through the
-/// coverage pass's three-second test, which test it is and how long it's run.
+/// `kill -USR1` asks a run what's running, piped as on a terminal: here, during the coverage
+/// pass's three-second test, which test it is and how long it's run.
 #[cfg(unix)]
 #[test]
 fn sigusr1_says_whats_running() {
@@ -2612,17 +2612,19 @@ fn sigusr1_says_whats_running() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_mutastic"))
         .args(["run", &dir.display().to_string(), "--report=none"])
         .env("MUTASTIC_PROGRESS", "counter")
+        .env("MUTASTIC_HEARTBEAT", "0.5")
         .env("NO_COLOR", "1")
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
     let stderr = std::io::BufReader::new(child.stderr.take().unwrap());
-    let mut lines = Vec::new();
+    let (mut lines, mut asked) = (Vec::new(), false);
     for line in stderr.lines() {
         let line = line.unwrap();
-        if line.starts_with("built ") {
-            std::thread::sleep(Duration::from_millis(1500));
+        // Once a heartbeat says the test is running, however long the machine took to get there.
+        if !asked && line.starts_with("coverage  [0/1 tests] · ") {
+            asked = true;
             let asked = Command::new("kill")
                 .args(["-USR1", &child.id().to_string()])
                 .status()
