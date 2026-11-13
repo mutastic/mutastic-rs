@@ -153,6 +153,21 @@ struct State {
     package: String,
     /// Whether the score has fallen below the threshold: the tab stays red from then.
     red: bool,
+    /// The live events on stdout, for `--format=jsonl`, once asked for.
+    events: Option<Events>,
+    /// The phase the events last said started, and when.
+    event_phase: Option<(&'static str, Instant)>,
+    /// Whether `run-started` has gone out: `progress` events wait for it.
+    started_sent: bool,
+    /// When the last `progress` event went out.
+    evented: Instant,
+}
+
+/// What `run-started` says besides the build's profile, for the live events: how unsafe code is
+/// treated, and the share, for `--shard`.
+pub struct Events {
+    pub unsafe_mode: crate::sites::UnsafeMode,
+    pub share: Option<serde_json::Value>,
 }
 
 struct Inner {
@@ -213,9 +228,13 @@ impl Progress {
                 drawn: 0,
                 printed: now,
                 frame: 0,
-                stopped: shown == Shown::None,
+                stopped: false,
                 package: String::new(),
                 red: false,
+                events: None,
+                event_phase: None,
+                started_sent: false,
+                evented: now,
             }),
             wake: Condvar::new(),
         });
@@ -225,6 +244,10 @@ impl Progress {
             keys: Mutex::new(keys),
             guard: Mutex::new(guard),
         };
+        let ticking = Arc::clone(&inner);
+        if let Ok(mut ticker) = progress.ticker.lock() {
+            *ticker = Some(std::thread::spawn(move || ticking.tick()));
+        }
         if shown == Shown::None {
             return progress;
         }
@@ -233,11 +256,25 @@ impl Progress {
             "mutastic {} · reading the Cargo package…",
             env!("CARGO_PKG_VERSION")
         ));
-        let ticking = Arc::clone(&inner);
-        if let Ok(mut ticker) = progress.ticker.lock() {
-            *ticker = Some(std::thread::spawn(move || ticking.tick()));
-        }
         progress
+    }
+
+    /// Writes the run's phases and progress as events on stdout as they happen, for
+    /// `--format=jsonl`: `run-started` as soon as the build is done, and before it, phases only.
+    pub fn stream(&self, events: Events) {
+        if let Some(mut state) = self.inner.lock() {
+            let started = state.since;
+            state.events = Some(events);
+            self.inner.phase_event(&mut state, Some("reading"));
+            if let Some((_, at)) = state.event_phase.as_mut() {
+                *at = started;
+            }
+        }
+    }
+
+    /// Whether `run-started` went out live, so the result doesn't say it again.
+    pub fn streamed(&self) -> bool {
+        self.inner.lock().is_some_and(|state| state.started_sent)
     }
 
     /// The package whose files the file lines name, once it's read.
@@ -255,9 +292,6 @@ impl Progress {
     }
 
     pub fn step(&self, step: engine::Progress) {
-        if self.inner.shown == Shown::None {
-            return;
-        }
         let Some(mut state) = self.inner.lock() else {
             return;
         };
@@ -313,6 +347,7 @@ impl Inner {
     fn take(&self, state: &mut State, step: engine::Progress) {
         match step {
             engine::Progress::Building { mutants } => {
+                self.phase_event(state, Some("building"));
                 self.enter(
                     state,
                     Phase::Building {
@@ -348,7 +383,20 @@ impl Inner {
                 took,
                 rounds,
                 withdrawn,
+                profile,
             } => {
+                self.phase_event(state, None);
+                if let Some(events) = &state.events {
+                    let started = report::run_started(
+                        &state.package,
+                        profile,
+                        events.unsafe_mode,
+                        events.share.clone(),
+                    );
+                    self.event(&started);
+                    state.started_sent = true;
+                }
+                self.phase_event(state, Some("coverage"));
                 self.enter(state, Phase::Coverage { done: 0, total: 0 });
                 self.write(state, &frames::built_line(mutants, took, rounds, withdrawn));
             }
@@ -377,6 +425,7 @@ impl Inner {
             } => {
                 state.counts.total = mutants;
                 state.cost = cost;
+                self.phase_event(state, Some("mutants"));
                 self.enter(state, Phase::Mutants);
                 let line = format!(
                     "{}{} on rustc {rustc} in {}{} · {}",
@@ -434,6 +483,7 @@ impl Inner {
             }
             engine::Progress::FileFinished { .. } => {}
             engine::Progress::Ran { took } => {
+                self.phase_event(state, None);
                 self.enter(state, Phase::Idle);
                 let line = frames::ran_line(&state.counts, took, self.style);
                 self.write(state, &line);
@@ -441,6 +491,7 @@ impl Inner {
             engine::Progress::Checking { done, total } => {
                 if !matches!(state.phase, Phase::Checking { .. }) {
                     state.since = Instant::now();
+                    self.phase_event(state, Some("checking"));
                 }
                 state.phase = Phase::Checking { done, total };
             }
@@ -449,10 +500,86 @@ impl Inner {
                 took,
                 found,
             } => {
+                self.phase_event(state, None);
                 self.enter(state, Phase::Idle);
                 self.write(state, &frames::checked_line(missed, took, found));
             }
         }
+    }
+
+    /// One event on stdout, a line of its own.
+    fn event(&self, event: &serde_json::Value) {
+        let mut stdout = std::io::stdout().lock();
+        let _ = writeln!(stdout, "{event}");
+        let _ = stdout.flush();
+    }
+
+    /// The phase the events said started has finished; `next`, when given, has started.
+    fn phase_event(&self, state: &mut State, next: Option<&'static str>) {
+        if state.events.is_none() {
+            return;
+        }
+        if let Some((phase, at)) = state.event_phase.take() {
+            self.event(&serde_json::json!({
+                "schema": report::SCHEMA,
+                "edition": report::EDITION,
+                "reason": "phase-finished",
+                "phase": phase,
+                "durationMs": u64::try_from(at.elapsed().as_millis()).unwrap_or(u64::MAX),
+            }));
+        }
+        if let Some(phase) = next {
+            self.event(&serde_json::json!({
+                "schema": report::SCHEMA,
+                "edition": report::EDITION,
+                "reason": "phase-started",
+                "phase": phase,
+            }));
+            state.event_phase = Some((phase, Instant::now()));
+            state.evented = Instant::now();
+        }
+    }
+
+    /// How far the phase under way is, as an event: what it knows, nothing it doesn't.
+    fn progress_event(state: &State) -> Option<serde_json::Value> {
+        let (phase, at) = state.event_phase?;
+        let millis = |took: Duration| u64::try_from(took.as_millis()).unwrap_or(u64::MAX);
+        let mut event = serde_json::json!({
+            "schema": report::SCHEMA,
+            "edition": report::EDITION,
+            "reason": "progress",
+            "phase": phase,
+            "elapsedMs": millis(at.elapsed()),
+        });
+        match &state.phase {
+            Phase::Building { round, crates, .. } => {
+                event["round"] = (*round).into();
+                event["crates"] = (*crates).into();
+            }
+            Phase::Coverage { done, total } | Phase::Checking { done, total } if *total > 0 => {
+                event["done"] = (*done).into();
+                event["total"] = (*total).into();
+            }
+            Phase::Mutants => {
+                let counts = &state.counts;
+                let (weighted, left) = Self::estimate(state);
+                event["done"] = counts.done.into();
+                event["total"] = counts.total.into();
+                if let Some(weighted) = weighted {
+                    event["weighted"] = ((weighted * 1000.0).round() / 1000.0).into();
+                }
+                if let Some(left) = left {
+                    event["leftMs"] = millis(left).into();
+                }
+                event["caught"] = counts.caught.into();
+                event["missed"] = counts.missed.into();
+                event["notCovered"] = counts.not_covered.into();
+                event["timedOut"] = counts.timed_out.into();
+                event["running"] = state.workers.iter().flatten().count().into();
+            }
+            _ => {}
+        }
+        Some(event)
     }
 
     /// Each worker's line for a frame.
@@ -626,6 +753,15 @@ impl Inner {
             };
             if state.stopped {
                 return;
+            }
+            if state.started_sent && state.evented.elapsed() >= self.heartbeat {
+                if let Some(event) = Self::progress_event(&state) {
+                    self.event(&event);
+                }
+                state.evented = Instant::now();
+            }
+            if self.shown == Shown::None {
+                continue;
             }
             if terminal::asked() {
                 self.dump(&mut state);

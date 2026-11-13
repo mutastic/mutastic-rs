@@ -94,7 +94,11 @@ fn pricing_misses_only_the_edge_of_the_discount() {
     assert_eq!(finished["reason"], "run-finished");
     assert_eq!(finished["score"], 90.9);
     assert_eq!(finished["killed"], 10);
-    assert_eq!(events[0]["rule"], mutastic::report::RULE);
+    let started = events
+        .iter()
+        .find(|e| e["reason"] == "run-started")
+        .unwrap();
+    assert_eq!(started["rule"], mutastic::report::RULE);
     assert!(events.iter().all(|e| e["edition"] == "rust"), "{stdout}");
     assert_eq!(finished["toolchain"]["name"], "rustc");
     assert!(
@@ -247,7 +251,10 @@ fn unsafe_code_is_fenced_off_and_crashes_are_told_apart() {
         let errors: Vec<String> = schema().iter_errors(event).map(|e| e.to_string()).collect();
         assert!(errors.is_empty(), "{event}\n{}", errors.join("\n"));
     }
-    let started = &events[0];
+    let started = events
+        .iter()
+        .find(|e| e["reason"] == "run-started")
+        .unwrap();
     assert_eq!(started["profile"]["overflowChecks"], true, "{started}");
     assert_eq!(started["profile"]["debugAssertions"], true, "{started}");
     assert_eq!(started["unsafe"], "skip");
@@ -1094,8 +1101,12 @@ fn since_runs_the_changed_lines_mutants() {
         &["run", "--since=HEAD", "--format=jsonl", "--report=none"],
     );
     let arid = events(&jsonl);
-    assert_eq!(arid[1]["statusReason"], "arid: only writes output");
-    assert_eq!(arid[1]["skipKind"], "arid");
+    let skipped = arid
+        .iter()
+        .find(|e| e["reason"] == "mutant-finished")
+        .unwrap();
+    assert_eq!(skipped["statusReason"], "arid: only writes output");
+    assert_eq!(skipped["skipKind"], "arid");
     assert_eq!(arid.last().unwrap()["ignored"], 1);
 }
 
@@ -2646,4 +2657,69 @@ fn sigusr1_says_whats_running() {
     )
     .unwrap();
     assert!(running.is_match(&said), "{said}");
+}
+
+/// `--format=jsonl` streams the run's phases and progress as they happen: `run-started` once, as
+/// the build finishes, with only phase events before it; `progress` on the heartbeat's cadence;
+/// and every event as the schema has it.
+#[test]
+fn jsonl_streams_phases_and_progress_as_they_happen() {
+    let dir = copy_of("sleepy", "live-events");
+    let started = std::time::Instant::now();
+    let output = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+        .args([
+            "run",
+            &dir.display().to_string(),
+            "--format=jsonl",
+            "--report=none",
+        ])
+        .env("MUTASTIC_HEARTBEAT", "0.5")
+        .env("MUTASTIC_PROGRESS", "none")
+        .output()
+        .unwrap();
+    assert!(
+        started.elapsed() > Duration::from_secs(3),
+        "the fixture's test sleeps"
+    );
+    let events = events(&String::from_utf8_lossy(&output.stdout));
+    let schema = schema();
+    for event in &events {
+        let errors: Vec<String> = schema.iter_errors(event).map(|e| e.to_string()).collect();
+        assert!(errors.is_empty(), "{event}\n{}", errors.join("\n"));
+    }
+    let reasons: Vec<&str> = events
+        .iter()
+        .map(|e| e["reason"].as_str().unwrap())
+        .collect();
+    let run_started = reasons.iter().position(|&r| r == "run-started").unwrap();
+    assert_eq!(reasons.iter().filter(|&&r| r == "run-started").count(), 1);
+    assert!(
+        reasons[..run_started]
+            .iter()
+            .all(|r| r.starts_with("phase-")),
+        "{reasons:?}"
+    );
+    let phases: Vec<&str> = events
+        .iter()
+        .filter(|e| e["reason"] == "phase-started")
+        .map(|e| e["phase"].as_str().unwrap())
+        .collect();
+    assert_eq!(phases, ["reading", "building", "coverage", "mutants"]);
+    let progress: Vec<&Value> = events
+        .iter()
+        .filter(|e| e["reason"] == "progress")
+        .collect();
+    assert!(
+        progress
+            .iter()
+            .any(|e| e["phase"] == "coverage" && e["total"] == 1),
+        "{progress:#?}"
+    );
+    assert!(
+        progress
+            .iter()
+            .any(|e| e["phase"] == "mutants" && e["running"].as_u64() > Some(0)),
+        "{progress:#?}"
+    );
+    assert_eq!(reasons.last(), Some(&"run-finished"));
 }

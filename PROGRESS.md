@@ -229,7 +229,8 @@ the build is done), and the events before it are phase events only.
 
 ## Later
 
-Still to come: Gradle's footer (P3, the Java edition's alone): the plugin reads the child's
-`progress` events and drives Gradle's own progress line, falling back to heartbeat lines where
-Gradle's internal API isn't there. A preview of all of it:
+Gradle's footer is the Java edition's alone: the plugin follows the run's live events and drives
+Gradle's own progress line, falling back to heartbeat lines where Gradle's internal API isn't there.
+In the Rust edition the `mutant-finished` events still come at the end, after the phases', since
+each carries what the checking phase found. A preview of all of it:
 https://claude.ai/artifact/EXHy5dovr98tnBYAfBXn2M

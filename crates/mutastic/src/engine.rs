@@ -105,6 +105,8 @@ pub struct Report {
     pub mutants: Duration,
     /// Looking for a test to suggest for each missed mutant, when there were any to look for.
     pub checking: Option<Duration>,
+    /// Whether `run-started` went out live, with the run's progress, rather than with the rest.
+    pub streamed: bool,
     pub took: Duration,
     pub unsafe_mode: UnsafeMode,
     /// The settings the user's crate was built with, from Cargo: `opt_level`, `debug_assertions`,
@@ -236,12 +238,14 @@ pub enum Progress<'a> {
         crates: usize,
         last: &'a str,
     },
-    /// The build is done: each round's step, and the mutants withdrawn as they didn't compile.
+    /// The build is done: each round's step, the mutants withdrawn as they didn't compile, and
+    /// the profile Cargo built with.
     Built {
         mutants: usize,
         took: Duration,
         rounds: &'a [&'a str],
         withdrawn: usize,
+        profile: &'a serde_json::Value,
     },
     /// A worker of the coverage pass starts a test.
     TestStarted { worker: usize, name: &'a str },
@@ -363,6 +367,7 @@ pub fn run(
         took: build_took,
         rounds: &steps,
         withdrawn: built.unviable.len(),
+        profile: &built.profile,
     });
     let cwd = project.copy_dir().join(&project.package_dir);
     let listed = testrun::list(&built.binaries, &cwd)?;
@@ -460,6 +465,7 @@ pub fn run(
         coverage: coverage_took,
         mutants: mutants_took,
         checking,
+        streamed: false,
         took: started.elapsed(),
         unsafe_mode: options.unsafe_mode,
         profile: built.profile,

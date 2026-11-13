@@ -36,6 +36,17 @@ fn copy(from: &Path, to: &Path, skip: &[&str]) {
     }
 }
 
+/// A stream without the events a live run writes as it goes, its phases and progress: shares put
+/// together have none, as nothing runs then.
+fn settled(text: &str) -> String {
+    text.lines()
+        .filter(|line| {
+            !line.contains(r#""reason":"phase-"#) && !line.contains(r#""reason":"progress""#)
+        })
+        .map(|line| format!("{line}\n"))
+        .collect()
+}
+
 /// `mutastic` run in `dir`: its exit status, stdout and stderr.
 fn mutastic(dir: &Path, args: &[&str]) -> (i32, String, String) {
     let output = Command::new(env!("CARGO_BIN_EXE_mutastic"))
@@ -205,7 +216,7 @@ fn two_shares_put_together_are_the_whole_run() {
         );
         assert_eq!(code, 0, "{out}{err}");
         if *format == "jsonl" {
-            assert_eq!(untimed(&out), untimed(whole));
+            assert_eq!(untimed(&out), untimed(&settled(whole)));
             // Each result is its share's, to the millisecond.
             for event in events(&out)
                 .iter()
@@ -267,7 +278,11 @@ fn two_shares_put_together_are_the_whole_run() {
     // One share of one is a share too, and is the whole run.
     let (code, out, err) = mutastic(&dir, &["run", "--shard=1/1", "--format=jsonl"]);
     assert_eq!(code, 0, "{out}{err}");
-    assert_eq!(events(&out)[0]["share"]["of"], 1);
+    let started = events(&out)
+        .into_iter()
+        .find(|e| e["reason"] == "run-started")
+        .unwrap();
+    assert_eq!(started["share"]["of"], 1);
     forget_last_runs(&dir);
     let (code, out, err) = mutastic(
         &dir,
@@ -278,7 +293,7 @@ fn two_shares_put_together_are_the_whole_run() {
         ],
     );
     assert_eq!(code, 0, "{out}{err}");
-    assert_eq!(untimed(&out), untimed(&whole[0]));
+    assert_eq!(untimed(&out), untimed(&settled(&whole[0])));
 }
 
 /// A share's events, read to change.

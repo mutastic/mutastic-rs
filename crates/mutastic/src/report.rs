@@ -2033,28 +2033,48 @@ fn agent_entry(view: &View, entry: &Entry, words: Vocabulary) -> String {
     out
 }
 
-/// The `mutastic.events/v1` stream.
-fn jsonl(report: &Report) -> String {
-    let view = View { report };
-    let mut lines = vec![json!({
+/// `run-started`: the package, the rules for agents, and what decides a mutant's meaning, so runs
+/// can be compared: the build's settings, which mutastic forces for overflow checks and debug
+/// assertions, and how unsafe code was treated.
+pub fn run_started(
+    package: &str,
+    profile: &serde_json::Value,
+    unsafe_mode: crate::sites::UnsafeMode,
+    share: Option<serde_json::Value>,
+) -> serde_json::Value {
+    let mut started = json!({
         "schema": SCHEMA,
         "edition": EDITION,
         "reason": "run-started",
-        "project": report.project.package,
+        "project": package,
         "rule": RULE,
         "decline": DECLINE,
-        // What decides a mutant's meaning, so runs can be compared: the build's settings, which
-        // mutastic forces for overflow checks and debug assertions, and how unsafe code was treated.
         "profile": {
             "name": "mutastic",
-            "optLevel": report.profile["opt_level"],
-            "overflowChecks": report.profile["overflow_checks"],
-            "debugAssertions": report.profile["debug_assertions"],
+            "optLevel": profile["opt_level"],
+            "overflowChecks": profile["overflow_checks"],
+            "debugAssertions": profile["debug_assertions"],
         },
-        "unsafe": report.unsafe_mode.name(),
-    })];
-    if let Some(share) = &report.share {
-        lines[0]["share"] = share.json();
+        "unsafe": unsafe_mode.name(),
+    });
+    if let Some(share) = share {
+        started["share"] = share;
+    }
+    started
+}
+
+/// The `mutastic.events/v1` stream.
+fn jsonl(report: &Report) -> String {
+    let view = View { report };
+    let mut lines = Vec::new();
+    // Streamed as the build finished, when the run's progress went out live.
+    if !report.streamed {
+        lines.push(run_started(
+            &report.project.package,
+            &report.profile,
+            report.unsafe_mode,
+            report.share.as_ref().map(crate::shares::Tag::json),
+        ));
     }
     for result in &report.results {
         lines.push(mutant_event(&view, result));

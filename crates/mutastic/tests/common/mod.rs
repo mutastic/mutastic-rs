@@ -7,11 +7,11 @@ use std::sync::{Mutex, OnceLock};
 
 use serde_json::Value;
 
-/// `mutastic.events/v1`, pinned from the Java repository (`docs/public/schemas/events/v1.json` at
-/// 424af48, with `mutant-explained`, the optional `docs` the mutant events gained, and
-/// `run-finished`'s `failOnNew`, `newMisses` and `inBaseline`, for `run --fail-on-new`). It asks `jdk`
-/// only of the Java edition's events, and every Rust event says `"edition": "rust"`, so it's taken
-/// as it is.
+/// `mutastic.events/v1`, pinned from the Java repository (`docs/public/schemas/events/v1.json` on
+/// its `progress-p2b` branch, mutastic #44: with `mutant-explained`, the optional `docs` the mutant
+/// events gained, `run-finished`'s `failOnNew`, `newMisses` and `inBaseline`, and the live
+/// `phase-started`, `phase-finished` and `progress` events). It asks `jdk` only of the Java
+/// edition's events, and every Rust event says `"edition": "rust"`, so it's taken as it is.
 #[allow(
     dead_code,
     reason = "only some test crates check events against the schema"
