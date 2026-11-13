@@ -440,13 +440,25 @@ pub(crate) mod __mutastic {{
         let Ok(mut out) = std::fs::File::create(output) else {{
             return;
         }};
+        // The first line's call is made again, a millisecond apart, six times: two calls in a row
+        // read the same clock tick, and a clock's answer would pass for a fixed one.
+        let mut again = 6;
         for line in text.lines() {{
             let values: std::vec::Vec<i128> = line.split(' ').filter_map(|word| word.parse().ok()).collect();
             let once = || std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| call(&values)));
             let written = match once() {{
                 Ok(None) => std::string::String::from("s"),
                 Ok(Some(value)) => {{
-                    if twice && once().ok().flatten().as_ref() != Some(&value) {{
+                    let calls = if twice {{ again.max(1) }} else {{ 0 }};
+                    let apart = again > 1;
+                    let varies = (0..calls).any(|_| {{
+                        if apart {{
+                            std::thread::sleep(std::time::Duration::from_millis(1));
+                        }}
+                        once().ok().flatten().as_ref() != Some(&value)
+                    }});
+                    again = 1;
+                    if varies {{
                         std::string::String::from("x")
                     }} else {{
                         std::format!("r {{value}}")
