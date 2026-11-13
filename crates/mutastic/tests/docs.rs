@@ -779,6 +779,74 @@ fn troubleshooting(work: &Path, shown: &mut BTreeMap<String, String>) {
         "troubleshooting/no-directory".into(),
         missing.stderr.replace(&looked, "/home/you/project"),
     );
+    red_and_broken(work, shown);
+}
+
+/// The error a run stopped with, without the progress before it.
+fn stopped_with(stderr: &str) -> String {
+    let at = stderr.find("mutastic: ").unwrap_or(0);
+    stderr[at..].to_string()
+}
+
+/// A command an error offers, run as a person pastes it in `work`, the directory mutastic ran in.
+fn pasted(work: &Path, line: &str) -> std::process::Output {
+    let words: Vec<&str> = line.trim().split(' ').collect();
+    Command::new(words[0])
+        .args(&words[1..])
+        .current_dir(work)
+        .env_remove("CARGO_TARGET_DIR")
+        .output()
+        .unwrap()
+}
+
+/// A test that fails with no mutant in, and a package that doesn't build: each error says where, and
+/// the command it ends in does what it says.
+fn red_and_broken(work: &Path, shown: &mut BTreeMap<String, String>) {
+    let lib = work.join("fixtures/pricing/src/lib.rs");
+    let source = std::fs::read_to_string(&lib).unwrap();
+
+    std::fs::write(
+        &lib,
+        source.replace(
+            "assert_eq!(pricing.shipping(39), 5);",
+            "assert_eq!(pricing.shipping(39), 4);",
+        ),
+    )
+    .unwrap();
+    let red = mutastic(work, &["run", "fixtures/pricing"]);
+    assert_eq!(red.code, 2, "{}", red.stderr);
+    let said = stopped_with(&red.stderr);
+    assert!(said.contains("left: 5, right: 4"), "{said}");
+    let rerun = said.lines().last().unwrap();
+    let alone = pasted(work, rerun);
+    let out = String::from_utf8_lossy(&alone.stdout);
+    assert!(
+        !alone.status.success()
+            && out.contains("test tests::shipping_is_free_from_the_threshold ... FAILED")
+            && out.contains("1 failed"),
+        "{rerun}: {out}"
+    );
+    shown.insert("troubleshooting/red".into(), said);
+
+    std::fs::write(
+        &lib,
+        source.replace("return total / 10;", "return total / \"10\";"),
+    )
+    .unwrap();
+    let broken = mutastic(work, &["run", "fixtures/pricing"]);
+    assert_eq!(broken.code, 2, "{}", broken.stderr);
+    let said = stopped_with(&broken.stderr);
+    // The line is the person's: line 27 of their file, whatever mutastic's copy made of it.
+    assert!(said.contains("src/lib.rs, line 27: "), "{said}");
+    let rerun = said.lines().last().unwrap();
+    let built = pasted(work, rerun);
+    let err = String::from_utf8_lossy(&built.stderr);
+    assert!(
+        !built.status.success() && err.contains("src/lib.rs:27:"),
+        "{rerun}: {err}"
+    );
+    shown.insert("troubleshooting/broken".into(), said);
+    std::fs::write(&lib, source).unwrap();
 }
 
 /// The suggested-tests page's card: a test written out for `late_fee`'s boundary.
@@ -929,12 +997,7 @@ fn commit(work: &Path) {
 fn red(work: &Path, test: &str) -> String {
     let red = mutastic(work, &["run", "fixtures/pricing"]);
     assert_eq!(red.code, 2, "{}{}", red.stdout, red.stderr);
-    let message: String = red
-        .stderr
-        .lines()
-        .filter(|line| plain(line).starts_with("mutastic: "))
-        .map(|line| format!("{line}\n"))
-        .collect();
+    let message = stopped_with(&red.stderr);
     assert!(plain(&message).contains(test), "{}", red.stderr);
     message
 }
@@ -1202,7 +1265,7 @@ fn the_docs_show_what_the_operators_print() {
 fn the_docs_show_what_troubleshooting_prints() {
     section(
         "troubleshooting",
-        &["operators", "loops", "platforms", "workspace"],
+        &["operators", "loops", "platforms", "workspace", "pricing"],
         troubleshooting,
     );
 }

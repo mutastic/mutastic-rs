@@ -1,1 +1,5 @@
-mutastic: the tests fail without any mutant: tests::loyal_customers_get_twenty_off_from_250; their output is in target/mutastic/tests.log
+mutastic: tests::loyal_customers_get_twenty_off_from_250 fails without any mutant, so mutastic can't judge one.
+It panicked: assertion `left == right` failed: left: 10, right: 20
+mutastic runs each test alone: a test that passes with the others, but fails alone, leans on one of them.
+Its output is in fixtures/pricing/target/mutastic/tests.log. To run it alone:
+  cargo test --manifest-path fixtures/pricing/Cargo.toml -p pricing --lib -- --exact tests::loyal_customers_get_twenty_off_from_250

@@ -1,0 +1,5 @@
+mutastic: tests::shipping_is_free_from_the_threshold fails without any mutant, so mutastic can't judge one.
+It panicked: assertion `left == right` failed: left: 5, right: 4
+mutastic runs each test alone: a test that passes with the others, but fails alone, leans on one of them.
+Its output is in fixtures/pricing/target/mutastic/tests.log. To run it alone:
+  cargo test --manifest-path fixtures/pricing/Cargo.toml -p pricing --lib -- --exact tests::shipping_is_free_from_the_threshold

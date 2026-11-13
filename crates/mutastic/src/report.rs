@@ -1737,6 +1737,8 @@ fn verdict(report: &Report, style: Style) -> String {
             style.label("PASS", GREEN),
             style.dim("Nothing to measure: no mutants to score.")
         )
+    } else if let Some(none) = no_tests(report, style.words) {
+        format!("{} {}", style.label("FAIL", RED), style.red(&none))
     } else if report.passed() {
         format!(
             "{} {}",
@@ -1764,6 +1766,20 @@ fn verdict(report: &Report, style: Style) -> String {
             ))
         )
     }
+}
+
+/// A run that found no tests to run: what to say in place of a score below the threshold, which
+/// would read as tests that miss. `None` when it found some, or has nothing to score.
+fn no_tests(report: &Report, words: Vocabulary) -> Option<String> {
+    if report.tests > 0 || report.score().is_none() || report.passed() {
+        return None;
+    }
+    Some(format!(
+        "Found no tests, so no mutant can be caught: {} {}. mutastic runs what `cargo test` \
+         runs; write a #[test] that calls this code.",
+        report.count(Status::NoCoverage),
+        words.not_covered()
+    ))
 }
 
 /// With `--fail-on-new`: PASS while every mutant no test catches is in the baseline, else FAIL with
@@ -1847,6 +1863,9 @@ fn agent(report: &Report, style: Style) -> String {
             format!(" ({skipped} more skipped)")
         }
     );
+    if let Some(none) = no_tests(report, words) {
+        let _ = writeln!(out, "no tests: {}", none.replacen("Found", "found", 1));
+    }
     for flaky in &report.flaky {
         let _ = writeln!(
             out,

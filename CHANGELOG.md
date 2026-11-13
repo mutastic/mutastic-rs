@@ -24,6 +24,19 @@ newest come first.
   directory.
 - **A word such as `-v` is an option mutastic doesn't have,** said with `mutastic --help`, not taken
   for the directory, which ended in the same `couldn't run cargo`.
+- **A package that doesn't build is shown where you wrote it.** mutastic printed rustc's errors
+  on its own instrumented copy, with its columns and its injected code. When the copy fails and
+  no mutant is to blame, mutastic now checks the package as it is, names each error by your file
+  and line, `src/lib.rs, line 27: cannot divide `u32` by `&str``, and ends in the command that
+  shows them in full, `cargo test --no-run -p pricing`. If the package builds and only the copy
+  doesn't, it says that's a bug in mutastic, with the copy's error to report.
+- **A test that fails with no mutant in says how, and how to run it alone.** It named the test
+  and the log. It now gives the panic's message, why a test that passes in `cargo test` can fail
+  here, where the log is from where you ran mutastic, and the command that runs just that test,
+  as `cargo test -p pricing --lib -- --exact tests::shipping_is_free_from_the_threshold`.
+- **A package with no tests says so.** Its run ended `Below the threshold of 80: 0 missed, 2 not
+  covered`, as if its tests missed. It now ends `Found no tests, so no mutant can be caught`, with
+  what mutastic runs; the exit status is still 1.
 - **No project here is said in both editions' terms.** In a directory with no build file in it or
   above it, mutastic answered with Cargo's `could not find Cargo.toml` alone, which says nothing to
   someone with a Maven or Gradle build. It now says where it looked, for `Cargo.toml`, `pom.xml`,

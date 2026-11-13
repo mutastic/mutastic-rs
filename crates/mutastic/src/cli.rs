@@ -1757,9 +1757,10 @@ fn red_verdict(
     state: &gate::State,
     error: &str,
 ) -> Result<gate::Verdict, String> {
-    let Some(failing) = crate::flaky::failing_tests(error) else {
+    let Some((failing, error)) = crate::flaky::failing_tests(error) else {
         return Err(error.to_string());
     };
+    let error = error.as_str();
     let before: Vec<&String> = failing
         .iter()
         .filter(|test| {

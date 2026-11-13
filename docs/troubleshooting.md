@@ -246,16 +246,48 @@ instead.
 To judge the tests of code for another platform, run mutastic on that platform. For a feature,
 make it a default one while you run, or run on a package that turns it on.
 
+## The package doesn't build
+
+mutastic builds a copy of the package with its mutants in. When that build fails and no mutant is to
+blame, mutastic checks the package as you wrote it, and names each error where it is in your files,
+with the command that shows them in full:
+
+<!-- output: troubleshooting/broken -->
+```text
+mutastic: pricing doesn't build, before any mutant is in it.
+The error is in src/lib.rs, line 27: cannot divide `u32` by `&str`.
+To see it in full:
+  cargo test --no-run --manifest-path fixtures/pricing/Cargo.toml -p pricing
+```
+
+If your package builds and only mutastic's copy doesn't, that's a bug in mutastic, and it says so,
+with the copy's first error to report.
+
 ## A test fails before any mutant
 
 mutastic runs every test once, alone, before any mutant, and every test has to pass. One that
-fails runs again on its own; one that fails every time stops the run, with its name and where its
-output is: `the tests fail without any mutant: pricing::big_orders; their output is in
-target/mutastic/tests.log`.
+fails runs again on its own; one that fails every time stops the run, with how it failed, where its
+output is, and the command that runs it alone:
+
+<!-- output: troubleshooting/red -->
+```text
+mutastic: tests::shipping_is_free_from_the_threshold fails without any mutant, so mutastic can't judge one.
+It panicked: assertion `left == right` failed: left: 5, right: 4
+mutastic runs each test alone: a test that passes with the others, but fails alone, leans on one of them.
+Its output is in fixtures/pricing/target/mutastic/tests.log. To run it alone:
+  cargo test --manifest-path fixtures/pricing/Cargo.toml -p pricing --lib -- --exact tests::shipping_is_free_from_the_threshold
+```
 
 A test that passes in `cargo test` but fails here usually depends on another test having run
 first, or on running in parallel with others: mutastic runs each one alone, in a process of its
 own. Make it stand alone.
+
+## No tests
+
+A package with no tests has nothing to catch a mutant: every one is not covered, and the run says
+`Found no tests` in place of a score below the threshold. mutastic runs what `cargo test` runs:
+`#[test]` functions in the package's library, binaries and `tests/`. Doc tests don't count; see
+[Doc tests](#doc-tests).
 
 ## A test is flaky
 
