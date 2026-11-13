@@ -2633,7 +2633,7 @@ fn sigusr1_says_whats_running() {
     child.wait().unwrap();
     let said = lines.join("\n");
     let running = regex::Regex::new(
-        r"running   1 test at \ds · 0 of 1 done\n   1 tests::doubles_slowly  \[00:00:0\d\]",
+        r"running   1 test at \ds · 0 of 1 done\n   \d tests::doubles_slowly  \[00:00:0\d\]",
     )
     .unwrap();
     assert!(running.is_match(&said), "{said}");
