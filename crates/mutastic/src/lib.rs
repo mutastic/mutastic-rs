@@ -31,6 +31,7 @@ pub mod id;
 pub mod ignores;
 pub mod java;
 pub mod locate;
+pub mod mistyped;
 pub mod nextrun;
 pub mod operator_docs;
 pub mod progress;

@@ -22,8 +22,27 @@ newest come first.
   said the directory was a workspace and to run in one of its packages. It now runs the package
   that holds it, and reads its `mutastic.yaml`, ignores, baseline and `--since` from the package's
   directory.
-- **A word such as `-v` is an option mutastic doesn't have,** said with `mutastic --help`, not taken
+- **A word such as `-v` is an option mutastic doesn't have,** said with `mutastic run --help`, not taken
   for the directory, which ended in the same `couldn't run cargo`.
+- **`run --help` prints run's help, and runs nothing.** `--help` or `-h` after any command, or
+  `mutastic help run`, prints that command's words, options and exit status. It started a whole
+  run before.
+- **A mistyped command, option, value or id is answered with the one close to it, and the line
+  again.** `mutastic run --formt=agent` says `run has no option --formt. There's one called
+  --format.` and ends in `mutastic run --format=agent`: the line as typed, with only that word
+  changed. The close name is found by an edit distance that counts two letters swapped as one
+  edit, so `rnu` finds `run`; it's only offered, never run. A mutant's id is offered only one digit,
+  or one swap, away. An unknown option or command gets one line of usage and the `--help` to run,
+  where it got the whole help.
+- **A value after a space says to use `=`.** `--format agent` said `--format:  isn't one of …`,
+  and took `agent` for the directory. It now says `--format takes its value after an =, not a
+  space` and ends in `mutastic run --format=agent`; `--since main` says the same, unless `main` is
+  a directory.
+- **`mutastic.yaml`, rules files and the ignores name the line, and what's valid there.** An
+  unknown section offers the close one (`rulez:` finds `rules:`); an operator that isn't one names
+  its line, the close name, the sets and namespaces, and `mutastic mutants --operators=all` to see
+  each id; a plugin that isn't there names the line that names it; an unknown field in a rules file
+  lists the fields; and an ignores entry that can't be read names its line and what it lacks.
 - **No project here is said in both editions' terms.** In a directory with no build file in it or
   above it, mutastic answered with Cargo's `could not find Cargo.toml` alone, which says nothing to
   someone with a Maven or Gradle build. It now says where it looked, for `Cargo.toml`, `pom.xml`,

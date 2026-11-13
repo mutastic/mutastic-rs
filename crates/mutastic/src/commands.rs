@@ -788,10 +788,20 @@ pub fn accepts(command: Option<&Command>, name: &str, value: Option<&str>) -> Re
 
 /// `gate <action> --help`: the command, what it does, its options, and how it exits.
 pub fn help(command: &Command) -> String {
-    let options: Vec<String> = options_for(command.name)
+    let taken: Vec<&CliOption> = options_for(command.name)
         .into_iter()
         .filter(|option| option.name != "edition")
-        .map(|option| format!("  {:<14}{}", option.synopsis(), option.help))
+        .collect();
+    // Each option's text starts in one column, two spaces after the longest.
+    let width = taken
+        .iter()
+        .map(|option| option.synopsis().chars().count())
+        .max()
+        .unwrap_or(0)
+        + 2;
+    let options: Vec<String> = taken
+        .iter()
+        .map(|option| format!("  {:<width$}{}", option.synopsis(), option.help))
         .collect();
     let listed = if options.is_empty() {
         String::new()

@@ -2448,7 +2448,7 @@ fn a_command_run_in_the_wrong_place_ends_in_the_one_to_run() {
         short,
         "mutastic: run has no option -v.\n\
          mutastic's options are long ones, such as --format=full. To see them all:\n  \
-         mutastic --help\n"
+         mutastic run --help\n"
     );
     let help = ran(&root, &["--help"], &[]);
     assert_eq!(help.status.code(), Some(0));
