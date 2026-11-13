@@ -165,8 +165,24 @@ There's a package called shop, in fixtures/workspace/shop. To test it:
 With no build file in the directory or any above it, `Cargo.toml` for Rust or `pom.xml`,
 `build.gradle(.kts)` or `settings.gradle(.kts)` for Java, there's no project to test. Go to your
 project, or name its directory. mutastic's options are all long ones, as `--format=full`: a word
-such as `-v` is an option it doesn't have, and `mutastic --help` lists them. When there's no
+such as `-v` is an option it doesn't have, and `mutastic run --help` lists run's. When there's no
 `cargo` to run, mutastic says where it looked: the `CARGO` variable, when it's set, or the PATH.
+
+## A word mutastic doesn't take
+
+A command, option or value mutastic doesn't have is never guessed at and run. When one it has is
+close, the error says so and ends in your line again with only that word changed; a value goes
+after an `=`, never a space:
+
+<!-- output: troubleshooting/mistyped -->
+```text
+mutastic: run has no option --formt. There's one called --format.
+  mutastic run fixtures/pricing --format=agent
+```
+
+With nothing close, it gives the command's usage, and `mutastic run --help` for its options. A
+`mutastic.yaml`, a rules file and `.mutastic/ignores.yaml` are read the same way: an error names
+the file and its line, and what that line could hold.
 
 ## Test code isn't mutated
 

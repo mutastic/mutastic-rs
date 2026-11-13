@@ -340,10 +340,7 @@ pub fn run(
     if !options.only.is_empty() {
         for id in &options.only {
             if !found.mutants.iter().any(|m| &m.id == id) {
-                return Err(format!(
-                    "{id} isn't a mutant of {}: run `mutastic run {}` to see its mutants",
-                    project.package, project.given
-                ));
+                return Err(not_a_mutant(id, &project.package, &project.given, &found));
             }
         }
     }
@@ -1171,6 +1168,18 @@ fn listed(module: &str, tests: &mut [String]) {
         format!("{module}::tests::")
     };
     tests.sort_by(|a, b| (!a.starts_with(&own), a).cmp(&(!b.starts_with(&own), b)));
+}
+
+/// `id` names no mutant of the package: one a digit or a swap away, if there is one, and the
+/// command that lists them all, without running anything.
+pub fn not_a_mutant(id: &str, package: &str, dir: &str, found: &Crate) -> String {
+    let ids = found.mutants.iter().map(|mutant| mutant.id.as_str());
+    let close = crate::similar::closest_within(id, ids, 1).map_or(String::new(), |close| {
+        format!(" There's one called {close}.")
+    });
+    format!(
+        "{id} isn't a mutant of {package}.{close} To see its mutants:\n  mutastic mutants {dir}"
+    )
 }
 
 #[cfg(test)]

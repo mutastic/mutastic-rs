@@ -38,6 +38,7 @@ Usage:
   mutastic next [dir]                The missed mutant most worth a test first, why, and the test
                                      to write; while the code under test is the same, it runs only
                                      what the last next left uncaught
+  mutastic <command> --help          One command's words, options and exit status
 
 Options:
   --only=<id>[,<id>…]   Run only these mutants
@@ -244,8 +245,17 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
         top: 1,
         fail_on_new: false,
     };
-    for arg in args {
+    // The line as typed, the command first, for an error to give back with one word changed.
+    let line: Vec<String> = std::iter::once(command.to_string())
+        .chain(args.iter().cloned())
+        .collect();
+    for (index, arg) in args.iter().enumerate() {
+        let at = index + 1;
         let Some(option) = arg.strip_prefix("--") else {
+            if arg == "-h" {
+                parsed.help = true;
+                continue;
+            }
             if arg.len() > 1 && arg.starts_with('-') {
                 return Err(short_option(command, arg));
             }
@@ -259,10 +269,23 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
         // `--help` is every command's, and `--fraction` the measuring `build`'s, not a user's.
         let internal = name == "help" || (name == "fraction" && command == "build");
         if !internal {
-            if commands::option(name).is_none() {
-                return Err(format!("unknown option --{name}\n\n{USAGE}"));
-            }
+            let Some(declared_option) = commands::option(name) else {
+                return Err(crate::mistyped::option(declared, &line, at, name, value));
+            };
             commands::accepts(declared, name, value)?;
+            if value.is_none() {
+                if let Some(error) = crate::mistyped::value(declared_option, &line, at) {
+                    return Err(error);
+                }
+            }
+            if let Some(value) = value {
+                let kind = value.split_once(':').map_or(value, |(kind, _)| kind);
+                let chosen = if name == "report" { kind } else { value };
+                if !declared_option.choices.is_empty() && !declared_option.choices.contains(&chosen)
+                {
+                    return Err(crate::mistyped::choice(declared_option, &line, at, chosen));
+                }
+            }
         }
         let value = value.unwrap_or("");
         match name {
@@ -391,7 +414,7 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
                     .parse()
                     .map_err(|_| format!("--fraction: {value} isn't a number"))?
             }
-            _ => return Err(format!("unknown option --{name}\n\n{USAGE}")),
+            _ => return Err(crate::mistyped::option(declared, &line, at, name, None)),
         }
     }
     Ok(parsed)
@@ -402,7 +425,7 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
 fn short_option(command: &str, word: &str) -> String {
     format!(
         "{command} has no option {word}.\n\
-         mutastic's options are long ones, such as --format=full. To see them all:\n  mutastic --help"
+         mutastic's options are long ones, such as --format=full. To see them all:\n  mutastic {command} --help"
     )
 }
 
@@ -422,7 +445,7 @@ pub fn check(args: &[String]) -> Result<(), String> {
                 None => Ok(()),
             }
         }
-        other => Err(format!("unknown command {other}")),
+        _ => Err(crate::mistyped::command(args)),
     }
 }
 
@@ -562,15 +585,16 @@ fn configure(command: &str, parsed: &mut Parsed) -> Result<(), String> {
         None => crate::config::Configuration::default(),
     };
     let mut rules = Vec::new();
-    for plugin in &config.plugins {
-        rules.extend(crate::callrules::read(plugin)?);
+    for (plugin, from) in config.plugins.iter().zip(&config.plugins_from) {
+        rules.extend(crate::callrules::read(plugin, from)?);
     }
     crate::callrules::load(rules);
     parsed.rules = config.rules;
     match &parsed.operators_given {
         Some(given) => parsed.operators = operators(given)?,
         None if !config.operators.is_empty() => {
-            parsed.operators = crate::config::resolve(&config.operators, crate::config::FILE)?;
+            parsed.operators =
+                crate::config::resolve_from(&config.operators, &config.operators_from)?;
         }
         None => {}
     }
@@ -643,6 +667,15 @@ fn dispatch(args: &[String]) -> Result<ExitCode, String> {
         println!("{USAGE}");
         return Ok(ExitCode::from(2));
     };
+    if let Some(help) = help(args)? {
+        println!("{help}");
+        return Ok(ExitCode::SUCCESS);
+    }
+    if !crate::mistyped::COMMANDS.contains(&command.as_str())
+        && !matches!(command.as_str(), "build" | "--version" | "-V")
+    {
+        return Err(crate::mistyped::command(args));
+    }
     let mut parsed = parse(command, &args[1..])?;
     arguments(command, &parsed)?;
     if let Err(error) = locate(command, args, &mut parsed) {
@@ -670,15 +703,44 @@ fn dispatch(args: &[String]) -> Result<ExitCode, String> {
         "baseline" => baseline_command(&parsed),
         // For measuring the schema itself: build with a share of the mutants, and say how it went.
         "build" => build(&parsed),
-        "--help" | "-h" | "help" => {
-            println!("{USAGE}");
-            Ok(ExitCode::SUCCESS)
-        }
         "--version" | "-V" => {
             println!("{}", versions());
             Ok(ExitCode::SUCCESS)
         }
-        other => Err(format!("unknown command {other}\n\n{USAGE}")),
+        _ => Err(crate::mistyped::command(args)),
+    }
+}
+
+/// What `--help` asks for, when it's asked: mutastic's usage, or one command's, for `help run`,
+/// `run --help` or `run -h`, before anything runs. `gate --help` without its action is each
+/// action's.
+fn help(args: &[String]) -> Result<Option<String>, String> {
+    let asks = |word: &String| word == "--help" || word == "-h";
+    let (command, rest) = match args.first().map(String::as_str) {
+        Some("help" | "--help" | "-h") => match args.get(1) {
+            Some(command) => (command, &args[2..]),
+            None => return Ok(Some(USAGE.to_string())),
+        },
+        Some(_) if args[1..].iter().any(asks) => (&args[0], &args[1..]),
+        _ => return Ok(None),
+    };
+    if command == "gate" {
+        let action = rest.iter().find(|word| !word.starts_with('-'));
+        let text = match action {
+            Some(action) => gate_help(action)?,
+            None => ["open", "check", "close"]
+                .iter()
+                .filter_map(|action| commands::command(&format!("gate {action}")))
+                .map(commands::help)
+                .collect::<Vec<_>>()
+                .join("\n\n"),
+        };
+        return Ok(Some(text));
+    }
+    match commands::command(command) {
+        Some(declared) => Ok(Some(commands::help(declared))),
+        None if args[0] == *command => Ok(None),
+        None => Err(crate::mistyped::command_at(args, 1)),
     }
 }
 
@@ -1220,10 +1282,7 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, String> {
     let project = workspace::read(&dir)?;
     let found = engine::find_all(&project);
     let Some(index) = found.mutants.iter().position(|m| m.id == id) else {
-        return Err(format!(
-            "{id} isn't a mutant of {}: run `mutastic run {dir}` to see its mutants",
-            project.package
-        ));
+        return Err(engine::not_a_mutant(&id, &project.package, &dir, &found));
     };
     let mutant = &found.mutants[index];
     if let Some(skipped) = &mutant.skipped {
@@ -1461,14 +1520,23 @@ fn gate_command(parsed: &Parsed) -> Result<ExitCode, String> {
             Ok(ExitCode::SUCCESS)
         }
         "check" => gate_check(parsed, &project, here, &work),
-        other => Err(format!("gate: {other} isn't one of open, check or close")),
+        other => Err(no_gate_action(other)),
     }
 }
 
 fn gate_help(action: &str) -> Result<String, String> {
     commands::command(&format!("gate {action}"))
         .map(commands::help)
-        .ok_or_else(|| format!("gate: {action} isn't one of open, check or close"))
+        .ok_or_else(|| no_gate_action(action))
+}
+
+/// `gate`'s action isn't one it has.
+fn no_gate_action(action: &str) -> String {
+    let actions = ["open", "check", "close"];
+    format!(
+        "gate: {action} isn't one of open, check or close.{}",
+        crate::similar::offered(action, actions)
+    )
 }
 
 /// Keeps where the task starts; with a hook, once for each session. A hook's output is the
@@ -1983,9 +2051,11 @@ mod tests {
             refused.starts_with("gate open doesn't take --tries"),
             "{refused}"
         );
-        assert!(check(&words("run --thresold=70"))
-            .unwrap_err()
-            .starts_with("unknown option --thresold"));
+        assert_eq!(
+            check(&words("run --thresold=70")).unwrap_err(),
+            "run has no option --thresold. There's one called --threshold.\n  \
+             mutastic run --threshold=70"
+        );
         assert!(check(&words("ignore --prune=yes")).is_err());
     }
 
@@ -2073,5 +2143,78 @@ mod tests {
         let declared: std::collections::BTreeSet<&str> =
             commands::OPTIONS.iter().map(|option| option.name).collect();
         assert_eq!(listed, declared);
+    }
+
+    /// Every line a mistyped command is answered with parses, as typed: what it offers works.
+    #[test]
+    fn every_line_offered_for_a_mistyped_one_parses() {
+        for typed in [
+            "rnu fixtures/pricing",
+            "verfy mb2f8ae57",
+            "run --formt=agent",
+            "run --formt agent",
+            "run --format agent fixtures/pricing",
+            "run --format=agnet",
+            "run --thresold=70 --format=brief",
+            "run --since main",
+            "next --top 3",
+            "verify mb2f8ae57 --workrs=2",
+            "--format=agent run",
+            "run --report=jsno",
+            "run --operators=strong",
+        ] {
+            let args = words(typed);
+            let refused = match check(&args) {
+                Err(refused) => refused,
+                Ok(()) => panic!("{typed} parses"),
+            };
+            let offered = refused.lines().last().unwrap();
+            let line = offered
+                .strip_prefix("  mutastic ")
+                .unwrap_or_else(|| panic!("{typed}: {refused}"));
+            assert_eq!(check(&words(line)), Ok(()), "{typed}: {refused}");
+            assert!(refused.lines().count() <= 3, "{typed}: {refused}");
+        }
+    }
+
+    /// A word no command takes gets one line of usage, never the whole help.
+    #[test]
+    fn a_word_it_cant_place_gets_one_line_of_usage() {
+        for typed in ["run --verbose", "build-it", "--verbose"] {
+            let refused = check(&words(typed)).unwrap_err();
+            let usage: Vec<&str> = refused
+                .lines()
+                .filter(|l| l.starts_with("Usage: "))
+                .collect();
+            assert_eq!(usage.len(), 1, "{typed}: {refused}");
+            assert!(refused.lines().count() <= 3, "{typed}: {refused}");
+            assert!(refused.ends_with(" --help"), "{typed}: {refused}");
+        }
+    }
+
+    /// `run --help`, `run -h` and `help run` print run's help; nothing runs.
+    #[test]
+    fn help_after_a_command_is_that_commands() {
+        let run = commands::help(commands::command("run").unwrap());
+        for typed in [
+            "run --help",
+            "run -h",
+            "help run",
+            "run . --format=agent --help",
+        ] {
+            assert_eq!(help(&words(typed)), Ok(Some(run.clone())), "{typed}");
+        }
+        assert_eq!(help(&words("--help")), Ok(Some(USAGE.to_string())));
+        let open = commands::help(commands::command("gate open").unwrap());
+        assert_eq!(help(&words("gate open --help")), Ok(Some(open.clone())));
+        assert!(help(&words("gate --help"))
+            .unwrap()
+            .unwrap()
+            .starts_with(&open));
+        assert_eq!(help(&words("run .")), Ok(None));
+        assert_eq!(
+            help(&words("help rnu")).unwrap_err(),
+            "mutastic has no command rnu. There's one called run.\n  mutastic help run"
+        );
     }
 }

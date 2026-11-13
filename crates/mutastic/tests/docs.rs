@@ -779,6 +779,10 @@ fn troubleshooting(work: &Path, shown: &mut BTreeMap<String, String>) {
         "troubleshooting/no-directory".into(),
         missing.stderr.replace(&looked, "/home/you/project"),
     );
+    // A mistyped option: the close one offered, in the line as typed, before anything runs.
+    let mistyped = mutastic(work, &["run", "fixtures/pricing", "--formt=agent"]);
+    assert_eq!(mistyped.code, 2, "{}", mistyped.stderr);
+    shown.insert("troubleshooting/mistyped".into(), mistyped.stderr);
     red_and_broken(work, shown);
 }
 
