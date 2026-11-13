@@ -238,6 +238,8 @@ pub enum Progress<'a> {
         rounds: &'a [&'a str],
         withdrawn: usize,
     },
+    /// A worker of the coverage pass starts a test.
+    TestStarted { worker: usize, name: &'a str },
     /// The coverage pass has run `done` of its `total` tests.
     Tested { done: usize, total: usize },
     /// The tests ran once each, recording what they reach; the mutants run next.
@@ -248,11 +250,28 @@ pub enum Progress<'a> {
         mutants: usize,
         /// The tests left out because they failed, then passed when run again.
         flaky: usize,
+        /// What the mutants should take, all told: each the time its covering tests took.
+        cost: Duration,
     },
     /// The results are the shares' (`--from-shards`): none run here.
     FromShares { summary: &'a str, mutants: usize },
-    /// One mutant has its result.
-    MutantFinished { status: Status },
+    /// A worker starts a mutant, expected to take `expected`, as its covering tests did; it's
+    /// slow past `slow`.
+    MutantStarted {
+        worker: usize,
+        found: &'a Crate,
+        mutant: usize,
+        expected: Duration,
+        slow: Duration,
+        /// The tests that cover it.
+        tests: usize,
+    },
+    /// One mutant has its result; `cost` is what it was expected to take.
+    MutantFinished {
+        status: Status,
+        worker: usize,
+        cost: Duration,
+    },
     /// Every mutant of one source file has its result, in the order found.
     FileFinished {
         found: &'a Crate,
@@ -369,21 +388,37 @@ pub fn run(
         .unzip();
     let coverage_took = coverage_started.elapsed();
     let rustc = rustc_version();
+    let order: Vec<usize> = selected.iter().copied().collect();
+    let first = first_at_site(&found, &live, &built);
+    let costs: Vec<Cost> = order
+        .iter()
+        .map(|&mutant| cost(&found, mutant, first[mutant], &built, &tests, &reach))
+        .collect();
     progress(Progress::Covered {
         tests: tests.len(),
         rustc: &rustc,
         took: coverage_took,
         mutants: selected.len(),
         flaky: flaky.len(),
+        cost: costs.iter().map(|cost| cost.expected).sum(),
     });
 
     let mutants_started = Instant::now();
-    let order: Vec<usize> = selected.iter().copied().collect();
-    let first = first_at_site(&found, &live, &built);
     let files = Files::new(&found, &order);
-    let mut results = testrun::parallel(&order, options.workers, |&mutant| {
+    let indexed: Vec<(usize, &Cost)> = order.iter().copied().zip(&costs).collect();
+    let mut results = testrun::parallel_on(&indexed, options.workers, |worker, &(mutant, cost)| {
+        if cost.expected > Duration::ZERO {
+            progress(Progress::MutantStarted {
+                worker,
+                found: &found,
+                mutant,
+                expected: cost.expected,
+                slow: cost.slow,
+                tests: cost.tests,
+            });
+        }
         let result = result(&found, mutant, first[mutant], &built, &tests, &reach, &cwd);
-        files.finished(&found, &result, progress);
+        files.finished(&found, &result, (worker, cost.expected), progress);
         result
     });
     progress(Progress::Ran {
@@ -572,6 +607,7 @@ impl Files {
         &self,
         found: &Crate,
         result: &MutantResult,
+        (worker, cost): (usize, Duration),
         progress: &(dyn Fn(Progress) + Sync),
     ) {
         let Ok(mut state) = self.state.lock() else {
@@ -584,6 +620,8 @@ impl Files {
         *left -= 1;
         progress(Progress::MutantFinished {
             status: result.status,
+            worker,
+            cost,
         });
         if *left == 0 {
             done.sort_by_key(|r| r.mutant);
@@ -647,7 +685,11 @@ fn coverage(
         done: 0,
         total: tests.len(),
     });
-    let mut reached = testrun::parallel(&indexed, workers, |&(index, test)| {
+    let mut reached = testrun::parallel_on(&indexed, workers, |worker, &(index, test)| {
+        progress(Progress::TestStarted {
+            worker,
+            name: &test.display,
+        });
         let covered = cover(index, test);
         progress(Progress::Tested {
             done: tested.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1,
@@ -759,6 +801,57 @@ fn first_at_site(found: &Crate, selected: &BTreeSet<usize>, built: &compile::Bui
         .collect()
 }
 
+/// What a mutant should take, and when it's slow: the time its covering tests took in the coverage
+/// pass, and three times that or half its timeout, whichever comes first. One no test reaches, or
+/// that isn't run, costs nothing.
+pub(crate) struct Cost {
+    expected: Duration,
+    slow: Duration,
+    tests: usize,
+}
+
+fn cost(
+    found: &Crate,
+    index: usize,
+    site: u32,
+    built: &compile::Built,
+    tests: &[Test],
+    reach: &[Reach],
+) -> Cost {
+    let none = Cost {
+        expected: Duration::ZERO,
+        slow: Duration::ZERO,
+        tests: 0,
+    };
+    if found.mutants[index].skipped.is_some() || built.unviable.contains_key(&index) {
+        return none;
+    }
+    let mut by_binary: BTreeMap<usize, Duration> = BTreeMap::new();
+    let mut covering = 0;
+    for (t, test) in tests.iter().enumerate() {
+        if reach[t].hits.contains(&site) {
+            *by_binary.entry(test.binary).or_default() += reach[t].took;
+            covering += 1;
+        }
+    }
+    let expected: Duration = by_binary.values().sum();
+    let timeout: Duration = by_binary.values().map(|&baseline| timeout(baseline)).sum();
+    if by_binary.is_empty() {
+        return none;
+    }
+    Cost {
+        expected,
+        slow: (expected * 3).min(timeout / 2),
+        tests: covering,
+    }
+}
+
+/// How long a binary's covering tests may run against a mutant: five times what they took, and a
+/// second, or ten seconds.
+fn timeout(baseline: Duration) -> Duration {
+    (baseline * 5 + Duration::from_secs(1)).max(Duration::from_secs(10))
+}
+
 fn result(
     found: &Crate,
     index: usize,
@@ -844,7 +937,7 @@ fn result(
         if mutant.near_unsafe.is_some() {
             names.push("--test-threads=1");
         }
-        let timeout = (baseline * 5 + Duration::from_secs(1)).max(Duration::from_secs(10));
+        let timeout = timeout(baseline);
         let active = [("MUTASTIC_ACTIVE", mutant.ordinal.to_string())];
         let outcome: Outcome = testrun::run(&built.binaries[binary], cwd, &names, &active, timeout);
         result.tests_run += group.len();

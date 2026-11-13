@@ -44,19 +44,70 @@ spinner (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`, one frame per redraw) and the phase w
 ⠴ reading   the Cargo package · 1s
 ⠴ building  cargo check, round 1 · 212 crates · 3m12s
    └ Checking ra_ap_syntax v0.0.301
-⠧ coverage  72/181 tests · 4m02s
-⠏ mutants   [2871/5525] ✓ 2610 caught · ✗ 41 missed · ○ 214 not covered · ⏱ 6 timed out · 24m10s
+⠧ coverage  ━━━━━━━━━━━━━━━━──────────────────────────  72/181 tests · 4m02s
+   1 [00:03:51] SLOW  docs::the_docs_show_what_the_operators_print
+   2 [00:00:41]       since::changed_lines_are_read
+   3 idle
+     t for what’s running
+⠏ mutants   ━━━━━━━━━━━━━━━━━━━━━───────────────────  52% · 2871/5525 · ✓ 2610 caught · ✗ 41 missed · ○ 214 not covered · ⏱ 6 timed out · 24m10s · ~21m left
+   1 [00:00:04]       src/engine.rs:540 finished() && becomes ||
+   7 [00:02:31] SLOW  src/testrun.rs:114 spawn() call removed
+   8 idle
+     … and 4 more running · t for what’s running
 ⠋ checking  52 missed · looking for a test that would catch each, 18/52 · 38s
 ```
 
-The clock is the phase's own. Before the coverage pass has listed its tests it says `listing the tests`. `└` lines are dim, and show the build tool's latest line: Cargo's
-`Checking`/`Compiling` for the last crate it started (its round counts check and build apart: `cargo build, round 2`), Gradle's or Maven's last log line. Java's
-building line names the tool's task: `⠴ building  gradle testClasses · 3m12s`.
+The clock is the phase's own. Before the coverage pass has listed its tests it says `listing the
+tests`. `└` lines are dim, and show the build tool's latest line: Cargo's `Checking`/`Compiling`
+for the last crate it started (its round counts check and build apart: `cargo build, round 2`),
+Gradle's or Maven's last log line. Java's building line names the tool's task:
+`⠴ building  gradle testClasses · 3m12s`.
+
+**The bar and the percent** (coverage and mutants) are green `━` on dim `─`, at most 40 wide. In the
+coverage pass they count tests. For mutants they're weighted: each mutant counts for what its
+covering tests took in the coverage pass, and one no test reaches counts for nothing, so the bar
+moves with the time that's passed rather than the number of mutants.
+
+**What's left** (`~21m left`) is the mutant phase's time so far, scaled by the cost still to run over
+the cost done. It shows once three mutants have run and ten seconds have passed. It rounds to whole
+minutes above ten minutes, to ten seconds above one, and to five below.
+
+**Worker lines**, one per worker, with a `[HH:MM:SS]` timer, `SLOW` (bold amber) and what it runs: a
+test's name, or a mutant as `file:line function() change`, its change in the words a miss line uses.
+A mutant is SLOW at three times what its tests took, or at half its timeout, whichever comes first.
+A test in the coverage pass is SLOW after a minute. Up to eight show, four below 100 columns, then
+`… and K more running`. The block keeps its height while workers come and go: an idle one says
+`idle`.
+
+**Width.** Every line fits the terminal: the bar shrinks first, from 40 down to 12; then the fates
+drop words, `✓ 2610 caught · ✗ 41 missed · ○ 214 · ⏱ 6`, then all of them,
+`✓2610 ✗41 ○214 ⏱6`, with the bar down to 6; then a line is cut with `…`. Wrapping is turned off
+(`ESC[?7l` … `ESC[?7h`) while the block is drawn, so a terminal narrowed mid-run cuts a line rather
+than wrapping it where the next redraw can't clear it. The Rust edition asks the terminal; Java
+reads `MUTASTIC_COLUMNS`, which the launcher passes, or `COLUMNS`, or assumes 100.
 
 A permanent line (a phase's end, a file's line) clears the block, prints, and redraws the block
-under it. The block is cleared before the result.
+under it, in one write, so the terminal never shows the block half gone. The block is cleared
+before the result.
 
 Clock form: `38s` under a minute, then `3m12s`, `1h02m`.
+
+## What's running: `t`, Ctrl-T, SIGUSR1
+
+On a terminal that's also stdin, `t` prints what's running above the live block, as does Ctrl-T
+(SIGINFO, on macOS and the BSDs) and `kill -USR1` anywhere on Unix, piped or not:
+
+```text
+running   8 workers at 24m31s
+   7 mb2f8ae57  src/lib.rs:26 discount() >= becomes >  [00:02:44] SLOW (expected 40s)
+               covered by 23 tests
+   8 idle
+```
+
+During the coverage pass it lists the running tests with their timers; during the build, Cargo's
+round, its crates done and its last line; while checking, how many it has looked at. To hear `t`,
+the terminal reads a key at a time without echo while the run lasts. Ctrl-C and Ctrl-Z still work,
+and every way out (finishing, an error, Ctrl-C, a kill, Ctrl-Z) leaves it as it was.
 
 ## Anywhere else: heartbeats
 
@@ -67,7 +118,7 @@ colour, whenever 30 seconds have passed since the last progress line of any kind
 reading   the Cargo package · 30s
 building  cargo check, round 1 · 31 crates · 30s
 coverage  [18/181 tests] · 1m00s
-mutants   [312/5525] ✓ 290 caught · ✗ 3 missed · ○ 214 not covered · ⏱ 0 timed out · 4m30s
+mutants   [312/5525] 4% · ✓ 290 caught · ✗ 3 missed · ○ 214 not covered · ⏱ 0 timed out · 4m30s · ~21m left
 checking  52 missed · 18/52 · 30s
 ```
 
@@ -103,15 +154,14 @@ writes about 120 heartbeats.
 
 ## Testing
 
-Frames are a pure function of the state, the phase's elapsed time and the spinner frame, and are
-tested as text. Each edition has a maximum-silence test: a run with `MUTASTIC_HEARTBEAT=1` on a
+Frames are a pure function of the state, the phase's elapsed time, the spinner frame and the width,
+and are tested as text, at 160, 120 and 80 columns. Each edition has a maximum-silence test: a run with `MUTASTIC_HEARTBEAT=1` on a
 fixture whose test sleeps through more than one heartbeat, stderr piped, every line timestamped.
 It fails if two lines are further apart than the heartbeat plus a second, or if a phase passes
 without a line.
 
 ## Later
 
-P2 adds a bar, a weighted percent, the estimate, a line per worker with SLOW tags, the `t` dump,
-live JSONL `phase-started` and `progress` events, width handling, and the summary ending on the
+Still to come in P2: live JSONL `phase-started` and `progress` events, and the summary ending on the
 score. P3 adds OSC 9;4 tab progress, synchronized output and Gradle's footer. A preview of all of it:
 https://claude.ai/artifact/EXHy5dovr98tnBYAfBXn2M

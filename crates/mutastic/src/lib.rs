@@ -16,14 +16,6 @@ macro_rules! stderr_line {
     }};
 }
 
-/// [`stderr_line!`] without the newline: a progress bar redrawn in place.
-macro_rules! stderr_text {
-    ($($arg:tt)*) => {{
-        use std::io::Write as _;
-        let _ = write!(std::io::stderr(), $($arg)*);
-    }};
-}
-
 pub mod baseline;
 pub mod callrules;
 pub mod cfg;
@@ -51,6 +43,7 @@ pub mod similar;
 pub mod since;
 pub mod sites;
 pub mod suggest;
+pub mod terminal;
 pub mod testrun;
 pub mod words;
 pub mod workspace;

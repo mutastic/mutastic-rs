@@ -494,8 +494,10 @@ fn the_live_line_is_redrawn_in_place() {
     let dir = copy.display().to_string();
     let (_, err) = run_with(&dir, "--progress=bar", false);
     let clear = "\r\x1b[2K";
+    // Piped, it can't ask the terminal its width, so it takes 100 columns: the bar, the
+    // weighted percent, then the fates in as many words as fit.
     let live = regex::Regex::new(
-        r"\x1b\[\?7l[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] mutants   \[\d+/11\] ✓ \d+ caught · ✗ \d missed · ○ 0 not covered · ⏱ 0 timed out · \d+s\x1b\[\?7h",
+        r"\x1b\[\?7l[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] mutants   [━─]+  \d+% · \d+/11 · ✓ \d+ caught · ✗ \d missed · ",
     )
     .unwrap();
     assert!(live.is_match(&err), "the mutants' live line: {err:?}");
@@ -2599,4 +2601,43 @@ fn a_piped_run_is_never_quiet_for_longer_than_its_heartbeat() {
             "no {phase:?} line:\n{lines:#?}"
         );
     }
+}
+
+/// `kill -USR1` asks a run what's running, piped as on a terminal: here, during the coverage
+/// pass's three-second test, which test it is and how long it's run.
+#[cfg(unix)]
+#[test]
+fn sigusr1_says_whats_running() {
+    let dir = copy_of("sleepy", "sigusr1");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+        .args(["run", &dir.display().to_string(), "--report=none"])
+        .env("MUTASTIC_PROGRESS", "counter")
+        .env("MUTASTIC_HEARTBEAT", "0.5")
+        .env("NO_COLOR", "1")
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let stderr = std::io::BufReader::new(child.stderr.take().unwrap());
+    let (mut lines, mut asked) = (Vec::new(), false);
+    for line in stderr.lines() {
+        let line = line.unwrap();
+        // Once a heartbeat says the test is running, however long the machine took to get there.
+        if !asked && line.starts_with("coverage  [0/1 tests] · ") {
+            asked = true;
+            let asked = Command::new("kill")
+                .args(["-USR1", &child.id().to_string()])
+                .status()
+                .unwrap();
+            assert!(asked.success());
+        }
+        lines.push(line);
+    }
+    child.wait().unwrap();
+    let said = lines.join("\n");
+    let running = regex::Regex::new(
+        r"running   1 test at \ds · 0 of 1 done\n   \d tests::doubles_slowly  \[00:00:0\d\]",
+    )
+    .unwrap();
+    assert!(running.is_match(&said), "{said}");
 }

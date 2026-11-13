@@ -18,7 +18,9 @@ categories = ["development-tools::testing", "development-tools::cargo-plugins", 
 rust-version = "1.91"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# Denied everywhere but `terminal`, which asks the C library for the terminal's width, its input
+# mode and signals, rather than take a dependency for a handful of calls; a test keeps it there.
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

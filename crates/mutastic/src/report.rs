@@ -638,6 +638,19 @@ fn method(found: &Crate, mutant: &Mutant) -> String {
     format!("{}()", found.functions[mutant.function].name)
 }
 
+/// A running mutant, for a worker's line: `src/lib.rs:26 discount() >= becomes >`, its change in
+/// the words a miss line uses.
+pub fn running(found: &Crate, mutant: &Mutant, style: Style) -> String {
+    let name = &found.functions[mutant.function].name;
+    format!(
+        "{}:{} {} {}",
+        mutant.file.display(),
+        mutant.line,
+        style.bold(&method(found, mutant)),
+        style.code(&words::advise(mutant, name, &BTreeMap::new()).change)
+    )
+}
+
 /// One file's line, as its last mutant finishes: `✓` and its count when nothing was missed, `❯`
 /// with each miss under it and each line no test reaches otherwise.
 pub fn file_finished(
