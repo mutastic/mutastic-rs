@@ -5,6 +5,30 @@ newest come first.
 
 ## Unreleased
 
+### Fixes
+
+- **A directory that isn't there is said, with where mutastic looked.** `mutastic run mutastic-rs`
+  in a workspace with no such directory said `couldn't run cargo: No such file or directory`. The
+  directory is now checked before Cargo runs: mutastic says `there's no directory mutastic-rs in
+  <where it looked>`, offers the one package or directory whose name is close to it, and ends in
+  the command to run, as `mutastic run crates/mutastic-rs`. A member's package name typed alone,
+  where there's no directory of that name, runs that member, and a note says which directory it
+  used. When there's really no `cargo`, mutastic says so, and where it looked: the `CARGO`
+  variable, when it's set, or the PATH.
+- **A workspace's root gives a command for each member.** It named the packages only; now it ends
+  in `mutastic run <dir>` for each, from where you are, up to ten, and past that, their names and
+  the command to fill in. See [A workspace](docs/troubleshooting.md#a-workspace).
+- **Inside a member, mutastic runs that member, as Cargo would.** From a member's `src`, mutastic
+  said the directory was a workspace and to run in one of its packages. It now runs the package
+  that holds it, and reads its `mutastic.yaml`, ignores, baseline and `--since` from the package's
+  directory.
+- **A word such as `-v` is an option mutastic doesn't have,** said with `mutastic --help`, not taken
+  for the directory, which ended in the same `couldn't run cargo`.
+- **No project here is said in both editions' terms.** In a directory with no build file in it or
+  above it, mutastic answered with Cargo's `could not find Cargo.toml` alone, which says nothing to
+  someone with a Maven or Gradle build. It now says where it looked, for `Cargo.toml`, `pom.xml`,
+  `build.gradle(.kts)` and `settings.gradle(.kts)`, and ends in `mutastic run <project directory>`.
+
 ## 1.1.0 (2026-11-12)
 
 ### Card changes

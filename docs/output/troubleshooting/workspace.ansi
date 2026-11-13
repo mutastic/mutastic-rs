@@ -1,2 +1,4 @@
-mutastic 1.1.0 · reading the Cargo package…
-mutastic: fixtures/workspace is a workspace: run mutastic in one of its packages (billing, shop)
+mutastic: fixtures/workspace is a workspace's root, and mutastic tests one package at a time.
+It has 2 packages. To test one:
+  mutastic run fixtures/workspace/billing
+  mutastic run fixtures/workspace/shop

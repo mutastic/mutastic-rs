@@ -785,6 +785,15 @@ fn troubleshooting(work: &Path, shown: &mut BTreeMap<String, String>) {
     let root = mutastic(work, &["run", "fixtures/workspace"]);
     assert_eq!(root.code, 2, "{}", root.stderr);
     shown.insert("troubleshooting/workspace".into(), root.stderr);
+    // A directory that isn't there, named close to a package: offered, as the command to run. The
+    // page shows the directory mutastic looked in as a reader's, not this copy's.
+    let missing = mutastic(work, &["run", "fixtures/workspace/shpo"]);
+    assert_eq!(missing.code, 2, "{}", missing.stderr);
+    let looked = std::fs::canonicalize(work).unwrap().display().to_string();
+    shown.insert(
+        "troubleshooting/no-directory".into(),
+        missing.stderr.replace(&looked, "/home/you/project"),
+    );
 }
 
 /// The suggested-tests page's card: a test written out for `late_fee`'s boundary.

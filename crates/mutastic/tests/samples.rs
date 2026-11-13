@@ -2320,3 +2320,233 @@ fn explain_as_events_says_what_the_text_says() {
         "{said}"
     );
 }
+
+/// Where a command runs is checked before Cargo runs. A directory that isn't there, a word that's
+/// an option, a workspace's root, no project at all and no Cargo are each said in the person's
+/// words, ending in the command to run instead, and that command runs. A package's name typed
+/// alone runs that package, and says so; below a package, the package runs, with its own
+/// `mutastic.yaml`, ignores and `--since` read from its directory, as from the package itself.
+#[test]
+fn a_command_run_in_the_wrong_place_ends_in_the_one_to_run() {
+    let root = copy_of("workspace", "located");
+    std::fs::create_dir_all(root.join("crates")).unwrap();
+    std::fs::rename(root.join("shop"), root.join("crates/shop")).unwrap();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"billing\", \"crates/shop\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    let real = std::fs::canonicalize(&root).unwrap();
+    let ran = |dir: &Path, args: &[&str], env: &[(&str, &Path)]| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_mutastic"));
+        command.args(args).current_dir(dir).env("NO_COLOR", "1");
+        for (name, value) in env {
+            command.env(name, value);
+        }
+        command.output().unwrap()
+    };
+    let stopped = |dir: &Path, args: &[&str]| {
+        let output = ran(dir, args, &[]);
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        String::from_utf8_lossy(&output.stderr).into_owned()
+    };
+    // Each command a message ends in runs where it was shown.
+    let runs = |dir: &Path, message: &str| {
+        for line in message
+            .lines()
+            .filter_map(|l| l.strip_prefix("  mutastic "))
+        {
+            let (code, out) = mutastic_in(dir, &line.split(' ').collect::<Vec<_>>());
+            assert_eq!(code, 0, "mutastic {line}: {out}");
+        }
+    };
+
+    // The workspace's root: each package, as the command to test it.
+    let listed = stopped(&root, &["mutants", "--operators=defaults"]);
+    assert_eq!(
+        listed,
+        "mutastic: this is a workspace's root, and mutastic tests one package at a time.\n\
+         It has 2 packages. To test one:\n  \
+         mutastic mutants billing --operators=defaults\n  \
+         mutastic mutants crates/shop --operators=defaults\n"
+    );
+    runs(&root, &listed);
+    // A directory in the workspace that's in none of its packages: the same, from where it is.
+    let crates = stopped(&root.join("crates"), &["mutants"]);
+    assert!(
+        crates.starts_with(
+            "mutastic: this directory is in a workspace, but in none of its packages, and \
+             mutastic tests one package at a time.\nIt has 2 packages. To test one:\n  \
+             mutastic mutants ../billing\n  mutastic mutants shop\n"
+        ),
+        "{crates}"
+    );
+    runs(&root.join("crates"), &crates);
+
+    // A name close to a package's, where there's no such directory: offered, never run.
+    let near = stopped(&root, &["mutants", "shpo"]);
+    assert_eq!(
+        near,
+        format!(
+            "mutastic: there's no directory shpo in {}.\n\
+             There's a package called shop, in crates/shop. To test it:\n  \
+             mutastic mutants crates/shop\n",
+            real.display()
+        )
+    );
+    runs(&root, &near);
+    // Close to nothing: the workspace's packages.
+    let far = stopped(&root, &["mutants", "nowhere"]);
+    assert!(
+        far.ends_with(
+            ".\nThis workspace has 2 packages. To test one:\n  \
+             mutastic mutants billing\n  mutastic mutants crates/shop\n"
+        ),
+        "{far}"
+    );
+    // A package's name exactly: that package runs, and the note says where.
+    // shop has no tests, so its run fails: on its score, not with mutastic's 2.
+    let (code, out) = mutastic_in(&root, &["run", "shop", "--report=none"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("mutastic: shop is the package in crates/shop, so mutastic runs there\n"),
+        "{out}"
+    );
+
+    // A word with one dash is an option mutastic doesn't have, never a directory.
+    let short = stopped(&root, &["run", "-v"]);
+    assert_eq!(
+        short,
+        "mutastic: run has no option -v.\n\
+         mutastic's options are long ones, such as --format=full. To see them all:\n  \
+         mutastic --help\n"
+    );
+    let help = ran(&root, &["--help"], &[]);
+    assert_eq!(help.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&help.stdout).contains("\nOptions:\n  --only=<id>"));
+
+    // Below a package, the package runs: its ignores, its mutastic.yaml and --since are read
+    // from its directory.
+    let src = root.join("crates/shop/src");
+    let git = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(&root)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap()
+            .status;
+        assert!(status.success(), "git {args:?}");
+    };
+    git(&["init", "-q"]);
+    std::fs::write(root.join(".gitignore"), "target\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "start"]);
+    let finished = |args: &[&str]| {
+        let (code, jsonl) = mutastic_in(&src, args);
+        assert_ne!(code, 2, "{jsonl}");
+        events(&jsonl)
+            .into_iter()
+            .filter(|e| e["reason"] == "mutant-finished")
+            .collect::<Vec<_>>()
+    };
+    let since = ["run", "--since=HEAD", "--format=jsonl", "--report=none"];
+    assert_eq!(finished(&since).len(), 0);
+    let lib = root.join("crates/shop/src/lib.rs");
+    let text = std::fs::read_to_string(&lib).unwrap();
+    std::fs::write(
+        &lib,
+        text.replace("prices.iter().sum()", "prices.iter().sum::<u32>()"),
+    )
+    .unwrap();
+    let changed = finished(&since);
+    assert!(
+        !changed.is_empty() && changed.iter().all(|e| e["location"]["method"] == "total"),
+        "{changed:?}"
+    );
+    std::fs::write(
+        root.join("crates/shop/mutastic.yaml"),
+        "rules:\n  - skip: shop::total\n    reason: summed by the till\n",
+    )
+    .unwrap();
+    let skipped = finished(&["run", "--format=jsonl", "--report=none"]);
+    assert!(
+        !skipped.is_empty()
+            && skipped
+                .iter()
+                .all(|e| e["statusReason"] == "user: summed by the till (rule `skip: shop::total`)"),
+        "{skipped:?}"
+    );
+    let (_, listing) = mutastic_in(&src, &["mutants"]);
+    let id = listing.split_whitespace().next().unwrap().to_string();
+    let (code, out) = mutastic_in(&src, &["ignore", &id, "--reason=kept"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.ends_with(&format!("to undo: mutastic ignore --remove {id} ..\n")),
+        "{out}"
+    );
+    assert!(root.join("crates/shop/.mutastic/ignores.yaml").is_file());
+    assert!(!src.join(".mutastic").exists());
+
+    // No project at all, in either edition's terms.
+    let empty = std::env::temp_dir().join(format!("mutastic-no-project-{}", std::process::id()));
+    std::fs::create_dir_all(&empty).unwrap();
+    let nothing = stopped(&empty, &["run"]);
+    assert_eq!(
+        nothing,
+        format!(
+            "mutastic: there's no project here for mutastic to test.\n\
+             It looked in {} and every directory above it, for Cargo.toml, pom.xml, \
+             build.gradle(.kts) or settings.gradle(.kts).\n\
+             Go to your project, or name its directory:\n  mutastic run <project directory>\n",
+            std::fs::canonicalize(&empty).unwrap().display()
+        )
+    );
+
+    // No Cargo where the CARGO variable points.
+    let no_cargo = root.join("no-cargo");
+    let output = ran(
+        &root.join("billing"),
+        &["mutants"],
+        &[("CARGO", no_cargo.as_path())],
+    );
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        format!(
+            "mutastic: CARGO is {}, and there's no cargo there.\n\
+             mutastic runs the cargo CARGO names. Point it at one, or unset it to use the cargo on \
+             the PATH:\n  unset CARGO\n",
+            no_cargo.display()
+        )
+    );
+    std::fs::remove_dir_all(&empty).ok();
+    std::fs::remove_dir_all(&root).ok();
+}
+
+/// No Cargo on the PATH, and no CARGO variable to say where one is.
+#[cfg(unix)]
+#[test]
+fn no_cargo_on_the_path_is_said_with_how_to_get_one() {
+    let output = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+        .args(["mutants", &fixture("pricing")])
+        .env_remove("CARGO")
+        .env("PATH", "/nonexistent")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "mutastic: there's no cargo on the PATH, and mutastic reads a Rust package with it.\n\
+         Install Rust from https://rustup.rs, or add the directory that holds cargo to the PATH. \
+         To check it's found:\n  cargo --version\n"
+    );
+}

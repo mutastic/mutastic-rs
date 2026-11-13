@@ -62,6 +62,8 @@ All the code is in `crates/mutastic/src`:
 | `cli` | The command: parses options, picks the format, runs the engine, sets the exit status |
 | `commands` | Every command, option, environment variable and exit status, declared once: what the parser takes, `gate --help`, `docs/commands.json` and `docs/reference/commands.md` |
 | `workspace` | Reads the package from `cargo metadata`; keeps mutastic's copy in step |
+| `locate` | Checks the directory a command names before anything runs there, finds the package that holds it, and says what's wrong with the command to run instead |
+| `similar` | The one name close to a mistyped one, offered and never acted on |
 | `cfg` | Which `cfg` predicates hold in mutastic's build: built, not built, or not known |
 | `sites` | Finds mutants with rust-analyzer's parser; the operators, their sets, and unsafe fencing; `sites/callable.rs`, whether a test can call a function, and how |
 | `id` | Mutant ids and fingerprints |
