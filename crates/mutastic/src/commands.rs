@@ -646,6 +646,12 @@ pub const ENVIRONMENT: &[Entry] = &[
         detail: "For a Gradle or Maven build, or a CI job, that always wants the same.",
     },
     Entry {
+        name: "MUTASTIC_TERM_PROGRESS",
+        meaning: "true or false: whether the terminal's tab shows the run's progress",
+        detail: "Unset, it does in Windows Terminal, ConEmu, Ghostty and WezTerm, which say they \
+                 draw it. Cargo's `CARGO_TERM_PROGRESS_TERM_INTEGRATION` is read too.",
+    },
+    Entry {
         name: "MUTASTIC_HEARTBEAT",
         meaning: "Seconds a log may go without a progress line",
         detail: "30 unless set. Off a terminal, a line with the phase, its counts and its clock is \

@@ -92,6 +92,27 @@ before the result.
 
 Clock form: `38s` under a minute, then `3m12s`, `1h02m`.
 
+## The tab: OSC 9;4
+
+Where the terminal draws progress in its tab or taskbar, the run shows it there too, with
+`ESC ] 9 ; 4 ; state ; percent ESC \`: busy (state 3) while reading, building, covering and
+checking; the mutants' weighted percent (state 1) while they run; red (state 2) from the moment
+the score, over the mutants run so far and once twenty have, falls below the threshold, and red
+it stays; and nothing (state 0) on every way out: the result, an error, Ctrl-C, a kill or Ctrl-Z.
+Missed mutants are normal, so a miss alone never turns it red. With `--fail-on-new` the score
+doesn't decide, and it never does.
+
+It's sent only to terminals that say they draw it, as some take `ESC ] 9` for a notification:
+Windows Terminal (`WT_SESSION`), ConEmu (`ConEmuANSI=ON`), Ghostty (`TERM_PROGRAM=ghostty` or
+`TERM=xterm-ghostty`) and WezTerm (`TERM_PROGRAM=WezTerm`). `MUTASTIC_TERM_PROGRESS=true|false`, or
+Cargo's `CARGO_TERM_PROGRESS_TERM_INTEGRATION`, decides instead.
+
+## Flicker: synchronized output
+
+On a terminal, each frame (the block cleared, any permanent lines, the block drawn again) is one
+write wrapped in `ESC [ ? 2026 h` … `ESC [ ? 2026 l`, so a terminal that knows synchronized output
+paints it at once. One that doesn't ignores the two sequences.
+
 ## What's running: `t`, Ctrl-T, SIGUSR1
 
 On a terminal that's also stdin, `t` prints what's running above the live block, as does Ctrl-T
@@ -183,5 +204,6 @@ without a line.
 
 ## Later
 
-Still to come in P2: live JSONL `phase-started` and `progress` events. P3 adds OSC 9;4 tab progress, synchronized output and Gradle's footer. A preview of all of it:
+Still to come: live JSONL `phase-started` and `progress` events (P2, once the Java edition's
+schema has them), and Gradle's footer (P3, the Java edition's alone). A preview of all of it:
 https://claude.ai/artifact/EXHy5dovr98tnBYAfBXn2M

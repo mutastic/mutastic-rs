@@ -38,6 +38,8 @@ pub struct Counts {
     pub missed: usize,
     pub not_covered: usize,
     pub timed_out: usize,
+    /// Skipped, or a runtime error: in no fate, and not scored.
+    pub unscored: usize,
 }
 
 /// What a worker is running: a test in the coverage pass, a mutant after it.
@@ -556,6 +558,7 @@ mod tests {
             missed: 41,
             not_covered: 214,
             timed_out: 6,
+            unscored: 0,
         }
     }
 

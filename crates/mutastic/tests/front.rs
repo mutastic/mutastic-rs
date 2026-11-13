@@ -73,13 +73,30 @@ fn forwarded(root: &Path, dir: &Path, args: &[&str], exit: u8) -> (Output, Optio
     executable(&engine, ENGINE);
     let record = root.join("record");
     std::fs::remove_file(&record).ok();
-    let output = mutastic(dir, args)
-        .env("MUTASTIC_JAVA_ENGINE", &engine)
-        .env("RECORD", &record)
-        .env("FAKE_EXIT", exit.to_string())
-        .output()
-        .unwrap();
+    let output = busy_again(|| {
+        mutastic(dir, args)
+            .env("MUTASTIC_JAVA_ENGINE", &engine)
+            .env("RECORD", &record)
+            .env("FAKE_EXIT", exit.to_string())
+            .output()
+            .unwrap()
+    });
     (output, recorded(&record))
+}
+
+/// `run`, again while running the stand-in failed only because it was busy. Writing an executable
+/// while another test's thread forks lets that child inherit the open file until it execs, and
+/// running the file then fails with ETXTBSY; a moment later it's free. It says nothing of mutastic.
+fn busy_again(mut run: impl FnMut() -> Output) -> Output {
+    let mut output = run();
+    for _ in 0..5 {
+        if !text(&output.stderr).contains("Text file busy") {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        output = run();
+    }
+    output
 }
 
 #[test]
@@ -151,7 +168,7 @@ fn the_java_edition_is_told_whether_stderr_is_a_terminal() {
         if let Some(preset) = preset {
             command.env("MUTASTIC_STDERR_TTY", preset);
         }
-        let output = command.output().unwrap();
+        let output = busy_again(|| command.output().unwrap());
         assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
         std::fs::read_to_string(root.join("record.tty")).unwrap()
     };
