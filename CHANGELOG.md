@@ -7,6 +7,11 @@ newest come first.
 
 ### Card changes
 
+- **A suggested test is named by where its input sits, not its value,** as in the Java edition. A
+  call of one argument is named for zero or a negative input, `fee_when_amount_is_zero`, or for
+  the edge of the literal its condition compares with, `discount_at_the_total_edge` and
+  `discount_just_below_the_total_edge`; a `const` the source names is used as before; anything
+  else keeps its values. Two mutants on a card suggesting one call get one test.
 - **Each suggested test says what it's for**, as in the Java edition. A card with a test for more
   than one of its mutants gave only the first mutant's fix, so the second test came with nothing
   saying why. Now `help:` says `one test for each mutant`, and each test follows its own mutant's
@@ -23,6 +28,11 @@ newest come first.
   hides what the mutant found, and was the one cheat mutastic's own evals saw.
 
 ### Additions
+
+- **`extends:` in `mutastic.yaml`, as in the Java edition.** A package's file adds another's rules
+  and plugins when it says `extends: ../mutastic.yaml`; its own `operators:`, if any, replace the
+  other's. A file names one other, which may extend another in turn. See
+  [In a workspace](docs/reference/configuration.md#in-a-workspace).
 
 - **`mutastic next`: the misses one at a time.** A long list of missed mutants goes unread, so
   `next` hands over the one most worth a test first: its card, why it's first, the test to write
@@ -67,11 +77,18 @@ newest come first.
 
 ### Scoring changes
 
+- **A package uses its nearest `mutastic.yaml`, however it's run,** as in the Java edition. A run
+  on a workspace's top read only the top's file, while `mutastic run shop` read only
+  `shop/mutastic.yaml`, so the same package could get two scores. Now each reads
+  `shop/mutastic.yaml` for `shop` when there is one, and the nearest above it, up to the git
+  repository's top, when there isn't. A package without a file of its own, in a repository with one
+  at its top, now has the top's rules applied.
 - **A zero check on an unsigned value skips what differs only below 0.** `n == 0` made `n <= 0`, or
   `n > 0` made `n != 0`, can't be told apart where `n` can't be negative, and is skipped as
   equivalent where the source proves it: a type written `u8` to `u128` or `usize` (parameter,
   `let` or field), a cast, a function declared beside it returning one, an `.enumerate()` index,
-  or arithmetic on those. Scores can go up; no id changes.
+  a `let` from a literal with an unsigned suffix, a `Duration`'s whole-number count where the
+  source names std's `Duration`, or arithmetic on those. Scores can go up; no id changes.
 - **`cfg!(debug_assertions)` forced true is skipped as equivalent.** mutastic builds every mutant
   with debug assertions on, so under it the condition is always true, and forcing it true changes
   nothing a test can see. Forced false still runs. Measured on httparse: 3 of its misses, 3 of 3

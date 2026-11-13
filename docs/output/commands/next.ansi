@@ -21,7 +21,7 @@
 
             // in mod tests
             #[test]
-            fn is_small_with_n_10() {
+            fn is_small_at_the_n_edge() {
                 assert!(!is_small(10)); // today false · with md0d6db64 true
             }
             [2mcheck today's value is the one you intend: the test pins what the code does now[0m

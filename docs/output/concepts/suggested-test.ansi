@@ -15,7 +15,7 @@
 
            // in mod rates::tests
            #[test]
-           fn late_fee_with_days_late_7() {
+           fn late_fee_at_the_days_late_edge() {
                assert_eq!(late_fee(7), 0); // today 0 · with this mutant 5
            }
            [2mcheck today's value is the one you intend: the test pins what the code does now[0m

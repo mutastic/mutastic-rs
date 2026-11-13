@@ -12,7 +12,7 @@ decline: if a mutant's case can't happen in practice, or the change is one no ca
    fix: test `discount()` with `total = 100` and assert the result
    test to add in mod tests:
      #[test]
-     fn discount_with_total_100() {
+     fn discount_at_the_total_edge() {
          assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
      }
      // check today's value is the one you intend: the test pins what the code does now

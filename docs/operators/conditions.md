@@ -65,7 +65,7 @@ fn small_orders_pay_for_delivery() {
 
            // in mod conditions::tests
            #[test]
-           fn free_delivery_with_total_50() {
+           fn free_delivery_at_the_total_edge() {
                assert!(free_delivery(50)); // today true · with this mutant false
            }
            check today's value is the one you intend: the test pins what the code does now
@@ -271,7 +271,9 @@ A value that can't be below 0 is the same: an unsigned one compared with 0 skips
 differ only below 0, `n == 0` becoming `n <= 0` and `n > 0` becoming `n != 0`, while `n != 0`, the
 check made never true and the rest run. Only what the source proves counts: a name or a field whose
 type is written `u8` to `u128` or `usize`, a cast `as` one of them, a call of a function declared
-beside it to return one, the index a `for` loop takes from `.enumerate()`, or arithmetic on those.
+beside it to return one, the index a `for` loop takes from `.enumerate()`, a `let` from a literal
+with an unsigned suffix (`let n = 5u32;`), a whole-number count of a `Duration` the source names
+(`d.as_secs()`, `d.subsec_nanos()`), or arithmetic on those.
 An inferred or generic type, or a type of the project's own with one of those names, and the
 mutants run.
 

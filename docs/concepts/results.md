@@ -240,7 +240,7 @@ how it went:
 
 | It prints | Means | Passes |
 |---|---|---|
-| `is caught by tests::discount_with_total_100` | a test failed | yes |
+| `is caught by tests::discount_at_the_total_edge` | a test failed | yes |
 | `is caught by run::totals, through a panic: attempt to subtract with overflow` | a test failed through a panic the language raised | yes |
 | `is caught only because the test process crashed (SIGABRT): no test's check caught it` | no test failed: the process died, in safe code | yes |
 | `is caught by a timeout` | the tests ran out of time | yes |

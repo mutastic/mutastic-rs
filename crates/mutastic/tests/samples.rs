@@ -122,7 +122,7 @@ fn pricing_misses_only_the_edge_of_the_discount() {
 
             // in mod tests
             #[test]
-            fn discount_with_total_100() {{
+            fn discount_at_the_total_edge() {{
                 assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0
             }}
             check today's value is the one you intend: the test pins what the code does now
@@ -844,6 +844,57 @@ fn mutastic_yaml_is_read_as_the_java_editions() {
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr)
         .contains("mutastic.yaml line 2: the rule `skip: x::**` needs a `reason:` under it"));
+    std::fs::remove_dir_all(&copy).ok();
+}
+
+/// A package uses its nearest `mutastic.yaml`, so it gets the same rules from the workspace's top as
+/// from its own directory; once, a run from the top read only the top's file. And a file adds
+/// another's when it says `extends:`.
+#[test]
+fn a_packages_own_mutastic_yaml_applies_from_the_workspaces_top() {
+    let copy = copy_of("workspace", "nearest-yaml");
+    // One package, so the workspace's top runs it.
+    std::fs::write(
+        copy.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"shop\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    let status_reason = |dir: &Path| {
+        let (_, jsonl) = mutastic(&[
+            "run",
+            &dir.display().to_string(),
+            "--format=jsonl",
+            "--report=none",
+        ]);
+        let found = events(&jsonl);
+        let total = found
+            .iter()
+            .find(|e| e["reason"] == "mutant-finished" && e["location"]["method"] == "total")
+            .unwrap_or_else(|| panic!("a mutant in total: {jsonl}"))
+            .clone();
+        total["statusReason"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string()
+    };
+    let own = "user: summed by the till (rule `skip: shop::total`)";
+    std::fs::write(
+        copy.join("shop/mutastic.yaml"),
+        "rules:\n  - skip: shop::total\n    reason: summed by the till\n",
+    )
+    .unwrap();
+    assert_eq!(status_reason(&copy), own);
+    assert_eq!(status_reason(&copy.join("shop")), own);
+    std::fs::write(copy.join("shop/mutastic.yaml"), "extends: ../shared.yaml\n").unwrap();
+    std::fs::write(
+        copy.join("shared.yaml"),
+        "rules:\n  - skip: shop::**\n    reason: shared by the team\n",
+    )
+    .unwrap();
+    assert_eq!(
+        status_reason(&copy),
+        "user: shared by the team (rule `skip: shop::**`)"
+    );
     std::fs::remove_dir_all(&copy).ok();
 }
 

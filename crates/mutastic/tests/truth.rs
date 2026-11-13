@@ -279,6 +279,7 @@ fn skipped_as_equivalent_behave_as_the_original(
         "fee_floor",
         "raised",
         "unsigned_zero",
+        "unsigned_more",
         "debug_checked",
     ] {
         assert!(skipped_in.contains(function), "{function}: {skipped_in:?}");
