@@ -797,9 +797,16 @@ fn run(parsed: &Parsed) -> Result<ExitCode, String> {
             since,
         )?);
     }
+    if format == Format::Jsonl {
+        progress.stream(crate::progress::Events {
+            unsafe_mode: parsed.unsafe_mode,
+            share: share.as_ref().map(crate::shares::Tag::json),
+        });
+    }
     let mut report = engine::run(&project, &options, &|step| progress.step(step))?;
     report.share = share;
     progress.finished();
+    report.streamed = progress.streamed();
     finish(parsed, report, format, folder.as_deref())
 }
 
@@ -883,10 +890,13 @@ fn finish(
         // Written empty first, so its path is shown as the reports' are.
         crate::shares::keep(&events, "")?;
         report.reports.push(report::files::shown(given, &events));
+        // Whole, `run-started` included, even when it went out live.
+        let streamed = std::mem::replace(&mut report.streamed, false);
         crate::shares::keep(
             &events,
             &report::render(&report, Format::Jsonl, Style::default()),
         )?;
+        report.streamed = streamed;
     }
     report.fail_on_new = judged_on_new(parsed);
     print!(

@@ -567,7 +567,11 @@ fn unsafety(work: &Path, shown: &mut BTreeMap<String, String>) {
     );
     let jsonl = ran(work, &["run", "fixtures/unsafety", "--format=jsonl"]);
     let events = events(&jsonl.stdout);
-    shown.insert("concepts/run-started".into(), pretty(&events[0]));
+    let started = events
+        .iter()
+        .find(|e| e["reason"] == "run-started")
+        .unwrap();
+    shown.insert("concepts/run-started".into(), pretty(started));
     let find = |method: &str, replacement: &str| -> Value {
         events
             .iter()

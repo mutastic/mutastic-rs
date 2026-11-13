@@ -475,6 +475,7 @@ impl Shares {
             coverage,
             mutants: took.saturating_sub(setup + coverage),
             checking: None,
+            streamed: false,
             took,
             unsafe_mode: options.unsafe_mode,
             profile: json!({
