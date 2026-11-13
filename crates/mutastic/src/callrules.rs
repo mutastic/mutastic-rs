@@ -90,11 +90,15 @@ pub fn find(id: &str) -> Option<&'static CallRule> {
     loaded().iter().find(|rule| rule.id == id)
 }
 
-/// Reads a rules file.
-pub fn read(file: &Path) -> Result<Vec<CallRule>, String> {
+/// Reads a rules file, named as a plugin `from` a place in a `mutastic.yaml`: `mutastic.yaml line 4`.
+pub fn read(file: &Path, from: &str) -> Result<Vec<CallRule>, String> {
     let name = file.display().to_string();
-    let text = std::fs::read_to_string(file)
-        .map_err(|_| format!("mutastic.yaml names the plugin {name}, which isn't there"))?;
+    let text = std::fs::read_to_string(file).map_err(|_| {
+        format!(
+            "{from}: the plugin {name} isn't there. A plugin's path is from the directory of the \
+             file that names it."
+        )
+    })?;
     parse(&text, &name)
 }
 
@@ -145,17 +149,37 @@ fn rule(fields: Vec<(String, String, usize)>, name: &str) -> Result<CallRule, St
             .find(|(k, _, _)| k == key)
             .map(|(_, value, _)| value.clone())
     };
+    const FIELDS: &[&str] = &[
+        "id",
+        "explanation",
+        "tier",
+        "owners",
+        "methods",
+        "rewrite",
+        "source",
+        "changed",
+        "headline",
+        "help",
+    ];
     for (key, _, line) in &fields {
         match key.as_str() {
-            "id" | "explanation" | "tier" | "owners" | "methods" | "rewrite" | "source"
-            | "changed" | "headline" | "help" => {}
+            known if FIELDS.contains(&known) => {}
             "descriptors" | "since" => {
                 return Err(error(
                     *line,
                     format!("{key} is the JVM's: the Rust edition matches a call by its name"),
                 ))
             }
-            other => return Err(error(*line, format!("unknown field {other}"))),
+            other => {
+                return Err(error(
+                    *line,
+                    format!(
+                        "unknown field {other}.{} An operator's fields are {}.",
+                        crate::similar::offered(other, FIELDS.iter().copied()),
+                        crate::mistyped::listed(FIELDS)
+                    ),
+                ))
+            }
         }
     }
     let required = |value: Option<String>, key: &str| {
@@ -209,7 +233,10 @@ fn rule(fields: Vec<(String, String, usize)>, name: &str) -> Result<CallRule, St
     if !matches!(tier.as_str(), "defaults" | "stronger" | "extended") {
         return Err(error(
             first,
-            format!("{id}: tier is defaults, stronger or extended"),
+            format!(
+                "{id}: tier is defaults, stronger or extended, not {tier}.{}",
+                crate::similar::offered(&tier, ["defaults", "stronger", "extended"])
+            ),
         ));
     }
     let methods = match &rewrite {
@@ -264,7 +291,8 @@ mod tests {
             ("- id: a/b\n  descriptors: (I)V\n", "r.yaml line 2: descriptors is the JVM's: the Rust edition matches a call by its name"),
             ("- id: a/b\n  explanation: e\n  methods: m\n  rewrite: keep argument\n  headline: h\n  help: x\n", "r.yaml line 1: a/b: the rewrite `keep argument` isn't in the Rust edition yet (remove, rename a->b)"),
             ("- id: A\n  rewrite: remove\n", "r.yaml line 1: A: an id is `namespace/name`, lower case"),
-            ("- id: a/b\n  colour: red\n", "r.yaml line 2: unknown field colour"),
+            ("- id: a/b\n  colour: red\n", "r.yaml line 2: unknown field colour. An operator's fields are id, explanation, tier, owners, methods, rewrite, source, changed, headline or help."),
+            ("- id: a/b\n  metods: m\n", "r.yaml line 2: unknown field metods. There's one called methods. An operator's fields are id, explanation, tier, owners, methods, rewrite, source, changed, headline or help."),
         ] {
             assert_eq!(parse(text, "r.yaml").unwrap_err(), error);
         }

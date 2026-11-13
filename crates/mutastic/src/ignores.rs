@@ -108,25 +108,39 @@ fn read_file(file: &PathBuf, name: &str) -> Result<Vec<Entry>, String> {
 pub fn parse(text: &str, name: &str) -> Result<Vec<Entry>, String> {
     let mut entries = Vec::new();
     let mut fields: Vec<(String, String)> = Vec::new();
-    for raw in text.lines() {
+    // The line the entry being read starts on.
+    let mut starts = 0;
+    for (index, raw) in text.lines().enumerate() {
         let mut line = raw.trim();
         if line.is_empty() || line.starts_with('#') || line == "ignores:" || line == "proposals:" {
             continue;
         }
         if let Some(rest) = line.strip_prefix("- ") {
-            add(&mut entries, std::mem::take(&mut fields), name)?;
+            add(&mut entries, std::mem::take(&mut fields), name, starts)?;
             line = rest;
         }
+        if fields.is_empty() {
+            starts = index + 1;
+        }
         let Some((key, value)) = line.split_once(':') else {
-            return Err(format!("{name}: can't read the line `{raw}`"));
+            return Err(format!(
+                "{name} line {}: can't read `{}`: each line of an entry is `field: value`",
+                index + 1,
+                raw.trim()
+            ));
         };
         fields.push((key.trim().to_string(), unquoted(value.trim())));
     }
-    add(&mut entries, fields, name)?;
+    add(&mut entries, fields, name, starts)?;
     Ok(entries)
 }
 
-fn add(entries: &mut Vec<Entry>, fields: Vec<(String, String)>, name: &str) -> Result<(), String> {
+fn add(
+    entries: &mut Vec<Entry>,
+    fields: Vec<(String, String)>,
+    name: &str,
+    line: usize,
+) -> Result<(), String> {
     if fields.is_empty() {
         return Ok(());
     }
@@ -137,7 +151,10 @@ fn add(entries: &mut Vec<Entry>, fields: Vec<(String, String)>, name: &str) -> R
             .map(|(_, value)| value.clone())
     };
     let (Some(id), Some(reason)) = (get("id"), get("reason")) else {
-        return Err(format!("{name}: every entry needs an id and a reason"));
+        let missing = if get("id").is_none() { "id" } else { "reason" };
+        return Err(format!(
+            "{name} line {line}: the entry has no {missing}: every entry needs an id and a reason"
+        ));
     };
     entries.push(Entry {
         id,
@@ -217,5 +234,20 @@ mod tests {
         propose(&dir, &[]).unwrap();
         assert!(proposed(&dir).unwrap().is_empty());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn an_entry_it_cant_read_is_named_by_its_line() {
+        let text = "ignores:\n  - id: m855c8e3c\n    reason: r\n  - id: m95f96847\n    at: x\n";
+        assert_eq!(
+            parse(text, FILE).unwrap_err(),
+            ".mutastic/ignores.yaml line 4: the entry has no reason: every entry needs an id and \
+             a reason"
+        );
+        assert_eq!(
+            parse("ignores:\n  - id: m855c8e3c\n    garbage\n", FILE).unwrap_err(),
+            ".mutastic/ignores.yaml line 3: can't read `garbage`: each line of an entry is \
+             `field: value`"
+        );
     }
 }

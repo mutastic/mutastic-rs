@@ -1,2 +1,3 @@
 mutastic 1.1.0 · reading the Cargo package…
-mutastic: m00000000 isn't a mutant of pricing: run `mutastic run fixtures/pricing` to see its mutants
+mutastic: m00000000 isn't a mutant of pricing. To see its mutants:
+  mutastic mutants fixtures/pricing

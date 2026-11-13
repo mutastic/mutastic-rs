@@ -77,7 +77,11 @@ pub struct Configuration {
     /// Rules files, each found from the file that names it: once read, the path from where the
     /// first file was read.
     pub plugins: Vec<PathBuf>,
+    /// Where each of `plugins` is named, `mutastic.yaml line 4`, for an error about it.
+    pub plugins_from: Vec<String>,
     pub operators: Vec<String>,
+    /// Where each of `operators` is written, `mutastic.yaml line 4`, for an error about it.
+    pub operators_from: Vec<String>,
 }
 
 impl Configuration {
@@ -136,9 +140,27 @@ impl Configuration {
     /// shown, then the parent's; the plugins of both; and its operators, if it chooses any, in
     /// place of the parent's, as `--operators` replaces them.
     fn over(self, parent: Configuration) -> Configuration {
+        let named = |plugins: Vec<PathBuf>, from: Vec<String>| -> Vec<Named> {
+            plugins
+                .into_iter()
+                .zip(from)
+                .map(|(p, f)| Named(p, f))
+                .collect()
+        };
+        let plugins = joined(
+            named(self.plugins, self.plugins_from),
+            named(parent.plugins, parent.plugins_from),
+        );
+        let (plugins, plugins_from) = plugins.into_iter().map(|Named(p, f)| (p, f)).unzip();
         Configuration {
             rules: joined(self.rules, parent.rules),
-            plugins: joined(self.plugins, parent.plugins),
+            plugins,
+            plugins_from,
+            operators_from: if self.operators.is_empty() {
+                parent.operators_from
+            } else {
+                self.operators_from
+            },
             operators: if self.operators.is_empty() {
                 parent.operators
             } else {
@@ -168,6 +190,16 @@ fn joined<T: PartialEq>(first: Vec<T>, then: Vec<T>) -> Vec<T> {
         }
     }
     both
+}
+
+/// A plugin, and where it's named.
+struct Named(PathBuf, String);
+
+/// A plugin named twice, by two files, is one plugin: the first file to name it says where.
+impl PartialEq for Named {
+    fn eq(&self, other: &Named) -> bool {
+        self.0 == other.0
+    }
 }
 
 /// Where a package's `mutastic.yaml` is: the nearest at or above the package's directory, no
@@ -271,10 +303,16 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
                 "plugins:" => "plugins",
                 "filters:" => "filters",
                 "operators:" => "operators",
-                _ => {
-                    return Err(error(
-                        "expected extends:, rules:, plugins:, filters: or operators:",
-                    ))
+                key => {
+                    let typed = key.trim_end_matches(':');
+                    let close = crate::similar::closest(typed, SECTIONS.iter().copied())
+                        .map_or(String::new(), |name| {
+                            format!(" There's one called {name}:.")
+                        });
+                    return Err(error(&format!(
+                        "expected extends:, rules:, plugins:, filters: or operators:, not \
+                         {key}.{close}"
+                    )));
                 }
             };
             continue;
@@ -306,8 +344,14 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
         }
         let listed = listed(item).ok_or_else(|| error("expected a list item, `- …`"))?;
         match section {
-            "plugins" => config.plugins.push(PathBuf::from(listed)),
-            "operators" => config.operators.push(listed),
+            "plugins" => {
+                config.plugins.push(PathBuf::from(listed));
+                config.plugins_from.push(format!("{shown} line {}", index + 1));
+            }
+            "operators" => {
+                config.operators.push(listed);
+                config.operators_from.push(format!("{shown} line {}", index + 1));
+            }
             "filters" => {
                 return Err(error(&format!(
                     "the filter {listed}: filters come from compiled plugins, which the Rust edition doesn't have yet"
@@ -368,10 +412,16 @@ pub fn without_comment(line: &str) -> &str {
 /// (`defaults`, `stronger`, `extended`, `all`), a namespace (`stream`) or an operator's id, each
 /// adding to the ones before, or after `-` taking away; a rules file's operators count too.
 pub fn resolve(entries: &[String], from: &str) -> Result<Vec<&'static str>, String> {
+    let from = vec![from.to_string(); entries.len()];
+    resolve_from(entries, &from)
+}
+
+/// The operators `entries` choose, each said, in an error, to be from its own place in `from`.
+pub fn resolve_from(entries: &[String], from: &[String]) -> Result<Vec<&'static str>, String> {
     use crate::sites;
     let rules = crate::callrules::loaded();
     let mut chosen: Vec<&'static str> = Vec::new();
-    for entry in entries {
+    for (index, entry) in entries.iter().enumerate() {
         let (remove, name) = match entry.strip_prefix('-') {
             Some(name) => (true, name),
             None => (false, entry.as_str()),
@@ -399,7 +449,8 @@ pub fn resolve(entries: &[String], from: &str) -> Result<Vec<&'static str>, Stri
                 .collect(),
         };
         if matched.is_empty() {
-            return Err(format!("{from}: {name} isn't an operator mutastic has"));
+            let from = from.get(index).map_or("", String::as_str);
+            return Err(no_operator(from, name));
         }
         if remove {
             chosen.retain(|id| !matched.contains(id));
@@ -412,6 +463,36 @@ pub fn resolve(entries: &[String], from: &str) -> Result<Vec<&'static str>, Stri
         }
     }
     Ok(chosen)
+}
+
+/// The sections a `mutastic.yaml` has, without their colons.
+const SECTIONS: &[&str] = &["extends", "rules", "plugins", "filters", "operators"];
+
+/// `name` is no set, namespace or operator mutastic has: what `--operators` and `operators:` take,
+/// and a close name.
+fn no_operator(from: &str, name: &str) -> String {
+    let rules = crate::callrules::loaded();
+    let ids: Vec<&str> = crate::sites::ALL
+        .iter()
+        .copied()
+        .chain(rules.iter().map(|rule| rule.id))
+        .collect();
+    let mut namespaces: Vec<&str> = ids
+        .iter()
+        .filter_map(|id| id.split_once('/').map(|(space, _)| space))
+        .collect();
+    namespaces.sort_unstable();
+    namespaces.dedup();
+    let sets = ["defaults", "stronger", "extended", "all"];
+    let names = sets.iter().chain(&namespaces).chain(&ids).copied();
+    format!(
+        "{from}: {name} isn't an operator mutastic has.{}\n\
+         It takes a set ({}), a namespace ({}) or an operator's id. To see each id:\n  \
+         mutastic mutants --operators=all",
+        crate::similar::offered(name, names),
+        crate::mistyped::listed(&sets),
+        crate::mistyped::listed(&namespaces),
+    )
 }
 
 #[cfg(test)]
@@ -439,7 +520,8 @@ mod tests {
     #[test]
     fn what_it_doesnt_understand_is_an_error_that_names_the_line() {
         for (text, error) in [
-            ("rule:\n", "mutastic.yaml line 1: expected extends:, rules:, plugins:, filters: or operators:"),
+            ("rule:\n", "mutastic.yaml line 1: expected extends:, rules:, plugins:, filters: or operators:, not rule:. There's one called rules:."),
+            ("colour:\n", "mutastic.yaml line 1: expected extends:, rules:, plugins:, filters: or operators:, not colour:."),
             ("extends: a.yaml\nextends: b.yaml\n", "mutastic.yaml line 2: a file extends one other file, once"),
             ("extends: ''\n", "mutastic.yaml line 1: `extends:` needs a path, such as ../mutastic.yaml"),
             ("extends: a.yaml\n  - x\n", "mutastic.yaml line 2: a list item needs a section above it"),
@@ -595,9 +677,51 @@ mod tests {
         assert!(chosen.contains(&crate::sites::MATH));
         let stream = resolve(&["stream".into()], "t").unwrap();
         assert!(!stream.is_empty() && stream.iter().all(|id| id.starts_with("stream/")));
+        let refused = resolve(&["nope".into()], "--operators").unwrap_err();
+        assert!(
+            refused.starts_with("--operators: nope isn't an operator mutastic has.\n"),
+            "{refused}"
+        );
+        assert!(
+            refused.contains("a set (defaults, stronger, extended or all), a namespace ("),
+            "{refused}"
+        );
+        assert!(
+            refused.ends_with("\n  mutastic mutants --operators=all"),
+            "{refused}"
+        );
+        assert!(resolve(&["strong".into()], "--operators")
+            .unwrap_err()
+            .starts_with(
+            "--operators: strong isn't an operator mutastic has. There's one called stronger.\n"
+        ));
+    }
+
+    #[test]
+    fn an_operator_written_in_the_file_is_named_by_its_line() {
+        let config = parse("operators:\n  - defaults\n  - mutastic/bondary\n").unwrap();
+        let refused = resolve_from(&config.operators, &config.operators_from).unwrap_err();
+        assert!(
+            refused.starts_with(
+                "mutastic.yaml line 3: mutastic/bondary isn't an operator mutastic has. There's \
+                 one called mutastic/boundary.\n"
+            ),
+            "{refused}"
+        );
+    }
+
+    #[test]
+    fn a_plugin_is_named_by_its_line() {
+        let config = parse("plugins:\n  - rules/a.yaml\n  - rules/b.yaml\n").unwrap();
         assert_eq!(
-            resolve(&["nope".into()], "--operators").unwrap_err(),
-            "--operators: nope isn't an operator mutastic has"
+            config.plugins_from,
+            ["mutastic.yaml line 2", "mutastic.yaml line 3"]
+        );
+        let refused = crate::callrules::read(&config.plugins[1], &config.plugins_from[1]);
+        assert_eq!(
+            refused.unwrap_err(),
+            "mutastic.yaml line 3: the plugin rules/b.yaml isn't there. A plugin's path is from \
+             the directory of the file that names it."
         );
     }
 }

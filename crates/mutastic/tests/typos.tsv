@@ -1,0 +1,39 @@
+# The typos mutastic answers with "There's one called …", and those it answers without.
+# Columns, split by tabs: the word typed; the names valid where it was typed, split by commas;
+# the one name offered, or - for none. The Java edition holds its suggestions to the same rows.
+# Commands
+rnu	run,verify,explain,ignore,gate,mutants,next,baseline,help	run
+urn	run,verify,explain,ignore,gate,mutants,next,baseline,help	run
+verfy	run,verify,explain,ignore,gate,mutants,next,baseline,help	verify
+explian	run,verify,explain,ignore,gate,mutants,next,baseline,help	explain
+mutant	run,verify,explain,ignore,gate,mutants,next,baseline,help	mutants
+baselin	run,verify,explain,ignore,gate,mutants,next,baseline,help	baseline
+nxet	run,verify,explain,ignore,gate,mutants,next,baseline,help	next
+RUN	run,verify,explain,ignore,gate,mutants,next,baseline,help	run
+build	run,verify,explain,ignore,gate,mutants,next,baseline,help	-
+test	run,verify,explain,ignore,gate,mutants,next,baseline,help	-
+# Options, without their dashes
+formt	only,format,threshold,operators,workers,since,report	format
+fromat	only,format,threshold,operators,workers,since,report	format
+thresold	only,format,threshold,operators,workers,since,report	threshold
+treshold	only,format,threshold,operators,workers,since,report	threshold
+oprators	only,format,threshold,operators,workers,since,report	operators
+worker	only,format,threshold,operators,workers,since,report	workers
+verbose	only,format,threshold,operators,workers,since,report	-
+onyl	only,format,threshold,operators,workers,since,report	only
+# Values
+agnet	full,brief,concise,grouped,agent,jsonl	agent
+json	full,brief,concise,grouped,agent,jsonl	jsonl
+breif	full,brief,concise,grouped,agent,jsonl	brief
+xml	full,brief,concise,grouped,agent,jsonl	-
+strong	defaults,stronger,extended,all	stronger
+default	defaults,stronger,extended,all	defaults
+# Config keys, without their colons
+rulez	extends,rules,plugins,filters,operators	rules
+rule	extends,rules,plugins,filters,operators	rules
+operator	extends,rules,plugins,filters,operators	operators
+extend	extends,rules,plugins,filters,operators	extends
+mutate	extends,rules,plugins,filters,operators	-
+# A transposition is one edit, and of two as close the nearer length wins
+tset	test,set	test
+lsit	edit,list	list

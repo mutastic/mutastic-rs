@@ -55,13 +55,14 @@ Each of the identical lines still has ids of its own, its own card, and its own 
 that catches the third line's change verifies the third line's ids, and no other's. Only deleting
 or adding one of them earlier in the function moves the count.
 
-When an id you kept stops working, `verify` says so, and names the command that shows the mutants
-as they are now:
+When an id you kept stops working, `verify` says so, and ends in the command that lists the
+mutants as they are now. An id one digit, or one swap, from a mutant's is offered as that mutant's:
 
 <!-- output: concepts/unknown-id -->
 ```text
 mutastic 1.1.0 · reading the Cargo package…
-mutastic: m00000000 isn't a mutant of pricing: run `mutastic run fixtures/pricing` to see its mutants
+mutastic: m00000000 isn't a mutant of pricing. To see its mutants:
+  mutastic mutants fixtures/pricing
 ```
 
 ## The Java edition's ids
