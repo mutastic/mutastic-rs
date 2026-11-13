@@ -3,8 +3,8 @@
 //! fails while a fresh run prints anything else. A page shows its copy without colour, as GitHub
 //! can't show it; the docs site shows the captured colour.
 //! Every Rust block is either an excerpt of a fixture these runs build, word for word, the test
-//! the getting-started page adds, or the test-first page's cycle, which this writes and runs. Every link between pages resolves, every
-//! `mutastic` command a page shows parses, and every id it names is a mutant of its fixture. And
+//! the getting-started page adds, or the test-first pages' cycles, which this writes and runs.
+//! Every link between pages resolves, every `mutastic` command a page shows parses, and every id it names is a mutant of its fixture. And
 //! every missed mutant's card on the operators fixture says something true: written into the
 //! source as the card claims it, the fixture's tests still pass.
 //!
@@ -812,18 +812,19 @@ fn queue(work: &Path, shown: &mut BTreeMap<String, String>) {
     shown.insert("concepts/next-jsonl".into(), top);
 }
 
-/// The test-first page's code, in order: each block marked `added to` or `changed in`, with what
-/// it marks.
-fn test_first_steps() -> Vec<(String, String)> {
-    let text = std::fs::read_to_string(docs().join("test-first.md")).unwrap();
+/// The pages whose code is a test-first cycle on the pricing fixture, in the order they're worked:
+/// the second starts where the first ends.
+const CYCLES: &[&str] = &["test-first.md", "test-first-refactor.md"];
+
+/// A test-first page's code, in order: each block marked `added to` or `changed in`, with what it
+/// marks.
+fn cycle_steps(page: &str) -> Vec<(String, String)> {
+    let text = std::fs::read_to_string(docs().join(page)).unwrap();
     blocks(&text)
         .into_iter()
         .filter_map(|b| match b.marker {
             Some((kind, path)) if kind == "added to" || kind == "changed in" => {
-                assert_eq!(
-                    path, "fixtures/pricing/src/lib.rs",
-                    "test-first.md changes {path}"
-                );
+                assert_eq!(path, "fixtures/pricing/src/lib.rs", "{page} changes {path}");
                 Some((kind, text[b.text].to_string()))
             }
             _ => None,
@@ -867,56 +868,54 @@ fn test_first_step(lib: &Path, (kind, code): &(String, String)) {
     std::fs::write(lib, changed).unwrap();
 }
 
-/// The ids of the pricing fixture's mutants once the test-first page's cycle is done: the page's
-/// `verify` names two of them, on code the fixture doesn't have until the page adds it.
+/// The ids of the pricing fixture's mutants at each step of the test-first pages' cycles: the
+/// pages' `verify` commands name some of them, on code the fixture doesn't have until a page adds
+/// it, and a later step may take away.
 fn test_first_ids() -> BTreeSet<String> {
     let dir = scratch("test-first-ids").join("pricing");
     common::fresh(&root().join("fixtures/pricing"), &dir);
-    for step in test_first_steps() {
+    let mut ids = BTreeSet::new();
+    for step in CYCLES.iter().flat_map(|page| cycle_steps(page)) {
         test_first_step(&dir.join("src/lib.rs"), &step);
+        let project = workspace::read(&dir.display().to_string()).unwrap();
+        ids.extend(engine::find_all(&project).mutants.into_iter().map(|m| m.id));
     }
-    let project = workspace::read(&dir.display().to_string()).unwrap();
-    engine::find_all(&project)
-        .mutants
-        .into_iter()
-        .map(|m| m.id)
-        .collect()
+    ids
 }
 
-/// The test-first page's cycle, on the pricing fixture in a repository of its own, from the page's
-/// own code: its failing test and the function's stub stop a run, the code that passes it leaves
-/// the cycle's edge untested, the card's tests make `verify` pass, and the cycle's run passes after.
-fn test_first(work: &Path, shown: &mut BTreeMap<String, String>) {
-    let steps = test_first_steps();
-    let kinds: Vec<&str> = steps.iter().map(|(kind, _)| kind.as_str()).collect();
-    assert_eq!(
-        kinds,
-        ["added to", "added to", "changed in", "added to"],
-        "test-first.md: a test, its stub, the code that passes it, then the card's tests"
-    );
-    // A repository of its own, as the page's clone is, so `--since=HEAD` is this cycle's lines.
+/// `git` in `work`, which must succeed, as a person with a name set runs it.
+fn git(work: &Path, args: &[&str]) {
+    let status = Command::new("git")
+        .args(args)
+        .current_dir(work)
+        .env("GIT_AUTHOR_NAME", "docs")
+        .env("GIT_AUTHOR_EMAIL", "docs@example.com")
+        .env("GIT_COMMITTER_NAME", "docs")
+        .env("GIT_COMMITTER_EMAIL", "docs@example.com")
+        .output()
+        .unwrap()
+        .status;
+    assert!(status.success(), "git {args:?}");
+}
+
+/// `work` made a repository of its own, as a page's clone is, with what's in it committed, so
+/// `--since=HEAD` is the next cycle's lines.
+fn repository(work: &Path) {
     std::fs::remove_dir_all(work.join(".git")).ok();
     std::fs::write(work.join(".gitignore"), "target\n").unwrap();
-    let git = |args: &[&str]| {
-        let status = Command::new("git")
-            .args(args)
-            .current_dir(work)
-            .env("GIT_AUTHOR_NAME", "docs")
-            .env("GIT_AUTHOR_EMAIL", "docs@example.com")
-            .env("GIT_COMMITTER_NAME", "docs")
-            .env("GIT_COMMITTER_EMAIL", "docs@example.com")
-            .output()
-            .unwrap()
-            .status;
-        assert!(status.success(), "git {args:?}");
-    };
-    git(&["init", "-q"]);
-    git(&["add", "."]);
-    git(&["commit", "-q", "-m", "start"]);
-    let lib = work.join("fixtures/pricing/src/lib.rs");
+    git(work, &["init", "-q"]);
+    commit(work);
+}
 
-    test_first_step(&lib, &steps[0]);
-    test_first_step(&lib, &steps[1]);
+/// The end of a cycle: everything committed, so the commit is the next cycle's `HEAD`.
+fn commit(work: &Path) {
+    git(work, &["add", "."]);
+    git(work, &["commit", "-q", "-m", "cycle"]);
+}
+
+/// A run stopped by a failing test, as a cycle's red step makes it: mutastic's message, which
+/// names `test`.
+fn red(work: &Path, test: &str) -> String {
     let red = mutastic(work, &["run", "fixtures/pricing"]);
     assert_eq!(red.code, 2, "{}{}", red.stdout, red.stderr);
     let message: String = red
@@ -925,14 +924,13 @@ fn test_first(work: &Path, shown: &mut BTreeMap<String, String>) {
         .filter(|line| plain(line).starts_with("mutastic: "))
         .map(|line| format!("{line}\n"))
         .collect();
-    assert!(
-        plain(&message).contains("tests::loyal_customers_get_five_off"),
-        "{}",
-        red.stderr
-    );
-    shown.insert("test-first/red".into(), message);
+    assert!(plain(&message).contains(test), "{}", red.stderr);
+    message
+}
 
-    test_first_step(&lib, &steps[2]);
+/// A cycle's run that misses what its code ran ahead of: the run, and the ids its card's `verify`
+/// names, which `page` must show that command for.
+fn missed(work: &Path, page: &str) -> (Ran, String) {
     let run = ran(work, &["run", "fixtures/pricing", "--since=HEAD"]);
     assert_eq!(run.code, 1, "{}", run.stdout);
     let done = plain(&run.stdout)
@@ -944,20 +942,115 @@ fn test_first(work: &Path, shown: &mut BTreeMap<String, String>) {
         })
         .expect("the cycle's run has a card");
     let ids = done.split_whitespace().nth(2).unwrap().to_string();
-    let page = std::fs::read_to_string(docs().join("test-first.md")).unwrap();
+    let text = std::fs::read_to_string(docs().join(page)).unwrap();
     assert!(
-        page.contains(&format!("mutastic verify {ids} fixtures/pricing\n")),
-        "test-first.md: verify the card's mutants, {ids}"
+        text.contains(&format!("mutastic verify {ids} fixtures/pricing\n")),
+        "{page}: verify the card's mutants, {ids}"
     );
+    (run, ids)
+}
+
+/// A cycle's run that catches every mutant on its lines.
+fn passed(work: &Path) -> String {
+    let run = ran(work, &["run", "fixtures/pricing", "--since=HEAD"]);
+    assert_eq!(run.code, 0, "{}", run.stdout);
+    run.stdout
+}
+
+/// The test-first page's cycle, on the pricing fixture in a repository of its own, from the page's
+/// own code: its failing test and the function's stub stop a run, the code that passes it leaves
+/// the cycle's edge untested, the card's tests make `verify` pass, and the cycle's run passes after.
+fn test_first(work: &Path, shown: &mut BTreeMap<String, String>) {
+    let steps = cycle_steps("test-first.md");
+    let kinds: Vec<&str> = steps.iter().map(|(kind, _)| kind.as_str()).collect();
+    assert_eq!(
+        kinds,
+        ["added to", "added to", "changed in", "added to"],
+        "test-first.md: a test, its stub, the code that passes it, then the card's tests"
+    );
+    repository(work);
+    let lib = work.join("fixtures/pricing/src/lib.rs");
+
+    test_first_step(&lib, &steps[0]);
+    test_first_step(&lib, &steps[1]);
+    let message = red(work, "tests::loyal_customers_get_five_off");
+    shown.insert("test-first/red".into(), message);
+
+    test_first_step(&lib, &steps[2]);
+    let (run, ids) = missed(work, "test-first.md");
     shown.insert("test-first/run".into(), run.stdout);
 
     test_first_step(&lib, &steps[3]);
     let verify = ran(work, &["verify", &ids, "fixtures/pricing"]);
     assert_eq!(verify.code, 0, "{}", verify.stdout);
     shown.insert("test-first/verify".into(), verify.stdout);
-    let again = ran(work, &["run", "fixtures/pricing", "--since=HEAD"]);
-    assert_eq!(again.code, 0, "{}", again.stdout);
-    shown.insert("test-first/again".into(), again.stdout);
+    shown.insert("test-first/again".into(), passed(work));
+}
+
+/// One tier's cycle on the refactor page, up to its commit: its failing test, which names the tier,
+/// the `if` that passes it, the run that misses its edge, and the card's test with `verify`.
+fn tier(work: &Path, tier: &str, steps: &[(String, String)], shown: &mut BTreeMap<String, String>) {
+    let lib = work.join("fixtures/pricing/src/lib.rs");
+    test_first_step(&lib, &steps[0]);
+    let test = cycle_test(&steps[0].1);
+    assert!(test.ends_with(&format!("_from_{tier}")), "{test}");
+    shown.insert(
+        format!("test-first-refactor/red-{tier}"),
+        red(work, &format!("tests::{test}")),
+    );
+    test_first_step(&lib, &steps[1]);
+    let (run, ids) = missed(work, "test-first-refactor.md");
+    shown.insert(format!("test-first-refactor/run-{tier}"), run.stdout);
+    test_first_step(&lib, &steps[2]);
+    let verify = ran(work, &["verify", &ids, "fixtures/pricing"]);
+    assert_eq!(verify.code, 0, "{}", verify.stdout);
+    shown.insert(format!("test-first-refactor/verify-{tier}"), verify.stdout);
+}
+
+/// The name of the test a step adds.
+fn cycle_test(code: &str) -> &str {
+    code.lines()
+        .find_map(|line| line.strip_prefix("fn "))
+        .and_then(|rest| rest.split('(').next())
+        .unwrap()
+}
+
+/// The refactor page's cycles, from where the test-first page's ends, committed: for each tier its
+/// failing test, the `if` that passes it, the run that misses its edge, and the card's test with
+/// `verify`; then, before the last commit, the run that starts the refactor, the refactor, and the
+/// run after it, which catches every mutant of the new shape.
+fn refactor(work: &Path, shown: &mut BTreeMap<String, String>) {
+    let page = "test-first-refactor.md";
+    let steps = cycle_steps(page);
+    let kinds: Vec<&str> = steps.iter().map(|(kind, _)| kind.as_str()).collect();
+    assert_eq!(
+        kinds,
+        [
+            "added to",
+            "changed in",
+            "added to",
+            "added to",
+            "changed in",
+            "added to",
+            "changed in"
+        ],
+        "{page}: for two tiers a test, the code that passes it and the card's test, then the \
+         refactor"
+    );
+    let lib = work.join("fixtures/pricing/src/lib.rs");
+    for step in cycle_steps("test-first.md") {
+        test_first_step(&lib, &step);
+    }
+    repository(work);
+
+    tier(work, "100", &steps[0..3], shown);
+    passed(work);
+    commit(work);
+    tier(work, "250", &steps[3..6], shown);
+
+    shown.insert("test-first-refactor/before".into(), passed(work));
+    test_first_step(&lib, &steps[6]);
+    shown.insert("test-first-refactor/after".into(), passed(work));
 }
 
 /// Runs the pages show as a Unix build makes them: code and tests under `cfg(unix)` are in it, and
@@ -1055,6 +1148,11 @@ fn the_docs_show_what_a_test_first_cycle_prints() {
     section("test-first", &["pricing"], test_first);
 }
 
+#[test]
+fn the_docs_show_what_a_refactor_prints() {
+    section("test-first-refactor", &["pricing"], refactor);
+}
+
 /// The lines of `text` without the indent they share.
 fn dedent(lines: &[&str]) -> Vec<String> {
     let indent = lines
@@ -1099,11 +1197,11 @@ fn every_rust_example_is_compiled() {
                     let catching = kind == "added to"
                         && page.starts_with(docs().join("operators"))
                         && path.starts_with("fixtures/operators/src/");
-                    let cycle = page == docs().join("test-first.md");
+                    let cycle = CYCLES.iter().any(|name| page == docs().join(name));
                     let started = kind == "added to" && page == docs().join("getting-started.md");
                     assert!(
                         path == "fixtures/pricing/src/lib.rs" && (started || cycle) || catching,
-                        "{place}: only the getting-started test, the test-first cycle's code and \
+                        "{place}: only the getting-started test, the test-first cycles' code and \
                          the operators' tests that catch them are added and run"
                     );
                 }
@@ -1311,12 +1409,15 @@ fn every_command_shown_parses_and_names_real_mutants() {
     let mutant_id = regex::Regex::new(r"^m[0-9a-f]{8}$").unwrap();
     let mut wrong = Vec::new();
     let mut found: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    // The test-first page names mutants of the code its cycle writes, which the fixture hasn't got.
-    let cycle = docs().join("test-first.md");
-    found.insert(
-        format!("{}:fixtures/pricing", cycle.display()),
-        test_first_ids(),
-    );
+    // The test-first pages name mutants of the code their cycles write, which the fixture hasn't
+    // got.
+    let cycle = test_first_ids();
+    for page in CYCLES {
+        found.insert(
+            format!("{}:fixtures/pricing", docs().join(page).display()),
+            cycle.clone(),
+        );
+    }
     for page in pages() {
         let text = std::fs::read_to_string(&page).unwrap();
         for block in blocks(&text) {
@@ -1407,12 +1508,13 @@ fn every_id_in_the_words_is_a_mutant() {
         let project = workspace::read(&dir.display().to_string()).unwrap();
         ids.extend(engine::find_all(&project).mutants.into_iter().map(|m| m.id));
     }
-    // The test-first page names mutants of the code its cycle writes, which the fixture hasn't got.
+    // The test-first pages name mutants of the code their cycles write, which the fixture hasn't
+    // got.
     let cycle: BTreeSet<String> = ids.union(&test_first_ids()).cloned().collect();
     let pattern = regex::Regex::new(r"\bm[0-9a-f]{8}\b").unwrap();
     let mut wrong = Vec::new();
     for page in pages() {
-        let known = if page == docs().join("test-first.md") {
+        let known = if CYCLES.iter().any(|name| page == docs().join(name)) {
             &cycle
         } else {
             &ids
