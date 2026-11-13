@@ -115,9 +115,10 @@ fn writing() -> bool {
 }
 
 /// A directory outside the repository, so Cargo doesn't take a copied fixture for a member of
-/// mutastic's own workspace, kept from run to run so builds there stay warm.
+/// mutastic's own workspace, kept from run to run so builds there stay warm, and this test
+/// process's alone while it runs.
 fn scratch(name: &str) -> PathBuf {
-    std::env::temp_dir().join("mutastic-rs-docs").join(name)
+    common::slot(&std::env::temp_dir().join("mutastic-rs-docs"), name).0
 }
 
 /// Where a section's fixtures are copied to run, as `fixtures/<name>`, so commands print what a
@@ -128,10 +129,9 @@ fn work(section: &str, fixtures: &[&str]) -> PathBuf {
     let work = scratch(&format!("docs-{section}"));
     for name in fixtures {
         let fixture = work.join("fixtures").join(name);
-        sync(&root().join("fixtures").join(name), &fixture);
         // The runs a page shows start with no last run to compare with, whatever this copy ran
         // before.
-        forget_last_runs(&fixture);
+        common::fresh(&root().join("fixtures").join(name), &fixture);
     }
     work
 }
@@ -143,27 +143,6 @@ fn forget_last_runs(fixture: &Path) {
     std::fs::remove_file(kept.join("last-run.tsv")).ok();
     std::fs::remove_dir_all(kept.join("last-runs")).ok();
     std::fs::remove_file(kept.join(mutastic::nextrun::FILE)).ok();
-}
-
-/// Copies a tree, writing only what changed, so the copy's build stays warm.
-fn sync(from: &Path, to: &Path) {
-    std::fs::create_dir_all(to).unwrap();
-    for entry in std::fs::read_dir(from).unwrap() {
-        let entry = entry.unwrap();
-        let name = entry.file_name();
-        if name == "target" {
-            continue;
-        }
-        let (source, destination) = (from.join(&name), to.join(&name));
-        if entry.file_type().unwrap().is_dir() {
-            sync(&source, &destination);
-        } else {
-            let bytes = std::fs::read(&source).unwrap();
-            if std::fs::read(&destination).ok() != Some(bytes.clone()) {
-                std::fs::write(&destination, bytes).unwrap();
-            }
-        }
-    }
 }
 
 struct Ran {
@@ -979,7 +958,7 @@ fn every_rust_example_is_compiled() {
 fn every_test_that_catches_a_card_does() {
     let work = scratch("catching");
     let fixture = work.join("fixtures/operators");
-    sync(&root().join("fixtures/operators"), &fixture);
+    common::fresh(&root().join("fixtures/operators"), &fixture);
     let mut added: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for page in pages() {
         let text = std::fs::read_to_string(&page).unwrap();
@@ -1283,7 +1262,7 @@ fn every_id_in_the_words_is_a_mutant() {
 fn every_missed_card_on_the_operators_fixture_is_true() {
     let work = scratch("claims");
     let fixture = work.join("fixtures/operators");
-    sync(&root().join("fixtures/operators"), &fixture);
+    common::fresh(&root().join("fixtures/operators"), &fixture);
     let jsonl = ran(
         &work,
         &[

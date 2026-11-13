@@ -13,10 +13,9 @@ use serde_json::Value;
 mod common;
 use common::schema;
 
+/// A fixture to run as it's checked in, in a copy this test process has to itself.
 fn fixture(name: &str) -> String {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../fixtures")
-        .join(name)
+    common::own_copy(name, &format!("samples-{name}"))
         .display()
         .to_string()
 }
@@ -145,7 +144,26 @@ fn pricing_misses_only_the_edge_of_the_discount() {
 #[test]
 fn every_shape_gets_a_card() {
     let dir = fixture("truth");
-    let (_, cards) = mutastic(&["run", &dir, "--format=full"]);
+    let (_, listed) = mutastic(&["mutants", &dir]);
+    // Not the two that make `in_while` count to `i32::MAX` before it overflows, ten seconds each:
+    // neither is missed, so neither has a card, and every mutant of mutastic this test reaches
+    // would wait for them.
+    let endless = ["m417a9a25", "m7539bd4b"];
+    let mutants: Vec<&str> = listed
+        .lines()
+        .filter_map(|line| line.split(' ').next())
+        .filter(|word| word.len() == 9 && word.starts_with('m'))
+        .collect();
+    assert!(
+        endless.iter().all(|id| mutants.contains(id)),
+        "both are still the fixture's: {listed}"
+    );
+    let ids: Vec<&str> = mutants
+        .into_iter()
+        .filter(|id| !endless.contains(id))
+        .collect();
+    let only = format!("--only={}", ids.join(","));
+    let (_, cards) = mutastic(&["run", &dir, "--format=full", &only]);
     assert!(cards.contains("[✗ MISSED]"), "{cards}");
     assert!(
         cards.contains(
@@ -213,7 +231,6 @@ fn a_word_a_command_doesnt_take_stops_it() {
         "{out}"
     );
     assert!(out.contains("mutastic: m0b3873d0 is caught by "), "{out}");
-    std::fs::remove_dir_all(&copy).ok();
 }
 
 /// Unsafe code is left alone, code near it is marked and runs isolated, and a crash counts as caught
@@ -446,7 +463,6 @@ fn the_full_view_is_coloured_as_the_java_editions() {
         "Worst at, plain",
         "  Worst at  Pricing::discount() 1 ✗\n",
     );
-    std::fs::remove_dir_all(&copy).ok();
 }
 
 /// The agent's list is ranked as the Java edition ranks it: a condition or a removal before
@@ -491,7 +507,6 @@ fn the_counter_is_redrawn_in_place() {
         !plain.contains(clear) && !plain.contains("[1/11]"),
         "{plain:?}"
     );
-    std::fs::remove_dir_all(&copy).ok();
 }
 
 /// A full run writes `mutation.json`, in the mutation-testing report schema as the Java edition
@@ -562,31 +577,11 @@ fn a_full_run_writes_the_report_files() {
         events(&only).pop().unwrap()["reports"],
         serde_json::json!([])
     );
-    std::fs::remove_dir_all(&copy).ok();
 }
 
-/// A copy of a fixture in a directory of its own, to change.
+/// A copy of a fixture this test process has to itself, to change.
 fn copy_of(name: &str, label: &str) -> std::path::PathBuf {
-    let to = std::env::temp_dir().join(format!("mutastic-{label}-{}", std::process::id()));
-    std::fs::remove_dir_all(&to).ok();
-    let from = Path::new(&fixture(name)).to_path_buf();
-    let mut stack = vec![std::path::PathBuf::new()];
-    while let Some(relative) = stack.pop() {
-        std::fs::create_dir_all(to.join(&relative)).unwrap();
-        for entry in std::fs::read_dir(from.join(&relative)).unwrap() {
-            let entry = entry.unwrap();
-            let path = relative.join(entry.file_name());
-            if entry.file_name() == "target" {
-                continue;
-            }
-            if entry.file_type().unwrap().is_dir() {
-                stack.push(path);
-            } else {
-                std::fs::copy(from.join(&path), to.join(&path)).unwrap();
-            }
-        }
-    }
-    to
+    common::own_copy(name, &format!("samples-{label}"))
 }
 
 fn mutastic_in(dir: &Path, args: &[&str]) -> (i32, String) {
@@ -699,7 +694,6 @@ fn an_ignore_holds_while_its_line_does() {
     );
     let (code, out) = mutastic_in(&dir, &["ignore", "mb2f8ae57"]);
     assert_eq!(code, 2, "a reason is needed: {out}");
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 /// The header `mutastic baseline` writes, the Java edition's.
@@ -837,7 +831,6 @@ fn fail_on_new_judges_a_run_by_its_baseline() {
     assert_eq!(finished["passed"], false);
     assert_eq!(finished["newMisses"], serde_json::json!(["mb2f8ae57"]));
     assert_eq!(finished["inBaseline"], 0);
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 /// A function no test checks, for a miss the baseline doesn't have: its return is a condition or
@@ -929,7 +922,6 @@ fn next_puts_new_misses_first_and_prune_drops_the_caught() {
         "{out}"
     );
     assert_eq!(std::fs::read_to_string(&file).unwrap(), BASELINE_HEADER);
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 /// The gate holds only new misses: one the baseline had before the task is the project's
@@ -993,7 +985,6 @@ fn the_gate_holds_only_new_misses() {
         ),
         "{out}"
     );
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 /// `--since` runs only the mutants on the lines changed since a commit, and says how much changed.
@@ -1078,7 +1069,6 @@ fn since_runs_the_changed_lines_mutants() {
     assert_eq!(arid[1]["statusReason"], "arid: only writes output");
     assert_eq!(arid[1]["skipKind"], "arid");
     assert_eq!(arid.last().unwrap()["ignored"], 1);
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 /// `mutastic.yaml` chooses the operators, adds a rules file's, and skips what its rules cover, with
@@ -1138,7 +1128,6 @@ fn mutastic_yaml_is_read_as_the_java_editions() {
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr)
         .contains("mutastic.yaml line 2: the rule `skip: x::**` needs a `reason:` under it"));
-    std::fs::remove_dir_all(&copy).ok();
 }
 
 /// A package uses its nearest `mutastic.yaml`, so it gets the same rules from the workspace's top as
@@ -1189,7 +1178,6 @@ fn a_packages_own_mutastic_yaml_applies_from_the_workspaces_top() {
         status_reason(&copy),
         "user: shared by the team (rule `skip: shop::**`)"
     );
-    std::fs::remove_dir_all(&copy).ok();
 }
 
 fn mutastic_with_input(dir: &Path, args: &[&str], input: &str) -> (i32, String) {
@@ -1357,7 +1345,6 @@ fn the_gate_holds_a_task_to_its_changed_lines() {
     );
     let (_, out) = mutastic_in(&dir, &["gate", "close"]);
     assert!(out.contains("mutastic gate: closed\n"), "{out}");
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 /// The mutants of one line, from `mutastic mutants`: id, then where it is, as `src/lib.rs:6:5`.
@@ -1507,7 +1494,6 @@ fn identical_lines_have_ids_of_their_own() {
         shifted.iter().all(|(id, _)| !by_step[3].contains(id)),
         "the last step's ids are gone: {shifted:?}"
     );
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 /// A test that fails, then passes when run again on its own, is flaky: the run goes on without it
@@ -1591,7 +1577,6 @@ fn a_flaky_test_is_left_out_and_one_that_always_fails_stops_the_run() {
     assert!(!out.contains("ignore"), "{out}");
     let log = std::fs::read_to_string(dir.join("target/mutastic/tests.log")).unwrap();
     assert!(log.contains("fails every time"), "{log}");
-    std::fs::remove_dir_all(&dir).ok();
 }
 
 /// Each full run is compared with the last under the same operators, as in the Java edition: its
@@ -1674,7 +1659,6 @@ fn a_full_run_compares_with_the_last_and_is_kept_for_the_next() {
         agent.contains("vs last run: 90.9% → 90.9% (same code)\n"),
         "{agent}"
     );
-    std::fs::remove_dir_all(&copy).ok();
 }
 
 /// `--report=sarif`: SARIF 2.1.0 the schema accepts, a result for the missed mutant on its line
@@ -1733,7 +1717,6 @@ fn the_sarif_report_is_a_result_for_each_miss_keyed_by_its_id() {
         location["region"],
         serde_json::json!({ "startLine": 26, "startColumn": 18, "endColumn": 20 })
     );
-    std::fs::remove_dir_all(&repository).ok();
 }
 
 /// `--vocabulary`, `--color` and `--hyperlinks`, as the Java edition takes them: the classic words
@@ -1871,7 +1854,6 @@ pub mod repayments {
         agent.contains("test to add in mod rates::tests:"),
         "{agent}"
     );
-    std::fs::remove_dir_all(&copy).ok();
 }
 
 /// A closed stderr (`mutastic run … 2>&1 | head`) loses the progress, never a mutant's result: a
@@ -1904,7 +1886,6 @@ fn a_closed_stderr_loses_no_results() {
         closed, open,
         "(exit, record lines) with stderr closed and open"
     );
-    std::fs::remove_dir_all(&copy).ok();
 }
 
 /// `next`, worked to the end on the ranking fixture: one item at a time in the run's order, exit 1
@@ -2158,7 +2139,6 @@ fn next_works_through_the_misses_one_at_a_time() {
     let (code, agent) = next(&["--format=agent"]);
     assert_eq!(code, 0, "{agent}");
     assert_eq!(agent, "mutastic next: nothing missed is left in ranking\n");
-    std::fs::remove_dir_all(&copy).ok();
 }
 
 /// Two mutants of one line with a test each, as the test-first guide's loyalty credit has: one fix
@@ -2196,7 +2176,6 @@ mod loyalty {
 
     let (_, card) = mutastic_in(&dir, &["run", "--format=full"]);
     let (_, agent) = mutastic_in(&dir, &["run", "--format=agent"]);
-    std::fs::remove_dir_all(&dir).ok();
 
     let card = card[card.find("loyalty_credit").expect(&card)..].to_string();
     assert!(card.contains("help: one test for each mutant"), "{card}");
@@ -2240,7 +2219,6 @@ fn two_runs_at_once_each_get_the_whole_result() {
         first.wait_with_output().unwrap(),
         second.wait_with_output().unwrap(),
     ];
-    std::fs::remove_dir_all(&dir).ok();
     for output in &outputs {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let finished: Vec<Value> = events(&stdout)
@@ -2270,7 +2248,6 @@ fn explain_as_events_says_what_the_text_says() {
     let (code, stdout) = mutastic_in(&dir, &["explain", "mb2f8ae57", "--format=jsonl"]);
     let (_, text) = mutastic_in(&dir, &["explain", "mb2f8ae57"]);
     let (refused, said) = mutastic_in(&dir, &["explain", "mb2f8ae57", "--format=agent"]);
-    std::fs::remove_dir_all(&dir).ok();
     assert_eq!(code, 0, "{stdout}");
     // Its progress is on stderr, which comes back with it here: the events are the JSON lines.
     let lines: String = stdout
