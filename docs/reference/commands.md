@@ -61,7 +61,7 @@ mutastic explain mb2f8ae57
 mutastic explain mb2f8ae57 fixtures/pricing
 ```
 
-**Options:** [`--workers=N`](#--workers), [`--no-suggestions`](#--no-suggestions), [`--vocabulary=WORDS`](#--vocabulary), [`--color=WHEN`](#--color), [`--hyperlinks=WHEN`](#--hyperlinks), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
+**Options:** [`--workers=N`](#--workers), [`--no-suggestions`](#--no-suggestions), [`--format=FORMAT`](#--format), [`--vocabulary=WORDS`](#--vocabulary), [`--color=WHEN`](#--color), [`--hyperlinks=WHEN`](#--hyperlinks), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
 
 **Exit status:** 0 whatever the mutant's result: it explains, it doesn't judge.
 
@@ -252,11 +252,12 @@ mutastic run --from-shards=shares --threshold=70
 
 ### `--format`
 
-`--format=FORMAT`, for [`next`](#next), [`run`](#run). How the result is shown; full on a terminal, concise elsewhere, agent for coding agents. One of `full`, `brief`, `concise`, `grouped`, `agent`, `jsonl`. Also set by `MUTASTIC_FORMAT` or `MUTASTIC_AGENT`.
+`--format=FORMAT`, for [`explain`](#explain), [`next`](#next), [`run`](#run). How the result is shown; full on a terminal, concise elsewhere, agent for coding agents; explain takes full and jsonl. One of `full`, `brief`, `concise`, `grouped`, `agent`, `jsonl`. Also set by `MUTASTIC_FORMAT` or `MUTASTIC_AGENT`.
 
 ```sh
-mutastic next --format=agent
-mutastic run --format=agent
+mutastic explain mb2f8ae57 --format=jsonl
+mutastic next --format=jsonl
+mutastic run --format=jsonl
 ```
 
 ### `--vocabulary`

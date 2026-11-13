@@ -333,3 +333,10 @@ add:
     = site      `total / 10` in Pricing::discount, line 27, column 26
     = last run  caught by pricing::big_orders_get_ten_percent_off
 ```
+
+`--format=jsonl` gives the same as events, for a coding agent or a script: the ones a run's
+`--format=jsonl` writes for that one mutant, then a `mutant-explained` event with what "About this
+mutant" says, a field for each row in the same words, as the Java edition writes it. Its `applied`
+is the change as `mutation.applied` has it, `level` `source` and its `text`, with the `original`
+and `replacement` code; the Java edition's is at the bytecode. `explain` takes `full`, the default,
+and `jsonl`.
