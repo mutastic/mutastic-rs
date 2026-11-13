@@ -953,17 +953,22 @@ fn test_first_step(lib: &Path, (kind, code): &(String, String)) {
 
 /// The ids of the pricing fixture's mutants at each step of the test-first pages' cycles: the
 /// pages' `verify` commands name some of them, on code the fixture doesn't have until a page adds
-/// it, and a later step may take away.
+/// it, and a later step may take away. Found once in a process: two tests ask, at once, and each
+/// copying the fixture into the one directory took the other's copy away as it read it.
 fn test_first_ids() -> BTreeSet<String> {
-    let dir = scratch("test-first-ids").join("pricing");
-    common::fresh(&root().join("fixtures/pricing"), &dir);
-    let mut ids = BTreeSet::new();
-    for step in CYCLES.iter().flat_map(|page| cycle_steps(page)) {
-        test_first_step(&dir.join("src/lib.rs"), &step);
-        let project = workspace::read(&dir.display().to_string()).unwrap();
-        ids.extend(engine::find_all(&project).mutants.into_iter().map(|m| m.id));
-    }
-    ids
+    static IDS: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
+    IDS.get_or_init(|| {
+        let dir = scratch("test-first-ids").join("pricing");
+        common::fresh(&root().join("fixtures/pricing"), &dir);
+        let mut ids = BTreeSet::new();
+        for step in CYCLES.iter().flat_map(|page| cycle_steps(page)) {
+            test_first_step(&dir.join("src/lib.rs"), &step);
+            let project = workspace::read(&dir.display().to_string()).unwrap();
+            ids.extend(engine::find_all(&project).mutants.into_iter().map(|m| m.id));
+        }
+        ids
+    })
+    .clone()
 }
 
 /// `git` in `work`, which must succeed, as a person with a name set runs it.
