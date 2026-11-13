@@ -1150,6 +1150,15 @@ fn explain(parsed: &Parsed) -> Result<ExitCode, String> {
     let Some(id) = parsed.positional.first() else {
         return Err("explain needs a mutant's id: mutastic explain <id> [dir]".into());
     };
+    if let Some(other) = parsed
+        .format
+        .filter(|format| !matches!(format, Format::Full | Format::Jsonl))
+    {
+        return Err(format!(
+            "explain takes --format=full or --format=jsonl, not --format={}",
+            other.name()
+        ));
+    }
     let dir = parsed.positional.get(1).map_or(".", String::as_str);
     started(false);
     let project = workspace::read(dir)?;
@@ -1159,14 +1168,16 @@ fn explain(parsed: &Parsed) -> Result<ExitCode, String> {
     let report = engine::run(&project, &options, &|step| progress.step(step))?;
     progress.finished();
     let last = report::last_run(&project.mutastic_dir().join("mutation.json"), id);
-    print!(
-        "{}",
+    let shown = if parsed.format == Some(Format::Jsonl) {
+        report::explained_jsonl(&report, last)
+    } else {
         report::explained(
             &report,
             last,
-            style(parsed, std::io::stdout().is_terminal())
+            style(parsed, std::io::stdout().is_terminal()),
         )
-    );
+    };
+    print!("{shown}");
     Ok(ExitCode::SUCCESS)
 }
 

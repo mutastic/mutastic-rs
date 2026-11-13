@@ -1951,3 +1951,64 @@ fn two_runs_at_once_each_get_the_whole_result() {
         );
     }
 }
+
+/// `explain --format=jsonl`: the events a run writes for the one mutant, then `mutant-explained`
+/// with what `About this mutant` says, each field in the text's words, as the Java edition writes
+/// it; another format is refused.
+#[test]
+fn explain_as_events_says_what_the_text_says() {
+    let dir = copy_of("pricing", "explain-jsonl");
+    mutastic_in(&dir, &["run", "--format=concise"]);
+    let (code, stdout) = mutastic_in(&dir, &["explain", "mb2f8ae57", "--format=jsonl"]);
+    let (_, text) = mutastic_in(&dir, &["explain", "mb2f8ae57"]);
+    let (refused, said) = mutastic_in(&dir, &["explain", "mb2f8ae57", "--format=agent"]);
+    std::fs::remove_dir_all(&dir).ok();
+    assert_eq!(code, 0, "{stdout}");
+    // Its progress is on stderr, which comes back with it here: the events are the JSON lines.
+    let lines: String = stdout
+        .lines()
+        .filter(|line| line.starts_with('{'))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    let all = events(&lines);
+    let reasons: Vec<&str> = all.iter().map(|e| e["reason"].as_str().unwrap()).collect();
+    assert_eq!(
+        reasons,
+        [
+            "run-started",
+            "mutant-finished",
+            "run-finished",
+            "mutant-explained"
+        ],
+        "{stdout}"
+    );
+    for event in &all {
+        let errors: Vec<String> = schema().iter_errors(event).map(|e| e.to_string()).collect();
+        assert!(errors.is_empty(), "{event}\n{}", errors.join("\n"));
+    }
+    let explained = &all[3];
+    assert_eq!(explained["fingerprint"], "b2f8ae57ca6c48cb");
+    assert_eq!(explained["applied"]["level"], "source");
+    assert_eq!(
+        explained["applied"]["text"], all[1]["mutation"]["applied"]["text"],
+        "the same text as the mutant-finished event's applied"
+    );
+    for words in [
+        &explained["operator"]["description"],
+        &explained["idDescription"],
+        &explained["idNote"],
+        &explained["site"]["description"],
+        &explained["lastRun"]["description"],
+        &explained["applied"]["description"],
+    ] {
+        assert!(
+            text.contains(words.as_str().unwrap()),
+            "{words} isn't in:\n{text}"
+        );
+    }
+    assert_eq!(refused, 2, "{said}");
+    assert!(
+        said.contains("explain takes --format=full or --format=jsonl"),
+        "{said}"
+    );
+}

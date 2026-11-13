@@ -402,10 +402,10 @@ pub const OPTIONS: &[CliOption] = &[
         group: "Output",
         choices: &["full", "brief", "concise", "grouped", "agent", "jsonl"],
         help: "How the result is shown; full on a terminal, concise elsewhere, agent for coding \
-               agents",
-        commands: &["run", "next"],
+               agents; explain takes full and jsonl",
+        commands: &["run", "next", "explain"],
         environment: "MUTASTIC_FORMAT, MUTASTIC_AGENT",
-        example: "--format=agent",
+        example: "--format=jsonl",
     },
     CliOption {
         name: "vocabulary",

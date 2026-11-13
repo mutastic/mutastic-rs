@@ -104,6 +104,7 @@
       "options": [
         "--workers",
         "--no-suggestions",
+        "--format",
         "--vocabulary",
         "--color",
         "--hyperlinks",
@@ -543,20 +544,25 @@
         "agent",
         "jsonl"
       ],
-      "help": "How the result is shown; full on a terminal, concise elsewhere, agent for coding agents",
+      "help": "How the result is shown; full on a terminal, concise elsewhere, agent for coding agents; explain takes full and jsonl",
       "commands": [
+        "explain",
         "next",
         "run"
       ],
       "environment": "MUTASTIC_FORMAT, MUTASTIC_AGENT",
       "examples": {
+        "explain": {
+          "commandLine": "mutastic explain mb2f8ae57 --format=jsonl",
+          "cargo": "cargo mutastic explain mb2f8ae57 --format=jsonl"
+        },
         "next": {
-          "commandLine": "mutastic next --format=agent",
-          "cargo": "cargo mutastic next --format=agent"
+          "commandLine": "mutastic next --format=jsonl",
+          "cargo": "cargo mutastic next --format=jsonl"
         },
         "run": {
-          "commandLine": "mutastic run --format=agent",
-          "cargo": "cargo mutastic run --format=agent"
+          "commandLine": "mutastic run --format=jsonl",
+          "cargo": "cargo mutastic run --format=jsonl"
         }
       }
     },
