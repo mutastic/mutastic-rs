@@ -1,0 +1,1 @@
+mutastic: the tests fail without any mutant: tests::loyal_customers_get_ten_off_from_100; their output is in target/mutastic/tests.log

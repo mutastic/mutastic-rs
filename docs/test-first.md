@@ -177,7 +177,9 @@ the mutant can't exist: that hides what it found.
 
 ## Refactor, run again, commit
 
-Change the structure if it needs it, with the suite green, and run the cycle again:
+Change the structure if it needs it, with the suite green, and run the cycle again. This cycle's
+code is one `if`, with nothing to refactor, so here the run only confirms the cycle:
+[Test-first with a refactor](test-first-refactor.md) carries on to a refactor the code does need.
 
 ```sh
 mutastic run fixtures/pricing --since=HEAD

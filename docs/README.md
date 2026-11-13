@@ -60,6 +60,8 @@ page stands alone and links to the others by relative path.
 
 - [Working test-first](test-first.md): one red, green, refactor cycle on a fixture, with mutastic
   on the cycle's lines, the card's tests proved with `verify`, and a commit.
+- [Test-first with a refactor](test-first-refactor.md): two more cycles on the same rule, then the
+  refactor they call for, with mutastic on the lines before and after it.
 
 ## Help
 
@@ -74,7 +76,7 @@ fixtures, kept in [`output/`](output/). `cargo test` runs each command again and
 mutastic prints anything else; `MUTASTIC_DOCS_WRITE=1 cargo test --test docs` writes the copies
 again after a change to what it prints. Every Rust example is a fixture's own code, quoted word for
 word from a file the tests build, or code a page adds: the getting-started page's test, which the
-same test adds and runs; the test-first cycle's code, which it writes step by step in a repository
+same test adds and runs; the test-first pages' cycles, which it writes step by step in a repository
 of its own, capturing each run; and each operator's test that catches it, which are added to the
 operators fixture together and must catch every mutant on the cards they follow. Every link between pages,
 every command shown and every mutant id named is checked too.

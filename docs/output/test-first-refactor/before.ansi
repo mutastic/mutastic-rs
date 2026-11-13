@@ -1,0 +1,13 @@
+
+ [2m    Files[0m  [32m[1m1 clean[0m[0m[2m (1)[0m
+ [2m  Mutants[0m  [32m✓ [1m4 caught[0m[0m[2m (4)[0m
+ [2m  Changed[0m  15 lines in 1 file since HEAD
+ [2m    Build[0m  one build of every mutant, 2 rounds (check and build)
+ [2mTest runs[0m  23[2m (40 without coverage selection)[0m
+ [2m Start at[0m  11:30:44
+ [2m Duration[0m  890ms [2m(setup 844ms, coverage 18ms, mutants 5ms)[0m
+ [2m    Tests[0m  10 on rustc 1.94.0 · 4 workers
+ [2m  Reports[0m  target/mutastic/mutation.json[2m · [0mtarget/mutastic/mutation.html
+ [2m    Score[0m  [32m[1m100.0%[0m[0m[2m  threshold 80[0m
+
+ [42;30;1m PASS [0m [32mEvery mutant was caught.[0m
