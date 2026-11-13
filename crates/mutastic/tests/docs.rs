@@ -220,6 +220,8 @@ fn steady(text: &str) -> String {
             r#""name":"rustc","version":…"#,
         ),
         (r"rustc \S+", "rustc …"),
+        // The commit a gate's task starts from, which changes with each repository a run makes.
+        (r"(?<w>from |--since=)[0-9a-f]{7,40}\b", "$w…"),
         (r"(?<c>\x1b\[[0-9;]*m|\b)\d+ workers?\b", "${c}… workers"),
         (r#""workers(?<s>Started)?": ?\d+"#, r#""workers$s":…"#),
     ];
@@ -817,8 +819,13 @@ fn queue(work: &Path, shown: &mut BTreeMap<String, String>) {
 }
 
 /// The pages whose code is a test-first cycle on the pricing fixture, in the order they're worked:
-/// the second starts where the first ends.
-const CYCLES: &[&str] = &["test-first.md", "test-first-refactor.md"];
+/// the second starts where the first ends. The agent page adds no code of its own: it names the
+/// first page's mutants, as an agent working that cycle meets them.
+const CYCLES: &[&str] = &[
+    "test-first.md",
+    "test-first-refactor.md",
+    "test-first-agent.md",
+];
 
 /// A test-first page's code, in order: each block marked `added to` or `changed in`, with what it
 /// marks.
@@ -1057,6 +1064,69 @@ fn refactor(work: &Path, shown: &mut BTreeMap<String, String>) {
     shown.insert("test-first-refactor/after".into(), passed(work));
 }
 
+/// `mutastic` in `work` as an agent's hook runs it: the hook's input on stdin, and no colour, as
+/// the agent reads it.
+fn hooked(work: &Path, args: &[&str]) -> Ran {
+    use std::io::Write as _;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+        .args(args)
+        .current_dir(work)
+        .env_remove("MUTASTIC_AGENT")
+        .env_remove("FORCE_COLOR")
+        .env("NO_COLOR", "1")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(br#"{"session_id":"docs"}"#)
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    Ran {
+        code: output.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+    }
+}
+
+/// The agent page's cycle, as the agent and its gate see it: the test-first page's code on the
+/// pricing fixture in a repository of its own, with the gate opened as the plugin's hook opens it,
+/// the agent format's run on the cycle's lines once the code passes, and the gate's check once the
+/// card's tests are in. The page's `verify` is the test-first page's.
+fn test_first_agent(work: &Path, shown: &mut BTreeMap<String, String>) {
+    let steps = cycle_steps("test-first.md");
+    repository(work);
+    let lib = work.join("fixtures/pricing/src/lib.rs");
+    let opened = hooked(work, &["gate", "open", "fixtures/pricing", "--hook=claude"]);
+    assert_eq!(opened.code, 0, "{}{}", opened.stdout, opened.stderr);
+    assert!(opened.stdout.contains("gated from"), "{}", opened.stdout);
+    shown.insert("test-first-agent/open".into(), opened.stdout);
+
+    for step in &steps[..3] {
+        test_first_step(&lib, step);
+    }
+    let run = ran(
+        work,
+        &["run", "fixtures/pricing", "--since=HEAD", "--format=agent"],
+    );
+    assert_eq!(run.code, 1, "{}", run.stdout);
+    shown.insert("test-first-agent/run".into(), run.stdout);
+
+    test_first_step(&lib, &steps[3]);
+    let check = mutastic(work, &["gate", "check", "fixtures/pricing"]);
+    assert_eq!(check.code, 0, "{}{}", check.stdout, check.stderr);
+    assert!(
+        plain(&check.stdout).starts_with("mutastic gate: passed"),
+        "{}",
+        check.stdout
+    );
+    shown.insert("test-first-agent/check".into(), check.stdout);
+}
+
 /// Runs the pages show as a Unix build makes them: code and tests under `cfg(unix)` are in it, and
 /// a Windows build leaves them out, so there they're run but the pages' copies are kept.
 const UNIX_BUILDS: &[&str] = &[
@@ -1155,6 +1225,11 @@ fn the_docs_show_what_a_test_first_cycle_prints() {
 #[test]
 fn the_docs_show_what_a_refactor_prints() {
     section("test-first-refactor", &["pricing"], refactor);
+}
+
+#[test]
+fn the_docs_show_what_an_agent_sees_test_first() {
+    section("test-first-agent", &["pricing"], test_first_agent);
 }
 
 /// The lines of `text` without the indent they share.
