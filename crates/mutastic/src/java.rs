@@ -350,6 +350,13 @@ pub fn forward(command: &Path, args: &[String]) -> ExitCode {
         let terminal = std::io::stderr().is_terminal();
         process.env("MUTASTIC_STDERR_TTY", if terminal { "1" } else { "0" });
     }
+    // Nor its width, which a live block fits.
+    if let (None, Some(columns)) = (
+        std::env::var_os("MUTASTIC_COLUMNS"),
+        crate::terminal::width(),
+    ) {
+        process.env("MUTASTIC_COLUMNS", columns.to_string());
+    }
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;

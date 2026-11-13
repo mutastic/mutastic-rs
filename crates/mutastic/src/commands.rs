@@ -699,6 +699,12 @@ pub const ENVIRONMENT: &[Entry] = &[
                  it's set already.",
     },
     Entry {
+        name: "MUTASTIC_COLUMNS",
+        meaning: "The terminal's width, for the Java edition",
+        detail: "The JDK can't ask the terminal, so `mutastic` sets it when it runs the Java \
+                 edition on a terminal, unless it's set already.",
+    },
+    Entry {
         name: "MUTASTIC_JAVA_ENGINE",
         meaning:
             "A Java edition's `bin/mutastic` to run instead, such as one built from its source",

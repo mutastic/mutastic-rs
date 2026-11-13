@@ -440,6 +440,7 @@ mutastic verify mb2f8ae57 --edition=rust
 - `MUTASTIC_VERSION`: In a Maven or Gradle project, the Java edition's release to use. Such as `0.5.0`, fetched if it isn't kept. Unset, from 1.0.0 it's the newest release of this mutastic's own major and minor version.
 - `MUTASTIC_HOME`: Where the Java edition's releases are kept. `~/.mutastic` unless set.
 - `MUTASTIC_STDERR_TTY`: Whether stderr is a terminal, 1 or 0, for the Java edition. The JDK can't tell, so `mutastic` sets it when it runs the Java edition, unless it's set already.
+- `MUTASTIC_COLUMNS`: The terminal's width, for the Java edition. The JDK can't ask the terminal, so `mutastic` sets it when it runs the Java edition on a terminal, unless it's set already.
 - `MUTASTIC_JAVA_ENGINE`: A Java edition's `bin/mutastic` to run instead, such as one built from its source. Nothing is fetched.
 - `MUTASTIC_JAVA_RELEASES`: Where the Java edition's releases are downloaded from, for a mirror. GitHub's releases of `mutastic/mutastic` unless set.
 - `JAVA_HOME`: The JDK the Java edition runs on. `java` on the `PATH` unless set.

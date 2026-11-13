@@ -80,6 +80,7 @@ uses the newest release it has kept, and fetches the latest when it has none.
 | `MUTASTIC_HOME` | Where releases are kept: `~/.mutastic` unless set |
 | `MUTASTIC_JAVA_ENGINE` | A Java edition's `bin/mutastic` to run instead, such as one built from its source. Nothing is fetched |
 | `MUTASTIC_JAVA_RELEASES` | Where releases are downloaded from, for a mirror: GitHub's releases of `mutastic/mutastic` unless set. A mirror serves `releases.atom` beside them, or at least `latest` |
+| `MUTASTIC_COLUMNS` | The terminal's width, which the JDK can't ask for: `mutastic` sets it for the Java edition on a terminal, unless it's set already |
 | `MUTASTIC_STDERR_TTY` | Whether stderr is a terminal, `1` or `0`, which the JDK can't tell: `mutastic` sets it for the Java edition, unless it's set already |
 
 From 1.0.0, a Java edition patch reaches you within a day of its release, and a new minor version
