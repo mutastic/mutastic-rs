@@ -60,7 +60,7 @@ page stands alone and links to the others by relative path.
 
 - [Working test-first](test-first.md): one red, green, refactor cycle on a fixture, with mutastic
   on the cycle's lines, the card's tests proved with `verify`, and a commit.
-- [Test-first with a refactor](test-first-refactor.md): two more cycles on the same rule, then the
+- [Working test-first: the refactor](test-first-refactor.md): two more cycles on the same rule, then the
   refactor they call for, with mutastic on the lines before and after it.
 
 ## Help

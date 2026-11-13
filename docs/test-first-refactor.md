@@ -1,4 +1,4 @@
-# Test-first with a refactor
+# Working test-first: the refactor
 
 Two more cycles on the rule [Working test-first](test-first.md) started, each adding a tier, until
 the code says the same thing three times. Then the refactor, done: mutastic on the cycle's lines
