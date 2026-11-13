@@ -2,10 +2,10 @@
 # passes or not. A mutation tool should publish its own score. No threshold until the score is
 # known; the run fails only when mutastic does.
 #
-# Each mutant runs mutastic's own tests, and the integration tests share folders: the copy's
-# fixtures, and the docs test's scratch. Two mutants running them at once could fail a test the
-# mutant didn't, a false catch, so each share runs one mutant at a time, and the shares, each on
-# a machine of its own, split the run. The last job puts them together, as --from-shards does.
+# Each mutant runs mutastic's own tests, and each test process takes fixture copies no other holds
+# (slot in tests/common), so two mutants at once share no folder, and neither fails a test for the
+# other: no false catch. Each share runs two, and the shares, each on a machine of its own, split
+# the run. The last job puts them together, as --from-shards does.
 #
 # It runs on a pull request that changes this file, so a change to it is tried before it lands.
 name: Self
@@ -22,9 +22,9 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # At 16 the slowest share (sites.rs and report.rs) ran past five hours; at 24 each is
-  # about a third shorter, well inside the limit below, run 14 at a time.
-  SHARES: 24
+  # One worker and 16 shares took 2 to 5 hours a share. The tests now take under half as long
+  # and each share runs two mutants at once: 14 shares, all at once, each well inside the limit.
+  SHARES: 14
 
 jobs:
   # mutastic, built once from this commit, for every share.
@@ -53,7 +53,7 @@ jobs:
       max-parallel: 14
       matrix:
         # As many as SHARES says.
-        share: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]
+        share: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 16 Oct 2026
@@ -66,12 +66,19 @@ jobs:
         run: >
           bin/mutastic run crates/mutastic
           --shard=${{ matrix.share }}/${{ env.SHARES }}
-          --workers=1 --threshold=0 --format=concise --progress=counter
+          --workers=2 --threshold=0 --format=concise --progress=counter
+      # The tests' fixture copies are kept in the temporary directory, warm for the next mutant.
+      - name: Disk used
+        if: always()
+        run: df -h / && du -sh /tmp/mutastic-rs-tests target || true
+      # A share writes its results when it finishes, so one stopped part-way has none: that's an
+      # error here, not a warning, as the report can't be made without every share.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: share-${{ matrix.share }}
           path: target/mutastic/shares/
+          if-no-files-found: error
           retention-days: 7
 
   # The shares put together: the whole run's score, cards and report files.
