@@ -173,6 +173,27 @@ pub fn nested(project: &Path, edition: Edition) -> Vec<PathBuf> {
     found
 }
 
+/// Commands to copy, one a line, each indented two spaces: `mutastic <command> <dir> <options>` for
+/// each directory, where `command` is the command and its words before the directory (`run`,
+/// `verify m1a2b3c4d`). The current directory, `.`, is left out, as a person would type it; one with
+/// a space or a quote in it is quoted, as a shell takes it, and a `<placeholder>` is left as it is.
+pub fn commands(command: &str, dirs: &[String], options: &[String]) -> String {
+    dirs.iter()
+        .map(|dir| {
+            let quoted = if dir.contains([' ', '\'', '"']) && !dir.starts_with('<') {
+                format!("\"{}\"", dir.replace('"', "\\\""))
+            } else {
+                dir.clone()
+            };
+            let words = std::iter::once(command)
+                .chain((dir != ".").then_some(quoted.as_str()))
+                .chain(options.iter().map(String::as_str));
+            format!("  mutastic {}", words.collect::<Vec<_>>().join(" "))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// What `run` says when the project it runs holds one of the other edition's: which edition runs,
 /// and the command for the other.
 pub fn nested_note(given: &str, route: &Route) -> Option<String> {
@@ -190,17 +211,14 @@ pub fn nested_note(given: &str, route: &Route) -> Option<String> {
         Edition::Java => "Java",
         Edition::Rust => "Rust",
     };
-    let commands: Vec<String> = inner
+    let dirs: Vec<String> = inner
         .iter()
         .map(|dir| {
             let dir = crate::workspace::slashed(dir);
             if given == "." {
-                format!("  mutastic run {dir}")
+                dir
             } else {
-                format!(
-                    "  mutastic run {}/{dir}",
-                    given.trim_end_matches(['/', '\\'])
-                )
+                format!("{}/{dir}", given.trim_end_matches(['/', '\\']))
             }
         })
         .collect();
@@ -216,7 +234,7 @@ pub fn nested_note(given: &str, route: &Route) -> Option<String> {
     Some(format!(
         "mutastic: {name} is {this}, so the {edition} edition runs here. It also holds {held}, \
          which is a project of its own; to test it, point mutastic at it:\n{}",
-        commands.join("\n")
+        commands("run", &dirs, &[])
     ))
 }
 
@@ -302,6 +320,18 @@ mod tests {
         let rust = route(&dir.join("native/src/main/rust")).unwrap();
         assert_eq!(nested_note(".", &rust), None);
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn each_command_shown_is_one_a_shell_takes_as_typed() {
+        let dirs = [".", "crates/shop", "my crates/shop", "<package directory>"].map(String::from);
+        assert_eq!(
+            commands("verify m1a2b3c4d", &dirs, &["--format=agent".to_string()]),
+            "  mutastic verify m1a2b3c4d --format=agent\n  \
+             mutastic verify m1a2b3c4d crates/shop --format=agent\n  \
+             mutastic verify m1a2b3c4d \"my crates/shop\" --format=agent\n  \
+             mutastic verify m1a2b3c4d <package directory> --format=agent"
+        );
     }
 
     #[test]

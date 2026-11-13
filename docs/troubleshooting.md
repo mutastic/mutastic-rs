@@ -127,17 +127,23 @@ test reaches by running it alone.
 
 ## A workspace
 
-mutastic runs one package at a time. Pointed at a workspace's root, it stops and names the
-members:
+mutastic runs one package at a time. Pointed at a workspace's root, it stops and gives the command
+for each member, from where you are:
 
 <!-- output: troubleshooting/workspace -->
 ```text
-mutastic 1.1.0 · reading the Cargo package…
-mutastic: fixtures/workspace is a workspace: run mutastic in one of its packages (billing, shop)
+mutastic: fixtures/workspace is a workspace's root, and mutastic tests one package at a time.
+It has 2 packages. To test one:
+  mutastic run fixtures/workspace/billing
+  mutastic run fixtures/workspace/shop
 ```
 
-Point it at the member instead: `mutastic run shop`, or `cargo mutastic run` inside `shop`. A root
-package that is also the workspace's root runs as itself. Today:
+Run one of them, or `cargo mutastic run` inside the member. A workspace of more than ten packages
+is listed by name, with the command to fill in. Anywhere inside a member, such as its `src`,
+mutastic runs that member, as Cargo would, and reads its `mutastic.yaml`, ignores and baseline from
+the member's directory. A member's package name typed where there's no directory of that name,
+`mutastic run shop` with `shop` in `crates/shop`, runs that member, and a note says which
+directory it used. A root package that is also the workspace's root runs as itself. Today:
 
 - **Only the package's own tests count.** A test in another member that calls the package's code
   doesn't reach its mutants, so that code may show as not covered. Move or copy such tests into the
@@ -145,6 +151,25 @@ package that is also the workspace's root runs as itself. Today:
 - **The whole workspace is copied,** so path dependencies on other members build as usual, but
   only the package named is mutated.
 - **A proc-macro crate** can't be mutated yet: mutastic says so and stops.
+
+## mutastic says there's no directory, or no project
+
+A directory mutastic is pointed at is checked before anything runs there. One that isn't there is
+named as you typed it, with where mutastic looked. A package or directory whose name is close to it
+is offered, never run, and the message ends in the command to run instead:
+
+<!-- output: troubleshooting/no-directory -->
+```text
+mutastic: there's no directory fixtures/workspace/shpo in /home/you/project.
+There's a package called shop, in fixtures/workspace/shop. To test it:
+  mutastic run fixtures/workspace/shop
+```
+
+With no build file in the directory or any above it, `Cargo.toml` for Rust or `pom.xml`,
+`build.gradle(.kts)` or `settings.gradle(.kts)` for Java, there's no project to test. Go to your
+project, or name its directory. mutastic's options are all long ones, as `--format=full`: a word
+such as `-v` is an option it doesn't have, and `mutastic --help` lists them. When there's no
+`cargo` to run, mutastic says where it looked: the `CARGO` variable, when it's set, or the PATH.
 
 ## Test code isn't mutated
 

@@ -245,6 +245,9 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
     };
     for arg in args {
         let Some(option) = arg.strip_prefix("--") else {
+            if arg.len() > 1 && arg.starts_with('-') {
+                return Err(short_option(command, arg));
+            }
             parsed.positional.push(arg.clone());
             continue;
         };
@@ -401,6 +404,15 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
     Ok(parsed)
 }
 
+/// A word such as `-v`, where a directory goes: mutastic's options are all long ones, so it's an
+/// option mutastic doesn't have, not a directory.
+fn short_option(command: &str, word: &str) -> String {
+    format!(
+        "{command} has no option {word}.\n\
+         mutastic's options are long ones, such as --format=full. To see them all:\n  mutastic --help"
+    )
+}
+
 /// Whether `args` (without the program's name) is a command mutastic takes, with options it knows,
 /// without running it: for checking the commands the docs show.
 pub fn check(args: &[String]) -> Result<(), String> {
@@ -550,12 +562,7 @@ fn operators(value: &str) -> Result<Vec<&'static str>, String> {
 /// Reads the package's nearest `mutastic.yaml`, if there is one: its rules, its rules files'
 /// operators, and the operators it chooses, unless `--operators` chose.
 fn configure(command: &str, parsed: &mut Parsed) -> Result<(), String> {
-    let at = match command {
-        "run" | "mutants" | "next" | "baseline" => 0,
-        "ignore" if parsed.prune => 0,
-        "verify" => verify_ids(&parsed.positional).1,
-        _ => 1,
-    };
+    let at = dir_slot(command, parsed).unwrap_or(1);
     let given = parsed.positional.get(at).map_or(".", String::as_str);
     let config = match configured_dir(given) {
         Some(dir) => crate::config::Configuration::read(&dir)?,
@@ -573,6 +580,53 @@ fn configure(command: &str, parsed: &mut Parsed) -> Result<(), String> {
             parsed.operators = crate::config::resolve(&config.operators, crate::config::FILE)?;
         }
         None => {}
+    }
+    Ok(())
+}
+
+/// Where `command`'s directory goes among the words that aren't options: after `verify`'s ids,
+/// `explain`'s or `ignore`'s id and `gate`'s action, first for the rest. `None` where it names no
+/// directory, or lacks the words before one, which it says itself.
+fn dir_slot(command: &str, parsed: &Parsed) -> Option<usize> {
+    let words = parsed.positional.len();
+    match command {
+        "run" | "mutants" | "next" | "baseline" => Some(0),
+        "ignore" if parsed.prune => Some(0),
+        "verify" if words > 0 => Some(verify_ids(&parsed.positional).1),
+        "gate" if parsed.help => None,
+        "explain" | "ignore" | "gate" if words > 0 => Some(1),
+        _ => None,
+    }
+}
+
+/// Checks the directory `command` runs in before anything runs there, and puts the package's in
+/// its place where that's another: below a package, it's the package's; a package's name typed
+/// where there's no such directory is that package's, said in a note. The ignores, the baseline,
+/// `mutastic.yaml` and `--since` are then all read from the package's directory.
+fn locate(command: &str, args: &[String], parsed: &mut Parsed) -> Result<(), String> {
+    let Some(slot) = dir_slot(command, parsed) else {
+        return Ok(());
+    };
+    let given = parsed.positional.get(slot).map_or(".", String::as_str);
+    let before: Vec<&str> = std::iter::once(command)
+        .chain(parsed.positional.iter().take(slot).map(String::as_str))
+        .collect();
+    let options: Vec<String> = args
+        .iter()
+        .skip(1)
+        .filter(|arg| arg.starts_with("--"))
+        .map(|arg| shell(arg))
+        .collect();
+    let line = crate::locate::Line::new(&before.join(" "), &options);
+    let located = crate::locate::resolve(given, &line)?;
+    if let Some(note) = &located.note {
+        stderr_line!("{note}");
+    }
+    if located.dir != given {
+        match parsed.positional.get_mut(slot) {
+            Some(word) => *word = located.dir,
+            None => parsed.positional.push(located.dir),
+        }
     }
     Ok(())
 }
@@ -598,6 +652,14 @@ fn dispatch(args: &[String]) -> Result<ExitCode, String> {
     };
     let mut parsed = parse(command, &args[1..])?;
     arguments(command, &parsed)?;
+    if let Err(error) = locate(command, args, &mut parsed) {
+        // A hook runs in whatever project the agent is in: where mutastic reads no Cargo package,
+        // there's nothing to gate, and it says nothing.
+        if command == "gate" && !parsed.hook.is_empty() {
+            return Ok(ExitCode::SUCCESS);
+        }
+        return Err(error);
+    }
     if matches!(
         command.as_str(),
         "run" | "verify" | "explain" | "ignore" | "mutants" | "gate" | "next" | "baseline"
