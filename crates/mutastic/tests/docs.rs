@@ -2,8 +2,8 @@
 //! one of the fixtures: it's captured in `docs/output/`, in colour as a terminal shows it, and this
 //! fails while a fresh run prints anything else. A page shows its copy without colour, as GitHub
 //! can't show it; the docs site shows the captured colour.
-//! Every Rust block is either an excerpt of a fixture these runs build, word for word, or the test
-//! the getting-started page adds, which this adds and runs. Every link between pages resolves, every
+//! Every Rust block is either an excerpt of a fixture these runs build, word for word, the test
+//! the getting-started page adds, or the test-first page's cycle, which this writes and runs. Every link between pages resolves, every
 //! `mutastic` command a page shows parses, and every id it names is a mutant of its fixture. And
 //! every missed mutant's card on the operators fixture says something true: written into the
 //! source as the card claims it, the fixture's tests still pass.
@@ -812,6 +812,154 @@ fn queue(work: &Path, shown: &mut BTreeMap<String, String>) {
     shown.insert("concepts/next-jsonl".into(), top);
 }
 
+/// The test-first page's code, in order: each block marked `added to` or `changed in`, with what
+/// it marks.
+fn test_first_steps() -> Vec<(String, String)> {
+    let text = std::fs::read_to_string(docs().join("test-first.md")).unwrap();
+    blocks(&text)
+        .into_iter()
+        .filter_map(|b| match b.marker {
+            Some((kind, path)) if kind == "added to" || kind == "changed in" => {
+                assert_eq!(
+                    path, "fixtures/pricing/src/lib.rs",
+                    "test-first.md changes {path}"
+                );
+                Some((kind, text[b.text].to_string()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// `code`, indented one level, as a line of a module or an `impl` is.
+fn indented(code: &str) -> String {
+    code.lines()
+        .map(|line| match line {
+            "" => "\n".to_string(),
+            _ => format!("    {line}\n"),
+        })
+        .collect()
+}
+
+/// One of the test-first page's steps, made to the pricing fixture's `src/lib.rs` as the page says:
+/// a test is added at the end of the `tests` module, other code at the end of `impl Pricing`, and
+/// a change replaces the function of the same name.
+fn test_first_step(lib: &Path, (kind, code): &(String, String)) {
+    let source = std::fs::read_to_string(lib).unwrap();
+    let changed = if kind == "changed in" {
+        let signature = code.lines().find(|l| l.starts_with("pub fn ")).unwrap();
+        let at = source.find(signature).unwrap();
+        let start = source[..at].rfind("\n\n").unwrap() + 2;
+        let end = at + source[at..].find("\n    }\n").unwrap() + "\n    }\n".len();
+        format!("{}{}{}", &source[..start], indented(code), &source[end..])
+    } else if code.contains("#[test]") {
+        let close = source.trim_end().rfind('}').unwrap();
+        format!("{}\n\n{}}}\n", source[..close].trim_end(), indented(code))
+    } else {
+        let close = source.find("\n}\n\n#[cfg(test)]").unwrap();
+        format!(
+            "{}\n\n{}{}",
+            &source[..close],
+            indented(code).trim_end(),
+            &source[close..]
+        )
+    };
+    std::fs::write(lib, changed).unwrap();
+}
+
+/// The ids of the pricing fixture's mutants once the test-first page's cycle is done: the page's
+/// `verify` names two of them, on code the fixture doesn't have until the page adds it.
+fn test_first_ids() -> BTreeSet<String> {
+    let dir = scratch("test-first-ids").join("pricing");
+    common::fresh(&root().join("fixtures/pricing"), &dir);
+    for step in test_first_steps() {
+        test_first_step(&dir.join("src/lib.rs"), &step);
+    }
+    let project = workspace::read(&dir.display().to_string()).unwrap();
+    engine::find_all(&project)
+        .mutants
+        .into_iter()
+        .map(|m| m.id)
+        .collect()
+}
+
+/// The test-first page's cycle, on the pricing fixture in a repository of its own, from the page's
+/// own code: its failing test and the function's stub stop a run, the code that passes it leaves
+/// the cycle's edge untested, the card's tests make `verify` pass, and the cycle's run passes after.
+fn test_first(work: &Path, shown: &mut BTreeMap<String, String>) {
+    let steps = test_first_steps();
+    let kinds: Vec<&str> = steps.iter().map(|(kind, _)| kind.as_str()).collect();
+    assert_eq!(
+        kinds,
+        ["added to", "added to", "changed in", "added to"],
+        "test-first.md: a test, its stub, the code that passes it, then the card's tests"
+    );
+    // A repository of its own, as the page's clone is, so `--since=HEAD` is this cycle's lines.
+    std::fs::remove_dir_all(work.join(".git")).ok();
+    std::fs::write(work.join(".gitignore"), "target\n").unwrap();
+    let git = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(work)
+            .env("GIT_AUTHOR_NAME", "docs")
+            .env("GIT_AUTHOR_EMAIL", "docs@example.com")
+            .env("GIT_COMMITTER_NAME", "docs")
+            .env("GIT_COMMITTER_EMAIL", "docs@example.com")
+            .output()
+            .unwrap()
+            .status;
+        assert!(status.success(), "git {args:?}");
+    };
+    git(&["init", "-q"]);
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "start"]);
+    let lib = work.join("fixtures/pricing/src/lib.rs");
+
+    test_first_step(&lib, &steps[0]);
+    test_first_step(&lib, &steps[1]);
+    let red = mutastic(work, &["run", "fixtures/pricing"]);
+    assert_eq!(red.code, 2, "{}{}", red.stdout, red.stderr);
+    let message: String = red
+        .stderr
+        .lines()
+        .filter(|line| plain(line).starts_with("mutastic: "))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    assert!(
+        plain(&message).contains("tests::loyal_customers_get_five_off"),
+        "{}",
+        red.stderr
+    );
+    shown.insert("test-first/red".into(), message);
+
+    test_first_step(&lib, &steps[2]);
+    let run = ran(work, &["run", "fixtures/pricing", "--since=HEAD"]);
+    assert_eq!(run.code, 1, "{}", run.stdout);
+    let done = plain(&run.stdout)
+        .lines()
+        .find_map(|line| {
+            line.trim_start()
+                .strip_prefix("done when")
+                .map(str::to_string)
+        })
+        .expect("the cycle's run has a card");
+    let ids = done.split_whitespace().nth(2).unwrap().to_string();
+    let page = std::fs::read_to_string(docs().join("test-first.md")).unwrap();
+    assert!(
+        page.contains(&format!("mutastic verify {ids} fixtures/pricing\n")),
+        "test-first.md: verify the card's mutants, {ids}"
+    );
+    shown.insert("test-first/run".into(), run.stdout);
+
+    test_first_step(&lib, &steps[3]);
+    let verify = ran(work, &["verify", &ids, "fixtures/pricing"]);
+    assert_eq!(verify.code, 0, "{}", verify.stdout);
+    shown.insert("test-first/verify".into(), verify.stdout);
+    let again = ran(work, &["run", "fixtures/pricing", "--since=HEAD"]);
+    assert_eq!(again.code, 0, "{}", again.stdout);
+    shown.insert("test-first/again".into(), again.stdout);
+}
+
 /// Runs the pages show as a Unix build makes them: code and tests under `cfg(unix)` are in it, and
 /// a Windows build leaves them out, so there they're run but the pages' copies are kept.
 const UNIX_BUILDS: &[&str] = &[
@@ -902,6 +1050,11 @@ fn the_docs_show_what_next_prints() {
     section("queue", &["ranking"], queue);
 }
 
+#[test]
+fn the_docs_show_what_a_test_first_cycle_prints() {
+    section("test-first", &["pricing"], test_first);
+}
+
 /// The lines of `text` without the indent they share.
 fn dedent(lines: &[&str]) -> Vec<String> {
     let indent = lines
@@ -942,18 +1095,22 @@ fn every_rust_example_is_compiled() {
                         .any(|at| dedent(&file[at..at + quoted.len()]) == want);
                     assert!(found, "{place}: isn't in {path} word for word:\n{body}");
                 }
-                Some((kind, path)) if kind == "added to" => {
-                    let catching = page.starts_with(docs().join("operators"))
+                Some((kind, path)) if kind == "added to" || kind == "changed in" => {
+                    let catching = kind == "added to"
+                        && page.starts_with(docs().join("operators"))
                         && path.starts_with("fixtures/operators/src/");
+                    let cycle = page == docs().join("test-first.md");
+                    let started = kind == "added to" && page == docs().join("getting-started.md");
                     assert!(
-                        path == "fixtures/pricing/src/lib.rs" || catching,
-                        "{place}: only the getting-started test and the operators' tests that \
-                         catch them are added and run"
+                        path == "fixtures/pricing/src/lib.rs" && (started || cycle) || catching,
+                        "{place}: only the getting-started test, the test-first cycle's code and \
+                         the operators' tests that catch them are added and run"
                     );
                 }
                 _ => assert!(
                     block.language != "rust",
-                    "{place}: a Rust block needs <!-- from: … --> or <!-- added to: … -->"
+                    "{place}: a Rust block needs <!-- from: … -->, <!-- added to: … --> or \
+                     <!-- changed in: … -->"
                 ),
             }
         }
@@ -1154,6 +1311,12 @@ fn every_command_shown_parses_and_names_real_mutants() {
     let mutant_id = regex::Regex::new(r"^m[0-9a-f]{8}$").unwrap();
     let mut wrong = Vec::new();
     let mut found: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    // The test-first page names mutants of the code its cycle writes, which the fixture hasn't got.
+    let cycle = docs().join("test-first.md");
+    found.insert(
+        format!("{}:fixtures/pricing", cycle.display()),
+        test_first_ids(),
+    );
     for page in pages() {
         let text = std::fs::read_to_string(&page).unwrap();
         for block in blocks(&text) {
@@ -1205,7 +1368,13 @@ fn every_command_shown_parses_and_names_real_mutants() {
                 let (Some(named), Some(dir)) = (named, dir) else {
                     continue;
                 };
-                let ids = found.entry(dir.clone()).or_insert_with(|| {
+                let mine = format!("{}:{dir}", page.display());
+                let key = if found.contains_key(&mine) {
+                    mine
+                } else {
+                    dir.clone()
+                };
+                let ids = found.entry(key).or_insert_with(|| {
                     let project = workspace::read(&root().join(&dir).display().to_string())
                         .unwrap_or_else(|e| panic!("{}: {line}: {e}", page.display()));
                     engine::find_all(&project)
@@ -1238,9 +1407,16 @@ fn every_id_in_the_words_is_a_mutant() {
         let project = workspace::read(&dir.display().to_string()).unwrap();
         ids.extend(engine::find_all(&project).mutants.into_iter().map(|m| m.id));
     }
+    // The test-first page names mutants of the code its cycle writes, which the fixture hasn't got.
+    let cycle: BTreeSet<String> = ids.union(&test_first_ids()).cloned().collect();
     let pattern = regex::Regex::new(r"\bm[0-9a-f]{8}\b").unwrap();
     let mut wrong = Vec::new();
     for page in pages() {
+        let known = if page == docs().join("test-first.md") {
+            &cycle
+        } else {
+            &ids
+        };
         let mut text = std::fs::read_to_string(&page).unwrap();
         for block in blocks(&text).into_iter().rev() {
             if block
@@ -1252,7 +1428,7 @@ fn every_id_in_the_words_is_a_mutant() {
             }
         }
         for found in pattern.find_iter(&text) {
-            if !ids.contains(found.as_str()) {
+            if !known.contains(found.as_str()) {
                 wrong.push(format!("{}: {}", page.display(), found.as_str()));
             }
         }

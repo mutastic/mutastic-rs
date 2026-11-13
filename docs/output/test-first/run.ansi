@@ -1,0 +1,58 @@
+
+[1;31m[1m Missed [0m[0m[2m────────────────────────────────────────────────────────────[0m
+
+ [1;34m❯[0m [1msrc/lib.rs[0m  [2m2 missed in 1 function[0m
+
+ [41;30;1m ✗ MISSED [0m no test checks [1mloyalty_credit()[0m at [1mtotal == 30[0m[2m · m525ce1d2[0m
+    [2m┌─[0m src/lib.rs:42
+    [2m│[0m
+ [2m41[0m [2m│[0m     pub fn loyalty_credit(&self, total: u32) -> u32 {
+ [2m42[0m [2m│[0m         if total >= 30 {
+    [2m│[0m                  [1;31m^^ >= changed to >[0m
+ [2m43[0m [2m│[0m             return 5;
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mif total >= 30 {
+              [32m+ [0mif total > 30 {
+    [2m=[0m also    [1;31m✗[0m no test needs [1mtotal >= 30[0m to be false in [1mloyalty_credit()[0m [2m· m076d6006[0m
+              [32m+ [0mif true {
+    [2m=[0m [1;34m[1mnote[0m[0m: every test calls [1mloyalty_credit()[0m away from the boundary
+            [2minputs seen: 50 (none is 30)[0m
+            [2mcovered by tests::loyal_customers_get_five_off (its 1 covering test still passes)[0m
+    [2m=[0m [32m[1mhelp[0m[0m: one test for each mutant
+
+            test [1mloyalty_credit()[0m with [1mtotal = 30[0m and assert the result[2m · m525ce1d2[0m
+            // in mod tests
+            #[test]
+            fn loyalty_credit_at_the_total_edge() {
+                assert_eq!(Pricing::new().loyalty_credit(30), 5); // today 5 · with m525ce1d2 0
+            }
+
+            add a test where [1mtotal >= 30[0m is false, and assert what [1mloyalty_credit()[0m does then[2m · m076d6006[0m
+            // in mod tests
+            #[test]
+            fn loyalty_credit_just_below_the_total_edge() {
+                assert_eq!(Pricing::new().loyalty_credit(29), 0); // today 0 · with m076d6006 5
+            }
+            [2mcheck today's value is the one you intend: the test pins what the code does now[0m
+
+    [2mdone when [0m mutastic verify m525ce1d2,m076d6006 fixtures/pricing [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=m525ce1d2,m076d6006 fixtures/pricing
+    [2mor ignore [0m mutastic ignore <id> --reason="<why>" fixtures/pricing for each of m525ce1d2, m076d6006
+
+[33m[1m Not covered [0m[0m[2m(no test reaches these lines)[0m
+   [33m○[0m src/lib.rs:45 loyalty_credit() [2m(1 mutant)[0m
+
+ [2m    Files[0m  [32m[1m0 clean[0m[0m[2m | [0m[1;31m[1m1 with misses[0m[0m[2m (1)[0m
+ [2m  Mutants[0m  [32m✓ [1m2 caught[0m[0m[2m · [0m[1;31m✗ [1m2 missed[0m[0m[2m · [0m[33m○ 1 not covered[0m[2m (5)[0m
+ [2m  Changed[0m  14 lines in 1 file since HEAD
+ [2m Worst at[0m  Pricing::loyalty_credit() 2 ✗
+ [2m    Build[0m  one build of every mutant, 2 rounds (check and build)
+ [2mTest runs[0m  4[2m (16 without coverage selection)[0m
+ [2m Start at[0m  10:45:51
+ [2m Duration[0m  801ms [2m(setup 749ms, coverage 8ms, mutants 18ms)[0m
+ [2m    Tests[0m  4 on rustc 1.94.0 · 4 workers
+ [2m  Reports[0m  target/mutastic/mutation.json[2m · [0mtarget/mutastic/mutation.html
+ [2m    Score[0m  [1;31m[1m40.0%[0m[0m[2m  threshold 80[0m[2m  · 50.0% where tests reach[0m
+
+ [41;30;1m FAIL [0m [1;31mScore below 80: 2 missed, 1 not covered.[0m
+[2m Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing[0m
