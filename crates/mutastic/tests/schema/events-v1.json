@@ -10,10 +10,14 @@
     "edition": { "$ref": "#/$defs/edition" },
     "reason": {
       "type": "string",
-      "description": "What the event is: `run-started`, `mutant-finished`, `mutant-revised` or `run-finished`, and as it runs `phase-started`, `phase-finished` and `progress`; from `mutastic next`, `next-item` and `next-finished`; from `mutastic explain`, `mutant-explained` after the run's. Ignore an event whose reason you don't know: a later v1 may add one."
+      "description": "What the event is: `run-started`, `mutant-finished`, `mutant-revised` or `run-finished`, and as it runs `phase-started`, `phase-finished` and `progress`; from `mutastic next`, `next-item` and `next-finished`; from `mutastic explain`, `mutant-explained` after the run's; and when mutastic can't run, `run-failed`, last. Ignore an event whose reason you don't know: a later v1 may add one."
     }
   },
   "allOf": [
+    {
+      "if": { "properties": { "reason": { "const": "run-failed" } }, "required": ["reason"] },
+      "then": { "$ref": "#/$defs/runFailed" }
+    },
     {
       "if": { "properties": { "reason": { "const": "run-started" } }, "required": ["reason"] },
       "then": { "$ref": "#/$defs/runStarted" }
@@ -819,6 +823,40 @@
         "notCovered": { "type": "integer", "minimum": 0, "description": "The mutants only: how many no test reaches, so far." },
         "timedOut": { "type": "integer", "minimum": 0, "description": "The mutants only: how many timed out so far." },
         "running": { "type": "integer", "minimum": 0, "description": "The mutants only: how many workers are running a mutant now." }
+      }
+    },
+    "runFailed": {
+      "type": "object",
+      "description": "mutastic couldn't run, and exits with `exitCode`: the last event on stdout in the agent and jsonl formats, whatever came before it, with the same words as the error on stderr. A run that fails part way has no `run-finished`, and may leave a phase started.",
+      "required": ["schema", "reason", "code", "message", "help", "exitCode", "rendered"],
+      "properties": {
+        "schema": { "$ref": "#/$defs/schema" },
+        "reason": { "const": "run-failed" },
+        "edition": { "$ref": "#/$defs/edition" },
+        "code": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$", "description": "The kind of failure, stable from release to release, such as `no-directory`, `workspace-root`, `unknown-option`, `build-failed` or `red-baseline`; `other` for one with no code of its own. The anchor of its entry on each edition's errors page. A later v1 may add a code: treat one you don't know as `other`." },
+        "message": { "type": "string", "description": "The error's first line, without `mutastic: `: what went wrong, in the words a person reads." },
+        "where": {
+          "type": "object",
+          "description": "Where it happened, as far as mutastic knows.",
+          "properties": {
+            "directory": { "type": "string", "description": "The directory the command was run on, as typed; `.` when none was." },
+            "path": { "type": ["string", "null"], "description": "That directory's whole path, `null` when there's no such directory." }
+          }
+        },
+        "help": {
+          "type": "array",
+          "description": "The commands the error ends in, in its order: what to run next. Empty when it offers none.",
+          "items": {
+            "type": "object",
+            "required": ["command", "applicability"],
+            "properties": {
+              "command": { "type": "string", "description": "The command, as the error prints it." },
+              "applicability": { "enum": ["exact", "placeholders", "maybe"], "description": "`exact`: it runs as it is. `placeholders`: a part in `<…>` is to be filled in first. `maybe`: a guess at what was meant, a close name, to check before running it." }
+            }
+          }
+        },
+        "exitCode": { "type": "integer", "minimum": 1, "description": "The status mutastic exits with." },
+        "rendered": { "type": "string", "description": "The error as stderr has it, every line, `mutastic: ` first." }
       }
     },
     "mutantExplained": {

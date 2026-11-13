@@ -16,6 +16,25 @@ macro_rules! stderr_line {
     }};
 }
 
+/// A line to stdout that can't panic: `mutastic run | head` closes stdout early, and `println!`
+/// would panic there and exit 101. What can't be shown is dropped, and the run ends as it would.
+macro_rules! stdout_line {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stdout(), $($arg)*);
+    }};
+}
+
+/// [`stdout_line`] without the line's end.
+macro_rules! stdout_text {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let mut stdout = std::io::stdout();
+        let _ = write!(stdout, $($arg)*);
+        let _ = stdout.flush();
+    }};
+}
+
 pub mod baseline;
 pub mod callrules;
 pub mod cfg;
@@ -25,6 +44,7 @@ pub mod compile;
 pub mod config;
 pub mod edition;
 pub mod engine;
+pub mod failure;
 pub mod flaky;
 pub mod gate;
 pub mod id;

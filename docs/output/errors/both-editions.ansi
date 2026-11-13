@@ -1,0 +1,1 @@
+mutastic: /home/you/project/both has both Cargo.toml and pom.xml, so either edition could read it: say which with --edition=rust or --edition=java

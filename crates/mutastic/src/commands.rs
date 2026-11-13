@@ -191,7 +191,7 @@ pub const COMMANDS: &[Command] = &[
                  where it differs, and why that can't happen. It runs no tests, and each step says \
                  how to undo it.",
         exits: "0 when the decision is recorded, proposed, accepted or removed; 1 when --accept \
-                names a mutant that isn't proposed.",
+                names a mutant that isn't proposed, or --remove one that isn't ignored.",
         takes_mutant_id: true,
         examples: &[
             "mutastic ignore mb2f8ae57 --reason=\"totals are rounded to tens\"",
@@ -733,8 +733,8 @@ pub const EXIT_CODES: &[Entry] = &[
     Entry {
         name: "1",
         meaning: "The score is below the threshold, or with --fail-on-new a miss is new; for verify, a mutant named is still missed or \
-                  not covered; for gate check, the task isn't done; for ignore --accept, the \
-                  mutant isn't proposed; for next, something is queued; for baseline, there's one \
+                  not covered; for gate check, the task isn't done; for ignore --accept or --remove, \
+                  the mutant isn't proposed or ignored; for next, something is queued; for baseline, there's one \
                   already, or none to prune",
         detail: "",
     },

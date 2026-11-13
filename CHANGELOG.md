@@ -5,8 +5,26 @@ newest come first.
 
 ## Unreleased
 
+### Additions
+
+- **An error is an event too.** In `--format=jsonl` and `--format=agent`, when mutastic can't run,
+  the last line on stdout is a `run-failed` event, with the error's `code`, its `message`, the
+  commands it ends in as `help`, each with whether it runs as it is, has a `<…>` to fill in, or is
+  a guess to check, the `exitCode`, and the error as stderr has it in `rendered`. A tool that reads
+  only stdout was left with nothing. See [When mutastic can't
+  run](docs/reference/events.md#when-mutastic-cant-run); the schema's copy has it.
+- **Each error has an entry on [the errors page](docs/reference/errors.md),** under its code: what
+  causes it, a kept copy of a real run, and what to do. Each command an error gives to run as it is,
+  is run by the docs test, and gets past the error.
+
 ### Fixes
 
+- **A closed stdout ends the run quietly.** `mutastic run | head -1` panicked and exited 101 when
+  `head` closed the pipe; it now stops writing and exits as the run would.
+- **Refusals are said on stderr, and stdout holds only results.** `baseline` with one already, or
+  none to prune, `ignore --accept` or `--remove` on a mutant that isn't proposed or ignored, and
+  `gate check` with no task open said so on stdout. `ignore --remove` on a mutant that isn't
+  ignored now exits 1, as `--accept` does.
 - **A directory that isn't there is said, with where mutastic looked.** `mutastic run mutastic-rs`
   in a workspace with no such directory said `couldn't run cargo: No such file or directory`. The
   directory is now checked before Cargo runs: mutastic says `there's no directory mutastic-rs in
