@@ -844,7 +844,8 @@ fn red_and_broken(work: &Path, shown: &mut BTreeMap<String, String>) {
     assert!(said.contains("src/lib.rs, line 27: "), "{said}");
     let rerun = said.lines().last().unwrap();
     let built = pasted(work, rerun);
-    let err = String::from_utf8_lossy(&built.stderr);
+    // Cargo writes the path as the platform does: `src\lib.rs` on Windows.
+    let err = String::from_utf8_lossy(&built.stderr).replace('\\', "/");
     assert!(
         !built.status.success() && err.contains("src/lib.rs:27:"),
         "{rerun}: {err}"
