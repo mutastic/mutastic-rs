@@ -3,8 +3,8 @@
 Two more cycles on the rule [Working test-first](test-first.md) started, each adding a tier, until
 the code says the same thing three times. Then the refactor, done: mutastic on the cycle's lines
 first, the change with the suite green, and mutastic on the lines it changed.
-[Working test-first](https://docs.mutastic.io/concepts/test-first/) says why mutastic comes where
-it does.
+[Working test-first](https://docs.mutastic.io/concepts/test-first/), under Concepts on the docs
+site, says why mutastic comes where it does.
 
 The spec, a tier at a time: loyal customers get 5 off orders of 30 or more, 10 off orders of 100 or
 more, and 20 off orders of 250 or more.
