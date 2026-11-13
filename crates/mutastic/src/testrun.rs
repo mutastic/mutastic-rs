@@ -277,18 +277,28 @@ pub fn parallel<T: Sync, R: Send>(
     workers: usize,
     work: impl Fn(&T) -> R + Sync,
 ) -> Vec<R> {
+    parallel_on(items, workers, |_, item| work(item))
+}
+
+/// [`parallel`], telling `work` which worker, from 0, runs each item: for a line per worker.
+pub fn parallel_on<T: Sync, R: Send>(
+    items: &[T],
+    workers: usize,
+    work: impl Fn(usize, &T) -> R + Sync,
+) -> Vec<R> {
     let next = AtomicUsize::new(0);
+    let (next, work) = (&next, &work);
     let mut results: Vec<(usize, R)> = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..workers.max(1))
-            .map(|_| {
-                scope.spawn(|| {
+            .map(|worker| {
+                scope.spawn(move || {
                     let mut done = Vec::new();
                     loop {
                         let index = next.fetch_add(1, Ordering::Relaxed);
                         let Some(item) = items.get(index) else {
                             break;
                         };
-                        done.push((index, work(item)));
+                        done.push((index, work(worker, item)));
                     }
                     done
                 })

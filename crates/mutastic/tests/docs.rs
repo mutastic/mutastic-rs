@@ -1427,6 +1427,39 @@ fn the_commands_reference_is_the_parsers_declarations() {
     }
 }
 
+/// Unsafe code lives in one module, `terminal`, and every block there says why it's sound.
+#[test]
+fn unsafe_code_stays_in_the_terminal_module() {
+    let allow = regex::Regex::new(r"allow\(\s*unsafe_code").unwrap();
+    let mut stack = vec![root().join("crates/mutastic/src")];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            // The workspace denies unsafe code, so a module needs to allow it to have any.
+            let text = std::fs::read_to_string(&path).unwrap();
+            let allows = allow.is_match(&text);
+            if path.ends_with("terminal.rs") {
+                assert!(allows);
+                assert_eq!(
+                    text.matches("unsafe {").count(),
+                    text.matches("// SAFETY: ").count(),
+                    "an unsafe block without its reason"
+                );
+            } else {
+                assert!(
+                    !allows,
+                    "{} allows unsafe code: it belongs in terminal.rs",
+                    path.display()
+                );
+            }
+        }
+    }
+}
+
 /// Every variable of the environment the command reads is on the reference's environment page.
 #[test]
 fn every_variable_read_is_declared() {
