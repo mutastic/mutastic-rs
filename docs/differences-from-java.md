@@ -83,9 +83,8 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
 - **`explain`** shows the change as source, `total >= 100 → (total) > (100)`, where the Java edition
   shows bytecode, and its `last run` comes from the `mutation.json` of the last run of every
   mutant, by `run` or `next`.
-- **`next`** queues the misses as the Java edition does, in the same words and events, but with no
-  `mutastic baseline` yet: so no new misses come first, `rank` has no `baseline` factor, and
-  `next-finished`'s `legacy` is always 0. `--top` takes at most one item a function, where Java
+- **`next`** queues the misses as the Java edition does, in the same words and events, new misses
+  before the baseline's. `--top` takes at most one item a function, where Java
   says a method. Whether the code under test is the same, so that only what the last `next` left
   uncaught runs, is a hash of the files mutastic mutates with their test code (`#[test]` functions
   and `#[cfg(test)]` modules) taken out, as Java hashes only the classes under test. See

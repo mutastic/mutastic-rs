@@ -576,7 +576,20 @@
         },
         "passed": {
           "type": "boolean",
-          "description": "Whether the score reached the threshold. For a run of mutants asked for by id (`--only`), whether every one was caught."
+          "description": "Whether the score reached the threshold. For a run of mutants asked for by id (`--only`), whether every one was caught. With `failOnNew`, whether no mutant no test catches was new: the threshold isn't applied."
+        },
+        "failOnNew": {
+          "const": true,
+          "description": "The run was judged on its new misses (`run --fail-on-new`), not on its score: it passes while every mutant no test catches, missed or not covered, is in the project's `.mutastic/baseline.yaml`. Only for such a run. Optional."
+        },
+        "newMisses": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/mutantId" },
+          "description": "With `failOnNew`, the mutants no test catches that the baseline doesn't hold, by id: what failed the run. Only with `failOnNew`."
+        },
+        "inBaseline": {
+          "$ref": "#/$defs/count",
+          "description": "With `failOnNew`, how many mutants no test catches the baseline holds: missed before, and still missed. Only with `failOnNew`."
         },
         "only": {
           "type": ["string", "null"],

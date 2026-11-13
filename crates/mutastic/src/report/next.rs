@@ -4,6 +4,9 @@
 //! [`PER_FUNCTION`] item a function and [`PER_FILE`] a file, so one function with many misses can't
 //! fill it. The words are the Java edition's `NextText`.
 //!
+//! Where the package has a baseline (`mutastic baseline`), the lines with a new miss come before
+//! those whose every mutant the baseline already has, each in the run's order.
+//!
 //! The mutants on one line are one item, as they share a card. A mutant proposed for ignoring
 //! (`ignore --propose`) isn't queued: the next step is a person's, to accept or withdraw it, and
 //! handing it back would have an agent decline it again. It's counted as waiting instead.
@@ -14,8 +17,8 @@ use std::fmt::Write as _;
 use serde_json::{json, Value};
 
 use super::{
-    agent_entry, brief_card, card, id_list, mutant_event, ranked, Entry, Format, Standing, Style,
-    View, DECLINE, EDITION, RULE, SCHEMA,
+    agent_entry, brief_card, card, id_list, is_legacy, mutant_event, new_first, ranked, Entry,
+    Format, Standing, Style, View, DECLINE, EDITION, RULE, SCHEMA,
 };
 use crate::engine::{Report, Status};
 
@@ -35,6 +38,8 @@ pub const PER_FILE: usize = 2;
 pub struct Asked<'a> {
     /// The ids proposed for ignoring, which wait on a person and aren't queued.
     pub proposed: &'a BTreeSet<String>,
+    /// The ids in the package's baseline, whose misses come after the new ones: none without one.
+    pub baseline: &'a BTreeSet<String>,
     /// The package's name, as the header says it.
     pub project: &'a str,
     /// The directory `mutastic` was pointed at, as the commands offered name it.
@@ -45,19 +50,26 @@ pub struct Asked<'a> {
     pub top: usize,
 }
 
-/// The queue: every missed line but those proposed for ignoring, in the run's order, and how many
-/// missed mutants wait on a person.
+/// The queue: every missed line but those proposed for ignoring, new misses before the baseline's,
+/// then in the run's order; how many missed mutants wait on a person; and how many of the lines
+/// the baseline already has.
 struct Queue<'a> {
     entries: Vec<Entry<'a>>,
     waiting: usize,
+    legacy: usize,
 }
 
 impl<'a> Queue<'a> {
-    fn of(view: &View<'a>, proposed: &BTreeSet<String>) -> Queue<'a> {
-        let entries = ranked(
+    fn of(view: &View<'a>, proposed: &BTreeSet<String>, baseline: &BTreeSet<String>) -> Queue<'a> {
+        let ranked = ranked(
             view,
             view.entries_where(|result| !proposed.contains(view.id(result))),
         );
+        let entries = new_first(view, ranked, baseline);
+        let legacy = entries
+            .iter()
+            .filter(|entry| is_legacy(view, entry, baseline))
+            .count();
         let waiting = view
             .report
             .results
@@ -65,7 +77,11 @@ impl<'a> Queue<'a> {
             .filter(|result| result.status == Status::Survived)
             .filter(|result| proposed.contains(view.id(result)))
             .count();
-        Queue { entries, waiting }
+        Queue {
+            entries,
+            waiting,
+            legacy,
+        }
     }
 
     /// How many mutants are queued.
@@ -118,9 +134,24 @@ pub struct Factor {
 }
 
 /// Why an item standing at `standing` is where it is, factor by factor, in the order they're
-/// applied. The Java edition's first factor, `baseline` (`new` or `legacy`), joins them once the
-/// Rust edition has a baseline; where it is in the code goes without saying.
-pub fn factors(standing: &Standing) -> Vec<Factor> {
+/// applied: first, where there's a baseline, whether the baseline had it (`legacy`) or it's a new
+/// miss; where it is in the code goes without saying.
+pub fn factors(standing: &Standing, legacy: Option<bool>) -> Vec<Factor> {
+    let baseline = legacy.map(|legacy| {
+        if legacy {
+            Factor {
+                signal: "baseline",
+                why: "in the baseline: missed before".into(),
+                value: json!("legacy"),
+            }
+        } else {
+            Factor {
+                signal: "baseline",
+                why: "not in the baseline: a new miss".into(),
+                value: json!("new"),
+            }
+        }
+    });
     let operator = if standing.prior == 2 {
         Factor {
             signal: "operator",
@@ -145,7 +176,12 @@ pub fn factors(standing: &Standing) -> Vec<Factor> {
         ),
         value: json!(covering),
     };
-    vec![operator, tests]
+    baseline.into_iter().chain([operator, tests]).collect()
+}
+
+/// Whether the baseline had an entry's every mutant, where there's a baseline to say.
+fn legacy(view: &View, entry: &Entry, asked: &Asked) -> Option<bool> {
+    (!asked.baseline.is_empty()).then(|| is_legacy(view, entry, asked.baseline))
 }
 
 /// `next`'s answer in the format asked, and whether anything is queued. `report` is the run it
@@ -156,7 +192,7 @@ pub fn next(report: Option<&Report>, asked: &Asked) -> (String, bool) {
         return (nothing_left(asked, 0), false);
     };
     let view = View { report };
-    let queue = Queue::of(&view, asked.proposed);
+    let queue = Queue::of(&view, asked.proposed, asked.baseline);
     if queue.entries.is_empty() {
         return (nothing_left(asked, queue.waiting), false);
     }
@@ -179,7 +215,7 @@ fn nothing_left(asked: &Asked, waiting: usize) -> String {
         waiting_on_a_person(waiting, " but ")
     );
     match asked.format {
-        Format::Jsonl => format!("{}\n", finished(0, 0, 0, waiting)),
+        Format::Jsonl => format!("{}\n", finished(0, 0, 0, 0, waiting)),
         Format::Agent => format!("mutastic next: {words}\n"),
         Format::Full | Format::Brief | Format::Concise | Format::Grouped => {
             format!("Next: {words}\n")
@@ -205,7 +241,7 @@ fn human(view: &View, queue: &Queue, asked: &Asked) -> String {
             card(&mut out, view, entry, style);
         }
         let _ = writeln!(out, " {}", style.bold(&ranked_because(at + 1)));
-        for factor in factors(&view.standing(entry)) {
+        for factor in factors(&view.standing(entry), legacy(view, entry, asked)) {
             let _ = writeln!(out, "   {}", factor.why);
         }
     }
@@ -223,7 +259,7 @@ fn agent(view: &View, queue: &Queue, asked: &Asked) -> String {
     let Some(head) = queue.entries.first() else {
         return nothing_left(asked, queue.waiting);
     };
-    let whys: Vec<String> = factors(&view.standing(head))
+    let whys: Vec<String> = factors(&view.standing(head), legacy(view, head, asked))
         .into_iter()
         .map(|factor| factor.why)
         .collect();
@@ -273,7 +309,7 @@ fn jsonl(view: &View, queue: &Queue, asked: &Asked) -> String {
         let mut event = mutant_event(view, entry.main);
         event["reason"] = json!("next-item");
         event["ids"] = json!(id_list(view, entry).split(',').collect::<Vec<_>>());
-        let factors: Vec<Value> = factors(&view.standing(entry))
+        let factors: Vec<Value> = factors(&view.standing(entry), legacy(view, entry, asked))
             .into_iter()
             .map(|factor| json!({ "signal": factor.signal, "value": factor.value, "why": factor.why }))
             .collect();
@@ -284,15 +320,15 @@ fn jsonl(view: &View, queue: &Queue, asked: &Asked) -> String {
         queue.entries.len(),
         queue.mutants(),
         shown.len(),
+        queue.legacy,
         queue.waiting,
     ));
     lines.iter().map(|line| format!("{line}\n")).collect()
 }
 
-/// `next-finished`: how many items and mutants are queued, how many items were shown, and how many
-/// missed mutants wait on a person. `legacy`, the queued items a baseline already has, is 0 while
-/// the Rust edition has no baseline.
-fn finished(queued: usize, mutants: usize, shown: usize, waiting: usize) -> Value {
+/// `next-finished`: how many items and mutants are queued, how many items were shown, how many of
+/// the queued items the baseline already has, and how many missed mutants wait on a person.
+fn finished(queued: usize, mutants: usize, shown: usize, legacy: usize, waiting: usize) -> Value {
     json!({
         "schema": SCHEMA,
         "edition": EDITION,
@@ -300,17 +336,26 @@ fn finished(queued: usize, mutants: usize, shown: usize, waiting: usize) -> Valu
         "queued": queued,
         "mutants": mutants,
         "shown": shown,
-        "legacy": 0,
+        "legacy": legacy,
         "waiting": waiting,
     })
 }
 
-/// `1 of 12 lines with missed mutants in pricing`, or `the first 2 of 12 …`, and what waits on a
-/// person.
+/// `1 of 12 lines with missed mutants in pricing`, or `the first 2 of 12 …`, how many are new where
+/// there's a baseline to say, and what waits on a person.
 fn header(queue: &Queue, asked: &Asked, shown: usize) -> String {
     let all = queue.entries.len();
+    let new = if asked.baseline.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " ({} new, {} in the baseline)",
+            all - queue.legacy,
+            queue.legacy
+        )
+    };
     format!(
-        "{} of {all} line{} with {} mutants in {}{}",
+        "{} of {all} line{} with {} mutants in {}{new}{}",
         if shown == 1 {
             "1".to_string()
         } else {
@@ -423,7 +468,7 @@ mod tests {
 
     #[test]
     fn each_factor_says_what_it_was_ranked_on() {
-        let condition = factors(&standing(2, 1, "src/lib.rs", 1));
+        let condition = factors(&standing(2, 1, "src/lib.rs", 1), None);
         assert_eq!(
             condition,
             [
@@ -440,13 +485,24 @@ mod tests {
                 },
             ]
         );
-        let other = factors(&standing(1, 3, "src/lib.rs", 1));
+        let other = factors(&standing(1, 3, "src/lib.rs", 1), None);
         assert_eq!(other[0].value, json!("other"));
         assert_eq!(
             other[0].why,
             "arithmetic or another change: more often noise"
         );
         assert_eq!(other[1].why, "3 tests run it, and none checks it");
+        let new = factors(&standing(1, 3, "src/lib.rs", 1), Some(false));
+        assert_eq!(
+            (new[0].signal, new[0].why.as_str(), &new[0].value),
+            ("baseline", "not in the baseline: a new miss", &json!("new"))
+        );
+        let legacy = factors(&standing(1, 3, "src/lib.rs", 1), Some(true));
+        assert_eq!(
+            (legacy[0].why.as_str(), &legacy[0].value),
+            ("in the baseline: missed before", &json!("legacy"))
+        );
+        assert_eq!(legacy.len(), 3);
     }
 
     #[test]

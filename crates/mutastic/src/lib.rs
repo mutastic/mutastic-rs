@@ -24,6 +24,7 @@ macro_rules! stderr_text {
     }};
 }
 
+pub mod baseline;
 pub mod callrules;
 pub mod cfg;
 pub mod cli;

@@ -3,7 +3,8 @@
 use serde_json::Value;
 
 /// `mutastic.events/v1`, pinned from the Java repository (`docs/public/schemas/events/v1.json` at
-/// b0d888c, with `mutant-explained` and the optional `docs` the mutant events gained). It asks `jdk`
+/// 424af48, with `mutant-explained`, the optional `docs` the mutant events gained, and
+/// `run-finished`'s `failOnNew`, `newMisses` and `inBaseline`, for `run --fail-on-new`). It asks `jdk`
 /// only of the Java edition's events, and every Rust event says `"edition": "rust"`, so it's taken
 /// as it is.
 pub fn schema() -> jsonschema::Validator {

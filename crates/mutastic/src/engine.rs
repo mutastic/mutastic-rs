@@ -121,6 +121,9 @@ pub struct Report {
     pub operators: Vec<&'static str>,
     /// This run against the last full run under the same operators, when there was one.
     pub comparison: Option<crate::record::Comparison>,
+    /// With `--fail-on-new`, the baseline the run is judged by: it passes on the misses the
+    /// baseline doesn't hold, not on its score.
+    pub fail_on_new: Option<crate::baseline::FailOnNew>,
 }
 
 impl Report {
@@ -147,8 +150,13 @@ impl Report {
         (scored > 0).then(|| 100.0 * detected as f64 / scored as f64)
     }
 
+    /// Whether the run passes: with `--fail-on-new`, when no mutant no test catches is new;
+    /// otherwise when the score reaches the threshold.
     pub fn passed(&self) -> bool {
-        self.score().is_none_or(|score| score >= self.threshold)
+        match &self.fail_on_new {
+            Some(judged) => judged.passes(self),
+            None => self.score().is_none_or(|score| score >= self.threshold),
+        }
     }
 }
 
@@ -373,6 +381,7 @@ pub fn run(
         share: None,
         operators: options.operators.clone(),
         comparison: None,
+        fail_on_new: None,
     })
 }
 
