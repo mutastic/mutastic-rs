@@ -205,8 +205,31 @@ fixture whose test sleeps through more than one heartbeat, stderr piped, every l
 It fails if two lines are further apart than the heartbeat plus a second, or if a phase passes
 without a line.
 
+## Live events: `--format=jsonl`
+
+Three events join `mutastic.events/v1`, additive, so a consumer that ignores reasons it doesn't
+know reads the stream as before. They go to stdout as they happen, among the others:
+
+```json
+{"schema":"mutastic.events/v1","edition":"rust","reason":"phase-started","phase":"building"}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"progress","phase":"mutants","elapsedMs":1450000,"done":2871,"total":5525,"weighted":0.52,"leftMs":1260000,"caught":2610,"missed":41,"notCovered":214,"timedOut":6,"running":8}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"phase-finished","phase":"building","durationMs":581000}
+```
+
+- `phase`: `reading`, `building`, `coverage`, `mutants` or `checking`.
+- `phase-started` when a phase begins; `phase-finished`, with `durationMs`, when it ends.
+- `progress` on the heartbeat's cadence (30 s, `MUTASTIC_HEARTBEAT`), whatever the format of
+  stderr, with what the phase knows: always `elapsedMs` (the phase's own); `done` and `total`
+  where there's a count (tests in coverage, mutants, missed mutants looked at in checking);
+  `round` and `crates` while Cargo builds; for mutants, `weighted` (0 to 1, three decimals),
+  `leftMs` once there's an estimate, the four fates' counts, and `running`, the busy workers.
+
+`run-started` stays where each edition has it (Rust's carries the build's profile, so it comes once
+the build is done), and the events before it are phase events only.
+
 ## Later
 
-Still to come: live JSONL `phase-started` and `progress` events (P2, once the Java edition's
-schema has them), and Gradle's footer (P3, the Java edition's alone). A preview of all of it:
+Still to come: Gradle's footer (P3, the Java edition's alone): the plugin reads the child's
+`progress` events and drives Gradle's own progress line, falling back to heartbeat lines where
+Gradle's internal API isn't there. A preview of all of it:
 https://claude.ai/artifact/EXHy5dovr98tnBYAfBXn2M
