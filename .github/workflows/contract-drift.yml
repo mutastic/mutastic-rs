@@ -1,0 +1,33 @@
+# Once a week, the editions' contract as it is on mutastic main, not as contract.json pins it: a
+# difference the Java repository has recorded or closed since the pin fails here, so the pin is
+# moved before the two editions drift apart unseen. It opens nothing: a red run is the signal.
+# Actions are pinned to a commit: a tag can be moved.
+name: Contract drift
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 16 Oct 2026
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: the contract on mutastic main
+        run: |
+          raw=$(jq -r .raw contract.json)
+          path=$(jq -r .path contract.json)
+          curl --fail --silent --show-error --location "$raw/main/$path" -o "$RUNNER_TEMP/contract.json"
+      - run: cargo test --locked --test contract
+        env:
+          MUTASTIC_CONTRACT: ${{ runner.temp }}/contract.json
