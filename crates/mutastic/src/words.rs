@@ -331,12 +331,30 @@ fn inputs_seen(seen: &BTreeMap<String, Vec<i128>>) -> Vec<String> {
     vec![format!("inputs seen: {}", each.join("; "))]
 }
 
+/// How many of a name's inputs a card shows: a property test passes hundreds, and a line of them
+/// says no more than its ends and how many there were.
+pub const INPUTS_SHOWN: usize = 10;
+
+/// The values, in order, or past [`INPUTS_SHOWN`] the smallest and largest few and how many:
+/// `-989, -974, -960, -959, -948, …, 884, 909, 948, 950 (64 values)`.
 fn join(values: &[i128]) -> String {
-    values
-        .iter()
-        .map(i128::to_string)
-        .collect::<Vec<_>>()
-        .join(", ")
+    let said = |values: &[i128]| {
+        values
+            .iter()
+            .map(i128::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    if values.len() <= INPUTS_SHOWN {
+        return said(values);
+    }
+    let end = INPUTS_SHOWN / 2;
+    format!(
+        "{}, …, {} ({} values)",
+        said(&values[..end]),
+        said(&values[values.len() - end..]),
+        values.len()
+    )
 }
 
 /// A comparison of a name with a number: `total >= 100`, or `100 <= total`.
