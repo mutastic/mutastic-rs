@@ -171,7 +171,8 @@ pub struct SuggestedTest {
 
 /// The inputs to try, each a value for every one of `types`: the constants near the change and
 /// either side of each, the values the tests passed, then a few small numbers, as the Java edition
-/// tries them, the earlier first, leaving out a value its type can't hold.
+/// tries them, the earlier first, leaving out a value its type can't hold. Where a property test
+/// passed more values than a card shows, the small numbers come before the values seen.
 pub fn candidates(
     types: &[&str],
     constants: &[i128],
@@ -181,8 +182,19 @@ pub fn candidates(
     let near = constants
         .iter()
         .flat_map(|&constant| [constant, constant - 1, constant + 1]);
-    let seen = inputs.values().flatten().copied();
-    for value in near.chain(seen).chain([0, 1, 2, 3, -1, 10]) {
+    let small = [0, 1, 2, 3, -1, 10];
+    // A name a property test passed hundreds of values: the values are a generator's, and a test
+    // named for one reads as noise, so the small numbers come before them.
+    let generated = inputs
+        .values()
+        .any(|values| values.len() > crate::words::INPUTS_SHOWN);
+    let seen: Vec<i128> = inputs.values().flatten().copied().collect();
+    let (first, then) = if generated {
+        (small.to_vec(), seen)
+    } else {
+        (seen, small.to_vec())
+    };
+    for value in near.chain(first).chain(then) {
         if !values.contains(&value) {
             values.push(value);
         }
@@ -875,6 +887,15 @@ mod tests {
             unbuilt.meaning,
             "free_from (Delivery's field, set when it's made)"
         );
+    }
+
+    #[test]
+    fn a_generator_s_values_come_after_the_small_numbers() {
+        let many = BTreeMap::from([("a".to_string(), (-500..-400).collect::<Vec<i128>>())]);
+        let found = candidates(&["i64"], &[], &many);
+        assert_eq!(found[..3], [vec![0], vec![1], vec![2]]);
+        let few = BTreeMap::from([("a".to_string(), vec![-450, 7])]);
+        assert_eq!(candidates(&["i64"], &[], &few)[0], [-450]);
     }
 
     #[test]

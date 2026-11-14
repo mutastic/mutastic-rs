@@ -73,6 +73,11 @@ newest come first.
 
 ### Fixes
 
+- **A property test's inputs don't flood a card.** Past 10 values, "inputs seen" shows the five
+  smallest and five largest and how many: `a = -931, -923, -791, -777, -723, …, 884, 909, 948,
+  950 (62 values)`. Where a property test passed a name that many values, the suggested test tries
+  small numbers before them, so it reads `add_with_a_0_and_b_1`, not a value a generator drew.
+
 - **A property test draws the same cases in every run.** mutastic sets `PROPTEST_RNG_SEED` for
   the tests it runs, unless you've set it, and turns proptest's saved failures off. A property that
   fails for some cases fails in every run or in none, so it can't stop one run, be called flaky in
