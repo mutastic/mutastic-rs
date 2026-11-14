@@ -30,6 +30,15 @@ pub const RULE: &str =
 pub const NO_REWRITE: &str =
     "Never change production code to make a mutant go away: tell the person.";
 pub const DECLINE: &str = "if a mutant's case can't happen in practice, or the change is one no caller can see, don't contrive a test: propose ignoring it, for a person to accept, as the kind it is (equivalent, unreachable, telemetry, deprecated or accepted-risk), with the reason in two sentences: the one case where it differs, and why that can't happen";
+/// With two or more mutants to write a test for, how an agent takes them: a task list, then one at
+/// a time, each proved before the next. The Java edition and the HTML report's Copy as prompt say
+/// the same; `verify` is the run's own `mutastic verify` for `<id>`.
+pub fn tasks(verify: &str) -> String {
+    format!(
+        "first make a task list with one item per mutant, grouped by file; then take them one at a time: write its test, run `{verify}`, and mark it done before starting the next"
+    )
+}
+
 /// The reason a proposal gives, as the Java edition's: the one case where the mutant differs, and
 /// why that can't happen, for a person to check in place of a test.
 pub const REASON: &str = "Differs only when <case>. That can't happen because <why>.";
@@ -2015,6 +2024,9 @@ fn agent(report: &Report, style: Style) -> String {
         "decline: {DECLINE} (`{}`)",
         view.command("propose", "<id>")
     );
+    if report.count(Status::Survived) + report.count(Status::NoCoverage) >= 2 {
+        let _ = writeln!(out, "tasks: {}", tasks(&view.command("verify", "<id>")));
+    }
     for line in not_mutated(report) {
         let _ = writeln!(out, "{line}");
     }
