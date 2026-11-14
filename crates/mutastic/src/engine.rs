@@ -473,7 +473,7 @@ pub fn run(
     });
     let mutants_took = mutants_started.elapsed();
     progress(Progress::Ran { took: mutants_took });
-    let runs = Runs {
+    let runs = BuildRuns {
         found: &found,
         first: &first,
         built: &built,
@@ -1184,7 +1184,7 @@ fn result(
 
 /// The false-catch guard's runs ([`crate::guard`]), on the run's build and the tests the coverage
 /// pass kept.
-struct Runs<'a> {
+struct BuildRuns<'a> {
     found: &'a Crate,
     /// For each mutant, the first live mutant at its site: what the coverage pass recorded.
     first: &'a [u32],
@@ -1195,13 +1195,13 @@ struct Runs<'a> {
     workers: usize,
 }
 
-impl Runs<'_> {
+impl BuildRuns<'_> {
     fn test(&self, display: &str) -> Option<usize> {
         self.tests.iter().position(|test| test.display == display)
     }
 }
 
-impl crate::guard::Runs for Runs<'_> {
+impl crate::guard::Runs for BuildRuns<'_> {
     fn time_of(&self, test: &str) -> Duration {
         self.test(test)
             .map_or(Duration::ZERO, |index| self.reach[index].took)
@@ -1398,7 +1398,8 @@ pub fn not_a_mutant(id: &str, package: &str, dir: &str, found: &Crate) -> String
         format!(" There's one called {close}.")
     });
     format!(
-        "{id} isn't a mutant of {package}.{close} To see its mutants:\n  mutastic mutants {dir}"
+        "{id} isn't a mutant of {package}.{close} To see its mutants:\n  mutastic mutants {}",
+        crate::report::shell_word(dir)
     )
 }
 

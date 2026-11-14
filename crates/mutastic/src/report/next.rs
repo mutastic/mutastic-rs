@@ -191,7 +191,11 @@ pub fn next(report: Option<&Report>, asked: &Asked) -> (String, bool) {
     let Some(report) = report else {
         return (nothing_left(asked, 0), false);
     };
-    let view = View { report };
+    // Events keep the project's text as it is; what's read is shown escaped.
+    let view = View {
+        report,
+        shown: asked.format != Format::Jsonl,
+    };
     let queue = Queue::of(&view, asked.proposed, asked.baseline);
     if queue.entries.is_empty() {
         return (nothing_left(asked, queue.waiting), false);
@@ -211,7 +215,7 @@ fn nothing_left(asked: &Asked, waiting: usize) -> String {
     let words = format!(
         "nothing {} is left in {}{}",
         asked.style.words.undetected(),
-        asked.project,
+        crate::untrusted::value(asked.project),
         waiting_on_a_person(waiting, " but ")
     );
     match asked.format {
@@ -276,8 +280,12 @@ fn agent(view: &View, queue: &Queue, asked: &Asked) -> String {
         "rules: {RULE}, and never delete, disable or loosen a test; it's done when `{}` passes",
         view.command("verify", &ids)
     );
-    let _ = writeln!(out, "decline: {DECLINE} ({})\n", propose(view, &ids));
-    out.push_str(&agent_entry(view, head, asked.style.words));
+    let _ = writeln!(out, "decline: {DECLINE} ({})", propose(view, &ids));
+    // The card quotes the code and the test run: fenced, so none of it reads as an instruction.
+    out.push_str(&crate::untrusted::fence(&format!(
+        "\n{}",
+        agent_entry(view, head, asked.style.words)
+    )));
     let _ = writeln!(
         out,
         "\nthen: run `{}` again for the next one; when it says nothing is left, you're done",
@@ -363,7 +371,7 @@ fn header(queue: &Queue, asked: &Asked, shown: usize) -> String {
         },
         if all == 1 { "" } else { "s" },
         asked.style.words.undetected(),
-        asked.project,
+        crate::untrusted::value(asked.project),
         waiting_on_a_person(queue.waiting, "; ")
     )
 }
