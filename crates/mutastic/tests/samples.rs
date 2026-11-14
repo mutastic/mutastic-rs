@@ -90,6 +90,42 @@ fn pricing_misses_only_the_edge_of_the_discount() {
         missed["mutation"]["applied"]["text"],
         "total >= 100 -> (total) > (100)"
     );
+    // `original` is the source span replaced and `replacement` what replaces it, as the Java
+    // edition gives them: written over the location, each makes its mutant's line.
+    let source = std::fs::read_to_string(Path::new(&dir).join("src/lib.rs")).unwrap();
+    let lines: Vec<&str> = source.lines().collect();
+    let mut mutated = Vec::new();
+    for mutant in &mutants {
+        let mutation = &mutant["mutation"];
+        let original = mutation["original"]
+            .as_str()
+            .expect("every mutant has an original");
+        let replacement = mutation["replacement"].as_str().unwrap();
+        let line = lines[mutant["location"]["line"].as_u64().unwrap() as usize - 1];
+        let column = mutant["location"]["column"].as_u64().unwrap() as usize - 1;
+        let (before, from) = line.split_at(line.char_indices().nth(column).unwrap().0);
+        let after = from
+            .strip_prefix(original)
+            .unwrap_or_else(|| panic!("{original:?} isn't at the location of {mutant}"));
+        mutated.push(format!("{} {before}{replacement}{after}", mutant["id"]));
+    }
+    mutated.sort();
+    assert_eq!(
+        mutated,
+        [
+            "\"m1636f6d5\"         if false {",
+            "\"m383e0002\"         1",
+            "\"m3be6b420\"         if true {",
+            "\"m6d05659f\"             return 0;",
+            "\"m7d92063c\"         if total <= self.free_shipping_from {",
+            "\"m89be540d\"         if false {",
+            "\"m95f96847\"             return total * 10;",
+            "\"mb2f8ae57\"         if total > 100 {",
+            "\"mbddcd9c4\"             return 0;",
+            "\"mc9e13290\"         1",
+            "\"md56e8c39\"         if true {",
+        ]
+    );
     let finished = events.last().unwrap();
     assert_eq!(finished["reason"], "run-finished");
     assert_eq!(finished["score"], 90.9);
