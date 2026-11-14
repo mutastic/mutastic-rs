@@ -489,6 +489,29 @@ fn missed_mutants_are_ranked_as_the_java_edition_ranks_them() {
     );
 }
 
+/// With more than one mutant to write a test for, the agent format says to take them as a task
+/// list, one at a time, after the rules and before the fenced entries; with one, it doesn't.
+#[test]
+fn more_than_one_miss_is_a_task_list() {
+    let ranking = fixture("ranking");
+    let (_, many) = mutastic(&["run", &ranking, "--format=agent", "--report=none"]);
+    let line = format!(
+        "tasks: {}",
+        mutastic::report::tasks(&format!("mutastic verify <id> {ranking}"))
+    );
+    let at = many.find(&line).unwrap_or_else(|| panic!("{line}\n{many}"));
+    assert!(at > many.find("\ndecline: ").unwrap(), "{many}");
+    assert!(at < many.find("<<mutastic-data ").unwrap(), "{many}");
+
+    let (_, one) = mutastic(&[
+        "run",
+        &fixture("pricing"),
+        "--format=agent",
+        "--report=none",
+    ]);
+    assert!(!one.contains("\ntasks: "), "{one}");
+}
+
 /// At a terminal, the phase's line is a live block redrawn in place, with wrapping off while it's
 /// drawn: each permanent line clears it first and draws it again beneath, and it's cleared before
 /// the result.

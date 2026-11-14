@@ -33,6 +33,10 @@ newest come first.
 
 ### Additions
 
+- **With more than one test to write, the agent format says how to take them.** After `rules:`
+  and `decline:`, a `tasks:` line asks the agent to make a task list, one item per mutant grouped
+  by file, then write each test, run its `mutastic verify` and mark it done before the next. The
+  Java edition and the HTML report's Copy as prompt say the same.
 - **A run with no mutant to run builds nothing and runs no test.** `mutastic run --since=HEAD` on
   a clean tree took a build and a pass of every test, a minute and more on a big crate, to say
   there was nothing to measure. When no mutant is there to run (no changed lines, changed lines
@@ -83,6 +87,19 @@ newest come first.
   0 to 100, not 150`.
 
 ### Fixes
+
+- **The test named as catching a mutant is the same in every run.** A mutant's covering tests run
+  together, on several threads, and the first to fail was named: where several cases catch it, as
+  cases written alike do, the name changed from run to run, and with it `mutation.json` and the
+  report's tests. The test named is now the first of those that failed as the tests are listed,
+  the library's before the other targets'.
+
+- **A property test draws the same cases in every run.** mutastic sets `PROPTEST_RNG_SEED` for
+  the tests it runs, unless you've set it, and turns proptest's saved failures off. A property that
+  fails for some cases fails in every run or in none, so it can't stop one run, be called flaky in
+  the next and catch a mutant in a third; and a case one of mutastic's runs saved can't decide its
+  next runs. `proptest-regressions/` isn't copied, so the cases you've saved aren't replayed, and
+  nothing is written to your tree.
 
 - **The gate knows a case by the name it runs under.** rstest and test-case give each case a test
   of its own, `halves::case_1`, and no function has that name. A case that failed at a check was
