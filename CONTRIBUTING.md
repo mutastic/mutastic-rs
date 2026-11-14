@@ -157,6 +157,23 @@ git config core.hooksPath .githooks
 CI runs the same check on each new commit in a push or pull request (`.githooks/check-commits`),
 counting from the commit that added the hook. `sh .githooks/test-commit-msg` tests the hook.
 
+A pull request is squash-merged, and GitHub writes its title and " (#<number>)" as the subject on
+`main`, where the check counts the whole line. So the title follows the same rules with the
+suffix counted: at most 44 characters for #10 to #99, 43 for #100 to #999. CI checks it
+(`.githooks/check-title`), again whenever the title is edited, and says the limit for the pull
+request's number.
+
+Merge with `.githooks/merge-pr`, not `gh pr merge` by hand. It writes the subject from the title,
+takes the body from a file (wrapped at 72) or leaves it empty, checks the whole message with
+`commit-msg`, and merges only once every check has passed, on the commit they ran on. It deletes
+the branch on GitHub and leaves local branches and worktrees alone. `--admin` merges without
+waiting for the checks, for one that can't pass; the message is still checked.
+
+```sh
+sh .githooks/merge-pr 59            # subject "<title> (#59)", no body
+sh .githooks/merge-pr 59 body.txt   # with a body that says why
+```
+
 ## Releases
 
 A release is a version tag, `v<version>`, matching the version in `Cargo.toml`: the release
