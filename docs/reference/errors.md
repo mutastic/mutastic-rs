@@ -140,7 +140,7 @@ mutastic verify mb2f8ae57 fixtures/pricing --threshold=70
 
 <!-- output: errors/option-not-taken -->
 ```text
-mutastic: verify doesn't take --threshold: mutastic verify <id>[,<id>…] [<id>…] [dir]
+mutastic: verify doesn't take --threshold: mutastic verify ID... [DIR]
 ```
 
 ## `extra-words`
@@ -153,7 +153,7 @@ mutastic mutants fixtures/pricing fixtures/workspace
 
 <!-- output: errors/extra-words -->
 ```text
-mutastic: mutants doesn't take fixtures/workspace: mutastic mutants [dir]
+mutastic: mutants doesn't take fixtures/workspace: mutastic mutants [DIR]
 ```
 
 ## `needs-id`
@@ -167,7 +167,7 @@ mutastic verify fixtures/pricing
 
 <!-- output: errors/needs-id -->
 ```text
-mutastic: verify needs a mutant's id, m and eight hex digits as a card shows it, and fixtures/pricing is a directory: mutastic verify <id>[,<id>…] [<id>…] [dir], as in mutastic verify m1a2b3c4d fixtures/pricing
+mutastic: verify needs a mutant's id, m and eight hex digits as a card shows it, and fixtures/pricing is a directory: mutastic verify ID... [DIR], as in mutastic verify m1a2b3c4d fixtures/pricing
 ```
 
 ## `unknown-id`

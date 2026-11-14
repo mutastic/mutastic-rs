@@ -259,7 +259,7 @@ keeps only the result.
 
 ## One mutant, explained
 
-`mutastic explain <id> [dir]` runs that one mutant and shows its card when it's missed, or what
+`mutastic explain ID [DIR]` runs that one mutant and shows its card when it's missed, or what
 became of it otherwise, then what it is: the change, its operator, how its id is made, where it is,
 and how the last run of every mutant went for it, from that run's `mutation.json`, which a full
 `mutastic run` writes, and `mutastic next` when it runs every mutant. Under the operator, `docs:`

@@ -13,70 +13,6 @@ use crate::shares::EVENTS;
 use crate::sites::UnsafeMode;
 use crate::{baseline, commands, gate, ignores, java, sites, testrun, workspace, wrapper};
 
-const USAGE: &str = "\
-mutastic: find the tests that run your code but don't check it
-
-Usage:
-  mutastic run [dir] [options]       Mutate the package in dir (default .) and run its tests
-  mutastic verify <id>… [dir]        Pass when a test catches each mutant named, the ids split
-                                     by commas or spaces
-  mutastic explain <id> [dir]        Everything known of one mutant, with its tests run
-  mutastic ignore <id> [dir] --reason=<why>
-                                     Record a decision not to test one mutant, in
-                                     .mutastic/ignores.yaml; --as=<kind> says what sort; --propose
-                                     proposes it for a person to accept (--accept <id>);
-                                     --remove <id> takes one back; --prune those whose line changed
-  mutastic gate open|check|close [dir]
-                                     Gate a coding agent's task on its changed lines' mutants:
-                                     open keeps where it starts, check says whether it's done
-                                     (--hook=claude answers as Claude Code's hooks, --tries=<n>),
-                                     close forgets it; gate <action> --help says more
-  mutastic mutants [dir]             List the mutants, without running anything
-  mutastic baseline [dir]            Record every mutant missed now in .mutastic/baseline.yaml, so
-                                     later misses are told from them; --prune drops those the
-                                     tests catch now
-  mutastic next [dir]                The missed mutant most worth a test first, why, and the test
-                                     to write; while the code under test is the same, it runs only
-                                     what the last next left uncaught
-  mutastic <command> --help          One command's words, options and exit status
-
-Options:
-  --only=<id>[,<id>…]   Run only these mutants
-  --format=<format>     full (default at a terminal), brief, concise, grouped, agent or jsonl
-  --threshold=<score>   The score a run must reach to pass (default 80)
-  --fail-on-new         Pass when every mutant no test catches is in .mutastic/baseline.yaml,
-                        and fail on one that isn't, whatever the score
-  --operators=<set>     defaults, stronger or extended, or operator ids separated by commas
-  --workers=<n>         Tests run side by side (default half the cores, at most 4)
-  --unsafe=<mode>       skip (default): leave unsafe code and functions holding an unsafe block
-                        alone; enclosing: mutate those functions too; all: unsafe code as well
-  --since[=<ref>]       Run only the mutants on lines changed since the merge-base of HEAD and
-                        <ref> (default: the default branch), uncommitted and new files included
-  --report=<kind>[:<path>]  Write a report file: json (mutation.json) or html (mutation.html), in
-                        target/mutastic unless a path is given; repeat it for more, or none.
-                        A full run writes both by default
-  --shard=<n>/<m>       Run only the nth of m shares of the mutants, to split one run across
-                        machines; it keeps its results in target/mutastic/shares/<n>-of-<m>
-  --from-shards=<dir>   Run no mutants: put together the results every share of a split run
-                        kept, found anywhere in dir, as the whole run
-  --no-suggestions      Don't look for a test that catches each missed mutant, which runs the
-                        missed mutant's function outside the tests
-  --force-coverage      Build and run every test even when no mutant is there to run, to check
-                        or time the suite
-  --top=<n>             How many of next's queue to show, at most one a function and two a
-                        file (default 1, at most 25)
-  --progress=<mode>     auto (default): a line redrawn in place at a terminal, none for agent
-                        and jsonl; bar, counter (a line every so often) or none
-  --vocabulary=<words>  plain (default) says caught and missed; classic says killed and survived
-  --color=<when>        auto (default): colour on a terminal that wants it; always or never
-  --hyperlinks=<when>   auto (default): file locations as links on a terminal; always or never
-  --edition=<edition>   rust or java: which edition runs. Unless given, the build file in dir, or
-                        the nearest above it, decides: Cargo.toml for rust; pom.xml, build.gradle
-                        or settings.gradle for java, which is fetched the first time it's needed
-
-Exit status: 0 when the run passes, verify's mutants are caught, or next has nothing queued; 1
-when it doesn't; 2 when mutastic couldn't run.";
-
 pub fn main(args: Vec<OsString>) -> ExitCode {
     if wrapper::active(&args) {
         return wrapper::run(&args);
@@ -534,16 +470,16 @@ fn arguments(command: &str, parsed: &Parsed) -> Result<(), String> {
     let synopsis = |name: &str| commands::command(name).map_or("", |command| command.synopsis);
     let (usage, takes_id, most) = match command {
         "run" | "mutants" | "next" | "baseline" => (synopsis(command), false, 1),
-        "build" => ("mutastic build [dir] --fraction=<share>", false, 1),
+        "build" => ("mutastic build [DIR] --fraction=SHARE", false, 1),
         "verify" => (
             synopsis(command),
             true,
             1 + verify_ids(&parsed.positional).1,
         ),
         "explain" => (synopsis(command), true, 2),
-        "ignore" if parsed.prune => ("mutastic ignore --prune [dir]", false, 1),
+        "ignore" if parsed.prune => ("mutastic ignore --prune [DIR]", false, 1),
         "ignore" => (synopsis(command), true, 2),
-        "gate" => ("mutastic gate open|check|close [dir]", false, 2),
+        "gate" => ("mutastic gate open|check|close [DIR]", false, 2),
         _ => return Ok(()),
     };
     if command == "run" {
@@ -742,8 +678,9 @@ fn configured_dir(given: &str) -> Option<std::path::PathBuf> {
 }
 
 fn dispatch(args: &[String]) -> Result<ExitCode, String> {
+    // With nothing to do, the help goes where errors go: stdout holds only results.
     let Some(command) = args.first() else {
-        stdout_line!("{USAGE}");
+        stderr_line!("{}", crate::help::general());
         return Ok(ExitCode::from(2));
     };
     if let Some(help) = help(args)? {
@@ -805,7 +742,7 @@ fn help(args: &[String]) -> Result<Option<String>, String> {
     let (command, rest) = match args.first().map(String::as_str) {
         Some("help" | "--help" | "-h") => match args.get(1) {
             Some(command) => (command, &args[2..]),
-            None => return Ok(Some(USAGE.to_string())),
+            None => return Ok(Some(crate::help::general())),
         },
         Some(_) if args[1..].iter().any(asks) => (&args[0], &args[1..]),
         _ => return Ok(None),
@@ -817,14 +754,14 @@ fn help(args: &[String]) -> Result<Option<String>, String> {
             None => ["open", "check", "close"]
                 .iter()
                 .filter_map(|action| commands::command(&format!("gate {action}")))
-                .map(commands::help)
+                .map(crate::help::of)
                 .collect::<Vec<_>>()
                 .join("\n\n"),
         };
         return Ok(Some(text));
     }
     match commands::command(command) {
-        Some(declared) => Ok(Some(commands::help(declared))),
+        Some(declared) => Ok(Some(crate::help::of(declared))),
         None if args[0] == *command => Ok(None),
         None => Err(crate::mistyped::command_at(args, 1)),
     }
@@ -1253,7 +1190,7 @@ fn recorded(
 fn verify(parsed: &Parsed) -> Result<ExitCode, String> {
     let (only, taken) = verify_ids(&parsed.positional);
     if only.is_empty() {
-        return Err("verify needs a mutant's id: mutastic verify <id> [dir]".into());
+        return Err("verify needs a mutant's id: mutastic verify ID... [DIR]".into());
     }
     let dir = parsed.positional.get(taken).map_or(".", String::as_str);
     let progress = start(parsed, false);
@@ -1296,7 +1233,7 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, String> {
 /// it, with how the last full run went. It explains; it doesn't judge, so it exits 0.
 fn explain(parsed: &Parsed) -> Result<ExitCode, String> {
     let Some(id) = parsed.positional.first() else {
-        return Err("explain needs a mutant's id: mutastic explain <id> [dir]".into());
+        return Err("explain needs a mutant's id: mutastic explain ID [DIR]".into());
     };
     if let Some(other) = parsed
         .format
@@ -1339,7 +1276,7 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, String> {
             let dir = parsed.positional.first().map_or(".", String::as_str);
             return prune(dir);
         }
-        return Err("ignore needs a mutant's id: mutastic ignore <id> [dir] --reason=WHY".into());
+        return Err("ignore needs a mutant's id: mutastic ignore ID [DIR] --reason=WHY".into());
     };
     let dir = parsed
         .positional
@@ -1569,7 +1506,7 @@ fn shell(word: &str) -> String {
 /// `gate open`, `gate check` or `gate close`, as the Java edition's: see [`gate`].
 fn gate_command(parsed: &Parsed) -> Result<ExitCode, String> {
     let Some(action) = parsed.positional.first().cloned() else {
-        return Err("gate needs open, check or close: mutastic gate open [dir]".into());
+        return Err("gate needs open, check or close: mutastic gate open [DIR]".into());
     };
     if parsed.help {
         stdout_line!("{}", gate_help(&action)?);
@@ -1616,7 +1553,7 @@ fn gate_command(parsed: &Parsed) -> Result<ExitCode, String> {
 
 fn gate_help(action: &str) -> Result<String, String> {
     commands::command(&format!("gate {action}"))
-        .map(commands::help)
+        .map(crate::help::of)
         .ok_or_else(|| no_gate_action(action))
 }
 
@@ -2267,10 +2204,11 @@ mod tests {
         }
     }
 
-    /// The help lists every option declared, and only those.
+    /// The help lists every option declared, and only those, and its examples parse.
     #[test]
     fn the_usage_lists_the_options_declared() {
-        let listed: std::collections::BTreeSet<&str> = USAGE
+        let general = crate::help::general();
+        let listed: std::collections::BTreeSet<&str> = general
             .split(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
             .filter_map(|word| word.strip_prefix("--"))
             .filter(|name| *name != "help")
@@ -2278,6 +2216,9 @@ mod tests {
         let declared: std::collections::BTreeSet<&str> =
             commands::OPTIONS.iter().map(|option| option.name).collect();
         assert_eq!(listed, declared);
+        for example in crate::help::EXAMPLES {
+            assert_eq!(check(&words(example)), Ok(()), "{example}");
+        }
     }
 
     /// Every line a mistyped command is answered with parses, as typed: what it offers works.
@@ -2354,7 +2295,7 @@ mod tests {
     /// `run --help`, `run -h` and `help run` print run's help; nothing runs.
     #[test]
     fn help_after_a_command_is_that_commands() {
-        let run = commands::help(commands::command("run").unwrap());
+        let run = crate::help::of(commands::command("run").unwrap());
         for typed in [
             "run --help",
             "run -h",
@@ -2363,8 +2304,8 @@ mod tests {
         ] {
             assert_eq!(help(&words(typed)), Ok(Some(run.clone())), "{typed}");
         }
-        assert_eq!(help(&words("--help")), Ok(Some(USAGE.to_string())));
-        let open = commands::help(commands::command("gate open").unwrap());
+        assert_eq!(help(&words("--help")), Ok(Some(crate::help::general())));
+        let open = crate::help::of(commands::command("gate open").unwrap());
         assert_eq!(help(&words("gate open --help")), Ok(Some(open.clone())));
         assert!(help(&words("gate --help"))
             .unwrap()

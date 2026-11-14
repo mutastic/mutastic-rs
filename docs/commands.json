@@ -5,9 +5,9 @@
     {
       "name": "run",
       "page": "run",
-      "synopsis": "mutastic run [dir] [options]",
+      "synopsis": "mutastic run [DIR] [OPTIONS]",
       "summary": "Mutate the package and run its tests against each mutant",
-      "detail": "dir is the package's directory, here unless given; in a workspace, a member's. The run passes when the score reaches the threshold, or with --fail-on-new when every mutant no test catches is in the baseline. A full run, one without --only, writes report files, and offers the commands to work on each missed mutant. Its progress goes to stderr, so stdout holds only the result. --shard runs one share of the mutants, for splitting a run across CI jobs, and --from-shards puts the shares back together as the whole run.",
+      "detail": "DIR is the package's directory, here unless given; in a workspace, a member's. The run passes when the score reaches the threshold, or with --fail-on-new when every mutant no test catches is in the baseline. A full run, one without --only, writes report files, and offers the commands to work on each missed mutant. Its progress goes to stderr, so stdout holds only the result. --shard runs one share of the mutants, for splitting a run across CI jobs, and --from-shards puts the shares back together as the whole run.",
       "exits": "0 when the score reaches the threshold, 1 when it doesn't; with --fail-on-new, 0 when every mutant no test catches is in the baseline, 1 when one isn't.",
       "takesMutantId": false,
       "examples": [
@@ -64,7 +64,7 @@
     {
       "name": "verify",
       "page": "verify",
-      "synopsis": "mutastic verify <id>[,<id>…] [<id>…] [dir]",
+      "synopsis": "mutastic verify ID... [DIR]",
       "summary": "Run mutants' tests: it passes when they catch every one not skipped",
       "detail": "How a fix is proved: each missed mutant offers it as \"done when\", and a card with several mutants names them all, split by commas; spaces split them too, and the directory comes after them. An id names its mutant whatever options showed it, so verify needs no --operators or --unsafe to find one.",
       "exits": "0 when it catches each mutant named, or the mutant is skipped or crashed where a crash proves nothing; 1 while one is still missed or not covered.",
@@ -92,7 +92,7 @@
     {
       "name": "explain",
       "page": "explain",
-      "synopsis": "mutastic explain <id> [dir]",
+      "synopsis": "mutastic explain ID [DIR]",
       "summary": "Everything known of one mutant, with its tests run",
       "detail": "Its card when it's missed, or what became of it otherwise, then what the change is, its operator, how its id is made, where it is, and how the last run of every mutant, by run or next, went for it, from that run's mutation.json.",
       "exits": "0 whatever the mutant's result: it explains, it doesn't judge.",
@@ -121,7 +121,7 @@
     {
       "name": "ignore",
       "page": "ignore",
-      "synopsis": "mutastic ignore <id> [dir] --reason=<why>",
+      "synopsis": "mutastic ignore ID [DIR] --reason=WHY",
       "summary": "Record a decision not to test one mutant",
       "detail": "It goes in .mutastic/ignores.yaml in the package's directory with its line and the reason, to commit and review, and lapses when that line changes: the mutant runs again, and run-finished lists it in staleIgnores. --remove takes one back; ignore --prune takes away every one that has lapsed. --propose records it in .mutastic/proposals.yaml instead, for a person to accept with --accept: how a coding agent says a mutant isn't worth a test, since until then it still counts as missed. A proposal that a mutant is equivalent or unreachable says the one case where it differs, and why that can't happen. It runs no tests, and each step says how to undo it.",
       "exits": "0 when the decision is recorded, proposed, accepted or removed; 1 when --accept names a mutant that isn't proposed, or --remove one that isn't ignored.",
@@ -161,7 +161,7 @@
     {
       "name": "next",
       "page": "next",
-      "synopsis": "mutastic next [dir] [options]",
+      "synopsis": "mutastic next [DIR] [OPTIONS]",
       "summary": "Show the missed mutant most worth a test first, and why",
       "detail": "The missed mutants as a queue, one line's at a time, in the order a run ranks them: its card, why it's first, and the command that says when it's done. --top shows the first few, spread over the code. With a baseline, new misses come before the baseline's. While the code under test is the same, it runs only the mutants the last next left uncaught, so any a new test catches drop out; once that code changes, it runs every mutant again. A mutant proposed for ignoring isn't queued: it waits on a person. For an agent, one task, and to run next again after it.",
       "exits": "0 when nothing missed is left, or only mutants proposed for ignoring; 1 while something is queued.",
@@ -198,7 +198,7 @@
     {
       "name": "baseline",
       "page": "baseline",
-      "synopsis": "mutastic baseline [dir] [options]",
+      "synopsis": "mutastic baseline [DIR]",
       "summary": "Record every mutant missed now, so later misses are told from them",
       "detail": "Runs the mutants and writes each one missed or not covered, by id, to .mutastic/baseline.yaml in the package's directory, to commit. From then on a miss that isn't in it is new: gate holds only new misses, next offers them first, and run --fail-on-new fails only on them. It's never rewritten to take in new misses: --prune runs the mutants and drops the baseline's that are caught now.",
       "exits": "0 when the baseline is written or pruned; 1 when there's one already and --prune isn't given, or --prune is given and there's none.",
@@ -225,7 +225,7 @@
     {
       "name": "gate open",
       "page": "gate-open",
-      "synopsis": "mutastic gate open [dir]",
+      "synopsis": "mutastic gate open [DIR]",
       "summary": "Start gating a coding agent's task: keep where it starts",
       "detail": "Keeps the commit the task starts from, its ignores, and how many tests run and are ignored, in target/mutastic, so gate check can say whether the task is done. With --hook, once for each of the agent's sessions; at a later prompt, it takes in the ignores made since the agent stopped.",
       "exits": "0 once it has kept where the task starts; 2 outside a git repository with a commit.",
@@ -248,7 +248,7 @@
     {
       "name": "gate check",
       "page": "gate-check",
-      "synopsis": "mutastic gate check [dir]",
+      "synopsis": "mutastic gate check [DIR]",
       "summary": "Say whether a gated task is done: its changed lines' mutants caught",
       "detail": "Runs the tests and the mutants on the lines changed since gate open: the tests run even with no mutant on those lines, and only a task that changed nothing skips them. The task is done when the tests pass, each mutant is caught or proposed for a person to ignore, no ignore was made by the task, and no test was taken away or ignored; until then it says what's left, as the agent format does. With --hook it answers as the agent's hook, and lets the agent stop, saying what's left, when it changed nothing since it was sent back, or after --tries.",
       "exits": "0 when the task is done, 1 when it isn't, 2 when no task is open. With --hook, 0 either way: the answer is what it prints, a block or a message, as the agent's hooks read it, and with nothing open the agent may stop.",
@@ -272,7 +272,7 @@
     {
       "name": "gate close",
       "page": "gate-close",
-      "synopsis": "mutastic gate close [dir]",
+      "synopsis": "mutastic gate close [DIR]",
       "summary": "Stop gating a task: forget where it started",
       "detail": "The next gate open starts a new task.",
       "exits": "0 whether a task was open or not: it says which, or with --hook says nothing.",
@@ -291,7 +291,7 @@
     {
       "name": "mutants",
       "page": "mutants",
-      "synopsis": "mutastic mutants [dir]",
+      "synopsis": "mutastic mutants [DIR]",
       "summary": "List the mutants, without building or running anything",
       "detail": "One line each: its id, place, operator, the change, and the function it's in. A mutant near unsafe code says why it's marked, and the last lines count what was left out. With --operators and --unsafe, it shows what those would add before a run.",
       "exits": "0 once they're listed.",
@@ -998,7 +998,7 @@
         "rust",
         "java"
       ],
-      "help": "Which edition runs; unless set, the build file in dir, or the nearest above it: Cargo.toml for rust, pom.xml, build.gradle or settings.gradle for java",
+      "help": "Which edition runs; unless set, the build file in DIR, or the nearest above it: Cargo.toml for rust, pom.xml, build.gradle or settings.gradle for java",
       "commands": [
         "baseline",
         "explain",
