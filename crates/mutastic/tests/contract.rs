@@ -912,12 +912,16 @@ fn sequence(
 }
 
 /// Every key path in `value`, `a.b` for an object's, `a[].b` within an array's items, and a file's
-/// name as `*` under mutation.json's `files` and `testFiles`.
+/// name as `*` under mutation.json's `files` and `testFiles`, as is a key of the maps under its
+/// `mutastic` keys that are keyed by data: an operator's name, a parameter's.
 fn paths(value: &Value, at: &str, into: &mut Vec<String>) {
+    let by_data = at == "mutastic.operatorDocs"
+        || at.ends_with("].mutastic.inputs")
+        || at.ends_with("].mutastic.suggestedTest.arguments");
     match value {
         Value::Object(object) => {
             for (key, inner) in object {
-                let key = if at == "files" || at == "testFiles" {
+                let key = if at == "files" || at == "testFiles" || by_data {
                     "*"
                 } else {
                     key

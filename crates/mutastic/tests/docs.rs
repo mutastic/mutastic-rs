@@ -456,9 +456,10 @@ fn readme_card(output: &str, id: &str) -> String {
 
 /// The pricing fixture in each format but `full`, the `mutants` listing, `--version`, and
 /// `explain`.
-/// The pricing run's `mutation.json`, as the Report files page shows it: its one missed mutant,
-/// with the file's text, its absolute root and its timings left out, as they're long or change from
-/// machine to machine.
+/// The pricing run's `mutation.json`, as the Report files page shows it: its one missed mutant and
+/// one test file, with the files' text, its absolute root and its timings left out, and the
+/// toolchain's version and the start time shown as `…`, as they're long or change from machine to
+/// machine.
 fn mutation_json(work: &Path) -> String {
     let file = work.join("fixtures/pricing/target/mutastic/mutation.json");
     let report: Value = serde_json::from_str(&std::fs::read_to_string(file).unwrap()).unwrap();
@@ -471,6 +472,11 @@ fn mutation_json(work: &Path) -> String {
         .unwrap()
         .clone();
     missed.as_object_mut().unwrap().remove("duration");
+    let mut tests = report["testFiles"]["tests/pricing.rs"].clone();
+    tests["source"] = "…".into();
+    let mut run = report["mutastic"].clone();
+    run["toolchain"]["version"] = "…".into();
+    run["startedAt"] = "…".into();
     pretty(&serde_json::json!({
         "$schema": report["$schema"],
         "schemaVersion": report["schemaVersion"],
@@ -480,7 +486,9 @@ fn mutation_json(work: &Path) -> String {
             "source": "…",
             "mutants": [missed],
         }},
+        "testFiles": { "tests/pricing.rs": tests },
         "framework": report["framework"],
+        "mutastic": run,
     }))
 }
 

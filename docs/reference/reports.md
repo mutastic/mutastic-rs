@@ -16,13 +16,15 @@ wrote, as `run-finished`'s `reports` does.
 
 `json` and `html` are written unless you choose otherwise.
 
-`language` is `rust` in each file's entry, and the tests are grouped by the module that holds them
-(`tests`, `pricing`), where the Java edition groups them by class.
+`language` is `rust` in each file's entry, and `testFiles` keys the tests by the file each is
+written in (`src/lib.rs` for a `mod tests`, `tests/pricing.rs`), as the Java edition does, with
+the file's text and where each test's function is declared.
 
 ### What `mutation.json` holds
 
-The pricing fixture's, trimmed to its one missed mutant, without the file's text (`source`), the
-other mutants, the tests, its absolute `projectRoot` or its timings:
+The pricing fixture's, trimmed to its one missed mutant and one test file, without the files' text
+(`source`), the other mutants and tests, its absolute `projectRoot` or its timings, and with the
+toolchain's version and the start time left out:
 
 <!-- output: reference/mutation-json -->
 ```text
@@ -71,8 +73,40 @@ other mutants, the tests, its absolute `projectRoot` or its timings:
 }
 ```
 
-`location` is 1-based, its end one past the change. `statusReason` is the card's headline, and
-`coveredBy` the tests that ran it and passed.
+`location` is 1-based, its end one past the change. `statusReason` is the card's headline, with
+backticks marking code, and `coveredBy` the tests that ran it and passed.
+
+### What mutastic adds
+
+A tool that reads the report schema reads the file as it is. What mutastic knows beyond the schema,
+what its cards and its HTML report show, is under one `mutastic` key, the same in both editions,
+described by the schema [`report/v1`](https://docs.mutastic.io/schemas/report/v1.json) (this
+repository's copy: `crates/mutastic/tests/schema/report-v1.json`). Every field is left out when
+there's nothing to say.
+
+At the top level, the run:
+
+| Field | What it is |
+|---|---|
+| `edition` | `rust`. |
+| `commands` | The commands the run's output gives for a mutant, for this package, with `<id>` where the mutant's id goes: `verify` (without the `passes` a card adds), `run`, `ignore` and `propose`. |
+| `docsBase` | Where the docs the run links to are: `https://docs.mutastic.io/rust/`. |
+| `operatorDocs` | For each operator in the report with a page in the docs, by its `mutatorName`, where, relative to `docsBase`: the event's `docs`. |
+| `score`, `threshold`, `passed`, `toolchain` | As `run-finished` gives them: `passed` is what the exit code says, with `--fail-on-new` too. |
+| `startedAt` | When the run started, in UTC: `2026-11-13T20:34:31Z`. |
+
+On each mutant:
+
+| Field | What it is |
+|---|---|
+| `method` | The function the change is in, by its path in its module: `Pricing::discount()`, or `discount()` for a free function. |
+| `evidence`, `fix` | For a missed mutant, the card's evidence lines and its fix, as `--format=agent` writes them. |
+| `inputs` | The whole numbers each parameter was called with while the tests ran, as the event's `inputs`. |
+| `suggestedTest` | For a missed mutant, the test to add, as the event's `suggestedTest`, with `arguments`: the value the call passes each parameter. |
+| `nearUnsafe` | Why the mutant is near unsafe code, as the event's `nearUnsafe`. |
+
+A test in `testFiles` has a `location`, the line and column of its function's name, when the file
+declares it: a test a macro writes is listed under its module's file without one.
 
 ## Where they go
 

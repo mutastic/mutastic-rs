@@ -983,6 +983,8 @@ fn finish(
     if parsed.only.is_empty() && report.scope.is_none() && kept {
         report.comparison = recorded(&report, &folder)?;
     }
+    // Before the reports, whose `passed` says what the exit code will.
+    report.fail_on_new = judged_on_new(parsed);
     // Only a full run writes reports: a run of some mutants would leave out the rest.
     if parsed.only.is_empty() && (kept || parsed.reports.is_some()) {
         let reports = parsed.reports.clone().unwrap_or_else(|| {
@@ -1002,14 +1004,16 @@ fn finish(
         crate::shares::keep(&events, "")?;
         report.reports.push(report::files::shown(given, &events));
         // Whole, `run-started` included, even when it went out live.
+        // A share is judged with the whole run, not on its own.
         let streamed = std::mem::replace(&mut report.streamed, false);
+        let judged = report.fail_on_new.take();
         crate::shares::keep(
             &events,
             &report::render(&report, Format::Jsonl, Style::default()),
         )?;
         report.streamed = streamed;
+        report.fail_on_new = judged;
     }
-    report.fail_on_new = judged_on_new(parsed);
     stdout_text!(
         "{}",
         report::render(

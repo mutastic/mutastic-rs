@@ -594,8 +594,9 @@ fn a_full_run_writes_the_report_files() {
     );
     assert_eq!(
         missed["statusReason"],
-        "no test checks discount() at total == 100"
+        "no test checks `discount()` at `total == 100`"
     );
+    additions(&report, &dir);
     let page = std::fs::read_to_string(&html).unwrap();
     assert!(page.contains("<mutation-test-report-app titlePostfix=\"mutastic\">"));
     assert!(page.contains(".report = {\"$schema\""));
@@ -609,6 +610,132 @@ fn a_full_run_writes_the_report_files() {
         events(&only).pop().unwrap()["reports"],
         serde_json::json!([])
     );
+}
+
+/// mutastic's additions to `mutation.json` (`report/v1`, pinned from the Java repository's
+/// `docs/public/schemas/report/v1.json`), read strictly: the schema leaves its objects open, so a
+/// field under `mutastic` it doesn't name fails here. And what they say for the pricing fixture's
+/// miss: what its card, its agent entry and its event say.
+fn additions(report: &Value, dir: &str) {
+    let schema: Value = serde_json::from_str(include_str!("schema/report-v1.json")).unwrap();
+    let errors: Vec<String> = jsonschema::validator_for(&schema)
+        .unwrap()
+        .iter_errors(report)
+        .map(|e| e.to_string())
+        .collect();
+    assert!(errors.is_empty(), "{errors:?}");
+    let defs = &schema["$defs"];
+    named_only(&report["mutastic"], &defs["run"], "mutastic");
+    let mutants: Vec<&Value> = report["files"]
+        .as_object()
+        .unwrap()
+        .values()
+        .flat_map(|file| file["mutants"].as_array().unwrap())
+        .collect();
+    for mutant in &mutants {
+        if let Some(more) = mutant.get("mutastic") {
+            assert!(!more.as_object().unwrap().is_empty(), "{mutant}");
+            named_only(more, &defs["mutant"], &format!("{}.mutastic", mutant["id"]));
+        }
+    }
+
+    let run = &report["mutastic"];
+    assert_eq!(run["edition"], "rust");
+    assert_eq!(
+        run["commands"],
+        serde_json::json!({
+            "verify": format!("mutastic verify <id> {dir}"),
+            "run": format!("mutastic run --only=<id> {dir}"),
+            "ignore": format!("mutastic ignore <id> --reason=\"<why>\" {dir}"),
+            "propose": format!("mutastic ignore <id> --propose --as=<equivalent|unreachable|…> --reason=\"{}\" {dir}", mutastic::report::REASON),
+        })
+    );
+    assert_eq!(run["docsBase"], "https://docs.mutastic.io/rust/");
+    assert_eq!(
+        run["operatorDocs"]["boundary"],
+        "operators/conditions/#boundary"
+    );
+    assert_eq!(run["score"], 90.9);
+    assert_eq!(run["threshold"], 80);
+    assert_eq!(run["passed"], true);
+    assert_eq!(run["toolchain"]["name"], "rustc");
+    let started = regex::Regex::new(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$").unwrap();
+    assert!(
+        started.is_match(run["startedAt"].as_str().unwrap()),
+        "{run}"
+    );
+
+    let missed = mutants.iter().find(|m| m["id"] == "mb2f8ae57").unwrap();
+    assert_eq!(
+        missed["mutastic"],
+        serde_json::json!({
+            "method": "Pricing::discount()",
+            "evidence": [
+                "every test calls `discount()` away from the boundary",
+                "inputs seen: 50, 250 (none is 100)",
+            ],
+            "fix": "test `discount()` with `total = 100` and assert the result",
+            "inputs": { "total": [50, 250] },
+            "suggestedTest": {
+                "testClass": "tests",
+                "name": "discount_at_the_total_edge",
+                "code": "#[test]\nfn discount_at_the_total_edge() {\n    assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0\n}",
+                "call": "Pricing::new().discount(100)",
+                "today": "10",
+                "withMutant": "0",
+                "arguments": { "total": 100 },
+            },
+        })
+    );
+    // A caught mutant has no card: where it is, and what its function was called with.
+    let caught = mutants.iter().find(|m| m["status"] == "Killed").unwrap();
+    let keys: Vec<&String> = caught["mutastic"].as_object().unwrap().keys().collect();
+    assert!(
+        keys.iter()
+            .all(|key| ["method", "inputs"].contains(&key.as_str())),
+        "{caught}"
+    );
+
+    // The tests, by the file each is written in, with where.
+    let tests = &report["testFiles"];
+    let files: Vec<&String> = tests.as_object().unwrap().keys().collect();
+    assert_eq!(files, ["src/lib.rs", "tests/pricing.rs"]);
+    let source = std::fs::read_to_string(Path::new(dir).join("tests/pricing.rs")).unwrap();
+    assert_eq!(tests["tests/pricing.rs"]["source"], source.as_str());
+    assert_eq!(
+        tests["tests/pricing.rs"]["tests"],
+        serde_json::json!([{
+            "id": "pricing::big_orders_get_ten_percent_off",
+            "name": "big_orders_get_ten_percent_off",
+            "location": { "start": { "line": 8, "column": 4 } },
+        }])
+    );
+    let inline = tests["src/lib.rs"]["tests"].as_array().unwrap();
+    let small = inline
+        .iter()
+        .find(|test| test["id"] == "tests::small_orders_pay_full_price")
+        .unwrap();
+    assert_eq!(
+        small["location"],
+        serde_json::json!({ "start": { "line": 46, "column": 8 } })
+    );
+}
+
+/// Every field of `value` is one `schema` names, and so on down the objects it describes field by
+/// field; a map keyed by data (`inputs`, `operatorDocs`) is left as it is.
+fn named_only(value: &Value, schema: &Value, at: &str) {
+    let (Some(object), Some(properties)) = (value.as_object(), schema["properties"].as_object())
+    else {
+        return;
+    };
+    for (key, inner) in object {
+        let described = properties.get(key);
+        assert!(
+            described.is_some(),
+            "{at}.{key}: the schema doesn't name it"
+        );
+        named_only(inner, described.unwrap(), &format!("{at}.{key}"));
+    }
 }
 
 /// A copy of a fixture this test process has to itself, to change.
