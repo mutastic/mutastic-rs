@@ -260,6 +260,8 @@ pub struct Red {
     /// The panic's message, on one line: `assertion `left == right` failed: left: 3, right: 4`.
     pub panic: Option<String>,
     pub rerun: String,
+    /// A property test that drew its cases from the seed mutastic sets: its command sets it too.
+    pub seeded: bool,
 }
 
 /// How many failing tests are named with how they failed, and given a command.
@@ -318,7 +320,20 @@ pub fn failed_message(failing: &[Red], log: &Path) -> String {
         log.display()
     ));
     lines.extend(commands);
+    if failing.iter().take(RED_SHOWN).any(|red| red.seeded) {
+        lines.push(format!(
+            "proptest drew its cases from the seed mutastic sets, PROPTEST_RNG_SEED={}: the \
+             command sets it too, so the test fails as it did here.",
+            crate::testrun::PROPTEST_SEED
+        ));
+    }
     lines.join("\n")
+}
+
+/// Whether a test's output is a property test's failure, drawn from the seed mutastic set: one
+/// the person set themselves is theirs to repeat.
+pub fn seeded(output: &str) -> bool {
+    std::env::var_os("PROPTEST_RNG_SEED").is_none() && output.contains("minimal failing input: ")
 }
 
 const FAILS: &str = " without any mutant, so mutastic can't judge one.";
@@ -390,6 +405,7 @@ mod tests {
             timed_out,
             panic: panic.map(str::to_string),
             rerun: format!("cargo test -p red --lib -- --exact {display}"),
+            seeded: false,
         };
         let log = Path::new("target/mutastic/tests.log");
         let message = failed_message(
@@ -424,6 +440,26 @@ mod tests {
         );
         assert_eq!(failing_tests(&one).unwrap().0, ["t"]);
         assert_eq!(failing_tests("couldn't build"), None);
+        // A property test's command sets the seed its cases came from, and a note says so.
+        let property = Red {
+            rerun: "PROPTEST_RNG_SEED=0 cargo test -p red --lib -- --exact p".into(),
+            seeded: true,
+            ..red(
+                "p",
+                false,
+                Some("Test failed: minimal failing input: x = 9"),
+            )
+        };
+        let seeded = failed_message(&[property], log);
+        assert!(
+            seeded.ends_with(
+                "To run it alone:\n  PROPTEST_RNG_SEED=0 cargo test -p red --lib -- --exact p\n\
+                 proptest drew its cases from the seed mutastic sets, PROPTEST_RNG_SEED=0: the \
+                 command sets it too, so the test fails as it did here."
+            ),
+            "{seeded}"
+        );
+        assert_eq!(failing_tests(&seeded).unwrap().0, ["p"]);
     }
 
     #[test]

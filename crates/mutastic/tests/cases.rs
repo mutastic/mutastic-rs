@@ -354,6 +354,19 @@ fn proptest_runs_are_deterministic() {
         .collect();
     assert_eq!(runs[0], runs[1]);
     assert_eq!(runs[1], runs[2]);
+    // Red with the seed mutastic sets: the command it offers sets the seed too, and says why.
+    let (code, said) = &runs[0];
+    assert_eq!(*code, 2, "seed 0 draws a case it fails: {said:?}");
+    assert!(
+        said.iter().any(|line| line
+            == "  PROPTEST_RNG_SEED=0 cargo test -p cases --lib -- --exact rare::discounts_stay_small"),
+        "{said:?}"
+    );
+    assert!(
+        said.iter()
+            .any(|line| line.starts_with("proptest drew its cases from the seed mutastic sets")),
+        "{said:?}"
+    );
     assert_eq!(
         std::fs::read_to_string(dir.join("proptest-regressions/lib.txt")).unwrap(),
         kept,

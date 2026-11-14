@@ -931,11 +931,18 @@ fn coverage(
                 let test = &tests[index];
                 let outcome = &reached[index].0;
                 let output = format!("{}\n{}", outcome.stdout, outcome.stderr);
+                let seeded = crate::flaky::seeded(&output);
+                let command = rerun(project, &binaries[test.binary], &test.name);
                 crate::flaky::Red {
                     display: test.display.clone(),
                     timed_out: outcome.timed_out,
                     panic: crate::flaky::panic_message(&output),
-                    rerun: rerun(project, &binaries[test.binary], &test.name),
+                    rerun: if seeded {
+                        format!("PROPTEST_RNG_SEED={} {command}", testrun::PROPTEST_SEED)
+                    } else {
+                        command
+                    },
+                    seeded,
                 }
             })
             .collect();

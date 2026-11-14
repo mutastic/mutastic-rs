@@ -100,6 +100,11 @@ newest come first.
 
 ### Fixes
 
+- **A property test's command sets its seed.** When a property test fails before any mutant, the
+  command mutastic offers to run it alone sets `PROPTEST_RNG_SEED` to the seed mutastic drew its
+  cases from, `PROPTEST_RNG_SEED=0 cargo test …`, and a line says so: without it, the test may pass
+  when run again.
+
 - **Each error's code is set where it's raised.** `run-failed`'s `code` was worked out afterwards
   from the error's words, and two errors got `other` that way: `--report=xyz` and `gate` with no
   action, which are now `option-value` and `unknown-command`. A mistyped gate action, `gate opn`,
