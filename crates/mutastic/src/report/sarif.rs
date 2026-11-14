@@ -28,7 +28,10 @@ const OPERATORS: &str =
     "https://github.com/mutastic/mutastic-rs/blob/main/docs/operators.md#every-operator";
 
 pub fn document(report: &Report) -> Value {
-    let view = View { report };
+    let view = View {
+        report,
+        shown: false,
+    };
     let flagged: Vec<&MutantResult> = report
         .results
         .iter()
