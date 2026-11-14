@@ -1024,6 +1024,10 @@ fn finish(
     if format != Format::Jsonl && parsed.only.is_empty() && report.scope.is_none() {
         baseline_note(&report);
     }
+    if !report.failing_alone().is_empty() {
+        // A test fails on the code with no mutant in, as one that fails before any mutant does.
+        return Ok(ExitCode::from(2));
+    }
     Ok(if report.passed() {
         ExitCode::SUCCESS
     } else {
@@ -1245,6 +1249,10 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, String> {
         };
         settled &= result.status.settled();
         stdout_line!("mutastic: {} {fate}", mutant.id);
+    }
+    if !report.failing_alone().is_empty() {
+        stdout_text!("{}", report::failing_alone(&report));
+        return Ok(ExitCode::from(2));
     }
     Ok(if settled {
         ExitCode::SUCCESS
@@ -1856,6 +1864,9 @@ fn gate_verdict(
         Ok(report) => report,
         Err(error) => return red_verdict(here, state, &error),
     };
+    if !report.failing_alone().is_empty() {
+        return Ok(gate::Verdict::block(gate::false_caught(&report)));
+    }
     let proposed: std::collections::BTreeSet<String> = ignores::proposed(here)?
         .into_iter()
         .map(|entry| entry.id)
