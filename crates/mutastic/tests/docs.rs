@@ -490,10 +490,15 @@ fn reference(work: &Path, shown: &mut BTreeMap<String, String>) {
     for format in ["brief", "concise", "grouped", "agent", "jsonl"] {
         // Each a first run, as the Java edition shows each format from a fresh copy.
         forget_last_runs(&work.join("fixtures/pricing"));
-        let run = ran(
-            work,
-            &["run", "fixtures/pricing", &format!("--format={format}")],
-        );
+        let mut args = vec!["run", "fixtures/pricing"];
+        let format_option = format!("--format={format}");
+        args.push(&format_option);
+        // Each mutant's event goes out as it finishes, so on one worker the stream is the same
+        // from run to run: what the page shows is what a run prints.
+        if format == "jsonl" {
+            args.push("--workers=1");
+        }
+        let run = ran(work, &args);
         if format == "jsonl" {
             for event in events(&run.stdout) {
                 let errors: Vec<String> = common::schema()

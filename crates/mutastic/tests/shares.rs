@@ -86,6 +86,21 @@ fn untimed(text: &str) -> Vec<Value> {
     events
 }
 
+/// `events` with each mutant's in the order of their ids: a run writes them as each mutant
+/// finishes, which varies from run to run, and shares put together write them in the order found.
+fn in_found_order(mut events: Vec<Value>) -> Vec<Value> {
+    let id = |event: &Value| event["id"].as_str().map(str::to_string);
+    let mutants: Vec<usize> = (0..events.len())
+        .filter(|&at| id(&events[at]).is_some())
+        .collect();
+    let mut sorted: Vec<Value> = mutants.iter().map(|&at| events[at].clone()).collect();
+    sorted.sort_by_key(|event| (event["reason"].to_string(), id(event)));
+    for (at, event) in mutants.into_iter().zip(sorted) {
+        events[at] = event;
+    }
+    events
+}
+
 /// Takes away the package's kept runs, so its next run is a first run, with nothing to compare
 /// with: what's compared here is the results, which a comparison with the last run would add to.
 fn forget_last_runs(dir: &Path) {
@@ -219,7 +234,10 @@ fn two_shares_put_together_are_the_whole_run() {
         );
         assert_eq!(code, 0, "{out}{err}");
         if *format == "jsonl" {
-            assert_eq!(untimed(&out), untimed(&settled(whole)));
+            assert_eq!(
+                in_found_order(untimed(&out)),
+                in_found_order(untimed(&settled(whole)))
+            );
             // Each result is its share's, to the millisecond.
             for event in events(&out)
                 .iter()
@@ -296,7 +314,10 @@ fn two_shares_put_together_are_the_whole_run() {
         ],
     );
     assert_eq!(code, 0, "{out}{err}");
-    assert_eq!(untimed(&out), untimed(&settled(&whole[0])));
+    assert_eq!(
+        in_found_order(untimed(&out)),
+        in_found_order(untimed(&settled(&whole[0])))
+    );
 }
 
 /// A share's events, read to change.

@@ -28,10 +28,7 @@ const OPERATORS: &str =
     "https://github.com/mutastic/mutastic-rs/blob/main/docs/operators.md#every-operator";
 
 pub fn document(report: &Report) -> Value {
-    let view = View {
-        report,
-        shown: false,
-    };
+    let view = View::of(report, false);
     let flagged: Vec<&MutantResult> = report
         .results
         .iter()
@@ -111,7 +108,7 @@ fn result_entry(
         region["endLine"] = end["line"].clone();
         region["endColumn"] = end["column"].clone();
     }
-    let uri = from_base(&view.report.project.workspace, &mutant.file, base);
+    let uri = from_base(&view.project.workspace, &mutant.file, base);
     json!({
         "ruleId": mutant.operator,
         "ruleIndex": rule_index,

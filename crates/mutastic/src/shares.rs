@@ -393,7 +393,12 @@ impl Shares {
         let order: Vec<usize> = (0..found.mutants.len()).collect();
         let files = engine::Files::new(&found, &order);
         for result in &results {
-            files.finished(&found, result, (0, std::time::Duration::ZERO), progress);
+            files.finished(
+                (&found, project),
+                result,
+                (0, std::time::Duration::ZERO),
+                progress,
+            );
         }
         Ok(self.report(project, found, results, stale_ignores, options))
     }

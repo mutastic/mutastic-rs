@@ -475,11 +475,17 @@ impl Inner {
                 }
             }
             engine::Progress::MutantFinished {
-                status,
+                result,
+                found,
+                project,
                 worker,
                 cost,
             } => {
-                state.counts.add(status);
+                // Live, as the mutant finishes: before the phase it ran in ends (decision 7).
+                if state.events.is_some() {
+                    self.event(&report::mutant_finished(found, project, result));
+                }
+                state.counts.add(result.status);
                 state.cost_done += cost;
                 if let Some(slot) = state.workers.get_mut(worker) {
                     *slot = None;
@@ -515,7 +521,10 @@ impl Inner {
             } => {
                 self.phase_event(state, None);
                 self.enter(state, Phase::Idle);
-                self.write(state, &frames::checked_line(missed, took, found));
+                // As the Java edition says it: only when there's a miss to say it about.
+                if missed > 0 {
+                    self.write(state, &frames::checked_line(missed, took, found));
+                }
             }
         }
     }

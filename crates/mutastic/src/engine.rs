@@ -112,9 +112,10 @@ pub struct Report {
     pub build: Duration,
     pub coverage: Duration,
     pub mutants: Duration,
-    /// Looking for a test to suggest for each missed mutant, when there were any to look for.
+    /// Checking each catch on the code as it is, after the mutants, when there was a miss.
     pub checking: Option<Duration>,
-    /// Whether `run-started` went out live, with the run's progress, rather than with the rest.
+    /// Whether `run-started` and each `mutant-finished` went out live, with the run's progress,
+    /// rather than with the rest.
     pub streamed: bool,
     pub took: Duration,
     pub unsafe_mode: UnsafeMode,
@@ -314,9 +315,12 @@ pub enum Progress<'a> {
         /// The tests that cover it.
         tests: usize,
     },
-    /// One mutant has its result; `cost` is what it was expected to take.
+    /// One mutant has its first result, the result itself, in the package and among the mutants
+    /// it's of; `cost` is what it was expected to take. Its `mutant-finished` goes out live.
     MutantFinished {
-        status: Status,
+        result: &'a MutantResult,
+        found: &'a Crate,
+        project: &'a Project,
         worker: usize,
         cost: Duration,
     },
@@ -329,9 +333,10 @@ pub enum Progress<'a> {
     },
     /// Every mutant has its result.
     Ran { took: Duration },
-    /// Looking for a test that catches each missed mutant: `done` of `total` looked at.
+    /// Every mutant has its result, and each catch is checked on the code as it is: `done` of
+    /// `total`, when it's counted.
     Checking { done: usize, total: usize },
-    /// The look is over: a test was found for `found` of the `missed` mutants.
+    /// The check is over: of the `missed` mutants, a test to suggest was found for `found`.
     Checked {
         missed: usize,
         took: Duration,
@@ -465,6 +470,7 @@ pub fn run(
     });
 
     let mutants_started = Instant::now();
+    let suggester = Suggester::new(project, &found, &built, options);
     let files = Files::new(&found, &order);
     let indexed: Vec<(usize, &Cost)> = order.iter().copied().zip(&costs).collect();
     let mut results = testrun::parallel_on(&indexed, options.workers, |worker, &(mutant, cost)| {
@@ -479,13 +485,25 @@ pub fn run(
             });
         }
         files.started(&found, mutant);
-        let result = result(&found, mutant, first[mutant], &built, &tests, &reach, &cwd);
-        files.finished(&found, &result, (worker, cost.expected), progress);
+        let result = Suggester::with_suggestion(
+            suggester.as_ref(),
+            result(&found, mutant, first[mutant], &built, &tests, &reach, &cwd),
+        );
+        files.finished(
+            (&found, project),
+            &result,
+            (worker, cost.expected),
+            progress,
+        );
         result
     });
     let mutants_took = mutants_started.elapsed();
     progress(Progress::Ran { took: mutants_took });
+    // Each catch checked on the code as it is, once the mutants have run: the checking phase.
+    let checking_started = Instant::now();
+    progress(Progress::Checking { done: 0, total: 0 });
     let runs = BuildRuns {
+        suggester: suggester.as_ref(),
         found: &found,
         first: &first,
         built: &built,
@@ -513,19 +531,19 @@ pub fn run(
         .into_iter()
         .map(|(index, first)| (results[index].mutant, first))
         .collect();
-    let looking = Instant::now();
-    let checked = options.suggestions && results.iter().any(|r| r.status == Status::Survived);
-    if options.suggestions {
-        suggest_all(
-            project,
-            &found,
-            &built,
-            &mut results,
-            options.workers,
-            progress,
-        );
-    }
-    let checking = checked.then(|| looking.elapsed());
+    let missed = results
+        .iter()
+        .filter(|r| r.status == Status::Survived)
+        .count();
+    let checking_took = checking_started.elapsed();
+    progress(Progress::Checked {
+        missed,
+        took: checking_took,
+        found: results.iter().filter(|r| r.suggestion.is_some()).count(),
+    });
+    // As the Java edition's summary has it: the time after the mutants, when there was a miss to
+    // say it about.
+    let checking = (missed > 0).then_some(checking_took);
     // The tests run against mutants; the coverage pass's runs aren't counted, as in the Java
     // edition, so the count compares with running every test on every mutant.
     let test_runs = results
@@ -799,7 +817,7 @@ impl Files {
     /// it's told, so two files' lines never interleave.
     pub(crate) fn finished(
         &self,
-        found: &Crate,
+        (found, project): (&Crate, &Project),
         result: &MutantResult,
         (worker, cost): (usize, Duration),
         progress: &(dyn Fn(Progress) + Sync),
@@ -813,7 +831,9 @@ impl Files {
         file.done.push(result.clone());
         file.left -= 1;
         progress(Progress::MutantFinished {
-            status: result.status,
+            result,
+            found,
+            project,
             worker,
             cost,
         });
@@ -1200,6 +1220,8 @@ fn result(
 /// pass kept.
 struct BuildRuns<'a> {
     found: &'a Crate,
+    /// What looks for a test to suggest for a mutant the reruns find missed.
+    suggester: Option<&'a Suggester<'a>>,
     /// For each mutant, the first live mutant at its site: what the coverage pass recorded.
     first: &'a [u32],
     built: &'a compile::Built,
@@ -1255,7 +1277,7 @@ impl crate::guard::Runs for BuildRuns<'_> {
             .unzip();
         let mutants: Vec<usize> = indexes.iter().map(|&at| results[at].mutant).collect();
         testrun::parallel(&mutants, self.workers, |&mutant| {
-            result(
+            let again = result(
                 self.found,
                 mutant,
                 self.first[mutant],
@@ -1263,41 +1285,61 @@ impl crate::guard::Runs for BuildRuns<'_> {
                 &tests,
                 &reach,
                 self.cwd,
-            )
+            );
+            Suggester::with_suggestion(self.suggester, again)
         })
     }
 }
 
-/// Looks for a test that catches each missed mutant whose function has a probe, side by side.
-fn suggest_all(
-    project: &Project,
-    found: &Crate,
-    built: &compile::Built,
-    results: &mut [MutantResult],
-    workers: usize,
-    progress: &(dyn Fn(Progress) + Sync),
-) {
-    let cwd = project.copy_dir().join(&project.package_dir);
-    let dir = project.mutastic_dir().join("probes");
-    let missed: Vec<usize> = (0..results.len())
-        .filter(|&index| results[index].status == Status::Survived)
-        .filter(|&index| {
-            built
-                .probes
-                .contains(&found.mutants[results[index].mutant].function)
+/// What looks for a test that catches a missed mutant whose function has a probe, as the mutant
+/// finishes: by running the probe on candidate inputs, as the code is and with the mutant in.
+struct Suggester<'a> {
+    found: &'a Crate,
+    built: &'a compile::Built,
+    /// The probes in the build, by libtest's name, with the binary each is in.
+    probes: BTreeMap<String, usize>,
+    /// Where the probes write what they found.
+    dir: PathBuf,
+    cwd: PathBuf,
+}
+
+impl<'a> Suggester<'a> {
+    /// `None` when the run doesn't look, or no function has a probe.
+    fn new(
+        project: &Project,
+        found: &'a Crate,
+        built: &'a compile::Built,
+        options: &Options,
+    ) -> Option<Suggester<'a>> {
+        if !options.suggestions || built.probes.is_empty() {
+            return None;
+        }
+        let cwd = project.copy_dir().join(&project.package_dir);
+        let dir = project.mutastic_dir().join("probes");
+        std::fs::create_dir_all(&dir).ok()?;
+        Some(Suggester {
+            found,
+            built,
+            probes: testrun::probes(&built.binaries, &cwd),
+            dir,
+            cwd,
         })
-        .collect();
-    if missed.is_empty() || std::fs::create_dir_all(&dir).is_err() {
-        return;
     }
-    let probes = testrun::probes(&built.binaries, &cwd);
-    let look = |index: usize| {
-        let result = &results[index];
+
+    /// A test that would catch `result`'s mutant, when it's missed and its function has a probe.
+    fn suggest(&self, result: &MutantResult) -> Option<crate::suggest::Suggestion> {
+        if result.status != Status::Survived {
+            return None;
+        }
+        let found = self.found;
         let mutant = &found.mutants[result.mutant];
+        if !self.built.probes.contains(&mutant.function) {
+            return None;
+        }
         let function = &found.functions[mutant.function];
         let callable = function.callable.as_ref()?;
         let name = callable.probe_name(function.ordinal);
-        let &binary = probes.get(&name)?;
+        let &binary = self.probes.get(&name)?;
         let line = source_line(found, result.mutant);
         let text = found
             .files
@@ -1322,35 +1364,24 @@ fn suggest_all(
             &result.inputs,
         ));
         let probe = crate::suggest::Probe {
-            binary: &built.binaries[binary],
-            cwd: &cwd,
+            binary: &self.built.binaries[binary],
+            cwd: &self.cwd,
             name: &name,
         };
-        crate::suggest::find(&probe, &dir, mutant.ordinal, &candidates).map(|mut found| {
+        crate::suggest::find(&probe, &self.dir, mutant.ordinal, &candidates).map(|mut found| {
             found.built_by = made
                 .filter(|made| found.values.starts_with(&made.values))
                 .map(|made| made.test);
             found
         })
-    };
-    let checking = Instant::now();
-    let (looked, total) = (std::sync::atomic::AtomicUsize::new(0), missed.len());
-    progress(Progress::Checking { done: 0, total });
-    let found_tests = testrun::parallel(&missed, workers, |&index| {
-        let found = look(index);
-        progress(Progress::Checking {
-            done: looked.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1,
-            total,
-        });
-        found
-    });
-    progress(Progress::Checked {
-        missed: total,
-        took: checking.elapsed(),
-        found: found_tests.iter().filter(|found| found.is_some()).count(),
-    });
-    for (index, suggestion) in missed.into_iter().zip(found_tests) {
-        results[index].suggestion = suggestion;
+    }
+
+    /// `result` with the test that would catch it, when there's one to find.
+    fn with_suggestion(suggester: Option<&Self>, mut result: MutantResult) -> MutantResult {
+        if let Some(suggester) = suggester {
+            result.suggestion = suggester.suggest(&result);
+        }
+        result
     }
 }
 

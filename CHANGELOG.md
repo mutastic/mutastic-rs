@@ -57,6 +57,16 @@ newest come first.
 
 ### Fixes
 
+- **Each mutant's event goes out as it finishes.** In `--format=jsonl`, every `mutant-finished`
+  came at the end of the run, after the `checking` phase, so a tool watching the stream saw
+  nothing of the results until the run was over. Each now goes out as its mutant finishes, before
+  the `mutants` phase ends, as in the Java edition (decision 7 of the editions' contract), in the
+  order the mutants finish. A missed mutant's test to suggest is looked for as it's found missed,
+  so its event still carries it, and `checking` is now the check of each catch on the code as it
+  is, which every run makes: its phase events are always there, and `checked` is said only when a
+  mutant was missed. A mutant run again without a test that fails on its own still gets its
+  `mutant-revised` after the phases. The results, the score and the report files don't change.
+  See [Events](docs/reference/events.md).
 - **A test that caught mutants and fails on its own fails the run.** Once the mutants have run,
   each test that caught one runs again, on its own with no mutant in. One that fails there (it
   trips on a file it, another test or the run left behind) is named as flaky, as a test that
