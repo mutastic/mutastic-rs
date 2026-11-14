@@ -1857,7 +1857,7 @@ fn agent(report: &Report, style: Style) -> String {
     let dir = &report.project.given;
     let _ = writeln!(
         out,
-        "mutastic: {} · score {} ({}{}) · {missed} {}, {not_covered} {}, {} {} of {} mutants{}",
+        "mutastic: {} · score {} ({}{}) · {missed} {}, {not_covered} {}, {} {} of {}{}",
         agent_verdict(report),
         report
             .score()
@@ -1876,7 +1876,7 @@ fn agent(report: &Report, style: Style) -> String {
         words.not_covered(),
         report.count(Status::Killed) + report.count(Status::Timeout),
         words.detected(),
-        report.results.len() - skipped,
+        crate::progress::count(report.results.len() - skipped, "mutant"),
         if skipped == 0 {
             String::new()
         } else {

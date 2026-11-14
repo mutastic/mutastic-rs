@@ -1076,9 +1076,10 @@ fn baseline_command(parsed: &Parsed) -> Result<ExitCode, String> {
         let entries = baseline::entries(&report);
         baseline::write(here, &entries)?;
         stdout_line!(
-            "mutastic: {} mutants no test catches are in {}: commit it. A miss that isn't in it is \
-             new: the gate holds only new misses, and next offers them first",
-            entries.len(),
+            "mutastic: {} no test catches {} in {}: commit it. A miss that isn't in it is new: the \
+             gate holds only new misses, and next offers them first",
+            crate::progress::count(entries.len(), "mutant"),
+            if entries.len() == 1 { "is" } else { "are" },
             baseline::FILE
         );
     }
@@ -1868,8 +1869,9 @@ fn gate_verdict(
                     .into(),
             ));
         }
+        let scored = crate::progress::count(scored, "mutant");
         return Ok(gate::Verdict::pass(format!(
-            "mutastic gate: passed: the tests catch {caught} of the {scored} mutants on the lines the task changed{waiting}{backlog}"
+            "mutastic gate: passed: the tests catch {caught} of the {scored} on the lines the task changed{waiting}{backlog}"
         )));
     }
     let waiting: Vec<String> = missed
@@ -1988,7 +1990,7 @@ fn mutants(parsed: &Parsed) -> Result<ExitCode, String> {
                 .unwrap_or_default()
         );
     }
-    stdout_line!("{} mutants", found.mutants.len());
+    stdout_line!("{}", crate::progress::count(found.mutants.len(), "mutant"));
     if found.not_mutated_unsafe > 0 {
         stdout_line!(
             "not mutated: unsafe ({}): --unsafe=enclosing or --unsafe=all includes them",
