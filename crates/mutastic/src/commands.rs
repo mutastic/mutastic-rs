@@ -328,7 +328,8 @@ pub const OPTIONS: &[CliOption] = &[
         group: "Running",
         choices: &[],
         help: "Mutate only the lines changed since the merge-base of HEAD and REF, uncommitted \
-               and new files included; the default branch without one",
+               and new files included; the default branch without one. With no mutant on those \
+               lines, nothing is built or run",
         commands: &["run", "next"],
         environment: "",
         example: "--since=main",
@@ -366,6 +367,18 @@ pub const OPTIONS: &[CliOption] = &[
         commands: &["run", "explain", "next"],
         environment: "",
         example: "--no-suggestions",
+    },
+    CliOption {
+        name: "force-coverage",
+        value: "",
+        kind: Kind::Flag,
+        group: "Running",
+        choices: &[],
+        help: "Build and run every test even when no mutant is there to run, to check or time \
+               the suite",
+        commands: &["run"],
+        environment: "",
+        example: "--since --force-coverage",
     },
     CliOption {
         name: "operators",

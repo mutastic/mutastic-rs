@@ -181,7 +181,8 @@ cycle starts.
 
 ### When it says it's done
 
-The gate runs mutastic on every line changed since the task started, committed or not:
+The gate runs mutastic on every line changed since the task started, committed or not. A task
+that changed no mutant's line passes in a second or so, as nothing is built or run:
 
 <!-- output: test-first-agent/check -->
 ```text

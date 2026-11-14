@@ -445,6 +445,10 @@ impl Inner {
                 );
                 self.write(state, &line);
             }
+            engine::Progress::NothingToRun => {
+                self.phase_event(state, None);
+                self.enter(state, Phase::Idle);
+            }
             engine::Progress::FromShares { summary, mutants } => {
                 state.counts.total = mutants;
                 self.enter(state, Phase::Idle);

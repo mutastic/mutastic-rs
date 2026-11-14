@@ -1126,7 +1126,14 @@ fn since_runs_the_changed_lines_mutants() {
         &["run", "--since=HEAD", "--format=full", "--report=none"],
     );
     assert!(
-        out.contains("   Mutants  ✓ 0 caught (0) · 1 skipped (1 arid)\n"),
+        out.contains("  Mutants  ✓ 0 caught (0) · 1 skipped (1 arid)\n"),
+        "{out}"
+    );
+    assert!(
+        out.contains(
+            "  Changed  1 line in 1 file since HEAD, none with a mutant to run, so nothing to \
+             build or run\n"
+        ),
         "{out}"
     );
     let (_, out) = mutastic_in(
@@ -1755,6 +1762,115 @@ fn a_full_run_compares_with_the_last_and_is_kept_for_the_next() {
         agent.contains("vs last run: 90.9% → 90.9% (same code)\n"),
         "{agent}"
     );
+}
+
+/// A run with no mutant to run builds nothing and runs no test, says so, and leaves the last run
+/// that measured something as the one `explain` and the next run read; `--force-coverage` builds
+/// and runs the tests anyway.
+#[test]
+fn a_run_with_no_mutant_to_run_builds_nothing() {
+    let copy = copy_of("pricing", "nothing-to-run");
+    let dir = copy.to_str().unwrap();
+    let git = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(&copy)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap()
+            .status;
+        assert!(status.success(), "git {args:?}");
+    };
+    git(&["init", "-q"]);
+    std::fs::write(copy.join(".gitignore"), "target\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "start"]);
+    let (code, _) = mutastic_in(&copy, &["run", dir, "--format=jsonl"]);
+    assert_eq!(code, 0);
+    let kept = |file: &str| std::fs::read(copy.join("target/mutastic").join(file)).unwrap();
+    let before: Vec<Vec<u8>> = ["last-run.tsv", "mutation.json", "mutation.html"]
+        .iter()
+        .map(|file| kept(file))
+        .collect();
+    let json_lines = |out: &str| -> Vec<Value> {
+        out.lines()
+            .filter(|line| line.starts_with('{'))
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
+    };
+    let phases = |events: &[Value]| -> Vec<String> {
+        events
+            .iter()
+            .filter(|e| e["reason"] == "phase-started")
+            .map(|e| e["phase"].as_str().unwrap().to_string())
+            .collect()
+    };
+
+    let (code, jsonl) = mutastic_in(&copy, &["run", dir, "--since=HEAD", "--format=jsonl"]);
+    assert_eq!(code, 0, "{jsonl}");
+    let empty = json_lines(&jsonl);
+    assert_eq!(phases(&empty), ["reading"], "{jsonl}");
+    for event in &empty {
+        let errors: Vec<String> = schema().iter_errors(event).map(|e| e.to_string()).collect();
+        assert!(errors.is_empty(), "{errors:?}: {event}");
+    }
+    let finished = empty.last().unwrap();
+    assert_eq!(finished["tests"], 0);
+    assert_eq!(finished["build"]["rounds"], 0);
+    assert_eq!(finished["score"], Value::Null);
+    assert_eq!(finished["passed"], true);
+    assert_eq!(finished["reports"], serde_json::json!([]));
+    assert_eq!(
+        finished["scope"],
+        serde_json::json!({ "since": "HEAD", "fileCount": 0, "lineCount": 0 })
+    );
+    let (code, full) = mutastic_in(&copy, &["run", dir, "--since=HEAD", "--format=full"]);
+    assert_eq!(code, 0, "{full}");
+    assert!(
+        full.contains("  Changed  0 lines in 0 files since HEAD, so nothing to build or run\n"),
+        "{full}"
+    );
+    for row in ["Build", "Test runs", "Tests", "Reports"] {
+        assert!(!full.contains(&format!(" {row}  ")), "{row}: {full}");
+    }
+    assert!(
+        full.contains("Score  none  [PASS] Nothing to measure: no mutants to score.\n"),
+        "{full}"
+    );
+    let after: Vec<Vec<u8>> = ["last-run.tsv", "mutation.json", "mutation.html"]
+        .iter()
+        .map(|file| kept(file))
+        .collect();
+    assert!(before == after, "a run that measured nothing is never kept");
+
+    let (code, jsonl) = mutastic_in(
+        &copy,
+        &[
+            "run",
+            dir,
+            "--since=HEAD",
+            "--force-coverage",
+            "--format=jsonl",
+            "--report=none",
+        ],
+    );
+    assert_eq!(code, 0, "{jsonl}");
+    let forced = json_lines(&jsonl);
+    assert_eq!(
+        phases(&forced),
+        ["reading", "building", "coverage", "mutants"],
+        "{jsonl}"
+    );
+    let finished = forced.last().unwrap();
+    assert!(finished["tests"].as_u64().unwrap() > 0, "{finished}");
+    assert!(
+        finished["build"]["rounds"].as_u64().unwrap() > 0,
+        "{finished}"
+    );
+    assert_eq!(finished["score"], Value::Null);
 }
 
 /// `--report=sarif`: SARIF 2.1.0 the schema accepts, a result for the missed mutant on its line

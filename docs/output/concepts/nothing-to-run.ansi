@@ -1,0 +1,7 @@
+
+ [2m   Files[0m  [32m[1m0 clean[0m[0m[2m (0)[0m
+ [2m Mutants[0m  [32m✓ [1m0 caught[0m[0m[2m (0)[0m
+ [2m Changed[0m  0 lines in 0 files since HEAD, so nothing to build or run
+ [2mStart at[0m  19:19:22
+ [2mDuration[0m  43ms [2m(setup 43ms)[0m
+ [2m   Score[0m  [1mnone[0m  [42;30;1m PASS [0m [2mNothing to measure: no mutants to score.[0m

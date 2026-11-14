@@ -7,6 +7,19 @@ newest come first.
 
 ### Additions
 
+- **A run with no mutant to run builds nothing and runs no test.** `mutastic run --since=HEAD` on
+  a clean tree took a build and a pass of every test, a minute and more on a big crate, to say
+  there was nothing to measure. When no mutant is there to run (no changed lines, changed lines
+  with no mutant, `--only` with skipped mutants only, a share that holds none, or a package with
+  none), mutastic now finds the mutants, lists the skipped ones with their reasons, and passes in
+  a second or so: `Changed  0 lines in 0 files since HEAD, so nothing to build or run`. The
+  summary leaves out the build, test runs and tests rows, `run-finished` has `tests` 0 and no
+  build rounds, and `run-started` comes with the results and leaves out the `optLevel` Cargo
+  didn't report. Such a run leaves the last run's record and report files as they were, unless a
+  `--report` is asked for, so `explain` and the next run's comparison still read the last run
+  that measured something. The gate passes a task that changed no mutant's line as fast.
+  `--force-coverage` builds and runs the tests anyway, as before, to check or time the suite. See
+  [When there's nothing to run](docs/concepts/how-a-run-works.md#when-theres-nothing-to-run).
 - **An error is an event too.** In `--format=jsonl` and `--format=agent`, when mutastic can't run,
   the last line on stdout is a `run-failed` event, with the error's `code`, its `message`, the
   commands it ends in as `help`, each with whether it runs as it is, has a `<…>` to fill in, or is

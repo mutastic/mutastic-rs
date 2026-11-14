@@ -47,6 +47,7 @@
         "--only",
         "--workers",
         "--no-suggestions",
+        "--force-coverage",
         "--operators",
         "--unsafe",
         "--report",
@@ -358,7 +359,7 @@
       "group": "Running",
       "value": "REF",
       "choices": [],
-      "help": "Mutate only the lines changed since the merge-base of HEAD and REF, uncommitted and new files included; the default branch without one",
+      "help": "Mutate only the lines changed since the merge-base of HEAD and REF, uncommitted and new files included; the default branch without one. With no mutant on those lines, nothing is built or run",
       "commands": [
         "next",
         "run"
@@ -459,6 +460,25 @@
         "run": {
           "commandLine": "mutastic run --no-suggestions",
           "cargo": "cargo mutastic run --no-suggestions"
+        }
+      }
+    },
+    {
+      "name": "--force-coverage",
+      "synopsis": "--force-coverage",
+      "kind": "flag",
+      "group": "Running",
+      "value": "",
+      "choices": [],
+      "help": "Build and run every test even when no mutant is there to run, to check or time the suite",
+      "commands": [
+        "run"
+      ],
+      "environment": "",
+      "examples": {
+        "run": {
+          "commandLine": "mutastic run --since --force-coverage",
+          "cargo": "cargo mutastic run --since --force-coverage"
         }
       }
     },
