@@ -329,11 +329,13 @@ fn a_property_failing_at_random_catches_nothing() {
     for _ in 0..3 {
         let (code, stdout) = mutastic(&dir, &["run", ".", "--format=jsonl"]);
         assert!(code == 1 || code == 2, "{stdout}");
-        let tripled: Vec<String> = finished(&stdout)
+        let mut tripled: Vec<String> = finished(&stdout)
             .iter()
             .filter(|m| m["coveredBy"] == serde_json::json!(["tripling::triples_stay_small"]))
             .map(|m| format!("{} {} {}", m["id"], m["status"], m["caughtBy"]))
             .collect();
+        // In id order: each goes out as its mutant finishes, which varies from run to run.
+        tripled.sort();
         assert!(
             !tripled.is_empty(),
             "the seed draws a case it passes: {stdout}"
@@ -357,10 +359,13 @@ fn caught_by_is_stable_across_runs() {
         .map(|_| {
             let (code, stdout) = mutastic(&dir, &["run", ".", "--format=jsonl"]);
             assert_eq!(code, 1, "{stdout}");
-            finished(&stdout)
+            // In id order: each goes out as its mutant finishes, which varies from run to run.
+            let mut said: Vec<String> = finished(&stdout)
                 .iter()
                 .map(|m| format!("{} {} {}", m["id"], m["status"], m["caughtBy"]))
-                .collect()
+                .collect();
+            said.sort();
+            said
         })
         .collect();
     assert_eq!(runs[0], runs[1]);
