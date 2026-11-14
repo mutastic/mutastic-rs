@@ -64,7 +64,11 @@ Formatting is rustfmt's, with its defaults: that is the spec, not taste.
     A pull request's title becomes its squash merge's subject with " (#<number>)" added, so keep
     it to 44 characters (43 from #100); CI checks it. Merge with `sh .githooks/merge-pr <number>
     [body-file]`, never `gh pr merge` by hand: it checks the whole message, body wrapped at 72,
-    and merges only once CI is green. See [Commit messages](CONTRIBUTING.md#commit-messages).
+    and once CI is green adds the pull request to the merge queue, which lands it only if it
+    still passes merged with the latest main. It returns once queued; `--wait` waits for it to
+    land (run it in the background, as the queue can take an hour), and prints the commit. The
+    queue takes the body from the pull request's description, which merge-pr sets: don't edit
+    it after. See [Commit messages](CONTRIBUTING.md#commit-messages).
 
 ## mutastic's own rules
 
