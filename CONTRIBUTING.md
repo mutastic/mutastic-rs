@@ -170,15 +170,15 @@ merges it only if that passes. One that fails there leaves the queue, and `main`
 
 Merge with `.githooks/merge-pr`, not `gh pr merge` by hand. It writes the subject from the title,
 takes the body from a file (wrapped at 72) or leaves it empty, checks the whole message with
-`commit-msg`, and once every check has passed, on the commit they ran on, adds the pull request to
-the queue. The queue writes the squash commit from the title and the pull request's description,
-so merge-pr makes the body the description first; don't edit it after. In the queue, the
-`squash-title` check reads that commit, body and all. merge-pr returns once the pull request is
-queued; with `--wait` it stays until it lands and prints the commit on `main`, or says why it left
-the queue (run it with `--wait` again to wait for one already queued). GitHub deletes the branch
-once it lands; local branches and worktrees are left alone. `--admin` merges past the queue and
-the checks, where the rules let an admin, for a check that can't pass; the message is still
-checked.
+`commit-msg`, and adds the pull request to the queue for the commit the checks ran on, once none has
+failed: the queue takes it only once they all pass. The queue writes the squash commit from the
+title and the pull request's description, so merge-pr makes the body the description first; don't
+edit it after. In the queue, the `squash-title` check reads that commit, body and all. merge-pr
+returns once the pull request is queued; with `--wait` it stays until it lands and prints the commit
+on `main`, or says why it left the queue (run it with `--wait` again to wait for one already
+queued). GitHub deletes the branch once it lands; local branches and worktrees are left alone.
+`--admin` merges past the queue and the checks, where the rules let an admin, for a check that can't
+pass; the message is still checked.
 
 ```sh
 sh .githooks/merge-pr 59                   # subject "<title> (#59)", no body; queued

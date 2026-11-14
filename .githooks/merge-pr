@@ -6,8 +6,9 @@
 #
 # The subject is the pull request's title and " (#<number>)", as GitHub writes it, and the body
 # is the file, or empty. Both go through commit-msg (check-title for the subject) first. It goes
-# on only once every check on the pull request has passed, and only for the head commit they ran
-# on. No local branch or checkout is touched.
+# on only for the head commit the checks ran on, and once they have all passed; with a queue, also
+# while some are still running, since the queue takes the pull request only once they pass. No
+# local branch or checkout is touched.
 #
 # The merge queue tests the pull request merged with the latest main, and with every pull request
 # ahead of it, and merges it only if that passes too. merge-pr adds it to the queue and returns;
@@ -117,13 +118,13 @@ info=$(gh api graphql -F owner="${repo%/*}" -F name="${repo#*/}" -F number="$num
     repository(owner: $owner, name: $name) {
       squashMergeCommitMessage
       pullRequest(number: $number) {
-        isMergeQueueEnabled isInMergeQueue autoMergeRequest { enabledAt } headRefOid title
+        id isMergeQueueEnabled isInMergeQueue autoMergeRequest { enabledAt } headRefOid title
       }
     }
   }' --jq '.data.repository | [.squashMergeCommitMessage, .pullRequest.isMergeQueueEnabled,
     (.pullRequest.isInMergeQueue or .pullRequest.autoMergeRequest != null),
-    .pullRequest.headRefOid, .pullRequest.title] | @tsv')
-IFS=$(printf '\t') read -r squash_message queue_enabled already head title <<EOF
+    .pullRequest.id, .pullRequest.headRefOid, .pullRequest.title] | @tsv')
+IFS=$(printf '\t') read -r squash_message queue_enabled already id head title <<EOF
 $info
 EOF
 queue=
@@ -161,6 +162,11 @@ sh "$hooks/commit-msg" "$message"
 if [ -z "$admin" ]; then
   status=0
   checks=$(gh pr checks "$number" --repo "$repo" 2>&1) || status=$?
+  # Checks still running are no reason to stop with a queue: the pull request joins it only once
+  # they pass. They run again after merge-pr writes the description, so a second try finds them so.
+  if [ "$status" -eq 8 ] && [ -n "$queue" ]; then
+    status=0
+  fi
   if [ "$status" -ne 0 ]; then
     printf '%s\n' "$checks" >&2
     if [ "$status" -eq 8 ]; then
@@ -180,7 +186,8 @@ if [ -z "$queue" ]; then
 fi
 
 # The queue's squash commit takes its body from the description, so the description becomes the
-# body. Changing it runs the commit checks again; the pull request joins the queue once they pass.
+# body. Changing it runs the commit checks on the pull request again; in the queue, squash-title
+# checks the commit written from it.
 if [ "$squash_message" = PR_BODY ]; then
   current=$(gh pr view "$number" --repo "$repo" --json body --jq .body)
   if [ "$current" != "$(cat "$message.body")" ]; then
@@ -188,11 +195,26 @@ if [ "$squash_message" = PR_BODY ]; then
     echo "merge-pr: #$number's description is now the body of its squash commit"
   fi
 fi
-# gh adds the pull request to the queue, or once its checks pass if they're running again.
-gh pr merge "$number" --repo "$repo" --squash --match-head-commit "$head"
+# Into the queue, pinned to the commit the checks ran on. If GitHub won't take it yet, as with
+# checks still running, auto-merge queues it once they pass (the repository allows auto-merge).
+# Not gh pr merge: some versions ask for auto-merge even for a pull request that is ready.
+enqueue='mutation($id: ID!, $head: GitObjectID!) {
+  enqueuePullRequest(input: { pullRequestId: $id, expectedHeadOid: $head }) {
+    mergeQueueEntry { position }
+  }
+}'
+automerge='mutation($id: ID!, $head: GitObjectID!) {
+  enablePullRequestAutoMerge(input: { pullRequestId: $id, expectedHeadOid: $head }) {
+    pullRequest { number }
+  }
+}'
+if ! gh api graphql -f id="$id" -f head="$head" -f query="$enqueue" > /dev/null; then
+  echo "merge-pr: GitHub won't queue #$number yet; it joins the queue once its checks pass" >&2
+  gh api graphql -f id="$id" -f head="$head" -f query="$automerge" > /dev/null
+fi
 if [ -z "$wait" ]; then
-  echo "merge-pr: #$number is queued; it lands once it passes with main and the pull requests"
-  echo "merge-pr: ahead of it. merge-pr --wait $number waits for it and prints the commit"
+  echo "merge-pr: #$number lands once it passes with main and the pull requests ahead of it"
+  echo "merge-pr: in the queue. merge-pr --wait $number waits for it and prints the commit"
   exit 0
 fi
 await
