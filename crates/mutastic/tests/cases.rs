@@ -367,3 +367,42 @@ fn a_caught_return_has_no_missed_note() {
     assert!(!out.contains("none fails"), "{out}");
     assert!(out.contains("= note: inputs seen: total = 100\n"), "{out}");
 }
+
+/// Where several cases catch a mutant, as cases written alike do, the one named is the same in
+/// every run: the first as the tests are listed, the library's before the other targets', not the
+/// first of the threads to finish.
+#[test]
+fn caught_by_is_stable_across_runs() {
+    let dir = copy("stable");
+    let runs: Vec<Vec<String>> = (0..3)
+        .map(|_| {
+            let (code, stdout) = mutastic(&dir, &["run", ".", "--format=jsonl"]);
+            assert_eq!(code, 1, "{stdout}");
+            finished(&stdout)
+                .iter()
+                .map(|m| format!("{} {} {}", m["id"], m["status"], m["caughtBy"]))
+                .collect()
+        })
+        .collect();
+    assert_eq!(runs[0], runs[1]);
+    assert_eq!(runs[1], runs[2]);
+    // Changing `add` fails the rstest case, the test-case row and the property alike: the
+    // library's first, as listed, is named.
+    let (_, stdout) = mutastic(&dir, &["run", ".", "--format=jsonl"]);
+    let minus = finished(&stdout)
+        .into_iter()
+        .find(|m| m["location"]["method"] == "add" && m["status"] == "Killed")
+        .unwrap();
+    assert_eq!(
+        minus["coveredBy"],
+        serde_json::json!([
+            "prop_tests::adding_zero_keeps_it",
+            "rows::adds::test_case_1_a_hundred_and_nothing",
+            "rstest_tests::adds::case_1"
+        ])
+    );
+    assert_eq!(
+        minus["caughtBy"], "prop_tests::adding_zero_keeps_it",
+        "{minus}"
+    );
+}

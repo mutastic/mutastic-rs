@@ -222,11 +222,11 @@
           "properties": {
             "original": {
               "type": "string",
-              "description": "The source the change is to, where it's known: `>=`."
+              "description": "The source span the mutant replaces, where it's known: a token, `>=`, or for a condition made always true or false the condition, `total >= 100`. The same in both editions."
             },
             "replacement": {
               "type": "string",
-              "description": "What that source becomes, where the change has one: `>`."
+              "description": "The source that replaces it: `>`, `false`, or the value a return gives instead, `0`. The same in both editions."
             },
             "description": {
               "type": "string",
