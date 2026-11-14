@@ -11,6 +11,7 @@ use crate::engine::{MutantResult, Report, Status};
 use crate::ignores;
 use crate::sites::{self, Change, Crate, Mutant};
 use crate::suggest::{self, SuggestedTest};
+use crate::untrusted;
 use crate::words::{self, Advice};
 
 pub mod files;
@@ -230,6 +231,9 @@ struct Entry<'a> {
 
 struct View<'a> {
     report: &'a Report,
+    /// Whether what it gives of the project's text is shown: [`untrusted::value`]d, for a person's
+    /// or an agent's reading. Events and report files keep it as it is.
+    shown: bool,
 }
 
 impl<'a> View<'a> {
@@ -252,6 +256,20 @@ impl<'a> View<'a> {
                 "if a caller can pass {unpassed}, test that caller with it; if none can, the mutant \
                  can't happen: propose ignoring it as unreachable"
             );
+        }
+        if self.shown {
+            // Its words quote the code (an operand, a name), so they're escaped as the code is.
+            for text in [
+                &mut advice.change,
+                &mut advice.caret,
+                &mut advice.headline,
+                &mut advice.help,
+            ]
+            .into_iter()
+            .chain(advice.notes.iter_mut())
+            {
+                *text = untrusted::escape(text);
+            }
         }
         advice
     }
@@ -312,7 +330,21 @@ impl<'a> View<'a> {
     }
 
     fn file(&self, mutant: &Mutant) -> String {
-        mutant.file.display().to_string()
+        let file = mutant.file.display().to_string();
+        if self.shown {
+            untrusted::value(&file)
+        } else {
+            file
+        }
+    }
+
+    /// A test's name, or another value of the project's, as this view gives it.
+    fn value(&self, text: &str) -> String {
+        if self.shown {
+            untrusted::value(text)
+        } else {
+            text.to_string()
+        }
     }
 
     fn id(&self, result: &MutantResult) -> &'a str {
@@ -349,14 +381,27 @@ impl<'a> View<'a> {
             .as_ref()?;
         let at = self.named(result);
         let edge = suggest::edge(mutant.operator, &mutant.operands);
-        Some(suggest::test(
+        let test = suggest::test(
             callable,
             &mutant.file,
             suggestion,
             named.then_some(mutant.id.as_str()),
             at.as_ref(),
             edge.as_ref(),
-        ))
+        );
+        Some(if self.shown {
+            SuggestedTest {
+                place: untrusted::value(&test.place),
+                lines: test
+                    .lines
+                    .iter()
+                    .map(|line| untrusted::value(line))
+                    .collect(),
+                ..test
+            }
+        } else {
+            test
+        })
     }
 
     /// The missed mutants, a line's together, the line's most telling first.
@@ -448,8 +493,16 @@ pub const MUTANT_COMMANDS: &[&str] = &["verify", "explain", "ignore", "propose",
 
 /// The command for `ids` (split by commas) in the package at `dir`, by one of
 /// [`MUTANT_COMMANDS`]: `mutastic verify mb2f8ae57 fixtures/pricing`. Every command the output
-/// offers for a mutant is written here, so a test can check each one parses.
+/// offers for a mutant is written here, so a test can check each one parses. It's made of
+/// mutastic's own words, ids (`m` and 8 hex digits: anything else is `<id>`, to fill in) and the
+/// directory, quoted for a shell: never of text from the project or a report file.
 pub fn mutant_command(verb: &str, ids: &str, dir: &str) -> String {
+    let ids = ids
+        .split(',')
+        .map(|id| if untrusted::is_id(id) { id } else { "<id>" })
+        .collect::<Vec<_>>()
+        .join(",");
+    let dir = shell_word(dir);
     match verb {
         "verify" => format!("mutastic verify {ids} {dir}"),
         "explain" => format!("mutastic explain {ids} {dir}"),
@@ -474,7 +527,24 @@ pub fn mutant_command(verb: &str, ids: &str, dir: &str) -> String {
 
 /// `mutastic next fixtures/pricing`: what `next` offers to run again, for the next item.
 pub fn next_command(dir: &str) -> String {
-    format!("mutastic next {dir}")
+    format!("mutastic next {}", shell_word(dir))
+}
+
+/// A directory, or another word typed into a command mutastic offers, as a shell takes it: as it
+/// is when it's plain (letters, digits and `_./:@%+=,-`, and on Windows `\` and `~`), else in
+/// single quotes, a quote in it written `'\''`, and what can't be seen [`untrusted::escape`]d.
+/// As the Java edition's `Invocation.quoted`.
+pub fn shell_word(word: &str) -> String {
+    let plain = |c: char| {
+        c.is_ascii_alphanumeric()
+            || "_./:@%+=,-".contains(c)
+            || (cfg!(windows) && (c == '\\' || c == '~'))
+    };
+    if !word.is_empty() && word.chars().all(plain) {
+        word.to_string()
+    } else {
+        format!("'{}'", untrusted::escape(word).replace('\'', "'\\''"))
+    }
 }
 
 /// Where an entry stands in the order a run ranks its misses, as the Java edition's `Finding.ranked`
@@ -596,14 +666,24 @@ fn covered_by(result: &MutantResult) -> String {
     if count == 1 {
         format!(
             "covered by {} (its 1 covering test still passes)",
-            result.covered_by[0]
+            untrusted::value(&result.covered_by[0])
         )
     } else {
         format!(
             "covered by {} (all {count} covering tests still pass)",
-            result.covered_by.join(", ")
+            names(&result.covered_by)
         )
     }
+}
+
+/// Tests' names, or other values of the project's, as they're shown: each [`untrusted::value`]d,
+/// with commas between.
+fn names(names: &[String]) -> String {
+    names
+        .iter()
+        .map(|name| untrusted::value(name))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn percent(score: Option<f64>) -> String {
@@ -635,7 +715,10 @@ pub fn render(report: &Report, format: Format, style: Style) -> String {
 
 /// `discount()`: a function as the cards name it.
 fn method(found: &Crate, mutant: &Mutant) -> String {
-    format!("{}()", found.functions[mutant.function].name)
+    format!(
+        "{}()",
+        untrusted::value(&found.functions[mutant.function].name)
+    )
 }
 
 /// A running mutant, for a worker's line: `src/lib.rs:26 discount() >= becomes >`, its change in
@@ -644,10 +727,12 @@ pub fn running(found: &Crate, mutant: &Mutant, style: Style) -> String {
     let name = &found.functions[mutant.function].name;
     format!(
         "{}:{} {} {}",
-        mutant.file.display(),
+        untrusted::value(&mutant.file.display().to_string()),
         mutant.line,
         style.bold(&method(found, mutant)),
-        style.code(&words::advise(mutant, name, &BTreeMap::new()).change)
+        style.code(&untrusted::escape(
+            &words::advise(mutant, name, &BTreeMap::new()).change
+        ))
     )
 }
 
@@ -692,8 +777,8 @@ pub fn file_finished(
         } else {
             style.red("❯")
         },
-        style.label(project, CYAN),
-        found.mutants[first.mutant].file.display(),
+        style.label(&untrusted::value(project), CYAN),
+        untrusted::value(&found.mutants[first.mutant].file.display().to_string()),
         style.dim("("),
         counts.join(&style.dim(" | ")),
         style.dim(")"),
@@ -708,7 +793,9 @@ pub fn file_finished(
             style.red("×"),
             method(found, mutant),
             style.dim(&format!(":{}", mutant.line)),
-            style.code(&words::advise(mutant, name, &result.inputs).change)
+            style.code(&untrusted::escape(
+                &words::advise(mutant, name, &result.inputs).change
+            ))
         );
     }
     let mut by_line: Vec<((String, usize), usize)> = Vec::new();
@@ -740,7 +827,10 @@ pub fn file_finished(
 }
 
 fn human(report: &Report, style: Style, format: Format) -> String {
-    let view = View { report };
+    let view = View {
+        report,
+        shown: true,
+    };
     let mut out = String::new();
     let entries = view.entries();
     if !entries.is_empty() {
@@ -821,16 +911,17 @@ fn warnings(out: &mut String, report: &Report, style: Style) {
             out,
             " {} {} failed, then passed when run again; left out of this run{}",
             style.amber("! flaky:"),
-            flaky.test,
+            untrusted::value(&flaky.test),
             flaky_reason(flaky)
         );
     }
     for (test, mutants) in &likely_flaky {
         let _ = writeln!(
             out,
-            " {} {test}; with the code unchanged, whether it catches {} changed since the last run",
+            " {} {}; with the code unchanged, whether it catches {} changed since the last run",
             style.amber("! likely flaky:"),
-            mutants.join(", ")
+            untrusted::value(test),
+            names(mutants)
         );
     }
 }
@@ -848,12 +939,9 @@ fn likely_flaky(report: &Report) -> std::collections::BTreeMap<String, Vec<Strin
 /// `; it reaches SystemTime::now`: what it reaches that changes from run to run, its own code first.
 fn flaky_reason(flaky: &crate::flaky::Flaky) -> String {
     if !flaky.reaches_in_test.is_empty() {
-        format!(
-            "; its own code reaches {}",
-            flaky.reaches_in_test.join(", ")
-        )
+        format!("; its own code reaches {}", names(&flaky.reaches_in_test))
     } else if !flaky.reaches.is_empty() {
-        format!("; it reaches {}", flaky.reaches.join(", "))
+        format!("; it reaches {}", names(&flaky.reaches))
     } else {
         String::new()
     }
@@ -867,12 +955,12 @@ fn flaky_advice(flaky: &crate::flaky::Flaky) -> String {
     if !flaky.reaches_in_test.is_empty() {
         format!(
             "Its own code reaches {}, which answers differently every run, so it makes its own flakiness: making that the same every time is likely safe, and if it stands in for something real (a slow service), keep that checked by a test of its own.",
-            flaky.reaches_in_test.join(", ")
+            names(&flaky.reaches_in_test)
         )
     } else if !flaky.reaches.is_empty() {
         format!(
             "The code it runs reaches {}, which answers differently every run: making that the same every time (a seed, a fixed clock, through the code's own seam) is likely safe, so long as the test still checks what it did.",
-            flaky.reaches.join(", ")
+            names(&flaky.reaches)
         )
     } else {
         "mutastic can't tell why: leave it unless the cause is plain in the code, and say in your final message that it's flaky.".to_string()
@@ -919,7 +1007,7 @@ fn frame(
             out,
             " {} {bar} {}",
             style.dim(&format!("{number:>width$}")),
-            lines[number - 1]
+            untrusted::value(lines[number - 1])
         );
         if number == mutant.line {
             let caret_width = text[mutant.caret.clone()]
@@ -1001,7 +1089,7 @@ fn cut(lines: &[&str], changed: usize, indent: usize) -> Vec<String> {
     }
     for line in &lines[from..to] {
         let leading = line.len() - line.trim_start().len();
-        shown.push(line[leading.min(indent)..].trim_end().to_string());
+        shown.push(untrusted::value(line[leading.min(indent)..].trim_end()));
     }
     if to < lines.len() {
         shown.push("…".to_string());
@@ -1113,7 +1201,7 @@ fn grouped(out: &mut String, view: &View, entries: &[Entry], style: Style) {
                 let mutant = view.mutant(result);
                 (mutant.line, mutant.column, mutant.ordinal)
             });
-            let name = &view.report.found.functions[function].name;
+            let name = untrusted::value(&view.report.found.functions[function].name);
             let _ = writeln!(
                 out,
                 "   {}() {}",
@@ -1343,7 +1431,11 @@ fn not_covered_places(view: &View) -> Vec<(String, Vec<(usize, String)>)> {
                 format!("{from}-{to}")
             };
             (
-                format!("{}:{place} {}()", f.file.display(), f.name),
+                format!(
+                    "{}:{place} {}()",
+                    view.value(&f.file.display().to_string()),
+                    view.value(&f.name)
+                ),
                 mutants,
             )
         })
@@ -1397,7 +1489,7 @@ fn summary(out: &mut String, report: &Report, style: Style) {
     // What to do next sits under the misses it's about, and the score, with its verdict, is the
     // last line: the one the cursor lands under.
     if report.count(Status::Survived) > 0 {
-        let dir = &report.project.given;
+        let dir = shell_word(&report.project.given);
         let _ = writeln!(
             out,
             "{}\n",
@@ -1840,7 +1932,7 @@ fn not_mutated(report: &Report) -> Vec<String> {
             .found
             .not_built
             .iter()
-            .map(|(cfg, count)| format!("`{cfg}` ({count})"))
+            .map(|(cfg, count)| format!("`{}` ({count})", untrusted::value(cfg)))
             .collect();
         lines.push(format!("not built here: {}", by_cfg.join(", ")));
     }
@@ -1849,12 +1941,14 @@ fn not_mutated(report: &Report) -> Vec<String> {
 
 fn agent(report: &Report, style: Style) -> String {
     let words = style.words;
-    let view = View { report };
+    let view = View {
+        report,
+        shown: true,
+    };
     let mut out = String::new();
     let missed = report.count(Status::Survived);
     let not_covered = report.count(Status::NoCoverage);
     let skipped = report.count(Status::Ignored);
-    let dir = &report.project.given;
     let _ = writeln!(
         out,
         "mutastic: {} · score {} ({}{}) · {missed} {}, {not_covered} {}, {} {} of {} mutants{}",
@@ -1890,7 +1984,7 @@ fn agent(report: &Report, style: Style) -> String {
         let _ = writeln!(
             out,
             "flaky: {} failed, then passed when run again; left out of this run, so its catches don't count. {} Never remove, disable or loosen it to get a run through",
-            flaky.test,
+            untrusted::value(&flaky.test),
             flaky_advice(flaky)
         );
     }
@@ -1906,13 +2000,15 @@ fn agent(report: &Report, style: Style) -> String {
     for (test, mutants) in likely_flaky(report) {
         let _ = writeln!(
             out,
-            "likely flaky: {test}; with the code unchanged, whether it catches {} changed since the last run. Its catches can't be trusted until it's fixed",
-            mutants.join(", ")
+            "likely flaky: {}; with the code unchanged, whether it catches {} changed since the last run. Its catches can't be trusted until it's fixed",
+            untrusted::value(&test),
+            names(&mutants)
         );
     }
     let _ = writeln!(
         out,
-        "rules: {RULE}; a fix counts when `mutastic verify <id> {dir}` passes"
+        "rules: {RULE}; a fix counts when `{}` passes",
+        view.command("verify", "<id>")
     );
     let _ = writeln!(
         out,
@@ -1927,12 +2023,20 @@ fn agent(report: &Report, style: Style) -> String {
         Some(judged) => new_first(&view, ranked, &judged.baseline),
         None => ranked,
     };
+    // From here on, each line quotes the code or the test run: fenced, so none of it reads as
+    // mutastic's own instructions.
+    let mut quoted = String::new();
     for (index, entry) in entries.iter().take(10).enumerate() {
-        let _ = write!(out, "\n{}. {}", index + 1, agent_entry(&view, entry, words));
+        let _ = write!(
+            quoted,
+            "\n{}. {}",
+            index + 1,
+            agent_entry(&view, entry, words)
+        );
     }
     if entries.len() > 10 {
         let _ = writeln!(
-            out,
+            quoted,
             "\n…and {} more: run with --format=jsonl for them all",
             entries.len() - 10
         );
@@ -1941,7 +2045,7 @@ fn agent(report: &Report, style: Style) -> String {
     let places = not_covered_places(&view);
     if !places.is_empty() {
         let _ = writeln!(
-            out,
+            quoted,
             "\nnot covered (no test reaches these lines{}{}):",
             or_only_flaky(report),
             if entries.is_empty() {
@@ -1957,7 +2061,7 @@ fn agent(report: &Report, style: Style) -> String {
         for (place, mutants) in places {
             let count = mutants.len();
             let _ = writeln!(
-                out,
+                quoted,
                 "- {place} ({count} mutant{})",
                 if count == 1 { "" } else { "s" }
             );
@@ -1973,7 +2077,7 @@ fn agent(report: &Report, style: Style) -> String {
                     .map(|(_, id)| id.as_str())
                     .collect();
                 let _ = writeln!(
-                    out,
+                    quoted,
                     "  or propose{}: {}",
                     if lines.len() == 1 {
                         String::new()
@@ -1984,6 +2088,9 @@ fn agent(report: &Report, style: Style) -> String {
                 );
             }
         }
+    }
+    if !quoted.is_empty() {
+        out.push_str(&untrusted::fence(&quoted));
     }
     out
 }
@@ -2037,7 +2144,7 @@ fn agent_entry(view: &View, entry: &Entry, words: Vocabulary) -> String {
     let _ = writeln!(
         out,
         "   covered by: {}; all still pass with the change",
-        result.covered_by.join(", ")
+        names(&result.covered_by)
     );
     for note in &advice.notes {
         let _ = writeln!(out, "   evidence: {note}");
@@ -2108,7 +2215,10 @@ pub fn run_started(
 
 /// The `mutastic.events/v1` stream.
 fn jsonl(report: &Report) -> String {
-    let view = View { report };
+    let view = View {
+        report,
+        shown: false,
+    };
     let mut lines = Vec::new();
     // Streamed as the build finished, when the run's progress went out live.
     if !report.streamed {
@@ -2438,7 +2548,10 @@ pub fn last_run(report_file: &std::path::Path, id: &str) -> Option<LastRun> {
 /// gets its card; anything else a card that says what happened instead, without help or a test to
 /// add; then what the change is, its operator, its id, its site and how the last full run went.
 pub fn explained(report: &Report, last: Option<LastRun>, style: Style) -> String {
-    let view = View { report };
+    let view = View {
+        report,
+        shown: true,
+    };
     let mut out = String::new();
     let Some(result) = report.results.first() else {
         return out;
@@ -2471,10 +2584,10 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
             ),
             format!(
                 "caught by {}{}",
-                result.killed_by.as_deref().unwrap_or("a test"),
+                untrusted::value(result.killed_by.as_deref().unwrap_or("a test")),
                 match result.killed_with.as_deref() {
                     Some(how) if how.starts_with("crash") => {
-                        format!(", by a crash ({how})")
+                        format!(", by a crash ({})", untrusted::value(how))
                     }
                     _ => String::new(),
                 }
@@ -2495,12 +2608,12 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
             style.label("SKIPPED", CYAN),
             format!(
                 "crashed where a crash proves nothing: {}",
-                result.reason.as_deref().unwrap_or_default()
+                untrusted::value(result.reason.as_deref().unwrap_or_default())
             ),
         ),
         Status::Ignored | Status::Survived => (
             style.label("SKIPPED", CYAN),
-            result.reason.clone().unwrap_or_default(),
+            untrusted::value(result.reason.as_deref().unwrap_or_default()),
         ),
     };
     let _ = writeln!(out, "\n {label} {}", style.bold(&outcome));
@@ -2510,7 +2623,7 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
     let mut notes = advice.notes.clone();
     if !result.covered_by.is_empty() {
         // Whether they still pass is a miss's to say: here, only which tests reach it.
-        notes.push(format!("covered by {}", result.covered_by.join(", ")));
+        notes.push(format!("covered by {}", names(&result.covered_by)));
     }
     for (index, note) in notes.iter().enumerate() {
         if index == 0 {
@@ -2582,6 +2695,23 @@ impl About {
     }
 }
 
+impl About {
+    /// The same, its text of the project's (the code, names, what the last run says) as it's
+    /// shown.
+    fn shown(self) -> About {
+        About {
+            from: untrusted::value(&self.from),
+            to: untrusted::value(&self.to),
+            operator_description: untrusted::escape(&self.operator_description),
+            id: untrusted::escape(&self.id),
+            function: untrusted::value(&self.function),
+            site: untrusted::escape(&self.site),
+            last_words: untrusted::escape(&self.last_words),
+            ..self
+        }
+    }
+}
+
 /// What the last full run said of the mutant, in words.
 fn last_words(last: Option<&LastRun>) -> String {
     match last {
@@ -2615,7 +2745,7 @@ fn about(
     last: Option<LastRun>,
     style: Style,
 ) {
-    let about = About::of(view, result, last);
+    let about = About::of(view, result, last).shown();
     let title = " About this mutant ";
     let _ = writeln!(
         out,
@@ -2660,7 +2790,10 @@ fn about(
 /// `mutant-explained` event with what `About this mutant` says, a field for each row, as the Java
 /// edition writes it: `applied` is at the source level here, where Java's is at the bytecode.
 pub fn explained_jsonl(report: &Report, last: Option<LastRun>) -> String {
-    let view = View { report };
+    let view = View {
+        report,
+        shown: false,
+    };
     let mut out = jsonl(report);
     let Some(result) = report.results.first() else {
         return out;
