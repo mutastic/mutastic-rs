@@ -1756,14 +1756,9 @@ fn gate_verdict(
             if one { "it" } else { "them" }
         )));
     }
-    // A task that changed nothing has nothing to check.
-    if gate::untouched(here, &state.base) {
-        return Ok(gate::Verdict::pass(
-            "mutastic gate: passed: the task changed no lines mutastic mutates".into(),
-        ));
-    }
-    // Whatever lines it changed: a task that only deletes a test, or ignores a mutant itself,
-    // changes none mutastic mutates, and mustn't pass for it.
+    // Whatever lines it changed: a task that only ignores a mutant itself changes none mutastic
+    // mutates, and mustn't pass for it. Checked even on a tree git sees as untouched, which it is
+    // when the project's git ignores `.mutastic/`.
     let added: Vec<String> = ignored_ids(here)?
         .difference(&state.ignored)
         .cloned()
@@ -1787,6 +1782,12 @@ fn gate_verdict(
             baseline::FILE,
             if one { "it" } else { "them" }
         )));
+    }
+    // A task that changed nothing else can't have taken a test away or broken one.
+    if gate::untouched(here, &state.base) {
+        return Ok(gate::Verdict::pass(
+            "mutastic gate: passed: the task changed no lines mutastic mutates".into(),
+        ));
     }
     let (before, now) = (state.shape, gate::Shape::of(here));
     if now.fewer_than(&before) {

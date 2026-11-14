@@ -1679,9 +1679,9 @@ fn the_gate_takes_an_ignore_the_person_accepts_between_turns() {
 
 /// A task that changes no line mutastic mutates is still held to the gate's other checks: it
 /// mustn't take a test away, or ignore a mutant or add one to the baseline itself. Without them,
-/// an agent passes by deleting the test that fails, once the rest pass. An ignore the person
-/// accepts between turns is still the task's to start from, and a task that changed nothing
-/// passes at once.
+/// an agent passes by deleting the test that fails, once the rest pass. Its own ignore or baseline
+/// entry holds it where git doesn't see `.mutastic/` too. An ignore the person accepts between
+/// turns is still the task's to start from, and a task that changed nothing passes at once.
 #[test]
 fn the_gate_holds_a_task_that_changes_no_mutated_line() {
     // A test the task starts with, failing: what an agent would rather take away than pass, in a
@@ -1692,6 +1692,8 @@ fn the_gate_holds_a_task_that_changes_no_mutated_line() {
         "removes-test",
         "ignores",
         "baselines",
+        "ignores-unseen",
+        "baselines-unseen",
         "person-ignores",
         "nothing",
     ];
@@ -1716,7 +1718,17 @@ fn the_gate_holds_a_task_that_changes_no_mutated_line() {
             "removes-test" => std::fs::write(&tests, format!("{text}\n{FAILING}")).unwrap(),
             _ => {}
         }
-        std::fs::write(dir.join(".gitignore"), "target\n").unwrap();
+        // A project whose git doesn't see `.mutastic/`: the tree looks untouched.
+        let unseen = task.ends_with("-unseen");
+        std::fs::write(
+            dir.join(".gitignore"),
+            if unseen {
+                "target\n.mutastic/\n"
+            } else {
+                "target\n"
+            },
+        )
+        .unwrap();
         git(&["init", "-q"]);
         git(&["add", "."]);
         git(&["commit", "-q", "-m", "start"]);
@@ -1758,11 +1770,11 @@ fn the_gate_holds_a_task_that_changes_no_mutated_line() {
                 std::fs::write(&tests, &text).unwrap();
                 Some("mutastic gate: fewer tests run than when the task started (4, 0 ignored; now 3, 0 ignored). Put them back: the gate doesn't pass a change by taking tests away".to_string())
             }
-            "ignores" => {
+            "ignores" | "ignores-unseen" => {
                 ignore();
                 Some(format!("mutastic gate: the task ignored {id} itself, and whether a mutant is worth a test is a person's call"))
             }
-            "baselines" => {
+            "baselines" | "baselines-unseen" => {
                 std::fs::create_dir_all(dir.join(".mutastic")).unwrap();
                 std::fs::write(
                     dir.join(".mutastic/baseline.yaml"),
