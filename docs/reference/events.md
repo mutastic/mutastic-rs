@@ -19,6 +19,7 @@ Each event has `schema` (`mutastic.events/v1`), `edition` (`rust`, where the Jav
 | `run-started` | Once the build is done, as it carries the build's profile; with no mutant to run, nothing is built, and it comes with the results |
 | `progress` | Every 30 seconds (`MUTASTIC_HEARTBEAT`), once `run-started` is out: the phase's `elapsedMs`, and what it knows: `done` and `total`; for mutants `weighted`, `leftMs`, the fates so far and how many are `running` |
 | `mutant-finished` | For each mutant, after the phases: each carries what the checking phase found |
+| `mutant-revised` | After every `mutant-finished`, for each mutant a test reached that then failed on its own with no mutant in: its result again, without that test, which replaces its `mutant-finished`. `falseCatchBy` names the test when it was the one that caught the mutant. See [Results](../concepts/results.md#a-test-that-fails-on-its-own) |
 | `run-finished` | Last: the totals, the score and the verdict |
 | `next-item` | From `mutastic next`: each item shown, its lead mutant as `mutant-finished` has it, with `ids` and `rank`. See [Working through misses](../concepts/next.md#for-a-tool) |
 | `next-finished` | Last, from `mutastic next`: how many lines and mutants are `queued`, `shown`, and `waiting` on a person |
@@ -134,7 +135,8 @@ breaking.
 
 ## Not there yet
 
-`flaky` names each test that failed, then passed when run again, and `flakyEvidence` says what it
-reaches that varies, as the Java edition's do. A Rust test fails with a panic, not a chain of
+`flaky` names each test that failed, then passed when run again, or that caught mutants and then
+failed on its own, and `flakyEvidence` says what it reaches that varies, as the Java edition's do;
+the second kind's entry has `"failsAlone": true`. A Rust test fails with a panic, not a chain of
 exceptions, so each one's `failure` is empty and `outside` is `false`. The lists the Java edition
 fills that the Rust edition doesn't yet (`likelyFlaky`, `unrelatedCatches`) are there and empty.

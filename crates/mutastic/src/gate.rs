@@ -462,6 +462,15 @@ pub fn claude_hook(verdict: &Verdict) -> String {
     }
 }
 
+/// Tests that caught mutants and then failed on their own with no mutant in, as the Java edition
+/// says it: their catches don't count, and the task isn't done while they do.
+pub fn false_caught(report: &crate::engine::Report) -> String {
+    format!(
+        "mutastic gate: a test that caught mutants on the lines the task changed fails on its own, with no mutant in, so its catches don't count and the task isn't done.\n\n{}",
+        crate::report::failing_alone(report).trim_end()
+    )
+}
+
 /// What holds the gate, every mutant by id, as the Java edition says it: those missed, those no
 /// test reaches, and apart from them those proposed, which wait on a person, not the agent.
 pub fn held_by(missed: &[String], uncovered: &[String], waiting: &[String]) -> String {
