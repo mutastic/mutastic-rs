@@ -26,6 +26,9 @@ pub struct Outcome {
     pub timed_out: bool,
     /// The first test that failed, by libtest's name.
     pub failed: Option<String>,
+    /// Every test that failed, by libtest's name, in the order they finished: with several
+    /// threads, an order that changes from run to run.
+    pub failures: Vec<String>,
     /// How it failed: `panic`, or `crash` for a process that died another way.
     pub failure: Option<String>,
     pub took: Duration,
@@ -186,6 +189,7 @@ pub fn run(
             passed: false,
             timed_out: false,
             failed: None,
+            failures: Vec::new(),
             failure: Some("couldn't start".into()),
             took: started.elapsed(),
             stdout: String::new(),
@@ -219,6 +223,7 @@ pub fn run(
             passed: false,
             timed_out: true,
             failed: None,
+            failures: Vec::new(),
             failure: None,
             took,
             stdout: text,
@@ -226,11 +231,15 @@ pub fn run(
             signal: None,
         };
     };
-    let failed = text.lines().find_map(|line| {
-        line.strip_prefix("test ")
-            .and_then(|rest| rest.strip_suffix(" ... FAILED"))
-            .map(str::to_string)
-    });
+    let failures: Vec<String> = text
+        .lines()
+        .filter_map(|line| {
+            line.strip_prefix("test ")
+                .and_then(|rest| rest.strip_suffix(" ... FAILED"))
+                .map(str::to_string)
+        })
+        .collect();
+    let failed = failures.first().cloned();
     let failure = if status.success() {
         None
     } else if failed.is_some() {
@@ -242,6 +251,7 @@ pub fn run(
         passed: status.success(),
         timed_out: false,
         failed,
+        failures,
         failure,
         took,
         stdout: text,
