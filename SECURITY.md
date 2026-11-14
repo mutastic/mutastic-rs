@@ -34,7 +34,10 @@ as you would running that project's tests.
   code whose tests you'd run under the same risk. See
   [Unsafe code](docs/concepts/unsafe.md).
 
-mutastic itself has no unsafe code (`unsafe_code = "forbid"`) and runs no network services. Its
+mutastic's unsafe code is all in one crate, `crates/mutastic-terminal`: a handful of C library
+calls for the terminal's width, its input mode and signals, each in a block of its own that says
+why it's sound, run nightly under Miri and AddressSanitizer. The rest of the workspace forbids it
+(`unsafe_code = "forbid"`). mutastic runs no network services. Its
 only network requests are for the Java edition, in a Maven or Gradle project: it looks up the
 Java edition's GitHub releases at most once a day, downloads one with `curl` the first time it's
 needed, and checks it against the release's `SHA256SUMS` before keeping it in `~/.mutastic`.

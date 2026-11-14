@@ -85,6 +85,23 @@ newest come first.
   someone with a Maven or Gradle build. It now says where it looked, for `Cargo.toml`, `pom.xml`,
   `build.gradle(.kts)` and `settings.gradle(.kts)`, and ends in `mutastic run <project directory>`.
 
+### Internal
+
+- **The unsafe code has a crate of its own,** `crates/mutastic-terminal`: the C calls for the
+  terminal's width, its input mode and signals, which were `mutastic`'s `terminal` module. The
+  workspace now forbids unsafe code rather than denying it, so no `#[allow]` can let it back in
+  elsewhere. In the crate, each `unsafe` block holds one operation and says why it's sound, and the
+  logic over the calls is tested against a fake. A nightly workflow runs its tests under Miri, for
+  each platform it lays out C's structs for, and under AddressSanitizer, the C calls included.
+  Nothing it does changes on Linux, macOS or Windows, and the binary takes no new dependency.
+- **The terminal's settings are read as each C library lays them out.** On FreeBSD, `struct
+  termios` holds `unsigned int` flags, not `unsigned long` as on macOS, and on Android it's shorter
+  than glibc's: mutastic read past what the C library wrote, which is undefined behaviour. Neither
+  is a platform mutastic ships for. Tests now hold each struct and constant to the `libc` crate's.
+  Unix platforms whose layouts aren't checked, such as Linux on MIPS, PowerPC or SPARC, NetBSD,
+  OpenBSD and illumos, now get no width, no `t` key and no Ctrl-T, as any other platform without
+  them, rather than the wrong constants.
+
 ## 1.1.0 (2026-11-12)
 
 ### Card changes

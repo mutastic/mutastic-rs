@@ -47,7 +47,9 @@ Formatting is rustfmt's, with its defaults: that is the spec, not taste.
 13. Name every regex group, including the ones nothing reads back. Never read a group by number.
 14. One concern per type.
 15. No unsafe code in mutastic itself (`unsafe_code = "forbid"`). Take a dependency, or a process,
-    before reaching for it.
+    before reaching for it. The one exception is `crates/mutastic-terminal`, the C calls for the
+    terminal: one operation to an `unsafe` block, each with its `// SAFETY:` comment, in an `ffi`
+    module, and the logic over them tested against a fake (see [ARCHITECTURE.md](ARCHITECTURE.md)).
 16. Commits follow Conventional Commits and 50/72: `type(scope): subject` in at most 50
     characters, imperative and lower case; a blank line; then a body wrapped at 72 that says why.
     The diff already says what.
