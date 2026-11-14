@@ -119,9 +119,11 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
   compile, and is withdrawn. See [Configuration](reference/configuration.md).
 - **The gate** is the Java edition's, so the coding agents' plugins run it unchanged. A test it
   counts is one the test binaries list, each `#[case]` and test-case row a test of its own, and one
-  turned off is `#[ignore]`, where Java counts `@Test` and `@Disabled` in the source. Where the
-  package doesn't build when the task starts, it counts `#[test]`-like functions in `src` and
-  `tests` instead.
+  turned off is `#[ignore]`, where Java counts `@Test` and `@Disabled` in the source. `gate open`
+  lists them in the background, on the tree as it was then, as the Java edition counts a
+  parameterized test's cases, and a check waits for the list. Where the list failed, as for a
+  package that doesn't build when the task starts, or isn't done in four minutes, it counts
+  `#[test]`-like functions in `src` and `tests` instead, and a pass says so.
 - **Skipped as arid:** a statement that only writes output, `println!`, `eprintln!`, `dbg!` or a
   logger's macro, where the Java edition skips a call to a logger or `System.out`.
 - **Skipped as equivalent:** a `?` that only passes on a formatter's error, inside the `fmt` of

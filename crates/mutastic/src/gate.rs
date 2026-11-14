@@ -45,6 +45,12 @@ pub struct State {
     /// The ignores when a hooked check last let the agent stop, until the next prompt: `None` while
     /// the agent has the turn. What's ignored after it is the person's, made between turns.
     pub stopped: Option<BTreeSet<String>>,
+    /// The token of the count of the tests the task started with, while a check hasn't read it:
+    /// see [`crate::gate_count`].
+    pub counting: String,
+    /// Why that count gave no tests, once a check found it failed or not done: the checks since
+    /// compare the source's test attributes, and a pass says so.
+    pub uncounted: String,
 }
 
 impl State {
@@ -66,6 +72,8 @@ impl State {
                 "counted" => state.shape.listed = value == "list",
                 "blocks" => state.blocks = value.parse().unwrap_or(0),
                 "tree" => state.tree = value,
+                "counting" => state.counting = value,
+                "uncounted" => state.uncounted = value,
                 _ => {
                     if let Some(test) = key.strip_prefix(RED) {
                         state.red.insert(test.to_string(), value);
@@ -93,6 +101,8 @@ impl State {
             ),
             format!("blocks={}", self.blocks),
             format!("tree={}", self.tree),
+            format!("counting={}", self.counting),
+            format!("uncounted={}", self.uncounted),
         ];
         if let Some(stopped) = &self.stopped {
             lines.push(format!(
@@ -700,6 +710,8 @@ mod tests {
             tree: "fedc".into(),
             red: [("tests::adds".to_string(), "00ff".to_string())].into(),
             stopped: Some(["m1".to_string()].into()),
+            counting: "c0ffee".into(),
+            uncounted: "it doesn't build".into(),
         };
         state.write(&work).unwrap();
         assert_eq!(State::read(&work), Some(state));
