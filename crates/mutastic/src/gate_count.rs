@@ -247,9 +247,10 @@ fn count(project: &Project, dir: &Path, tree: &str, token: &str) -> Result<Names
         return Err("git couldn't check out the tree the task started from".into());
     }
     let package = checked_out.join(prefix.trim());
-    let mut counted = workspace::read(&package.display().to_string())?;
+    let mut counted =
+        workspace::read(&package.display().to_string()).map_err(|failure| failure.message)?;
     counted.target = build_root(&project.mutastic_dir());
-    crate::gate::listed(&counted)
+    crate::gate::listed(&counted).map_err(|failure| failure.message)
 }
 
 #[cfg(test)]

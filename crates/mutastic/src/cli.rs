@@ -1794,7 +1794,7 @@ fn counted(
     mut open: gate::State,
     here: &std::path::Path,
     work: &std::path::Path,
-) -> Result<gate::State, String> {
+) -> Result<gate::State, Failure> {
     if open.counting.is_empty() || open.shape.listed || gate::untouched(here, &open.base) {
         return Ok(open);
     }
@@ -1806,7 +1806,7 @@ fn counted(
         }
     }
     open.counting.clear();
-    open.write(work)?;
+    open.write(work).map_err(|error| Code::Other.with(error))?;
     Ok(open)
 }
 
