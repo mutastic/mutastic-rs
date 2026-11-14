@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
+use crate::failure::{Code, Failure};
 use crate::since::git;
 use crate::testrun::Names;
 
@@ -383,7 +384,7 @@ pub fn gone(red: &BTreeMap<String, String>, now: &Names, package: &Path) -> Vec<
 
 /// Every test the package has now, from its binaries, built in mutastic's copy with no mutant in:
 /// what the gate counts and looks tests up by, as a run names them.
-pub fn listed(project: &crate::workspace::Project) -> Result<Names, String> {
+pub fn listed(project: &crate::workspace::Project) -> Result<Names, Failure> {
     let found = crate::engine::find_all(project);
     let none = BTreeSet::new();
     let built = crate::compile::build(project, &found, &none, &none, &|_| {})?;
@@ -391,6 +392,7 @@ pub fn listed(project: &crate::workspace::Project) -> Result<Names, String> {
         &built.binaries,
         &project.copy_dir().join(&project.package_dir),
     )
+    .map_err(|listing| Code::Other.with(listing))
 }
 
 /// The source files, there when the task started, that it took an assertion out of: by name. Every

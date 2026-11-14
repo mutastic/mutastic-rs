@@ -1821,7 +1821,7 @@ fn gate_verdict(
     let untouched = gate::untouched(here, &state.base);
     // The tests there now, by the names a run gives them, where a check below needs them.
     let names = if !state.red.is_empty() || (state.shape.listed && !untouched) {
-        Some(gate::listed(project).map_err(|e| Code::BuildFailed.with(e))?)
+        Some(gate::listed(project)?)
     } else {
         None
     };
