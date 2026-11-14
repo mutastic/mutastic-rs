@@ -88,7 +88,10 @@ pub fn shown(given: &Path, file: &Path) -> String {
 /// The report-schema document. Statuses are the schema's (`Killed`, `Survived`, …); locations are
 /// 1-based, with an exclusive end.
 pub fn json(report: &Report) -> Value {
-    let view = View { report };
+    let view = View {
+        report,
+        shown: false,
+    };
     let threshold = report.threshold;
     json!({
         "$schema": "https://raw.githubusercontent.com/stryker-mutator/mutation-testing-elements/master/packages/report-schema/src/mutation-testing-report-schema.json",
