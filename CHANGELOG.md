@@ -19,6 +19,12 @@ newest come first.
 
 ### Fixes
 
+- **An ignore you accept between turns doesn't hold the gate.** The gate counted the ignores from
+  a session's first prompt, so a proposal you accepted and then prompted again counted as the
+  task's own (`the task ignored … itself`). Now, as a hook, a check that lets the agent stop notes
+  the ignores, and the next prompt takes in those added since: yours, made between turns. One the
+  agent adds in its turn, with `ignore --accept` or by editing `.mutastic/ignores.yaml`, still
+  holds the gate after your next prompt.
 - **A closed stdout ends the run quietly.** `mutastic run | head -1` panicked and exited 101 when
   `head` closed the pipe; it now stops writing and exits as the run would.
 - **Refusals are said on stderr, and stdout holds only results.** `baseline` with one already, or

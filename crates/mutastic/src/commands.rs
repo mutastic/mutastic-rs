@@ -245,7 +245,8 @@ pub const COMMANDS: &[Command] = &[
         summary: "Start gating a coding agent's task: keep where it starts",
         detail: "Keeps the commit the task starts from, its ignores, and how many tests run and \
                  are ignored, in target/mutastic, so gate check can say whether the task is done. \
-                 With --hook, once for each of the agent's sessions.",
+                 With --hook, once for each of the agent's sessions; at a later prompt, it takes in \
+                 the ignores made since the agent stopped.",
         exits: "0 once it has kept where the task starts; 2 outside a git repository with a \
                 commit.",
         takes_mutant_id: false,
