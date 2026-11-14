@@ -1526,8 +1526,9 @@ fn summary(out: &mut String, report: &Report, style: Style) {
     let width = rows.iter().map(|(label, _)| label.len()).max().unwrap_or(0);
     out.push('\n');
     // What to do next sits under the misses it's about, and the score, with its verdict, is the
-    // last line: the one the cursor lands under.
-    if report.count(Status::Survived) > 0 {
+    // last line: the one the cursor lands under. A run of mutants asked for by id ends on each
+    // one's fate instead, as its verdict.
+    if report.count(Status::Survived) > 0 && !report.only {
         let dir = shell_word(&report.project.given);
         let _ = writeln!(
             out,
@@ -1539,6 +1540,70 @@ fn summary(out: &mut String, report: &Report, style: Style) {
     }
     for (label, value) in rows {
         let _ = writeln!(out, " {}  {value}", style.dim(&format!("{label:>width$}")));
+    }
+    if report.only {
+        out.push('\n');
+        if report.results.is_empty() {
+            let _ = writeln!(out, " {}", verdict(report, style));
+        }
+        for result in &report.results {
+            let _ = writeln!(
+                out,
+                " {}",
+                fate(
+                    &View {
+                        report,
+                        shown: true,
+                    },
+                    result,
+                    style
+                )
+            );
+        }
+    }
+}
+
+/// `[MISSED] mb2f8ae57 is still missed · done when mutastic verify mb2f8ae57 fixtures/pricing
+/// passes`: one mutant's verdict, for a run that asked for it by id, as the Java edition gives it.
+fn fate(view: &View, result: &MutantResult, style: Style) -> String {
+    let words = style.words;
+    let id = &view.mutant(result).id;
+    let detected = |text: String| {
+        let label = style.label(&words.detected().to_uppercase(), GREEN);
+        format!("{label} {}", style.green(&text))
+    };
+    let red = |label: &str, text: String| {
+        let label = style.label(&label.to_uppercase(), RED);
+        format!("{label} {}", style.red(&text))
+    };
+    let reason = untrusted::value(result.reason.as_deref().unwrap_or_default());
+    match result.status {
+        Status::Killed => detected(format!(
+            "{id} is {} by {}",
+            words.detected(),
+            untrusted::value(result.killed_by.as_deref().unwrap_or("a test"))
+        )),
+        Status::Timeout => detected(format!(
+            "{id} is {}: its tests stopped finishing in time",
+            words.detected()
+        )),
+        Status::Survived => red(
+            words.undetected(),
+            format!(
+                "{id} is still {} · done when {} passes",
+                words.undetected(),
+                view.command("verify", id)
+            ),
+        ),
+        Status::NoCoverage => red(
+            words.not_covered(),
+            format!("{id}: no test reaches its line"),
+        ),
+        Status::Ignored => format!("{} {id} is skipped: {reason}", style.label("SKIPPED", CYAN)),
+        Status::RuntimeError => format!(
+            "{} {id} crashes where a crash proves nothing ({reason}): it's left out of the score",
+            style.label("CRASHED", CYAN)
+        ),
     }
 }
 
@@ -1632,7 +1697,10 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
     if !report.reports.is_empty() {
         rows.push(("Reports", report.reports.join(&style.dim(" · "))));
     }
-    rows.push(("Score", score_row(report, style)));
+    // A run of mutants asked for by id has a fate for each, not a score.
+    if !report.only {
+        rows.push(("Score", score_row(report, style)));
+    }
     rows
 }
 
@@ -1992,6 +2060,9 @@ fn agent(report: &Report, style: Style) -> String {
         report,
         shown: true,
     };
+    if report.only && !report.results.is_empty() {
+        return agent_fates(&view, words);
+    }
     let mut out = String::new();
     let missed = report.count(Status::Survived);
     let not_covered = report.count(Status::NoCoverage);
@@ -2144,6 +2215,58 @@ fn agent(report: &Report, style: Style) -> String {
         out.push_str(&untrusted::fence(&quoted));
     }
     out
+}
+
+/// A run of mutants asked for by id, for an agent: each one's fate is the verdict, not a score,
+/// and a missed one has the rules and its entry, as the Java edition gives them.
+fn agent_fates(view: &View, words: Vocabulary) -> String {
+    let fates: Vec<String> = view
+        .report
+        .results
+        .iter()
+        .map(|result| {
+            let id = &view.mutant(result).id;
+            let fate = match result.status {
+                Status::Killed => format!(
+                    "is {} by {}",
+                    words.detected(),
+                    untrusted::value(result.killed_by.as_deref().unwrap_or("a test"))
+                ),
+                Status::Timeout => {
+                    format!(
+                        "is {}: its tests stopped finishing in time",
+                        words.detected()
+                    )
+                }
+                Status::Survived => format!("is still {}", words.undetected()),
+                Status::NoCoverage => "isn't reached by any test".to_string(),
+                Status::Ignored => format!(
+                    "is skipped: {}",
+                    untrusted::value(result.reason.as_deref().unwrap_or_default())
+                ),
+                Status::RuntimeError => format!(
+                    "crashes where a crash proves nothing ({}): it's left out of the score",
+                    untrusted::value(result.reason.as_deref().unwrap_or_default())
+                ),
+            };
+            let mut out = format!("mutastic: {id} {fate}\n");
+            if result.status == Status::Survived {
+                let _ = writeln!(
+                    out,
+                    "rules: {RULE}; a fix counts when `{}` passes\n",
+                    view.command("verify", id)
+                );
+                let entry = Entry {
+                    main: result,
+                    also: Vec::new(),
+                };
+                // The entry quotes the code and the test run: fenced, as the whole run's are.
+                out.push_str(&untrusted::fence(&agent_entry(view, &entry, words)));
+            }
+            out
+        })
+        .collect();
+    fates.join("\n")
 }
 
 /// `PASS` or `FAIL`; with `--fail-on-new`, the new misses that decided it.
@@ -2332,6 +2455,13 @@ fn jsonl(report: &Report) -> String {
         finished["failOnNew"] = json!(true);
         finished["newMisses"] = json!(judged.new_misses(report));
         finished["inBaseline"] = json!(judged.in_baseline(report));
+    }
+    // A run of mutants asked for by id: the first one found, as the Java edition gives it.
+    if report.only {
+        finished["only"] = report
+            .results
+            .first()
+            .map_or(Value::Null, |result| json!(view.mutant(result).id));
     }
     finished["coveredScore"] = report
         .covered_score()
