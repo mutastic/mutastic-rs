@@ -300,3 +300,9 @@ A proc-macro crate, which mutastic can't mutate yet.
 
 Anything else, usually what the system said: a disk that's full, a file mutastic can't write. The
 message names the file.
+
+## `internal`
+
+A bug in mutastic itself: it panicked. The message says where, and ends in where to report it,
+with the message. The Rust edition exits 2 for it until its 2.0, and 4 after, as the Java edition
+does.

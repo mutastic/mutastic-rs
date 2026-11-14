@@ -21,6 +21,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::failure::{Code, Failure};
+
 pub const FILE: &str = "mutastic.yaml";
 
 /// A project's decision: skip the mutants in some code, or mutate code a filter would skip.
@@ -88,7 +90,11 @@ impl Configuration {
     /// The configuration in `dir`, or none when it has no `mutastic.yaml`: the file's own, then
     /// what it `extends:`, in turn. A file adds another's only when it says so, so one file and the
     /// ones it names are all that apply, never a cascade nobody wrote down.
-    pub fn read(dir: &Path) -> Result<Configuration, String> {
+    pub fn read(dir: &Path) -> Result<Configuration, Failure> {
+        Self::read_chain(dir).map_err(|error| Code::Config.with(error))
+    }
+
+    fn read_chain(dir: &Path) -> Result<Configuration, String> {
         let base = normalized(dir);
         let first = base.join(FILE);
         if !first.is_file() {
@@ -411,13 +417,13 @@ pub fn without_comment(line: &str) -> &str {
 /// The operators `entries` choose, as `--operators` and `operators:` read them: a set
 /// (`defaults`, `stronger`, `extended`, `all`), a namespace (`stream`) or an operator's id, each
 /// adding to the ones before, or after `-` taking away; a rules file's operators count too.
-pub fn resolve(entries: &[String], from: &str) -> Result<Vec<&'static str>, String> {
+pub fn resolve(entries: &[String], from: &str) -> Result<Vec<&'static str>, Failure> {
     let from = vec![from.to_string(); entries.len()];
     resolve_from(entries, &from)
 }
 
 /// The operators `entries` choose, each said, in an error, to be from its own place in `from`.
-pub fn resolve_from(entries: &[String], from: &[String]) -> Result<Vec<&'static str>, String> {
+pub fn resolve_from(entries: &[String], from: &[String]) -> Result<Vec<&'static str>, Failure> {
     use crate::sites;
     let rules = crate::callrules::loaded();
     let mut chosen: Vec<&'static str> = Vec::new();
@@ -450,7 +456,7 @@ pub fn resolve_from(entries: &[String], from: &[String]) -> Result<Vec<&'static 
         };
         if matched.is_empty() {
             let from = from.get(index).map_or("", String::as_str);
-            return Err(no_operator(from, name));
+            return Err(Code::Config.with(no_operator(from, name)));
         }
         if remove {
             chosen.retain(|id| !matched.contains(id));
@@ -602,7 +608,7 @@ mod tests {
                 ("bad.yaml", "rules:\n  - skip: x::**\n"),
             ],
         );
-        let error = |sub: &str| Configuration::read(&dir.join(sub)).unwrap_err();
+        let error = |sub: &str| Configuration::read(&dir.join(sub)).unwrap_err().message;
         assert_eq!(
             error("missing"),
             "mutastic.yaml line 1: extends ../top.yaml, which isn't there"
@@ -677,7 +683,9 @@ mod tests {
         assert!(chosen.contains(&crate::sites::MATH));
         let stream = resolve(&["stream".into()], "t").unwrap();
         assert!(!stream.is_empty() && stream.iter().all(|id| id.starts_with("stream/")));
-        let refused = resolve(&["nope".into()], "--operators").unwrap_err();
+        let refused = resolve(&["nope".into()], "--operators")
+            .unwrap_err()
+            .message;
         assert!(
             refused.starts_with("--operators: nope isn't an operator mutastic has.\n"),
             "{refused}"
@@ -692,6 +700,7 @@ mod tests {
         );
         assert!(resolve(&["strong".into()], "--operators")
             .unwrap_err()
+            .message
             .starts_with(
             "--operators: strong isn't an operator mutastic has. There's one called stronger.\n"
         ));
@@ -700,7 +709,9 @@ mod tests {
     #[test]
     fn an_operator_written_in_the_file_is_named_by_its_line() {
         let config = parse("operators:\n  - defaults\n  - mutastic/bondary\n").unwrap();
-        let refused = resolve_from(&config.operators, &config.operators_from).unwrap_err();
+        let refused = resolve_from(&config.operators, &config.operators_from)
+            .unwrap_err()
+            .message;
         assert!(
             refused.starts_with(
                 "mutastic.yaml line 3: mutastic/bondary isn't an operator mutastic has. There's \
@@ -719,7 +730,7 @@ mod tests {
         );
         let refused = crate::callrules::read(&config.plugins[1], &config.plugins_from[1]);
         assert_eq!(
-            refused.unwrap_err(),
+            refused.unwrap_err().message,
             "mutastic.yaml line 3: the plugin rules/b.yaml isn't there. A plugin's path is from \
              the directory of the file that names it."
         );

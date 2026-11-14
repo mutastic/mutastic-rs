@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crate::compile::{self, Binary};
+use crate::failure::{Code, Failure};
 use crate::sites::{self, Crate, UnsafeMode};
 use crate::testrun::{self, Outcome, Test};
 use crate::workspace::Project;
@@ -311,7 +312,7 @@ pub fn run(
     project: &Project,
     options: &Options,
     progress: &(dyn Fn(Progress) + Sync),
-) -> Result<Report, String> {
+) -> Result<Report, Failure> {
     let started = Instant::now();
     let started_at = clock();
     let (found, stale_ignores) = find_for_run(project, options)?;
@@ -388,7 +389,7 @@ pub fn run(
         profile: &built.profile,
     });
     let cwd = project.copy_dir().join(&project.package_dir);
-    let listed = testrun::list(&built.binaries, &cwd)?;
+    let listed = testrun::list(&built.binaries, &cwd).map_err(|error| Code::Other.with(error))?;
     let setup = started.elapsed();
 
     let coverage_started = Instant::now();
@@ -574,7 +575,7 @@ fn nothing_to_run(
 /// The mutants a run finds, with what the project decided not to test skipped, and the ids of
 /// the ignores that no longer hold. An id names its mutant whatever was chosen when it was shown,
 /// so `--only` and `verify` look among them all.
-pub fn find_for_run(project: &Project, options: &Options) -> Result<(Crate, Vec<String>), String> {
+pub fn find_for_run(project: &Project, options: &Options) -> Result<(Crate, Vec<String>), Failure> {
     let mut found = if options.only.is_empty() {
         find_with(project, &options.operators, options.unsafe_mode)
     } else {
@@ -623,7 +624,7 @@ fn flaky_evidence(
 /// Skips each mutant the project decided not to test, in `.mutastic/ignores.yaml`, while its line
 /// is as it was when decided; gives the ids of those whose line has changed, which run again. A
 /// mutant a filter already skips keeps the filter's reason.
-fn apply_ignores(project: &Project, found: &mut Crate) -> Result<Vec<String>, String> {
+fn apply_ignores(project: &Project, found: &mut Crate) -> Result<Vec<String>, Failure> {
     let mut stale = Vec::new();
     for ignore in crate::ignores::read(std::path::Path::new(&project.given))? {
         let Some(index) = found.mutants.iter().position(|m| m.id == ignore.id) else {
@@ -788,9 +789,9 @@ fn coverage(
     tests: &[Test],
     workers: usize,
     progress: &(dyn Fn(Progress) + Sync),
-) -> Result<Covered, String> {
+) -> Result<Covered, Failure> {
     let dir = project.mutastic_dir().join("coverage");
-    std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|error| Code::Other.with(error.to_string()))?;
     let cwd = project.copy_dir().join(&project.package_dir);
     let cover = |index: usize, test: &Test| {
         let file: PathBuf = dir.join(format!("{index}.cov"));
@@ -853,7 +854,7 @@ fn coverage(
                 )
             })
             .collect();
-        std::fs::write(&log, output).map_err(|error| error.to_string())?;
+        std::fs::write(&log, output).map_err(|error| Code::Other.with(error.to_string()))?;
         let named: Vec<crate::flaky::Red> = failing
             .iter()
             .map(|&index| {
@@ -871,10 +872,10 @@ fn coverage(
         // From where the person is, as they'd open it.
         let here = std::env::current_dir().unwrap_or_else(|_| project.workspace.clone());
         let shown = crate::report::files::shown(&here, &log);
-        return Err(crate::flaky::failed_message(
+        return Err(Code::RedBaseline.with(crate::flaky::failed_message(
             &named,
             std::path::Path::new(&shown),
-        ));
+        )));
     }
     let reach = reached
         .into_iter()
@@ -1262,14 +1263,14 @@ fn listed(module: &str, tests: &mut [String]) {
 
 /// `id` names no mutant of the package: one a digit or a swap away, if there is one, and the
 /// command that lists them all, without running anything.
-pub fn not_a_mutant(id: &str, package: &str, dir: &str, found: &Crate) -> String {
+pub fn not_a_mutant(id: &str, package: &str, dir: &str, found: &Crate) -> Failure {
     let ids = found.mutants.iter().map(|mutant| mutant.id.as_str());
     let close = crate::similar::closest_within(id, ids, 1).map_or(String::new(), |close| {
         format!(" There's one called {close}.")
     });
-    format!(
+    Code::UnknownId.with(format!(
         "{id} isn't a mutant of {package}.{close} To see its mutants:\n  mutastic mutants {dir}"
-    )
+    ))
 }
 
 #[cfg(test)]

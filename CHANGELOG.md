@@ -58,6 +58,19 @@ newest come first.
 
 ### Fixes
 
+- **Each error's code is set where it's raised.** `run-failed`'s `code` was worked out afterwards
+  from the error's words, and two errors got `other` that way: `--report=xyz` and `gate` with no
+  action, which are now `option-value` and `unknown-command`. A mistyped gate action, `gate opn`,
+  is said as that before mutastic looks for a project, so outside one it no longer answers "there's
+  no project here". A file mutastic can't write is `other`, not `config`, and a git failure under
+  `--since` is `git`.
+- **A bad `--format` value ends the stream the environment asks for.** With
+  `MUTASTIC_FORMAT=jsonl`, `--format=xyz` was refused on stderr with no `run-failed` event.
+- **A panic ends as a failure.** A bug in mutastic exited 101 with Rust's own message and no
+  event. It now says `internal error:`, where, and where to report it, writes a `run-failed` event
+  with code `internal` in the agent and jsonl formats, and exits 2, as every failure does until
+  2.0.
+
 - **The gate runs the tests even with no mutant on the changed lines.** Since a run with no mutant
   to run stopped building and running the tests, a task that changed only lines with no mutant (a
   constant, an import, a log line) passed the gate with no test run, even when it broke one. The

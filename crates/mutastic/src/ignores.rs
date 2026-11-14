@@ -18,6 +18,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::failure::{Code, Failure};
+
 /// The sorts of decision, as the Java edition has them: the change can't be told apart, its case
 /// can't happen in practice, it only feeds logs or metrics, the code is on its way out, or the risk
 /// is accepted.
@@ -73,28 +75,32 @@ impl Entry {
     }
 }
 
-pub fn read(dir: &Path) -> Result<Vec<Entry>, String> {
-    read_file(&dir.join(FILE), FILE)
+/// The ignores in `dir`'s `.mutastic/ignores.yaml`, none without one: one it can't read is a
+/// configuration error.
+pub fn read(dir: &Path) -> Result<Vec<Entry>, Failure> {
+    read_file(&dir.join(FILE), FILE).map_err(|error| Code::Config.with(error))
 }
 
-pub fn proposed(dir: &Path) -> Result<Vec<Entry>, String> {
-    read_file(&dir.join(PROPOSALS), PROPOSALS)
+pub fn proposed(dir: &Path) -> Result<Vec<Entry>, Failure> {
+    read_file(&dir.join(PROPOSALS), PROPOSALS).map_err(|error| Code::Config.with(error))
 }
 
-pub fn write(dir: &Path, entries: &[Entry]) -> Result<(), String> {
-    write_file(&dir.join(FILE), entries, HEADER)
+/// Writes the ignores: a file it can't write is the system's error.
+pub fn write(dir: &Path, entries: &[Entry]) -> Result<(), Failure> {
+    write_file(&dir.join(FILE), entries, HEADER).map_err(|error| Code::Other.with(error))
 }
 
 /// Writes the proposals; with none waiting, there's no file, and nothing to commit.
-pub fn propose(dir: &Path, entries: &[Entry]) -> Result<(), String> {
+pub fn propose(dir: &Path, entries: &[Entry]) -> Result<(), Failure> {
     let file = dir.join(PROPOSALS);
     if entries.is_empty() {
         if file.exists() {
-            std::fs::remove_file(&file).map_err(|error| format!("{PROPOSALS}: {error}"))?;
+            std::fs::remove_file(&file)
+                .map_err(|error| Code::Other.with(format!("{PROPOSALS}: {error}")))?;
         }
         return Ok(());
     }
-    write_file(&file, entries, PROPOSALS_HEADER)
+    write_file(&file, entries, PROPOSALS_HEADER).map_err(|error| Code::Other.with(error))
 }
 
 fn read_file(file: &PathBuf, name: &str) -> Result<Vec<Entry>, String> {

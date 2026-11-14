@@ -1431,10 +1431,9 @@ fn errors(work: &Path, shown: &mut BTreeMap<String, String>) {
         .filter_map(|line| line.strip_suffix('`'))
         .map(str::to_string)
         .collect();
-    let given: BTreeSet<String> = mutastic::failure::CODES
+    let given: BTreeSet<String> = mutastic::failure::Code::ALL
         .iter()
-        .map(|(code, _)| code.to_string())
-        .chain([mutastic::failure::OTHER.to_string()])
+        .map(|code| code.name().to_string())
         .collect();
     assert_eq!(entries, given, "docs/reference/errors.md's entries");
     // Each entry's command is the one run above: the page's commands fail on purpose, so the

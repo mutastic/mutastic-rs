@@ -9,6 +9,8 @@ use std::process::Command;
 
 use serde_json::Value;
 
+use crate::failure::{Code, Failure};
+
 #[derive(Clone, Debug)]
 pub struct Project {
     /// The directory mutastic was pointed at, as given, for the commands it prints.
@@ -76,7 +78,7 @@ pub struct Metadata {
 
 impl Metadata {
     /// Asks Cargo about the workspace that holds `dir`, a directory there is.
-    pub fn read(dir: &str) -> Result<Metadata, String> {
+    pub fn read(dir: &str) -> Result<Metadata, Failure> {
         let output = Command::new(cargo())
             .args(["metadata", "--no-deps", "--format-version", "1"])
             .current_dir(dir)
@@ -84,13 +86,13 @@ impl Metadata {
             .map_err(no_cargo)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!(
+            return Err(Code::NoProject.with(format!(
                 "{dir} isn't a Cargo project: {}",
                 stderr.lines().last().unwrap_or_default()
-            ));
+            )));
         }
         let metadata: Value = serde_json::from_slice(&output.stdout)
-            .map_err(|error| format!("couldn't read cargo metadata: {error}"))?;
+            .map_err(|error| Code::Other.with(format!("couldn't read cargo metadata: {error}")))?;
         Ok(Metadata {
             workspace: PathBuf::from(metadata["workspace_root"].as_str().unwrap_or(dir)),
             target: PathBuf::from(metadata["target_directory"].as_str().unwrap_or("target")),
@@ -148,11 +150,11 @@ fn manifest_dir(package: &Value) -> PathBuf {
 
 /// Why Cargo didn't start: there's none where mutastic looked, the `CARGO` variable or the PATH,
 /// or something else, said as the system says it.
-fn no_cargo(error: std::io::Error) -> String {
+fn no_cargo(error: std::io::Error) -> Failure {
     if error.kind() != std::io::ErrorKind::NotFound {
-        return format!("couldn't run {}: {error}", cargo());
+        return Code::NoCargo.with(format!("couldn't run {}: {error}", cargo()));
     }
-    match std::env::var("CARGO") {
+    let message = match std::env::var("CARGO") {
         Ok(set) => format!(
             "CARGO is {set}, and there's no cargo there.\n\
              mutastic runs the cargo CARGO names. Point it at one, or unset it to use the cargo on \
@@ -162,16 +164,18 @@ fn no_cargo(error: std::io::Error) -> String {
                    Install Rust from https://rustup.rs, or add the directory that holds cargo to \
                    the PATH. To check it's found:\n  cargo --version"
             .to_string(),
-    }
+    };
+    Code::NoCargo.with(message)
 }
 
 /// Reads the package in `dir`: the one that holds it, or the only package of the workspace there.
-pub fn read(dir: &str) -> Result<Project, String> {
+pub fn read(dir: &str) -> Result<Project, Failure> {
     if !Path::new(dir).is_dir() {
-        return Err(format!("there's no directory {dir}"));
+        return Err(Code::NoDirectory.with(format!("there's no directory {dir}")));
     }
     let metadata = Metadata::read(dir)?;
-    let here = std::fs::canonicalize(dir).map_err(|error| format!("{dir}: {error}"))?;
+    let here =
+        std::fs::canonicalize(dir).map_err(|error| Code::Other.with(format!("{dir}: {error}")))?;
     let package = metadata.package(&here).cloned().ok_or_else(|| {
         crate::locate::not_a_package(dir, &here, &metadata, &crate::locate::Line::new("run", &[]))
     })?;
@@ -195,10 +199,10 @@ pub fn read(dir: &str) -> Result<Project, String> {
             .map(|kinds| kinds.iter().filter_map(Value::as_str).collect())
             .unwrap_or_default();
         if kinds.contains(&"proc-macro") {
-            return Err(format!(
+            return Err(Code::ProcMacro.with(format!(
                 "{} is a proc-macro crate, which mutastic can't mutate yet",
                 package["name"].as_str().unwrap_or_default()
-            ));
+            )));
         }
         let is_lib = kinds.iter().any(|kind| kind.ends_with("lib"));
         if is_lib || kinds.contains(&"bin") {
@@ -283,8 +287,8 @@ pub type Overrides = std::collections::BTreeMap<PathBuf, String>;
 
 /// Brings the copy up to date with the workspace, writing only what changed, with `overrides` in
 /// place of the originals.
-pub fn sync(project: &Project, overrides: &Overrides) -> Result<(), String> {
-    hold(&project.mutastic_dir())?;
+pub fn sync(project: &Project, overrides: &Overrides) -> Result<(), Failure> {
+    hold(&project.mutastic_dir()).map_err(|error| Code::Other.with(error))?;
     let copy = project.copy_dir();
     let mut kept = std::collections::BTreeSet::new();
     copy_tree(
@@ -295,16 +299,16 @@ pub fn sync(project: &Project, overrides: &Overrides) -> Result<(), String> {
         overrides,
         &mut kept,
     )
-    .map_err(|error| format!("couldn't copy the workspace: {error}"))?;
+    .map_err(|error| Code::Other.with(format!("couldn't copy the workspace: {error}")))?;
     remove_stale(&copy, Path::new(""), &kept).ok();
     // The copy is its own workspace root, so Cargo doesn't look above it.
     let manifest = copy.join("Cargo.toml");
     let text = std::fs::read_to_string(&manifest).unwrap_or_default();
     if !text.lines().any(|line| line.trim() == "[workspace]") {
         write_if_changed(&manifest, &format!("{text}\n[workspace]\n"))
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| Code::Other.with(error.to_string()))?;
     }
-    stand_alone(&copy, project, &kept).map_err(|error| error.to_string())
+    stand_alone(&copy, project, &kept).map_err(|error| Code::Other.with(error.to_string()))
 }
 
 /// Gives each package in the copy that the workspace excludes an empty `[workspace]`, as the copy's
