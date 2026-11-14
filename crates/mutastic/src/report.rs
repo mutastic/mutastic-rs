@@ -2568,54 +2568,60 @@ fn round1(value: f64) -> f64 {
     (value * 10.0).round() / 10.0
 }
 
+/// What a change swaps the token at its caret for, when it swaps one: `>` for `>=`.
+fn token(change: &Change) -> Option<&str> {
+    match change {
+        Change::Boundary { after, .. }
+        | Change::Reversed { after, .. }
+        | Change::Connector { after, .. }
+        | Change::Math { after, .. }
+        | Change::Swapped { after, .. }
+        | Change::Replaced { after, .. }
+        | Change::Compared { after, .. } => Some(after),
+        _ => None,
+    }
+}
+
+/// Whether writing `token` over its range makes the source `claim` does, but for brackets.
+fn same_but_brackets(
+    text: &str,
+    claim: &(Range<usize>, String),
+    token: (&Range<usize>, &str),
+) -> bool {
+    let (span, with) = claim;
+    let (caret, after) = token;
+    let region = span.start.min(caret.start)..span.end.max(caret.end);
+    let written = |range: &Range<usize>, by: &str| {
+        let mut local = text[region.clone()].to_string();
+        local.replace_range(range.start - region.start..range.end - region.start, by);
+        local.replace(['(', ')'], "")
+    };
+    written(caret, after) == written(span, with)
+}
+
 fn mutant_event(view: &View, result: &MutantResult) -> Value {
     let mutant = view.mutant(result);
     let function = &view.report.found.functions[mutant.function];
     let advice = view.advice(result);
-    let mut mutation = json!({});
+    // `original` is the source the claim replaces and `replacement` what it writes there, so
+    // writing `replacement` over `original` at `location` makes the mutant's source, as in the
+    // Java edition: a token, a condition, a returned expression, a call taken out, a body.
+    // A token swapped where the caret is stays that token, `>=` to `>`, as the Java edition
+    // gives it, where it makes what the claim does but for the brackets the claim adds to keep
+    // precedence; anything else is the claim's whole span.
     let text = view.text(mutant);
-    // What the claim replaces, as written: a returned expression, a condition, a body.
-    let (claimed, claimed_with) = mutant.claim();
-    let replaced = &text[claimed];
-    match &mutant.change {
-        Change::Boundary { before, after }
-        | Change::Reversed { before, after }
-        | Change::Connector { before, after }
-        | Change::Math { before, after } => {
-            mutation["original"] = json!(before);
-            mutation["replacement"] = json!(after);
+    let claim = mutant.claim();
+    let (claimed, replacement) = match token(&mutant.change) {
+        Some(after) if same_but_brackets(text, &claim, (&mutant.caret, after)) => {
+            (mutant.caret.clone(), after.to_string())
         }
-        Change::Returns { .. } => {
-            mutation["original"] = json!(replaced);
-            mutation["replacement"] = json!(claimed_with);
-        }
-        Change::Swapped { before, after }
-        | Change::Replaced { before, after }
-        | Change::Compared { before, after, .. } => {
-            mutation["original"] = json!(before);
-            mutation["replacement"] = json!(after);
-        }
-        Change::Body { .. } => {
-            mutation["original"] = json!(replaced);
-            mutation["replacement"] = json!(claimed_with);
-        }
-        Change::ArmRemoved { pattern } => {
-            mutation["original"] = json!(pattern);
-            mutation["replacement"] = json!(mutant.replacement);
-        }
-        Change::Parameter { name, value } => {
-            mutation["original"] = json!(name);
-            mutation["replacement"] = json!(value);
-        }
-        Change::Removed { statement } => {
-            mutation["original"] = json!(statement);
-            mutation["replacement"] = json!(mutant.replacement);
-        }
-        Change::Always { .. } => {
-            mutation["original"] = json!(replaced);
-            mutation["replacement"] = json!(claimed_with);
-        }
-    }
+        _ => claim,
+    };
+    let at = files::position(text, claimed.start);
+    let mut mutation = json!({
+        "original": &text[claimed],
+        "replacement": replacement,
+    });
     mutation["description"] = json!(advice.change);
     // `applied` is the change as the engine makes it, and at what level: here, to the source, the
     // whole site before and after, which no other field has for every change.
@@ -2633,8 +2639,8 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
         "operator": mutant.operator,
         "location": {
             "file": view.file(mutant),
-            "line": mutant.line,
-            "column": mutant.column,
+            "line": at["line"],
+            "column": at["column"],
             // The schema's names: the item that holds the function (`pricing::Pricing`), and
             // the function.
             "class": function.path.rsplit_once("::").map_or(view.report.project.crate_name.as_str(), |(holder, _)| holder),
