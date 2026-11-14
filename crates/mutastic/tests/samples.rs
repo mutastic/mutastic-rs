@@ -1441,6 +1441,105 @@ fn the_gate_holds_a_task_to_its_changed_lines() {
     assert!(out.contains("mutastic gate: closed\n"), "{out}");
 }
 
+/// The gate runs the tests even when no mutant is on the lines the task changed: a task that
+/// breaks a test with a line holding none (a constant, an import, a log line) is held, as a red
+/// baseline is, while a plain `run --since` of the same change runs no test. Only a task that
+/// changed nothing skips them.
+#[test]
+fn the_gate_runs_the_tests_with_no_mutant_on_the_changed_lines() {
+    let dir = copy_of("pricing", "gate-no-mutant");
+    let git = |args: &[&str]| {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(&dir)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "git {args:?}");
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    };
+    // A test of the threshold `new` sets, a line no mutant is on.
+    std::fs::write(
+        dir.join("tests/threshold.rs"),
+        "#[test]\nfn shipping_is_free_from_fifty() {\n    assert_eq!(pricing::Pricing::new().shipping(49), 5);\n}\n",
+    )
+    .unwrap();
+    std::fs::write(dir.join(".gitignore"), "target\n").unwrap();
+    git(&["init", "-q"]);
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "start"]);
+    let base = git(&["rev-parse", "HEAD"]);
+    let (code, out) = mutastic_in(&dir, &["gate", "open"]);
+    assert_eq!(code, 0, "{out}");
+    let lib = dir.join("src/lib.rs");
+    let text = std::fs::read_to_string(&lib).unwrap();
+    let threshold = |from: &str| {
+        let changed = text.replace("with_free_shipping_from(50)", from);
+        assert_ne!(changed, text);
+        std::fs::write(&lib, changed).unwrap();
+    };
+
+    // The task moves the threshold, breaking a test that was there: held.
+    threshold("with_free_shipping_from(40)");
+    let (_, mutants) = mutastic_in(&dir, &["mutants"]);
+    assert!(!mutants.contains("src/lib.rs:16:"), "{mutants}");
+    // As a hook: sent back, then, changing nothing, over to the person.
+    let (_, hooked) = mutastic_with_input(&dir, &["gate", "check", ".", "--hook=claude"], "{}");
+    let answer: Value = serde_json::from_str(hooked.trim()).unwrap();
+    assert_eq!(answer["decision"], "block", "{hooked}");
+    let (_, hooked) = mutastic_with_input(&dir, &["gate", "check", ".", "--hook=claude"], "{}");
+    let answer: Value = serde_json::from_str(hooked.trim()).unwrap();
+    assert!(
+        answer["systemMessage"]
+            .as_str()
+            .unwrap()
+            .starts_with("mutastic gate: nothing changed since the agent was sent back"),
+        "{hooked}"
+    );
+    // Run by a person, it says why, and fails.
+    let (code, out) = mutastic_in(&dir, &["gate", "check"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("threshold::shipping_is_free_from_fifty was there when the task started: if it passed then, the task's change broke it"),
+        "{out}"
+    );
+    // A plain run of the same change keeps the fast path: no mutant, no build, no test.
+    let since = format!("--since={base}");
+    let (code, out) = mutastic_in(&dir, &["run", &since, "--format=brief"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("Tests  none ran: no mutant to run"), "{out}");
+
+    // A threshold that breaks nothing: passed, the tests having run.
+    threshold("with_free_shipping_from(60)");
+    let (code, out) = mutastic_in(&dir, &["gate", "check"]);
+    assert_eq!(code, 0, "{out}");
+    assert_eq!(
+        out,
+        "mutastic gate: passed: the tests pass, and the lines the task changed hold no mutant to run\n"
+    );
+
+    // A test's data, no line mutastic mutates, breaking a test: held.
+    std::fs::write(&lib, &text).unwrap();
+    std::fs::write(dir.join("tests/orders.txt"), "150\n").unwrap();
+    let (code, out) = mutastic_in(&dir, &["gate", "check"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("small_orders_pay_full_price was there when the task started"),
+        "{out}"
+    );
+    git(&["checkout", "--", "tests/orders.txt"]);
+    // Nothing changed at all: passed, and no test needs to run.
+    let (code, out) = mutastic_in(&dir, &["gate", "check"]);
+    assert_eq!(code, 0, "{out}");
+    assert_eq!(
+        out,
+        "mutastic gate: passed: the task changed no lines mutastic mutates\n"
+    );
+}
+
 /// An ignore the person accepts between turns, after the gate let the agent stop and before their
 /// next prompt, is the task's to start from: the next check passes. One the agent accepts in its
 /// turn, or writes into `.mutastic/ignores.yaml` itself, stays the agent's, after the person's next

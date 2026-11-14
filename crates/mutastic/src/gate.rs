@@ -406,6 +406,13 @@ pub fn tree(dir: &Path) -> String {
     tree
 }
 
+/// Whether the working tree is the commit `base`'s, file for file: a task that changed nothing
+/// can't have broken a test.
+pub fn untouched(dir: &Path, base: &str) -> bool {
+    let at_base = git(dir, &["rev-parse", &format!("{base}^{{tree}}")]);
+    at_base.is_some_and(|at_base| at_base.trim() == tree(dir))
+}
+
 /// Whether the task is done, what to say, and whether that's to the agent or past it, to the
 /// person.
 #[derive(Clone, Debug)]
