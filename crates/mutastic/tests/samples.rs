@@ -2581,9 +2581,11 @@ fn the_sarif_report_is_a_result_for_each_miss_keyed_by_its_id() {
     let missed = &results[0];
     assert_eq!(missed["level"], "warning");
     assert_eq!(missed["ruleId"], "mutastic/boundary");
+    let rule = &run["tool"]["driver"]["rules"][missed["ruleIndex"].as_u64().unwrap() as usize];
+    assert_eq!(rule["id"], "mutastic/boundary");
     assert_eq!(
-        run["tool"]["driver"]["rules"][missed["ruleIndex"].as_u64().unwrap() as usize]["id"],
-        "mutastic/boundary"
+        rule["helpUri"], "https://docs.mutastic.io/rust/operators/conditions/#boundary",
+        "a rule links its operator's section, as events and explain do"
     );
     assert_eq!(missed["partialFingerprints"]["mutasticId/v1"], "mb2f8ae57");
     assert!(missed.get("fixes").is_none());
