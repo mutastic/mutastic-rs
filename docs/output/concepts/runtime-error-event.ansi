@@ -15,6 +15,7 @@
     "method": "checked"
   },
   "mutation": {
+    "original": "x < 0",
     "replacement": "true",
     "description": "`x < 0` is always true",
     "applied": {
@@ -33,5 +34,5 @@
     ]
   },
   "testsRun": 1,
-  "durationMs": 4
+  "durationMs": 11
 }
