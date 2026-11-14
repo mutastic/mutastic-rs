@@ -1,0 +1,16 @@
+ [41;30;1m ✗ MISSED [0m tests pass even when [1m*[0m becomes [1m/[0m in [1mpay()[0m
+    [2m┌─[0m src/lib.rs:14
+    [2m│[0m
+ [2m13[0m [2m│[0m pub fn pay(quantity: u32, price: u32, receipt: &mut Vec<String>) -> u32 {
+ [2m14[0m [2m│[0m     let total = quantity * price;
+    [2m│[0m                          [1;31m^ * changed to /[0m
+ [2m15[0m [2m│[0m     let off = discount(total);
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mlet total = quantity * price;
+              [32m+ [0mlet total = quantity / price;
+    [2m=[0m [1;34m[1mnote[0m[0m: inputs seen: price = 50, 250; quantity = 1
+            [2mcovered by checkout::big_orders_get_a_discount, checkout::small_orders_pay_full_price (all 2 covering tests still pass)[0m
+    [2m=[0m [32m[1mhelp[0m[0m: use inputs where [1mquantity * price[0m and [1mquantity / price[0m differ, and assert the result
+
+    [2mdone when [0m mutastic verify m3590a884 fixtures/checkout [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=m3590a884 fixtures/checkout
