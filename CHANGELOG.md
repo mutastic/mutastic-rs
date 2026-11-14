@@ -84,6 +84,14 @@ newest come first.
 
 ### Fixes
 
+- **The gate knows a case by the name it runs under.** rstest and test-case give each case a test
+  of its own, `halves::case_1`, and no function has that name. A case that failed at a check was
+  remembered without its source, and once it passed the gate said it was gone, at every check,
+  until `gate close`. The gate now looks tests up by the names the test binaries list, and counts
+  them from the same list, so taking a `#[case]` row away holds the gate as taking a test-case row
+  away did. `gate open` builds the tests once to list them; a package that doesn't build when the
+  task starts is counted from its source, as before.
+
 - **A test that caught mutants and fails on its own fails the run.** Once the mutants have run,
   each test that caught one runs again, on its own with no mutant in. One that fails there (it
   trips on a file it, another test or the run left behind) is named as flaky, as a test that

@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use crate::since::git;
+use crate::testrun::Names;
 
 const FILE: &str = "gate.properties";
 
@@ -61,6 +62,7 @@ impl State {
                 "stopped" => state.stopped = Some(ids(&value)),
                 "tests" => state.shape.tests = value.parse().unwrap_or(0),
                 "disabled" => state.shape.disabled = value.parse().unwrap_or(0),
+                "counted" => state.shape.listed = value == "list",
                 "blocks" => state.blocks = value.parse().unwrap_or(0),
                 "tree" => state.tree = value,
                 _ => {
@@ -84,6 +86,10 @@ impl State {
             ),
             format!("tests={}", self.shape.tests),
             format!("disabled={}", self.shape.disabled),
+            format!(
+                "counted={}",
+                if self.shape.listed { "list" } else { "source" }
+            ),
             format!("blocks={}", self.blocks),
             format!("tree={}", self.tree),
         ];
@@ -138,14 +144,27 @@ fn ids(value: &str) -> BTreeSet<String> {
         .collect()
 }
 
-/// How many tests the package's sources have, and how many of them are ignored.
+/// How many tests the package has, and how many of them are ignored.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Shape {
     pub tests: usize,
     pub disabled: usize,
+    /// Counted from the test binaries' lists, every `#[case]` and matrix cell a test; or, where
+    /// the package didn't build when the task started, from the source's test attributes.
+    pub listed: bool,
 }
 
 impl Shape {
+    /// The tests the binaries list.
+    pub fn listed(names: &Names) -> Shape {
+        Shape {
+            tests: names.run.len(),
+            disabled: names.ignored.len(),
+            listed: true,
+        }
+    }
+
+    /// The test attributes in the package's sources: for a package that doesn't build.
     pub fn of(package: &Path) -> Shape {
         let mut shape = Shape::default();
         for file in sources(package) {
@@ -285,43 +304,93 @@ fn fingerprint(body: &str) -> String {
         .collect()
 }
 
-/// `tests::small_orders_pay_full_price` as the gate remembers it: its last segment is its name.
-fn name_of(test: &str) -> &str {
-    test.rsplit("::").next().unwrap_or(test)
-}
-
-/// The failing tests to remember, each with its body's fingerprint now.
-pub fn remember(failing: &[String], package: &Path) -> BTreeMap<String, String> {
-    let mut found: BTreeMap<String, String> = BTreeMap::new();
-    for file in sources(package) {
-        found.extend(tests(&std::fs::read_to_string(&file).unwrap_or_default()));
-    }
-    failing
-        .iter()
-        .map(|test| {
-            let body = found.get(name_of(test)).cloned().unwrap_or_default();
-            (test.clone(), body)
-        })
-        .collect()
-}
-
-/// The remembered tests no longer there, by name or by body: a move keeps the name, and a rename
-/// keeps the body.
-pub fn gone(red: &BTreeMap<String, String>, package: &Path) -> Vec<String> {
-    let mut names = BTreeSet::new();
-    let mut bodies = BTreeSet::new();
+/// Every test function in the package's sources, by name, to its body's fingerprint.
+fn test_functions(package: &Path) -> BTreeMap<String, String> {
+    let mut found = BTreeMap::new();
     for file in sources(package) {
         for (name, body) in tests(&std::fs::read_to_string(&file).unwrap_or_default()) {
-            names.insert(name);
-            bodies.insert(body);
+            found.entry(name).or_insert(body);
         }
     }
+    found
+}
+
+/// The function a test, as a run names it, is written as: its last segment for a plain `#[test]`,
+/// and for a generated one, `rstest_tests::halves::case_1` or `rows::adds::test_case_1_four`, the
+/// last segment that names a test function. `None` where no segment does.
+fn written_as<'t>(test: &'t str, functions: &BTreeMap<String, String>) -> Option<&'t str> {
+    test.rsplit("::")
+        .find(|segment| functions.contains_key(*segment))
+}
+
+/// The function a test is written as, by name, in the package's sources now: what to look for at
+/// another commit. Its last segment where no segment names a test function.
+pub fn function_of(test: &str, package: &Path) -> String {
+    let functions = test_functions(package);
+    written_as(test, &functions)
+        .or_else(|| test.rsplit("::").next())
+        .unwrap_or(test)
+        .to_string()
+}
+
+/// A test's fingerprint: its function's body's, and for a generated test, with the segments
+/// after the function's name, so each case of one function is told apart. Empty where no segment
+/// names a test function.
+fn fingerprint_of(test: &str, functions: &BTreeMap<String, String>) -> String {
+    let Some(function) = written_as(test, functions) else {
+        return String::new();
+    };
+    let body = &functions[function];
+    let segments: Vec<&str> = test.split("::").collect();
+    let at = segments
+        .iter()
+        .rposition(|segment| *segment == function)
+        .unwrap_or(0);
+    let case = segments[at + 1..].join("::");
+    if case.is_empty() {
+        body.clone()
+    } else {
+        fingerprint(&format!("{body}::{case}"))
+    }
+}
+
+/// The failing tests to remember, each with its fingerprint now.
+pub fn remember(failing: &[String], package: &Path) -> BTreeMap<String, String> {
+    let functions = test_functions(package);
+    failing
+        .iter()
+        .map(|test| (test.clone(), fingerprint_of(test, &functions)))
+        .collect()
+}
+
+/// The remembered tests no longer there, by name or by fingerprint: `now` are the tests the
+/// binaries list. A move or a rename keeps a test's body, and a rename of its function keeps a
+/// case's.
+pub fn gone(red: &BTreeMap<String, String>, now: &Names, package: &Path) -> Vec<String> {
+    let functions = test_functions(package);
+    let bodies: BTreeSet<String> = now
+        .run
+        .iter()
+        .chain(&now.ignored)
+        .map(|test| fingerprint_of(test, &functions))
+        .filter(|body| !body.is_empty())
+        .collect();
     red.iter()
-        .filter(|(test, body)| {
-            !names.contains(name_of(test)) && (body.is_empty() || !bodies.contains(*body))
-        })
+        .filter(|(test, body)| !now.has(test) && (body.is_empty() || !bodies.contains(*body)))
         .map(|(test, _)| test.clone())
         .collect()
+}
+
+/// Every test the package has now, from its binaries, built in mutastic's copy with no mutant in:
+/// what the gate counts and looks tests up by, as a run names them.
+pub fn listed(project: &crate::workspace::Project) -> Result<Names, String> {
+    let found = crate::engine::find_all(project);
+    let none = BTreeSet::new();
+    let built = crate::compile::build(project, &found, &none, &none, &|_| {})?;
+    Names::of(
+        &built.binaries,
+        &project.copy_dir().join(&project.package_dir),
+    )
 }
 
 /// The source files, there when the task started, that it took an assertion out of: by name. Every
@@ -572,6 +641,47 @@ mod tests {
         assert_eq!(attributes(source).iter().filter(|a| is_test(a)).count(), 3);
     }
 
+    /// A generated case is looked up by its whole name, as libtest lists it: no function is
+    /// called `case_1`. One that failed is there while it's listed, a rename of its function keeps
+    /// it, and taking its row away loses it, though its function is still there.
+    #[test]
+    fn a_case_is_known_by_its_listed_name() {
+        let package =
+            std::env::temp_dir().join(format!("mutastic-gate-cases-{}", std::process::id()));
+        std::fs::create_dir_all(package.join("src")).unwrap();
+        let write = |name: &str| {
+            let source = format!(
+                "#[rstest]\n#[case(4, 2)]\n#[case(0, 0)]\nfn {name}(#[case] x: i64, #[case] half: i64) {{\n    assert_eq!(x / 2, half);\n}}\n"
+            );
+            std::fs::write(package.join("src/lib.rs"), source).unwrap();
+        };
+        let names = |run: &[&str]| Names {
+            run: run.iter().map(|name| name.to_string()).collect(),
+            ignored: BTreeSet::new(),
+        };
+        write("halves");
+        let red = remember(&["tests::halves::case_1".to_string()], &package);
+        assert_ne!(
+            red["tests::halves::case_1"], "",
+            "fingerprinted by its function"
+        );
+        let both = names(&["tests::halves::case_1", "tests::halves::case_2"]);
+        assert!(gone(&red, &both, &package).is_empty(), "still listed");
+        assert_eq!(function_of("tests::halves::case_1", &package), "halves");
+
+        write("halving");
+        let renamed = names(&["tests::halving::case_1", "tests::halving::case_2"]);
+        assert!(
+            gone(&red, &renamed, &package).is_empty(),
+            "renamed, same case"
+        );
+
+        let red = remember(&["tests::halving::case_2".to_string()], &package);
+        let one_row = names(&["tests::halving::case_1"]);
+        assert_eq!(gone(&red, &one_row, &package), ["tests::halving::case_2"]);
+        std::fs::remove_dir_all(&package).ok();
+    }
+
     #[test]
     fn a_state_is_written_and_read_back() {
         let work = std::env::temp_dir().join(format!("mutastic-gate-{}", std::process::id()));
@@ -582,6 +692,7 @@ mod tests {
             shape: Shape {
                 tests: 5,
                 disabled: 1,
+                listed: true,
             },
             blocks: 2,
             tree: "fedc".into(),
