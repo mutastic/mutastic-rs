@@ -57,6 +57,11 @@ newest come first.
 
 ### Fixes
 
+- **A property test's inputs don't flood a card.** Past 10 values, "inputs seen" shows the five
+  smallest and five largest and how many: `a = -931, -923, -791, -777, -723, …, 884, 909, 948,
+  950 (62 values)`. Where a property test passed a name that many values, the suggested test tries
+  small numbers before them, so it reads `add_with_a_0_and_b_1`, not a value a generator drew.
+
 - **`explain` on a caught return doesn't say no test fails.** The card for a caught or uncovered
   return-value mutant gave the missed card's note, "tests reach this return, but none fails when
   it returns `0`", under the test that caught it.
