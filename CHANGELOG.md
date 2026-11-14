@@ -33,6 +33,10 @@ newest come first.
 
 ### Additions
 
+- **With more than one test to write, the agent format says how to take them.** After `rules:`
+  and `decline:`, a `tasks:` line asks the agent to make a task list, one item per mutant grouped
+  by file, then write each test, run its `mutastic verify` and mark it done before the next. The
+  Java edition and the HTML report's Copy as prompt say the same.
 - **A run with no mutant to run builds nothing and runs no test.** `mutastic run --since=HEAD` on
   a clean tree took a build and a pass of every test, a minute and more on a big crate, to say
   there was nothing to measure. When no mutant is there to run (no changed lines, changed lines

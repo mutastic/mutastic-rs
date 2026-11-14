@@ -228,6 +228,61 @@ fn removing_a_case_row_is_fewer_tests() {
     );
 }
 
+/// A case turned off is a test turned off: libtest lists an `#[ignore]`d test with `--ignored`, so
+/// the gate counts it as ignored, not as there. One rstest case or test-case row, a whole
+/// function's cases, or a plain test, each holds the gate.
+#[test]
+fn ignoring_a_case_is_fewer_tests() {
+    let dir = copy("gate-ignored");
+    let _git = committed(&dir);
+    let (code, out) = mutastic(&dir, &["gate", "open"]);
+    assert_eq!(code, 0, "{out}");
+    let (lib, rows) = (dir.join("src/lib.rs"), dir.join("tests/rows.rs"));
+    let ignored = [
+        (
+            &lib,
+            "    #[case(1, 1, 1)]\n",
+            "    #[case(1, 1, 1)]\n    #[ignore]\n",
+            "12, 1",
+        ),
+        (
+            &lib,
+            "    #[case(2, 1, 2)]\n",
+            "    #[case(2, 1, 2)]\n    #[ignore]\n",
+            "11, 2",
+        ),
+        (
+            &rows,
+            "#[test_case(2, 1, 2 ; \"two by one\")]",
+            "#[test_case(2, 1, 2 => ignore ; \"two by one\")]",
+            "12, 1",
+        ),
+        (
+            &rows,
+            "#[test_case(2, 1, 2 ; \"two by one\")]\n",
+            "#[test_case(2, 1, 2 ; \"two by one\")]\n#[ignore]\n",
+            "11, 2",
+        ),
+        (
+            &lib,
+            "    #[test]\n    fn subtracting_nothing",
+            "    #[test]\n    #[ignore]\n    fn subtracting_nothing",
+            "12, 1",
+        ),
+    ];
+    for (file, from, to, now) in ignored {
+        let kept = std::fs::read_to_string(file).unwrap();
+        edit(file, from, to);
+        let (code, out) = mutastic(&dir, &["gate", "check"]);
+        assert_eq!(code, 1, "{to}: {out}");
+        let fewer = format!(
+            "mutastic gate: fewer tests run than when the task started (13, 0 ignored; now {now} ignored)"
+        );
+        assert!(out.contains(&fewer), "{to}: {out}");
+        std::fs::write(file, kept).unwrap();
+    }
+}
+
 /// What a jsonl run says of each mutant that can change from one run to the next: its status,
 /// what caught it, the inputs seen and the test suggested.
 fn outcomes(stdout: &str) -> Vec<String> {
