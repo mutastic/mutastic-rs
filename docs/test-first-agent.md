@@ -197,10 +197,15 @@ that:
 
 - **each mutant on the changed lines is caught, or proposed** for a person to ignore;
 - **the task made no ignore of its own**: it proposes, and you decide;
+- **the task added nothing to the baseline itself**: what's the project's backlog is yours to say;
 - **no test was taken away**: no fewer tests than at the start, and none more `#[ignore]`d;
 - **the tests pass.** When a test that was there before fails, the gate tells the agent to find
   out whether the change or the test is wrong, and to ask you if it isn't sure, rather than
   rewrite what the test expects.
+
+It checks each of them whatever lines the task changed: a task that only deletes a failing test
+changes no line mutastic mutates, and is held all the same. Only a task that changed nothing
+passes at once.
 
 When something's missed, the gate sends the agent back with the cards, as the run above shows
 them. When it can't get there, the gate lets it stop and tells you what's left.
