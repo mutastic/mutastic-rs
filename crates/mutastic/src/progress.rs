@@ -13,7 +13,7 @@ use crate::engine::{self, Status};
 use crate::report::{self, Style};
 use crate::terminal;
 
-pub use frames::{Counts, Phase, View, Worker};
+pub use frames::{count, Counts, Phase, View, Worker};
 
 /// How progress is shown: `bar`, a live block redrawn in place on a terminal; `counter`, a plain
 /// line at each phase and a heartbeat between, for logs, CI and agents; or `none`.

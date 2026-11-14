@@ -34,6 +34,12 @@ the code. See [Troubleshooting](troubleshooting.md#a-workspace).
   `Instant::now` or `rand::thread_rng`, and fields of a type like `RandomState` that a method reads
   through `self`. A Rust test fails with a panic, so there's no failure chain, and none of the Java
   edition's advice for a test that failed on the network or a file.
+- **A test that caught mutants and fails on its own** is found as in the Java edition, once the
+  mutants have run, and the run doesn't pass. The coverage pass already runs each test in a process
+  of its own, so a Rust test that needs another test to set it up stops the run there, before any
+  mutant; what's left to find afterwards is what the mutants' runs left behind, such as a file. The
+  run exits with status 2, as for a test that fails with no mutant in, where the Java edition exits
+  with 3, and its line doesn't offer `--exclude-tests`, which the Rust edition doesn't have yet.
 
 ## Cards
 
