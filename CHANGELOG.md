@@ -57,6 +57,10 @@ newest come first.
 
 ### Fixes
 
+- **`explain` on a caught return doesn't say no test fails.** The card for a caught or uncovered
+  return-value mutant gave the missed card's note, "tests reach this return, but none fails when
+  it returns `0`", under the test that caught it.
+
 - **The test named as catching a mutant is the same in every run.** A mutant's covering tests run
   together, on several threads, and the first to fail was named: where several cases catch it, as
   cases written alike do, the name changed from run to run, and with it `mutation.json` and the
