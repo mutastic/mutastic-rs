@@ -601,7 +601,7 @@ fn the_live_line_is_redrawn_in_place() {
 }
 
 /// A full run writes `mutation.json`, in the mutation-testing report schema as the Java edition
-/// writes it, and `mutation.html`, that report in the viewer, and says where in its summary and
+/// writes it, and `mutation.html`, that report in mutastic's own page, and says where in its summary and
 /// its events.
 #[test]
 fn a_full_run_writes_the_report_files() {
@@ -656,8 +656,18 @@ fn a_full_run_writes_the_report_files() {
         "no test checks discount() at total == 100"
     );
     let page = std::fs::read_to_string(&html).unwrap();
-    assert!(page.contains("<mutation-test-report-app titlePostfix=\"mutastic\">"));
-    assert!(page.contains(".report = {\"$schema\""));
+    // mutastic's own page, the report in its slot, every `<` in it escaped.
+    let slot = "<script type=\"application/json\" id=\"mutation-report\">";
+    let data = &page[page.find(slot).unwrap() + slot.len()..];
+    let data = &data[..data.find("</script>").unwrap()];
+    assert!(
+        data.starts_with("{\"$schema\""),
+        "{}",
+        &data[..80.min(data.len())]
+    );
+    assert!(!data.contains('<'));
+    let back: serde_json::Value = serde_json::from_str(data).unwrap();
+    assert_eq!(back, report);
     std::fs::remove_dir_all(&out).ok();
 
     let (_, jsonl) = mutastic(&["run", &dir, "--format=jsonl", "--report=json:x.json"]);
