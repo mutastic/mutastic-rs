@@ -1461,14 +1461,18 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
         ));
     }
     let rounds = report.rounds;
-    rows.push((
-        "Build",
-        format!(
-            "one build of every mutant, {rounds} round{} (check and build)",
-            if rounds == 1 { "" } else { "s" }
-        ),
-    ));
-    rows.push(("Test runs", test_runs_row(report, style)));
+    if report.built {
+        rows.push((
+            "Build",
+            format!(
+                "one build of every mutant, {rounds} round{} (check and build)",
+                if rounds == 1 { "" } else { "s" }
+            ),
+        ));
+        rows.push(("Test runs", test_runs_row(report, style)));
+    } else {
+        rows.push(("Build", format!("nothing built: {NOTHING_TO_RUN}")));
+    }
     if let Some(started) = &report.started_at {
         rows.push(("Start at", started.clone()));
     }
@@ -1482,13 +1486,17 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
     ));
     rows.push((
         "Tests",
-        format!(
-            "{} on rustc {} · {} worker{}",
-            report.tests,
-            report.rustc,
-            report.workers,
-            if report.workers == 1 { "" } else { "s" }
-        ),
+        if report.built {
+            format!(
+                "{} on rustc {} · {} worker{}",
+                report.tests,
+                report.rustc,
+                report.workers,
+                if report.workers == 1 { "" } else { "s" }
+            )
+        } else {
+            format!("none ran: {NOTHING_TO_RUN}")
+        },
     ));
     if !report.reports.is_empty() {
         rows.push(("Reports", report.reports.join(&style.dim(" · "))));
@@ -1497,6 +1505,9 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
     rows
 }
 
+/// Why a run built nothing and ran no test, as the Java edition says it.
+const NOTHING_TO_RUN: &str = "no mutant to run";
+
 /// The run's time by phase, `setup 3.5s, build 9m41s, coverage 7m23s, mutants 34m12s, checking
 /// 51.0s`: the build and checking where they were timed.
 fn phases(report: &Report) -> String {
@@ -1504,6 +1515,9 @@ fn phases(report: &Report) -> String {
         "setup {}",
         duration(report.setup.saturating_sub(report.build))
     )];
+    if !report.built {
+        return parts.join(", ");
+    }
     if !report.build.is_zero() {
         parts.push(format!("build {}", duration(report.build)));
     }
@@ -2073,14 +2087,19 @@ pub fn run_started(
         "project": package,
         "rule": RULE,
         "decline": DECLINE,
-        "profile": {
-            "name": "mutastic",
-            "optLevel": profile["opt_level"],
-            "overflowChecks": profile["overflow_checks"],
-            "debugAssertions": profile["debug_assertions"],
-        },
+        "profile": { "name": "mutastic" },
         "unsafe": unsafe_mode.name(),
     });
+    // A run with nothing to build has no opt-level from Cargo: what isn't known is left out.
+    for (key, setting) in [
+        ("optLevel", "opt_level"),
+        ("overflowChecks", "overflow_checks"),
+        ("debugAssertions", "debug_assertions"),
+    ] {
+        if !profile[setting].is_null() {
+            started["profile"][key] = profile[setting].clone();
+        }
+    }
     if let Some(share) = share {
         started["share"] = share;
     }

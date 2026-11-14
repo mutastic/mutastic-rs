@@ -16,7 +16,7 @@ Each event has `schema` (`mutastic.events/v1`), `edition` (`rust`, where the Jav
 |---|---|
 | `phase-started` | A phase begins: `reading`, `building`, `coverage`, `mutants` or `checking`. Only these and `phase-finished` come before `run-started` |
 | `phase-finished` | A phase ends, with its `durationMs` |
-| `run-started` | Once the build is done, as it carries the build's profile |
+| `run-started` | Once the build is done, as it carries the build's profile; with no mutant to run, nothing is built, and it comes with the results |
 | `progress` | Every 30 seconds (`MUTASTIC_HEARTBEAT`), once `run-started` is out: the phase's `elapsedMs`, and what it knows: `done` and `total`; for mutants `weighted`, `leftMs`, the fates so far and how many are `running` |
 | `mutant-finished` | For each mutant, after the phases: each carries what the checking phase found |
 | `run-finished` | Last: the totals, the score and the verdict |
@@ -92,7 +92,7 @@ them.
 | Event | Field | Means |
 |---|---|---|
 | every event | `edition` | `rust`. The schema asks the Java edition's own field, `run-finished`'s `jdk`, only of events whose `edition` is `java` |
-| `run-started` | `profile` | How mutastic's build was made: `name`, `optLevel`, `overflowChecks`, `debugAssertions`, as Cargo reports them. See [Profiles](../concepts/profiles.md#what-the-run-records) |
+| `run-started` | `profile` | How mutastic's build was made: `name`, `optLevel`, `overflowChecks`, `debugAssertions`, as Cargo reports them; with nothing built, `optLevel` is left out. See [Profiles](../concepts/profiles.md#what-the-run-records) |
 | `run-started` | `unsafe` | `skip`, `enclosing` or `all`: how unsafe code was treated |
 | `mutant-finished` | `status: "RuntimeError"` | Crashed where a crash proves nothing; out of the score. See [Unsafe code](../concepts/unsafe.md) |
 | `mutant-finished` | `nearUnsafe` | Why the mutant is near unsafe code: `called from unsafe code`, `in a module with unsafe code`, and, with `--unsafe`, `in a function with an unsafe block` or `inside unsafe code` |

@@ -107,6 +107,33 @@ A test process that dies without a test failing, by a signal or an abort, is run
 time to see how it died. What that means depends on where the mutant is: see
 [Results](results.md#caught-only-because-the-test-process-crashed).
 
+## When there's nothing to run
+
+A run of a change that touched no mutant's line, of skipped mutants only, or of a share that holds
+none has nothing to measure, and building the crate and running every test would take minutes to
+find that out. So mutastic builds nothing and runs no test: it finds the mutants, lists the skipped
+ones with their reasons, and passes with nothing to measure, in a second or so. On a clean tree:
+
+```sh
+mutastic run fixtures/pricing --since=HEAD
+```
+
+<!-- output: concepts/nothing-to-run -->
+```text
+
+    Files  0 clean (0)
+  Mutants  ✓ 0 caught (0)
+  Changed  0 lines in 0 files since HEAD
+    Build  nothing built: no mutant to run
+ Start at  19:31:48
+ Duration  74ms (setup 74ms)
+    Tests  none ran: no mutant to run
+    Score  none  [PASS] Nothing to measure: no mutants to score.
+```
+
+Such a run leaves the last run's record and report files as they were. `--force-coverage` builds
+the crate and runs the tests anyway, to check that they pass or to time them.
+
 ## Running it again
 
 The copy and its build stay in `target/mutastic`, so the next run, or a `verify`, rebuilds only what
@@ -131,6 +158,7 @@ change to or from one isn't counted.
 
 Only a full run compares and records: a run of one mutant (`--only`, `verify`, `explain`) says
 nothing about the others, and a run of a change (`--since`) has a different score by design. A
+run with no mutant to run measured nothing, so it isn't kept either. A
 share (`--shard`) keeps its record in its own folder, so a whole run is never compared with part of
 one.
 

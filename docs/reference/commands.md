@@ -32,7 +32,7 @@ mutastic run --shard=2/4 --threshold=0
 mutastic run --from-shards=shares --threshold=70
 ```
 
-**Options:** [`--threshold=N`](#--threshold), [`--fail-on-new`](#--fail-on-new), [`--since[=REF]`](#--since), [`--only=ID`](#--only), [`--workers=N`](#--workers), [`--no-suggestions`](#--no-suggestions), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--report=KIND[:PATH]`](#--report), [`--shard=N/M`](#--shard), [`--from-shards=DIR`](#--from-shards), [`--format=FORMAT`](#--format), [`--vocabulary=WORDS`](#--vocabulary), [`--color=WHEN`](#--color), [`--hyperlinks=WHEN`](#--hyperlinks), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
+**Options:** [`--threshold=N`](#--threshold), [`--fail-on-new`](#--fail-on-new), [`--since[=REF]`](#--since), [`--only=ID`](#--only), [`--workers=N`](#--workers), [`--no-suggestions`](#--no-suggestions), [`--force-coverage`](#--force-coverage), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--report=KIND[:PATH]`](#--report), [`--shard=N/M`](#--shard), [`--from-shards=DIR`](#--from-shards), [`--format=FORMAT`](#--format), [`--vocabulary=WORDS`](#--vocabulary), [`--color=WHEN`](#--color), [`--hyperlinks=WHEN`](#--hyperlinks), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
 
 **Exit status:** 0 when the score reaches the threshold, 1 when it doesn't; with --fail-on-new, 0 when every mutant no test catches is in the baseline, 1 when one isn't.
 
@@ -195,7 +195,7 @@ mutastic run --fail-on-new
 
 ### `--since`
 
-`--since[=REF]`, for [`next`](#next), [`run`](#run). Mutate only the lines changed since the merge-base of HEAD and REF, uncommitted and new files included; the default branch without one.
+`--since[=REF]`, for [`next`](#next), [`run`](#run). Mutate only the lines changed since the merge-base of HEAD and REF, uncommitted and new files included; the default branch without one. With no mutant on those lines, nothing is built or run.
 
 ```sh
 mutastic next --since=main
@@ -230,6 +230,14 @@ mutastic verify mb2f8ae57 --workers=2
 mutastic explain mb2f8ae57 --no-suggestions
 mutastic next --no-suggestions
 mutastic run --no-suggestions
+```
+
+### `--force-coverage`
+
+`--force-coverage`, for [`run`](#run). Build and run every test even when no mutant is there to run, to check or time the suite.
+
+```sh
+mutastic run --since --force-coverage
 ```
 
 ### `--operators`

@@ -1054,6 +1054,10 @@ fn test_first(work: &Path, shown: &mut BTreeMap<String, String>) {
     );
     repository(work);
     let lib = work.join("fixtures/pricing/src/lib.rs");
+    // Before the cycle, nothing has changed: nothing is built and no test runs.
+    let unchanged = ran(work, &["run", "fixtures/pricing", "--since=HEAD"]);
+    assert_eq!(unchanged.code, 0, "{}", unchanged.stdout);
+    shown.insert("concepts/nothing-to-run".into(), unchanged.stdout);
 
     test_first_step(&lib, &steps[0]);
     test_first_step(&lib, &steps[1]);

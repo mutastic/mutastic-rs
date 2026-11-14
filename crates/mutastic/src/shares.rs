@@ -453,7 +453,13 @@ impl Shares {
             millis("/coverageMs"),
         );
         let first = &self.shares[0];
-        let profile = &first.started["profile"];
+        // A share with no mutant to run built nothing, so its profile has no opt-level.
+        let profile = &self
+            .shares
+            .iter()
+            .find(|read| !read.started["profile"]["optLevel"].is_null())
+            .unwrap_or(first)
+            .started["profile"];
         let rustc = first
             .finished
             .as_ref()
@@ -492,6 +498,7 @@ impl Shares {
             operators: options.operators.clone(),
             comparison: None,
             fail_on_new: None,
+            built: true,
         }
     }
 
