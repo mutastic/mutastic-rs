@@ -30,6 +30,9 @@ ignore = true
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# A workspace crate's path dependency on another, mutastic's on mutastic-terminal, has no version;
+# it's allowed only between crates that aren't published. A registry dependency still needs one.
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"

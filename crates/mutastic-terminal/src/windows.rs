@@ -29,7 +29,7 @@ const STD_ERROR_HANDLE: u32 = -12i32 as u32;
 
 /// The calls, one each. Miri can't call them, so everything else is written over this, and the
 /// tests give it a fake.
-pub(crate) trait Calls: Sync {
+trait Calls: Sync {
     /// The part of stderr's console buffer the window shows, when stderr is a console.
     fn window(&self) -> Option<SmallRect>;
     /// `on_leave` added to the console's Ctrl-C handlers, or taken off.
