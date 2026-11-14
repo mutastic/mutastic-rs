@@ -1,0 +1,85 @@
+#!/bin/sh
+# Squash-merges a pull request with a message main's commit check will pass, written before the
+# merge rather than found red after it:
+#
+#   .githooks/merge-pr [--admin] <number> [body-file]
+#
+# The subject is the pull request's title and " (#<number>)", as GitHub writes it, and the body
+# is the file, or empty. Both go through commit-msg (check-title for the subject) first. It merges
+# only once every check on the pull request has passed, and only the head commit they ran on; the
+# branch on GitHub is deleted, and no local branch or checkout is touched. --admin merges without
+# waiting for the checks, with admin rights, for a check that can't pass; the message is still
+# checked.
+
+set -eu
+usage() {
+  echo "usage: merge-pr [--admin] <number> [body-file]" >&2
+  exit 2
+}
+admin=
+number=
+body=
+for arg in "$@"; do
+  case $arg in
+    --admin) admin=--admin ;;
+    -*) usage ;;
+    *)
+      if [ -z "$number" ]; then
+        number=$arg
+      elif [ -z "$body" ]; then
+        body=$arg
+      else
+        usage
+      fi
+      ;;
+  esac
+done
+case $number in '' | *[!0-9]*) usage ;; esac
+if [ -n "$body" ] && [ ! -r "$body" ]; then
+  echo "merge-pr: can't read $body" >&2
+  exit 2
+fi
+hooks=$(cd "$(dirname "$0")" && pwd)
+
+repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+title=$(gh pr view "$number" --repo "$repo" --json title --jq .title)
+head=$(gh pr view "$number" --repo "$repo" --json headRefOid --jq .headRefOid)
+
+sh "$hooks/check-title" "$number" "$title"
+message=$(mktemp)
+trap 'rm -f "$message" "$message.body"' EXIT
+: > "$message.body"
+if [ -n "$body" ]; then
+  # commit-msg skips lines starting with #, as git strips them, but GitHub keeps them.
+  if grep -n '^#' "$body" >&2; then
+    echo "merge-pr: the body has lines starting with #, which the check skips; reword them" >&2
+    exit 1
+  fi
+  cat "$body" > "$message.body"
+fi
+{
+  printf '%s (#%s)\n' "$title" "$number"
+  if [ -s "$message.body" ]; then
+    printf '\n'
+    cat "$message.body"
+  fi
+} > "$message"
+sh "$hooks/commit-msg" "$message"
+
+if [ -z "$admin" ]; then
+  status=0
+  checks=$(gh pr checks "$number" --repo "$repo" 2>&1) || status=$?
+  if [ "$status" -ne 0 ]; then
+    printf '%s\n' "$checks" >&2
+    if [ "$status" -eq 8 ]; then
+      echo "merge-pr: checks on #$number are still running; try again once they pass" >&2
+    else
+      echo "merge-pr: not every check on #$number has passed; fix it, or pass --admin" >&2
+    fi
+    exit 1
+  fi
+fi
+
+# --repo keeps gh away from the local checkout: it deletes the branch on GitHub only.
+gh pr merge "$number" --repo "$repo" --squash --delete-branch $admin \
+  --match-head-commit "$head" --subject "$title (#$number)" --body-file "$message.body"
