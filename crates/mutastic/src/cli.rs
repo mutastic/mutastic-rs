@@ -1052,6 +1052,10 @@ fn finish(
     if format != Format::Jsonl && parsed.only.is_empty() && report.scope.is_none() {
         baseline_note(&report);
     }
+    if !report.failing_alone().is_empty() {
+        // A test fails on the code with no mutant in, as one that fails before any mutant does.
+        return Ok(ExitCode::from(2));
+    }
     Ok(if report.passed() {
         ExitCode::SUCCESS
     } else {
@@ -1107,9 +1111,10 @@ fn baseline_command(parsed: &Parsed) -> Result<ExitCode, Failure> {
         let entries = baseline::entries(&report);
         baseline::write(here, &entries).map_err(|error| Code::Other.with(error))?;
         stdout_line!(
-            "mutastic: {} mutants no test catches are in {}: commit it. A miss that isn't in it is \
-             new: the gate holds only new misses, and next offers them first",
-            entries.len(),
+            "mutastic: {} no test catches {} in {}: commit it. A miss that isn't in it is new: the \
+             gate holds only new misses, and next offers them first",
+            crate::progress::count(entries.len(), "mutant"),
+            if entries.len() == 1 { "is" } else { "are" },
             baseline::FILE
         );
     }
@@ -1273,9 +1278,12 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, Failure> {
                 untrusted::value(result.reason.as_deref().unwrap_or("crash"))
             ),
         };
-        settled &= result.status.detected()
-            || matches!(result.status, Status::Ignored | Status::RuntimeError);
+        settled &= result.status.settled();
         stdout_line!("mutastic: {} {fate}", mutant.id);
+    }
+    if !report.failing_alone().is_empty() {
+        stdout_text!("{}", report::failing_alone(&report));
+        return Ok(ExitCode::from(2));
     }
     Ok(if settled {
         ExitCode::SUCCESS
@@ -1820,28 +1828,9 @@ fn gate_verdict(
             untrusted::fence(&names.join("\n"))
         )));
     }
-    let changed = crate::since::changed_since(here, &state.base)?;
-    let found = engine::find_all(project);
-    let ours = found.files.iter().any(|file| {
-        std::fs::canonicalize(project.workspace.join(&file.path))
-            .is_ok_and(|path| changed.lines.contains_key(&path))
-    });
-    if !ours {
-        // A task that changed nothing can't have broken a test. One that changed a test, a build
-        // file or a test's data may have, so the tests run.
-        if gate::untouched(here, &state.base) {
-            return Ok(gate::Verdict::pass(
-                "mutastic gate: passed: the task changed no lines mutastic mutates".into(),
-            ));
-        }
-        return match gate_run(parsed, project, changed) {
-            Ok(_) => Ok(gate::Verdict::pass(
-                "mutastic gate: passed: the tests pass, and the task changed no lines mutastic mutates"
-                    .into(),
-            )),
-            Err(error) => red_verdict(here, state, &error),
-        };
-    }
+    // Whatever lines it changed: a task that only ignores a mutant itself changes none mutastic
+    // mutates, and mustn't pass for it. Checked even on a tree git sees as untouched, which it is
+    // when the project's git ignores `.mutastic/`.
     let added: Vec<String> = ignored_ids(here)?
         .difference(&state.ignored)
         .cloned()
@@ -1866,6 +1855,12 @@ fn gate_verdict(
             if one { "it" } else { "them" }
         )));
     }
+    // A task that changed nothing else can't have taken a test away or broken one.
+    if gate::untouched(here, &state.base) {
+        return Ok(gate::Verdict::pass(
+            "mutastic gate: passed: the task changed no lines mutastic mutates".into(),
+        ));
+    }
     let (before, now) = (state.shape, gate::Shape::of(here));
     if now.fewer_than(&before) {
         return Ok(gate::Verdict::block(format!(
@@ -1873,10 +1868,29 @@ fn gate_verdict(
             before.tests, before.disabled, now.tests, now.disabled
         )));
     }
+    let changed = crate::since::changed_since(here, &state.base)?;
+    let found = engine::find_all(project);
+    let ours = found.files.iter().any(|file| {
+        std::fs::canonicalize(project.workspace.join(&file.path))
+            .is_ok_and(|path| changed.lines.contains_key(&path))
+    });
+    if !ours {
+        // A change to a test, a build file or a test's data may still break a test, so they run.
+        return match gate_run(parsed, project, changed) {
+            Ok(_) => Ok(gate::Verdict::pass(
+                "mutastic gate: passed: the tests pass, and the task changed no lines mutastic mutates"
+                    .into(),
+            )),
+            Err(error) => red_verdict(here, state, &error),
+        };
+    }
     let mut report = match gate_run(parsed, project, changed) {
         Ok(report) => report,
         Err(error) => return red_verdict(here, state, &error),
     };
+    if !report.failing_alone().is_empty() {
+        return Ok(gate::Verdict::block(gate::false_caught(&report)));
+    }
     let proposed: std::collections::BTreeSet<String> = ignores::proposed(here)?
         .into_iter()
         .map(|entry| entry.id)
@@ -1932,8 +1946,9 @@ fn gate_verdict(
                     .into(),
             ));
         }
+        let scored = crate::progress::count(scored, "mutant");
         return Ok(gate::Verdict::pass(format!(
-            "mutastic gate: passed: the tests catch {caught} of the {scored} mutants on the lines the task changed{waiting}{backlog}"
+            "mutastic gate: passed: the tests catch {caught} of the {scored} on the lines the task changed{waiting}{backlog}"
         )));
     }
     let waiting: Vec<String> = missed
@@ -2086,7 +2101,7 @@ fn mutants(parsed: &Parsed) -> Result<ExitCode, Failure> {
                 .unwrap_or_default()
         );
     }
-    stdout_line!("{} mutants", found.mutants.len());
+    stdout_line!("{}", crate::progress::count(found.mutants.len(), "mutant"));
     if found.not_mutated_unsafe > 0 {
         stdout_line!(
             "not mutated: unsafe ({}): --unsafe=enclosing or --unsafe=all includes them",

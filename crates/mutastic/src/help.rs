@@ -266,6 +266,31 @@ mod tests {
         }
     }
 
+    /// Each command's `Docs:` link is the page the docs site writes for it from the committed
+    /// `docs/commands.json`: its `docs` root, `reference/`, and the command's `page`, as
+    /// `rust/reference/<page>/`. The top help links the root.
+    #[test]
+    fn each_docs_link_is_a_page_the_docs_site_writes() {
+        let model: serde_json::Value =
+            serde_json::from_str(include_str!("../../../docs/commands.json")).unwrap_or_default();
+        let root = model["docs"].as_str().unwrap_or_default();
+        assert!(root.ends_with("/rust/"), "{root}");
+        let pages: Vec<&str> = model["commands"]
+            .as_array()
+            .map(|commands| commands.iter().filter_map(|c| c["page"].as_str()).collect())
+            .unwrap_or_default();
+        assert_eq!(pages.len(), commands::COMMANDS.len());
+        for (command, page) in commands::COMMANDS.iter().zip(pages) {
+            let docs: Vec<String> = of(command)
+                .lines()
+                .filter_map(|line| line.strip_prefix("Docs: "))
+                .map(str::to_string)
+                .collect();
+            assert_eq!(docs, [format!("{root}reference/{page}/")], "{}", command.name);
+        }
+        assert!(general().ends_with(&format!("Docs: {root}")));
+    }
+
     #[test]
     fn a_long_example_breaks_outside_its_quotes() {
         let long = "mutastic ignore mb2f8ae57 --propose --as=unreachable --reason=\"Differs only \

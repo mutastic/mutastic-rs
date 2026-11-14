@@ -96,7 +96,24 @@ newest come first.
   event. It now says `internal error:`, where, and where to report it, writes a `run-failed` event
   with code `internal` in the agent and jsonl formats, and exits 2, as every failure does until
   2.0.
-
+- **A test that caught mutants and fails on its own fails the run.** Once the mutants have run,
+  each test that caught one runs again, on its own with no mutant in. One that fails there (it
+  trips on a file it, another test or the run left behind) is named as flaky, as a test that
+  "passes among the others but fails on its own"; its catches don't count, and every mutant it
+  reached runs again without it, so scores can go down. Unlike other flaky tests it fails the run
+  whatever the score, with exit status 2, and `verify` and `gate check` don't pass on it either.
+  In `--format=jsonl`, a mutant run again comes as a `mutant-revised` event after the
+  `mutant-finished` ones, naming the test as `falseCatchBy` where its catch didn't count, and the
+  test's `flakyEvidence` entry has `"failsAlone": true`, as in the Java edition. A healthy suite's
+  results don't change, at the cost of one run of each catching test. No id changes. See
+  [A test that fails on its own](docs/concepts/results.md#a-test-that-fails-on-its-own).
+- **The gate holds a task that changes no line mutastic mutates to its other checks.** Such a task
+  skipped the checks for ignores and baseline entries the task made itself, and for tests taken
+  away or `#[ignore]`d, so an agent that only deleted a failing test, or ignored a mutant itself,
+  passed once the rest of the tests did. Now they run on every check, whatever lines changed, with
+  the same words and the same hand-over; only a task that changed nothing passes at once, and
+  an ignore or baseline entry it made itself holds it even where git doesn't see `.mutastic/`.
+  An ignore you accept between turns is still the task's to start from.
 - **The gate runs the tests even with no mutant on the changed lines.** Since a run with no mutant
   to run stopped building and running the tests, a task that changed only lines with no mutant (a
   constant, an import, a log line) passed the gate with no test run, even when it broke one. The

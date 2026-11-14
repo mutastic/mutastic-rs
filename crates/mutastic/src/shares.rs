@@ -185,7 +185,7 @@ struct Read {
     file: PathBuf,
     tag: Tag,
     started: Value,
-    /// Each mutant's `mutant-finished`, by id.
+    /// Each mutant's last result, its `mutant-revised` or else its `mutant-finished`, by id.
     results: BTreeMap<String, Value>,
     finished: Option<Value>,
 }
@@ -498,11 +498,15 @@ impl Shares {
             stale_ignores,
             scope: None,
             flaky: self.flaky(),
+            // A share's `mutant-revised` has replaced its `mutant-finished`: the whole run's
+            // events give each mutant's last result once.
+            revised: BTreeMap::new(),
             share: None,
             operators: options.operators.clone(),
             comparison: None,
             fail_on_new: None,
             built: true,
+            only: false,
         }
     }
 
@@ -521,6 +525,7 @@ impl Shares {
                 if seen.insert(test.clone()) {
                     flaky.push(Flaky {
                         test,
+                        fails_alone: found["failsAlone"] == true,
                         reaches: strings(&found["reaches"]),
                         reaches_in_test: strings(&found["reachesInTest"]),
                     });
@@ -584,7 +589,8 @@ fn share(file: &Path) -> Result<Read, String> {
             .map_err(|error| not_events(format!("line {} isn't JSON ({error})", index + 1)))?;
         match event["reason"].as_str() {
             Some("run-started") => started = Some(event),
-            Some("mutant-finished") => {
+            // A `mutant-revised` comes after the mutant's `mutant-finished`, and replaces it.
+            Some("mutant-finished" | "mutant-revised") => {
                 let id = event["id"].as_str().unwrap_or_default().to_string();
                 results.insert(id, event);
             }
@@ -624,6 +630,7 @@ fn result_of(index: usize, event: &Value) -> Option<MutantResult> {
         covered_by: strings(&event["coveredBy"]),
         killed_by: text("caughtBy"),
         killed_with: text("caughtWith"),
+        false_catch_by: text("falseCatchBy"),
         tests_run: event["testsRun"].as_u64().unwrap_or(0) as usize,
         took: Duration::from_millis(event["durationMs"].as_u64().unwrap_or(0)),
         inputs: event["inputs"]

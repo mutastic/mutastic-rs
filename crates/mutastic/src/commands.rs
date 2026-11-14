@@ -764,7 +764,8 @@ pub const EXIT_CODES: &[Entry] = &[
         meaning: "mutastic couldn't run: an unknown option, a word the command doesn't take, not \
                   a Cargo package, a workspace's root, a test that fails with no mutant in, an id \
                   that isn't a mutant of the package, shares --from-shards can't put together as one \
-                  run, --fail-on-new with no baseline, or no task open for gate check",
+                  run, --fail-on-new with no baseline, or no task open for gate check; or, for run \
+                  and verify, a test that caught mutants fails on its own, with no mutant in",
         detail: "",
     },
 ];

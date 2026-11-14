@@ -192,6 +192,34 @@ This is the unsafety fixture, which has one of each:
      Score  35.7%   FAIL  Below the threshold of 80: 7 missed, 2 not covered.  · 41.7% where tests reach
 ```
 
+## A test that fails on its own
+
+A catch is only the mutant's doing if the test passes without it. The coverage pass checks that
+before any mutant, but a test can pass then and still fail later on code with no mutant in: it
+trips on something an earlier run of it, or of another test, left behind, most often a file it
+writes and never removes. Against every mutant it reaches, it fails, and each failure would look
+like a catch.
+
+So once every mutant has its result, each test that caught one runs again, once, on its own with
+no mutant in. One that fails there passed among the others but fails on its own, so its catches
+weren't the mutants'. A test that runs out of time there isn't counted, as load can do that.
+
+Its catches don't count. It's left out, as a flaky test is, and each mutant it reached runs again
+without it: the other tests that reach the mutant decide whether it's caught or missed, and if none
+does, it's not covered. The mutant keeps its id, and its card says which test's catch didn't count
+(`… failed against it, but fails on its own with no mutant in too: that catch doesn't count`).
+
+The run doesn't pass while such a test is there, whatever the score, and exits with status 2, as
+for a test that fails with no mutant in. `verify` and `gate check` check their catches the same
+way, so neither passes on a false catch. The output names the test as flaky, as one that `passes
+among the others but fails on its own`, and says the run can't pass until it does. In
+`--format=jsonl`, `run-finished` lists it in `flaky`, its entry in `flakyEvidence` has
+`"failsAlone": true`, and each mutant run again is sent again as a `mutant-revised` event with its
+last result, which replaces its `mutant-finished`; one whose catch didn't count names the test as
+`falseCatchBy`.
+
+When every catch holds, nothing changes but the time: one run of each test that caught something.
+
 ## The score
 
 The score is the share of the mutants that ran which the tests noticed:
@@ -256,4 +284,4 @@ See [`mutastic verify`](../reference/commands.md#verify) for the command itself.
 |---|---|
 | 0 | The run passed, or every mutant `verify` named is caught, skipped, or crashed where a crash proves nothing |
 | 1 | The score is under the threshold, or a mutant `verify` named is missed or not covered |
-| 2 | mutastic couldn't run: not a Cargo package, a test that fails with no mutant in, a build that fails for a reason no mutant explains |
+| 2 | mutastic couldn't run: not a Cargo package, a test that fails with no mutant in, a build that fails for a reason no mutant explains; or a test that caught mutants fails on its own, with no mutant in, so its catches can't be trusted |
