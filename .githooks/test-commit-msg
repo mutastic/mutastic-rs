@@ -160,7 +160,8 @@ checks "new commit in the older style" 1 "Keep the exit status, in the older sty
 # merge-pr, against a fake gh that answers for pull request #59 and writes down the merge it is
 # asked for. FAKE_QUEUE says whether main has a merge queue, FAKE_SQUASH what the squash commit's
 # body is (BLANK or PR_BODY), FAKE_QUEUED whether #59 is in it already, and FAKE_LANDED how the
-# wait ends: MERGED, or OPEN for a pull request the queue dropped.
+# wait ends: MERGED, or OPEN for a pull request the queue dropped. FAKE_ENQUEUE=refused has GitHub
+# refuse to queue it, as for checks still running.
 bin=$(mktemp -d)
 trap 'rm -f "$message" "$message.err"; rm -rf "$repo" "$bin"' EXIT
 cat > "$bin/gh" <<'GH'
@@ -170,7 +171,13 @@ case "$1 $2" in
   "api graphql")
     case "$*" in
       *squashMergeCommitMessage*)
-        printf '%s\t%s\t%s\t%s\t%s\n' "$FAKE_SQUASH" "$FAKE_QUEUE" "$FAKE_QUEUED" 1a2b3c "$FAKE_TITLE" ;;
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$FAKE_SQUASH" "$FAKE_QUEUE" "$FAKE_QUEUED" PR_59 1a2b3c \
+          "$FAKE_TITLE" ;;
+      *enqueuePullRequest*)
+        echo "enqueuePullRequest $4 $6" >> "$FAKE_MERGE"
+        [ "$FAKE_ENQUEUE" != refused ] || exit 1
+        ;;
+      *enablePullRequestAutoMerge*) echo "enablePullRequestAutoMerge $4 $6" >> "$FAKE_MERGE" ;;
       *) printf '%s\t%s\tfalse\tfalse\t-\t-\n' "$FAKE_LANDED" 4d5e6f ;;
     esac
     ;;
@@ -201,7 +208,7 @@ merged() {
   rm -f "$FAKE_MERGE"
   status=0
   FAKE_TITLE=$pr_title FAKE_STATUS=$checks FAKE_QUEUE=${queue:-false} FAKE_SQUASH=${squash:-BLANK} \
-    FAKE_QUEUED=${queued:-false} FAKE_LANDED=${landed:-MERGED} PATH="$bin:$PATH" \
+    FAKE_QUEUED=${queued:-false} FAKE_LANDED=${landed:-MERGED} FAKE_ENQUEUE=${enqueue:-} PATH="$bin:$PATH" \
     sh ./merge-pr "$@" > "$message" 2>&1 || status=$?
   if [ -f "$FAKE_MERGE" ]; then
     [ "$expected_status" -eq 0 ] || [ "${landed:-}" = OPEN ] || echo "merged anyway" >> "$message"
@@ -235,12 +242,16 @@ merged "no number" 2 "usage: merge-pr" "$title" 0
 
 # With a merge queue: the pull request joins it, and the queue writes the commit.
 queue=true
-merged "queue" 0 "pr merge 59 --repo mutastic/example --squash --match-head-commit 1a2b3c" \
-  "$title" 0 59
-unmerged "queue, no subject" "--subject"
+merged "queue" 0 "enqueuePullRequest id=PR_59 head=1a2b3c" "$title" 0 59
+unmerged "queue, not gh pr merge" "pr merge"
+unmerged "queue, no auto-merge" "AutoMerge"
+enqueue=refused
+merged "queue refused, auto-merge" 0 "enablePullRequestAutoMerge id=PR_59 head=1a2b3c" "$title" 8 59
+enqueue=
 merged "queue, message still checked" 1 "line 3 is 73 characters" "$title" 0 59 "$bin/long-body"
 merged "queue, checks still checked" 1 "not every check on #59 has passed" "$title" 1 59
-merged "queue, blank body leaves the description" 0 "is queued" "$title" 0 59 "$bin/body"
+merged "queue, checks running" 0 "enqueuePullRequest id=PR_59 head=1a2b3c" "$title" 8 59
+merged "queue, blank body leaves the description" 0 "lands once it passes" "$title" 0 59 "$bin/body"
 unmerged "queue, description kept" "pr edit"
 squash=PR_BODY
 merged "queue, body to the description" 0 "--body-file" "$title" 0 59 "$bin/body"
@@ -255,7 +266,7 @@ merged "queue, dropped" 1 "left the merge queue without merging" "$title" 0 --wa
 landed=
 queued=true
 merged "queue, already queued" 0 "already queued" "$title" 0 59
-unmerged "queue, already queued, not again" "pr merge"
+unmerged "queue, already queued, not again" "enqueuePullRequest"
 merged "queue, already queued, --wait" 0 "landed on main as 4d5e6f" "$title" 0 --wait 59
 queued=
 merged "queue, --admin past it" 0 "--squash --delete-branch --admin" "$title" 1 --admin 59
