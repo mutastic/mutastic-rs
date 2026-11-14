@@ -12,6 +12,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::failure::{Code, Failure};
+
 /// The Java edition's build files: Maven's, then Gradle's.
 pub const JVM_BUILDS: &[&str] = &[
     "pom.xml",
@@ -68,17 +70,17 @@ fn builds_in(dir: &Path) -> (Option<&'static str>, bool) {
 
 /// Which edition reads `dir`: its own build file's, or the nearest one above it. With no build
 /// file anywhere above, the Rust edition, which says there's no project here as it always has.
-pub fn route(dir: &Path) -> Result<Route, String> {
+pub fn route(dir: &Path) -> Result<Route, Failure> {
     let start = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
     for here in start.ancestors() {
         let (jvm, cargo) = builds_in(here);
         let (edition, build) = match (jvm, cargo) {
             (Some(jvm), true) => {
-                return Err(format!(
+                return Err(Code::BothEditions.with(format!(
                     "{} has both {CARGO_BUILD} and {jvm}, so either edition could read it: say \
                      which with --edition=rust or --edition=java",
                     here.display()
-                ))
+                )))
             }
             (Some(jvm), false) => (Edition::Java, jvm),
             (None, true) => (Edition::Rust, CARGO_BUILD),
@@ -99,19 +101,19 @@ pub fn route(dir: &Path) -> Result<Route, String> {
 
 /// `--edition=<edition>`, if given, and the arguments without it, which is how either edition
 /// receives them.
-pub fn chosen(args: &[String]) -> Result<(Option<Edition>, Vec<String>), String> {
+pub fn chosen(args: &[String]) -> Result<(Option<Edition>, Vec<String>), Failure> {
     let mut edition = None;
     let mut rest = Vec::with_capacity(args.len());
     for arg in args {
         match arg.strip_prefix("--edition=") {
             Some(name) => {
-                edition = Some(
-                    Edition::parse(name)
-                        .ok_or_else(|| format!("--edition: {name} isn't one of java or rust"))?,
-                )
+                edition = Some(Edition::parse(name).ok_or_else(|| {
+                    Code::OptionValue.with(format!("--edition: {name} isn't one of java or rust"))
+                })?)
             }
             None if arg == "--edition" => {
-                return Err("--edition needs a value: --edition=java or --edition=rust".into())
+                return Err(Code::OptionValue
+                    .with("--edition needs a value: --edition=java or --edition=rust"))
             }
             None => rest.push(arg.clone()),
         }
@@ -337,7 +339,7 @@ mod tests {
     #[test]
     fn both_editions_in_one_directory_is_the_persons_to_choose() {
         let dir = tree(&["Cargo.toml", "pom.xml"]);
-        let error = route(&dir).unwrap_err();
+        let error = route(&dir).unwrap_err().message;
         assert!(
             error.contains("--edition=rust or --edition=java"),
             "{error}"

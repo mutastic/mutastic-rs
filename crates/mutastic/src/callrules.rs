@@ -21,6 +21,8 @@
 use std::path::Path;
 use std::sync::OnceLock;
 
+use crate::failure::{Code, Failure};
+
 /// One call operator.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CallRule {
@@ -91,15 +93,15 @@ pub fn find(id: &str) -> Option<&'static CallRule> {
 }
 
 /// Reads a rules file, named as a plugin `from` a place in a `mutastic.yaml`: `mutastic.yaml line 4`.
-pub fn read(file: &Path, from: &str) -> Result<Vec<CallRule>, String> {
+pub fn read(file: &Path, from: &str) -> Result<Vec<CallRule>, Failure> {
     let name = file.display().to_string();
     let text = std::fs::read_to_string(file).map_err(|_| {
-        format!(
+        Code::Config.with(format!(
             "{from}: the plugin {name} isn't there. A plugin's path is from the directory of the \
              file that names it."
-        )
+        ))
     })?;
-    parse(&text, &name)
+    parse(&text, &name).map_err(|error| Code::Config.with(error))
 }
 
 pub fn parse(text: &str, name: &str) -> Result<Vec<CallRule>, String> {

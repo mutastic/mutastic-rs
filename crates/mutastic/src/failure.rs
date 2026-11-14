@@ -6,141 +6,141 @@
 
 use serde_json::{json, Value};
 
-/// Every code, with what in the error's text says it's that kind, in the order they're tried. The
-/// error page has an entry for each, and the docs test holds the two to each other.
-pub const CODES: &[(&str, &[&str])] = &[
-    ("copy-build-failed", &["mutastic's copy of "]),
-    (
-        "build-failed",
-        &[
-            "doesn't build, before any mutant is in it",
-            "the build fails, and not because of a mutant",
-            "the build still fails after",
-            "cargo failed in the copy",
-        ],
-    ),
-    (
-        "red-baseline",
-        &[" without any mutant, so mutastic can't judge one"],
-    ),
-    ("no-directory", &["there's no directory "]),
-    (
-        "no-project",
-        &["there's no project ", "isn't a Cargo project"],
-    ),
-    (
-        "workspace-root",
-        &[
-            "a workspace's root",
-            "in a workspace, but in none of its packages",
-        ],
-    ),
-    (
-        "no-cargo",
-        &[
-            "there's no cargo ",
-            "and there's no cargo there",
-            "couldn't run cargo",
-        ],
-    ),
-    (
-        "unknown-command",
-        &[
-            "has no command ",
-            "takes its command first",
-            "takes a command before",
-        ],
-    ),
-    ("unknown-option", &[" has no option -"]),
-    (
-        "shards",
-        &[
-            "--from-shards",
-            "share's events",
-            "shares of runs",
-            "share of a",
-            "the shares in ",
-            "shares and put",
-            "its events stop before run-finished",
-            "of the shares",
-            " is there twice, in ",
-            " is missing from ",
-        ],
-    ),
-    ("option-not-taken", &[" doesn't take --"]),
-    (
-        "environment",
-        &[
-            "MUTASTIC_FORMAT: ",
-            "MUTASTIC_VOCABULARY: ",
-            "MUTASTIC_PROGRESS: ",
-            "MUTASTIC_HEARTBEAT: ",
-        ],
-    ),
-    (
-        "option-value",
-        &[
-            "takes its value after an =",
-            " needs a value",
-            "isn't one of",
-            "isn't a number",
-            "isn't a positive number",
-            "needs a whole number",
-            "--threshold is from ",
-            "takes no value",
-            "--hook: ",
-            "--shard needs",
-            "--shard: ",
-            "--only=",
-            "--only needs",
-            "--reason=",
-        ],
-    ),
-    (
-        "needs-id",
-        &[
-            "needs a mutant's id",
-            "needs a reason, for whoever reviews it",
-        ],
-    ),
-    ("unknown-id", &[" isn't a mutant of "]),
-    (
-        "config",
-        &[
-            "mutastic.yaml",
-            "ignores.yaml",
-            "proposals.yaml",
-            "isn't an operator mutastic has",
-            "the plugin ",
-            "extends: goes round",
-        ],
-    ),
-    ("no-baseline", &["--fail-on-new needs a baseline"]),
-    ("git", &["needs a git repository", "git knows no commit"]),
-    ("both-editions", &["so either edition could read it"]),
-    (
-        "java-edition",
-        &[
-            "Java edition",
-            "JDK",
-            "MUTASTIC_JAVA_ENGINE",
-            "MUTASTIC_HOME",
-        ],
-    ),
-    ("proc-macro", &["is a proc-macro crate"]),
-    ("extra-words", &[" doesn't take "]),
-];
+/// The kind of failure, set where the error is raised (decision 13): an error can't reach a person
+/// without one, and nothing works it out from the words afterwards, so rewording a message never
+/// moves its code. Each has an entry on the errors page, and the docs test holds the two to each
+/// other.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Code {
+    NoDirectory,
+    NoProject,
+    WorkspaceRoot,
+    NoCargo,
+    UnknownCommand,
+    UnknownOption,
+    OptionValue,
+    OptionNotTaken,
+    ExtraWords,
+    NeedsId,
+    UnknownId,
+    Config,
+    Environment,
+    NoBaseline,
+    Git,
+    Shards,
+    BothEditions,
+    BuildFailed,
+    CopyBuildFailed,
+    RedBaseline,
+    JavaEdition,
+    ProcMacro,
+    /// Anything else: an error mutastic has no entry for yet, usually one the system gave (a disk
+    /// that's full, a file it can't read).
+    Other,
+    /// A bug in mutastic itself: it panicked.
+    Internal,
+}
 
-/// The code for anything else: an error mutastic has no entry for yet, usually one the system
-/// gave (a disk that's full, a file it can't read).
-pub const OTHER: &str = "other";
+impl Code {
+    /// Every code, in the errors page's order.
+    pub const ALL: &[Code] = &[
+        Code::NoDirectory,
+        Code::NoProject,
+        Code::WorkspaceRoot,
+        Code::NoCargo,
+        Code::UnknownCommand,
+        Code::UnknownOption,
+        Code::OptionValue,
+        Code::OptionNotTaken,
+        Code::ExtraWords,
+        Code::NeedsId,
+        Code::UnknownId,
+        Code::Config,
+        Code::Environment,
+        Code::NoBaseline,
+        Code::Git,
+        Code::Shards,
+        Code::BothEditions,
+        Code::BuildFailed,
+        Code::CopyBuildFailed,
+        Code::RedBaseline,
+        Code::JavaEdition,
+        Code::ProcMacro,
+        Code::Other,
+        Code::Internal,
+    ];
 
-/// The kind of failure `message` says.
-pub fn code(message: &str) -> &'static str {
-    CODES
-        .iter()
-        .find(|(_, says)| says.iter().any(|said| message.contains(said)))
-        .map_or(OTHER, |(code, _)| code)
+    /// As the event and the errors page write it: `no-directory`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Code::NoDirectory => "no-directory",
+            Code::NoProject => "no-project",
+            Code::WorkspaceRoot => "workspace-root",
+            Code::NoCargo => "no-cargo",
+            Code::UnknownCommand => "unknown-command",
+            Code::UnknownOption => "unknown-option",
+            Code::OptionValue => "option-value",
+            Code::OptionNotTaken => "option-not-taken",
+            Code::ExtraWords => "extra-words",
+            Code::NeedsId => "needs-id",
+            Code::UnknownId => "unknown-id",
+            Code::Config => "config",
+            Code::Environment => "environment",
+            Code::NoBaseline => "no-baseline",
+            Code::Git => "git",
+            Code::Shards => "shards",
+            Code::BothEditions => "both-editions",
+            Code::BuildFailed => "build-failed",
+            Code::CopyBuildFailed => "copy-build-failed",
+            Code::RedBaseline => "red-baseline",
+            Code::JavaEdition => "java-edition",
+            Code::ProcMacro => "proc-macro",
+            Code::Other => "other",
+            Code::Internal => "internal",
+        }
+    }
+
+    /// The failure this code names, in `message`'s words.
+    pub fn with(self, message: impl Into<String>) -> Failure {
+        Failure {
+            code: self,
+            message: message.into(),
+        }
+    }
+}
+
+/// Why mutastic couldn't run: the kind of failure, and what a person reads after `mutastic: `.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Failure {
+    pub code: Code,
+    pub message: String,
+}
+
+impl std::fmt::Display for Failure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+/// The failure a panic is: a bug in mutastic, with where it panicked and where to report it.
+pub fn internal(panic: &std::panic::PanicHookInfo<'_>) -> Failure {
+    let payload = panic.payload();
+    let said = payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("a panic");
+    let place = panic.location().map_or(String::new(), |at| {
+        format!(", at {}:{}", at.file(), at.line())
+    });
+    Code::Internal.with(internal_message(said, &place))
+}
+
+fn internal_message(said: &str, place: &str) -> String {
+    format!(
+        "internal error: {said}{place}. That's a bug in mutastic, not in your code. To report it, \
+         with the error above:\n  https://github.com/mutastic/mutastic-rs/issues"
+    )
 }
 
 /// How sure mutastic is of a command it offers, as rustc grades a suggestion: `exact` runs as it
@@ -204,9 +204,10 @@ pub fn help(message: &str) -> Vec<String> {
         .collect()
 }
 
-/// The `run-failed` event for `message`, as mutastic prints it after `mutastic: `, which ended
-/// a command run on `directory`, as typed, with `exit` as its status.
-pub fn event(message: &str, directory: &str, exit: u8) -> Value {
+/// The `run-failed` event for `failure`, whose message mutastic prints after `mutastic: `, which
+/// ended a command run on `directory`, as typed, with `exit` as its status.
+pub fn event(failure: &Failure, directory: &str, exit: u8) -> Value {
+    let message = failure.message.as_str();
     // Windows canonicalizes to a verbatim path, `\\?\C:\…`, which no one types.
     let path = std::fs::canonicalize(directory).ok().map(|path| {
         let shown = crate::workspace::slashed(&path);
@@ -227,7 +228,7 @@ pub fn event(message: &str, directory: &str, exit: u8) -> Value {
         "schema": crate::report::SCHEMA,
         "edition": crate::report::EDITION,
         "reason": "run-failed",
-        "code": code(message),
+        "code": failure.code.name(),
         "message": message.lines().next().unwrap_or_default(),
         "where": {"directory": directory, "path": path},
         "help": help,
@@ -241,35 +242,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_error_is_coded_by_what_it_says() {
-        for (message, expected) in [
-            ("run has no option --formt. There's one called --format.\n  mutastic run --format=agent", "unknown-option"),
-            ("run has no option -v.\nmutastic's options are long ones", "unknown-option"),
-            ("mutastic has no command rnu. There's one called run.\n  mutastic run", "unknown-command"),
-            ("--format: agnt isn't one of full, brief, concise, grouped, agent or jsonl. There's one called agent.\n  mutastic run --format=agent", "option-value"),
-            ("--threshold is from 0 to 100, not 150", "option-value"),
-            ("--threshold needs a whole number, not 72.5", "option-value"),
-            ("MUTASTIC_VOCABULARY: xyz isn't one of plain or classic", "environment"),
-            ("there's no directory shpo in /p.\n", "no-directory"),
-            ("this is a workspace's root, and mutastic tests one package at a time.", "workspace-root"),
-            ("t fails without any mutant, so mutastic can't judge one.", "red-baseline"),
-            ("pricing doesn't build, before any mutant is in it.", "build-failed"),
-            ("mutastic's copy of pricing doesn't build, though pricing does", "copy-build-failed"),
-            ("m00000000 isn't a mutant of pricing. To see its mutants:\n  mutastic mutants .", "unknown-id"),
-            ("mutastic.yaml line 1: expected extends:", "config"),
-            ("--since needs a git repository", "git"),
-            ("run doesn't take --top: mutastic run [DIR] [OPTIONS]", "option-not-taken"),
-            ("run doesn't take explain m1: mutastic run [DIR] [OPTIONS]", "extra-words"),
-            ("disk full", OTHER),
-        ] {
-            assert_eq!(code(message), expected, "{message}");
-        }
+    fn a_panic_is_said_as_a_bug_with_where_to_report_it() {
+        let said = internal_message("index out of bounds", ", at src/engine.rs:12");
+        assert!(said.starts_with(
+            "internal error: index out of bounds, at src/engine.rs:12. That's a bug in mutastic"
+        ));
+        let event = event(&Code::Internal.with(said), ".", 2);
+        assert_eq!(event["code"], "internal");
+        assert_eq!(event["help"], json!([]));
+    }
+
+    #[test]
+    fn each_code_has_a_name_of_its_own() {
+        let mut names: Vec<&str> = Code::ALL.iter().map(|code| code.name()).collect();
+        let all = names.len();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), all);
     }
 
     #[test]
     fn each_command_says_whether_it_runs_as_it_is() {
         let guessed = "run has no option --formt. There's one called --format.\n  mutastic run --format=agent";
-        let event = event(guessed, "no/such/dir", 2);
+        let event = event(&Code::UnknownOption.with(guessed), "no/such/dir", 2);
         assert_eq!(event["code"], "unknown-option");
         assert_eq!(
             event["message"],

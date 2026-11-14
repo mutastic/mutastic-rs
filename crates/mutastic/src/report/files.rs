@@ -1,6 +1,6 @@
 //! The report files a full run writes, as the Java edition writes them: `mutation.json`, in the
-//! mutation-testing report schema (version 2), and `mutation.html`, that report in the schema's
-//! own viewer, embedded so the page needs no network; and `mutation.sarif`, SARIF 2.1.0 for code
+//! mutation-testing report schema (version 2), and `mutation.html`, that report in mutastic's own
+//! page, the one the Java edition embeds, so it needs no network; and `mutation.sarif`, SARIF 2.1.0 for code
 //! scanning, when asked for (`sarif.rs`).
 
 use std::collections::BTreeMap;
@@ -11,9 +11,13 @@ use serde_json::{json, Value};
 use super::{Status, View};
 use crate::engine::{MutantResult, Report};
 
-/// The viewer the HTML report embeds: mutation-testing-elements 3.9.0, unchanged, as the Java
-/// edition embeds it (see `THIRD-PARTY.md`).
-const VIEWER: &str = include_str!("viewer/mutation-test-elements.js");
+/// The HTML report's page as mutastic's `report-ui/` builds it, one file that needs no network,
+/// vendored at the mutastic commit `page/report-page.json` pins: the Java edition embeds the same page.
+/// `scripts/pin-report-page.sh` moves the pin.
+const PAGE: &str = include_str!("page/report.html");
+
+/// The page's empty slot for the report, which it holds once.
+const SLOT: &str = "<script type=\"application/json\" id=\"mutation-report\"></script>";
 
 /// A report a run can write.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -218,25 +222,37 @@ fn test_files(report: &Report) -> Value {
         .into()
 }
 
-/// The JSON in the schema's viewer, with the viewer itself, so the page needs no network.
+/// The JSON in mutastic's report page. Every `<` in it is written as JSON's escape for it, which
+/// reads back the same, so nothing in the data (a `</script>` or a `<!--` in a source file) can end
+/// the page's script element or change how the page reads it.
 pub fn html(report: &Report) -> String {
-    // `</` can't appear inside a script element: `<\/` means the same in JavaScript.
-    let data = json(report).to_string().replace("</", "<\\/");
-    format!(
-        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n\
-         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
-         <title>mutastic · {}</title>\n<script>\n{}\n</script>\n</head>\n<body>\n\
-         <mutation-test-report-app titlePostfix=\"mutastic\"></mutation-test-report-app>\n\
-         <script>\ndocument.querySelector('mutation-test-report-app').report = {data};\n</script>\n\
-         </body>\n</html>\n",
-        escape(&report.project.package),
-        VIEWER.replace("</script", "<\\/script")
+    let data = json(report).to_string().replace('<', "\\u003c");
+    PAGE.replacen(
+        SLOT,
+        &format!("<script type=\"application/json\" id=\"mutation-report\">{data}</script>"),
+        1,
     )
 }
 
-fn escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The vendored page is the one `page/report-page.json` pins, byte for byte, and holds its slot
+    /// once. `tests/report_page.rs` checks the pin against mutastic's own checksum at that commit.
+    #[test]
+    fn the_page_is_the_pinned_one() {
+        use sha2::{Digest, Sha256};
+        let pin: Value = serde_json::from_str(include_str!("page/report-page.json")).unwrap();
+        let sum: String = Sha256::digest(PAGE.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        assert_eq!(
+            pin["sha256"].as_str().unwrap(),
+            sum,
+            "src/report/page/report.html isn't the pinned page: scripts/pin-report-page.sh <commit>"
+        );
+        assert_eq!(PAGE.matches(SLOT).count(), 1);
+    }
 }
