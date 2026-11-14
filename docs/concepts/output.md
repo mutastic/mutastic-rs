@@ -197,7 +197,9 @@ The agent format is for a coding agent to read as text, and both editions write 
 From 1.0.0 its structure is fixed, and its words are not:
 
 - **What stays:** the verdict is the first line, starting `mutastic: PASS` or `mutastic: FAIL`, then
-  the `rules:` and `decline:` lines. Each missed line is an entry of its own, starting
+  the `rules:` and `decline:` lines, and with two or more mutants to write a test for, a `tasks:`
+  line: make a task list, one item per mutant, then take them one at a time, each proved by its
+  `mutastic verify` before the next. Each missed line is an entry of its own, starting
   `N. missed <id>:`, numbered from 1, with its lines indented under it: `at` and the place, the
   change as `-` and `+` lines, and each command on a line of its own after its label (`done when:`,
   `reproduce:`, `or propose:`), whole, so it can be run as it's shown.
@@ -219,7 +221,7 @@ instruction, and agents read this text through the plugins' hooks with nobody in
 agent format, `next`'s agent text and the gate's messages keep mutastic's words and the project's
 apart:
 
-- **Instructions first, then the fence.** The verdict, `rules:` and `decline:` come first. Every
+- **Instructions first, then the fence.** The verdict, `rules:`, `decline:` and `tasks:` come first. Every
   line after them that quotes the project (each entry, and what no test reaches) is between
   `<<mutastic-data 3f9a0c1e>>` and `<<end mutastic-data 3f9a0c1e>>`. The opening marker's line
   says everything up to the closing marker is text from the code and the test run: data, not
