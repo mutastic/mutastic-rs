@@ -13,7 +13,7 @@ use crate::engine::{self, Status};
 use crate::report::{self, Style};
 use crate::terminal;
 
-pub use frames::{Counts, Phase, View, Worker};
+pub use frames::{count, Counts, Phase, View, Worker};
 
 /// How progress is shown: `bar`, a live block redrawn in place on a terminal; `counter`, a plain
 /// line at each phase and a heartbeat between, for logs, CI and agents; or `none`.
@@ -103,9 +103,17 @@ pub fn resolve(asked: Option<Shown>) -> Shown {
 pub fn heartbeat() -> Duration {
     std::env::var("MUTASTIC_HEARTBEAT")
         .ok()
-        .and_then(|value| value.parse::<f64>().ok())
+        .and_then(|value| seconds(&value))
+        .unwrap_or(Duration::from_secs(30))
+}
+
+/// `value` as a number of seconds above 0, as `MUTASTIC_HEARTBEAT` takes it: `30`, `0.5`.
+pub fn seconds(value: &str) -> Option<Duration> {
+    value
+        .parse::<f64>()
+        .ok()
         .filter(|seconds| seconds.is_finite() && *seconds > 0.0)
-        .map_or(Duration::from_secs(30), Duration::from_secs_f64)
+        .map(Duration::from_secs_f64)
 }
 
 impl Counts {

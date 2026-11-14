@@ -11,6 +11,7 @@ use crate::engine::{MutantResult, Report, Status};
 use crate::ignores;
 use crate::sites::{self, Change, Crate, Mutant};
 use crate::suggest::{self, SuggestedTest};
+use crate::untrusted;
 use crate::words::{self, Advice};
 
 pub mod files;
@@ -230,6 +231,9 @@ struct Entry<'a> {
 
 struct View<'a> {
     report: &'a Report,
+    /// Whether what it gives of the project's text is shown: [`untrusted::value`]d, for a person's
+    /// or an agent's reading. Events and report files keep it as it is.
+    shown: bool,
 }
 
 impl<'a> View<'a> {
@@ -252,6 +256,20 @@ impl<'a> View<'a> {
                 "if a caller can pass {unpassed}, test that caller with it; if none can, the mutant \
                  can't happen: propose ignoring it as unreachable"
             );
+        }
+        if self.shown {
+            // Its words quote the code (an operand, a name), so they're escaped as the code is.
+            for text in [
+                &mut advice.change,
+                &mut advice.caret,
+                &mut advice.headline,
+                &mut advice.help,
+            ]
+            .into_iter()
+            .chain(advice.notes.iter_mut())
+            {
+                *text = untrusted::escape(text);
+            }
         }
         advice
     }
@@ -312,7 +330,21 @@ impl<'a> View<'a> {
     }
 
     fn file(&self, mutant: &Mutant) -> String {
-        mutant.file.display().to_string()
+        let file = mutant.file.display().to_string();
+        if self.shown {
+            untrusted::value(&file)
+        } else {
+            file
+        }
+    }
+
+    /// A test's name, or another value of the project's, as this view gives it.
+    fn value(&self, text: &str) -> String {
+        if self.shown {
+            untrusted::value(text)
+        } else {
+            text.to_string()
+        }
     }
 
     fn id(&self, result: &MutantResult) -> &'a str {
@@ -349,14 +381,27 @@ impl<'a> View<'a> {
             .as_ref()?;
         let at = self.named(result);
         let edge = suggest::edge(mutant.operator, &mutant.operands);
-        Some(suggest::test(
+        let test = suggest::test(
             callable,
             &mutant.file,
             suggestion,
             named.then_some(mutant.id.as_str()),
             at.as_ref(),
             edge.as_ref(),
-        ))
+        );
+        Some(if self.shown {
+            SuggestedTest {
+                place: untrusted::value(&test.place),
+                lines: test
+                    .lines
+                    .iter()
+                    .map(|line| untrusted::value(line))
+                    .collect(),
+                ..test
+            }
+        } else {
+            test
+        })
     }
 
     /// The missed mutants, a line's together, the line's most telling first.
@@ -448,8 +493,16 @@ pub const MUTANT_COMMANDS: &[&str] = &["verify", "explain", "ignore", "propose",
 
 /// The command for `ids` (split by commas) in the package at `dir`, by one of
 /// [`MUTANT_COMMANDS`]: `mutastic verify mb2f8ae57 fixtures/pricing`. Every command the output
-/// offers for a mutant is written here, so a test can check each one parses.
+/// offers for a mutant is written here, so a test can check each one parses. It's made of
+/// mutastic's own words, ids (`m` and 8 hex digits: anything else is `<id>`, to fill in) and the
+/// directory, quoted for a shell: never of text from the project or a report file.
 pub fn mutant_command(verb: &str, ids: &str, dir: &str) -> String {
+    let ids = ids
+        .split(',')
+        .map(|id| if untrusted::is_id(id) { id } else { "<id>" })
+        .collect::<Vec<_>>()
+        .join(",");
+    let dir = shell_word(dir);
     match verb {
         "verify" => format!("mutastic verify {ids} {dir}"),
         "explain" => format!("mutastic explain {ids} {dir}"),
@@ -474,7 +527,24 @@ pub fn mutant_command(verb: &str, ids: &str, dir: &str) -> String {
 
 /// `mutastic next fixtures/pricing`: what `next` offers to run again, for the next item.
 pub fn next_command(dir: &str) -> String {
-    format!("mutastic next {dir}")
+    format!("mutastic next {}", shell_word(dir))
+}
+
+/// A directory, or another word typed into a command mutastic offers, as a shell takes it: as it
+/// is when it's plain (letters, digits and `_./:@%+=,-`, and on Windows `\` and `~`), else in
+/// single quotes, a quote in it written `'\''`, and what can't be seen [`untrusted::escape`]d.
+/// As the Java edition's `Invocation.quoted`.
+pub fn shell_word(word: &str) -> String {
+    let plain = |c: char| {
+        c.is_ascii_alphanumeric()
+            || "_./:@%+=,-".contains(c)
+            || (cfg!(windows) && (c == '\\' || c == '~'))
+    };
+    if !word.is_empty() && word.chars().all(plain) {
+        word.to_string()
+    } else {
+        format!("'{}'", untrusted::escape(word).replace('\'', "'\\''"))
+    }
 }
 
 /// Where an entry stands in the order a run ranks its misses, as the Java edition's `Finding.ranked`
@@ -596,14 +666,53 @@ fn covered_by(result: &MutantResult) -> String {
     if count == 1 {
         format!(
             "covered by {} (its 1 covering test still passes)",
-            result.covered_by[0]
+            untrusted::value(&result.covered_by[0])
         )
     } else {
         format!(
             "covered by {} (all {count} covering tests still pass)",
-            result.covered_by.join(", ")
+            names(&result.covered_by)
         )
     }
+}
+
+/// What a mutant's card says of the test whose catch of it was false, as the Java edition says it.
+fn false_catch(test: &str) -> String {
+    format!(
+        "{} failed against it, but fails on its own with no mutant in too: that catch doesn't count",
+        untrusted::value(test)
+    )
+}
+
+/// A line for each test that caught mutants and fails on its own, saying what to do: for `verify`
+/// and the gate, as for a run.
+pub fn failing_alone(report: &Report) -> String {
+    report
+        .failing_alone()
+        .into_iter()
+        .map(failing_alone_line)
+        .collect()
+}
+
+/// A test that caught mutants, then failed on its own with no mutant in, run again after them: it
+/// passed among the others, so it counts on what something else sets up or leaves behind. The Java
+/// edition's words, but for the way out it offers with `--exclude-tests`, which this edition
+/// doesn't have yet.
+fn failing_alone_line(flaky: &crate::flaky::Flaky) -> String {
+    format!(
+        "flaky: {} passes among the others but fails on its own, with no mutant in (run again after the mutants, it failed): it counts on something another test or the run sets up or leaves behind. It's left out, so its catches don't count: the mutants it reached ran again without it, and the run can't pass until it passes on its own. Make it set up what it needs and clean up what it leaves. Never remove, disable or loosen it to get a run through\n",
+        untrusted::value(&flaky.test)
+    )
+}
+
+/// Tests' names, or other values of the project's, as they're shown: each [`untrusted::value`]d,
+/// with commas between.
+fn names(names: &[String]) -> String {
+    names
+        .iter()
+        .map(|name| untrusted::value(name))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn percent(score: Option<f64>) -> String {
@@ -635,7 +744,10 @@ pub fn render(report: &Report, format: Format, style: Style) -> String {
 
 /// `discount()`: a function as the cards name it.
 fn method(found: &Crate, mutant: &Mutant) -> String {
-    format!("{}()", found.functions[mutant.function].name)
+    format!(
+        "{}()",
+        untrusted::value(&found.functions[mutant.function].name)
+    )
 }
 
 /// `Pricing::discount()`, or `discount()` for a free function: a function by its path in its
@@ -656,10 +768,12 @@ pub fn running(found: &Crate, mutant: &Mutant, style: Style) -> String {
     let name = &found.functions[mutant.function].name;
     format!(
         "{}:{} {} {}",
-        mutant.file.display(),
+        untrusted::value(&mutant.file.display().to_string()),
         mutant.line,
         style.bold(&method(found, mutant)),
-        style.code(&words::advise(mutant, name, &BTreeMap::new()).change)
+        style.code(&untrusted::escape(
+            &words::advise(mutant, name, &BTreeMap::new()).change
+        ))
     )
 }
 
@@ -704,8 +818,8 @@ pub fn file_finished(
         } else {
             style.red("❯")
         },
-        style.label(project, CYAN),
-        found.mutants[first.mutant].file.display(),
+        style.label(&untrusted::value(project), CYAN),
+        untrusted::value(&found.mutants[first.mutant].file.display().to_string()),
         style.dim("("),
         counts.join(&style.dim(" | ")),
         style.dim(")"),
@@ -720,7 +834,9 @@ pub fn file_finished(
             style.red("×"),
             method(found, mutant),
             style.dim(&format!(":{}", mutant.line)),
-            style.code(&words::advise(mutant, name, &result.inputs).change)
+            style.code(&untrusted::escape(
+                &words::advise(mutant, name, &result.inputs).change
+            ))
         );
     }
     let mut by_line: Vec<((String, usize), usize)> = Vec::new();
@@ -752,7 +868,10 @@ pub fn file_finished(
 }
 
 fn human(report: &Report, style: Style, format: Format) -> String {
-    let view = View { report };
+    let view = View {
+        report,
+        shown: true,
+    };
     let mut out = String::new();
     let entries = view.entries();
     if !entries.is_empty() {
@@ -829,20 +948,30 @@ fn warnings(out: &mut String, report: &Report, style: Style) {
     }
     out.push('\n');
     for flaky in &report.flaky {
+        if flaky.fails_alone {
+            let _ = writeln!(
+                out,
+                " {} {} passes among the others but fails on its own, with no mutant in (run again after the mutants, it failed); its catches don't count, the mutants it reached ran again without it, and the run can't pass until it passes on its own",
+                style.red("! flaky:"),
+                untrusted::value(&flaky.test)
+            );
+            continue;
+        }
         let _ = writeln!(
             out,
             " {} {} failed, then passed when run again; left out of this run{}",
             style.amber("! flaky:"),
-            flaky.test,
+            untrusted::value(&flaky.test),
             flaky_reason(flaky)
         );
     }
     for (test, mutants) in &likely_flaky {
         let _ = writeln!(
             out,
-            " {} {test}; with the code unchanged, whether it catches {} changed since the last run",
+            " {} {}; with the code unchanged, whether it catches {} changed since the last run",
             style.amber("! likely flaky:"),
-            mutants.join(", ")
+            untrusted::value(test),
+            names(mutants)
         );
     }
 }
@@ -860,12 +989,9 @@ fn likely_flaky(report: &Report) -> std::collections::BTreeMap<String, Vec<Strin
 /// `; it reaches SystemTime::now`: what it reaches that changes from run to run, its own code first.
 fn flaky_reason(flaky: &crate::flaky::Flaky) -> String {
     if !flaky.reaches_in_test.is_empty() {
-        format!(
-            "; its own code reaches {}",
-            flaky.reaches_in_test.join(", ")
-        )
+        format!("; its own code reaches {}", names(&flaky.reaches_in_test))
     } else if !flaky.reaches.is_empty() {
-        format!("; it reaches {}", flaky.reaches.join(", "))
+        format!("; it reaches {}", names(&flaky.reaches))
     } else {
         String::new()
     }
@@ -879,12 +1005,12 @@ fn flaky_advice(flaky: &crate::flaky::Flaky) -> String {
     if !flaky.reaches_in_test.is_empty() {
         format!(
             "Its own code reaches {}, which answers differently every run, so it makes its own flakiness: making that the same every time is likely safe, and if it stands in for something real (a slow service), keep that checked by a test of its own.",
-            flaky.reaches_in_test.join(", ")
+            names(&flaky.reaches_in_test)
         )
     } else if !flaky.reaches.is_empty() {
         format!(
             "The code it runs reaches {}, which answers differently every run: making that the same every time (a seed, a fixed clock, through the code's own seam) is likely safe, so long as the test still checks what it did.",
-            flaky.reaches.join(", ")
+            names(&flaky.reaches)
         )
     } else {
         "mutastic can't tell why: leave it unless the cause is plain in the code, and say in your final message that it's flaky.".to_string()
@@ -931,7 +1057,7 @@ fn frame(
             out,
             " {} {bar} {}",
             style.dim(&format!("{number:>width$}")),
-            lines[number - 1]
+            untrusted::value(lines[number - 1])
         );
         if number == mutant.line {
             let caret_width = text[mutant.caret.clone()]
@@ -1013,7 +1139,7 @@ fn cut(lines: &[&str], changed: usize, indent: usize) -> Vec<String> {
     }
     for line in &lines[from..to] {
         let leading = line.len() - line.trim_start().len();
-        shown.push(line[leading.min(indent)..].trim_end().to_string());
+        shown.push(untrusted::value(line[leading.min(indent)..].trim_end()));
     }
     if to < lines.len() {
         shown.push("…".to_string());
@@ -1125,7 +1251,7 @@ fn grouped(out: &mut String, view: &View, entries: &[Entry], style: Style) {
                 let mutant = view.mutant(result);
                 (mutant.line, mutant.column, mutant.ordinal)
             });
-            let name = &view.report.found.functions[function].name;
+            let name = untrusted::value(&view.report.found.functions[function].name);
             let _ = writeln!(
                 out,
                 "   {}() {}",
@@ -1231,6 +1357,7 @@ fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
     }
     let mut notes: Vec<String> = advice.notes.clone();
     notes.push(covered_by(result));
+    notes.extend(result.false_catch_by.as_deref().map(false_catch));
     for (index, note) in notes.iter().enumerate() {
         if index == 0 {
             let _ = writeln!(
@@ -1355,7 +1482,11 @@ fn not_covered_places(view: &View) -> Vec<(String, Vec<(usize, String)>)> {
                 format!("{from}-{to}")
             };
             (
-                format!("{}:{place} {}()", f.file.display(), f.name),
+                format!(
+                    "{}:{place} {}()",
+                    view.value(&f.file.display().to_string()),
+                    view.value(&f.name)
+                ),
                 mutants,
             )
         })
@@ -1407,9 +1538,10 @@ fn summary(out: &mut String, report: &Report, style: Style) {
     let width = rows.iter().map(|(label, _)| label.len()).max().unwrap_or(0);
     out.push('\n');
     // What to do next sits under the misses it's about, and the score, with its verdict, is the
-    // last line: the one the cursor lands under.
-    if report.count(Status::Survived) > 0 {
-        let dir = &report.project.given;
+    // last line: the one the cursor lands under. A run of mutants asked for by id ends on each
+    // one's fate instead, as its verdict.
+    if report.count(Status::Survived) > 0 && !report.only {
+        let dir = shell_word(&report.project.given);
         let _ = writeln!(
             out,
             "{}\n",
@@ -1420,6 +1552,70 @@ fn summary(out: &mut String, report: &Report, style: Style) {
     }
     for (label, value) in rows {
         let _ = writeln!(out, " {}  {value}", style.dim(&format!("{label:>width$}")));
+    }
+    if report.only {
+        out.push('\n');
+        if report.results.is_empty() {
+            let _ = writeln!(out, " {}", verdict(report, style));
+        }
+        for result in &report.results {
+            let _ = writeln!(
+                out,
+                " {}",
+                fate(
+                    &View {
+                        report,
+                        shown: true,
+                    },
+                    result,
+                    style
+                )
+            );
+        }
+    }
+}
+
+/// `[MISSED] mb2f8ae57 is still missed · done when mutastic verify mb2f8ae57 fixtures/pricing
+/// passes`: one mutant's verdict, for a run that asked for it by id, as the Java edition gives it.
+fn fate(view: &View, result: &MutantResult, style: Style) -> String {
+    let words = style.words;
+    let id = &view.mutant(result).id;
+    let detected = |text: String| {
+        let label = style.label(&words.detected().to_uppercase(), GREEN);
+        format!("{label} {}", style.green(&text))
+    };
+    let red = |label: &str, text: String| {
+        let label = style.label(&label.to_uppercase(), RED);
+        format!("{label} {}", style.red(&text))
+    };
+    let reason = untrusted::value(result.reason.as_deref().unwrap_or_default());
+    match result.status {
+        Status::Killed => detected(format!(
+            "{id} is {} by {}",
+            words.detected(),
+            untrusted::value(result.killed_by.as_deref().unwrap_or("a test"))
+        )),
+        Status::Timeout => detected(format!(
+            "{id} is {}: its tests stopped finishing in time",
+            words.detected()
+        )),
+        Status::Survived => red(
+            words.undetected(),
+            format!(
+                "{id} is still {} · done when {} passes",
+                words.undetected(),
+                view.command("verify", id)
+            ),
+        ),
+        Status::NoCoverage => red(
+            words.not_covered(),
+            format!("{id}: no test reaches its line"),
+        ),
+        Status::Ignored => format!("{} {id} is skipped: {reason}", style.label("SKIPPED", CYAN)),
+        Status::RuntimeError => format!(
+            "{} {id} crashes where a crash proves nothing ({reason}): it's left out of the score",
+            style.label("CRASHED", CYAN)
+        ),
     }
 }
 
@@ -1513,7 +1709,10 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
     if !report.reports.is_empty() {
         rows.push(("Reports", report.reports.join(&style.dim(" · "))));
     }
-    rows.push(("Score", score_row(report, style)));
+    // A run of mutants asked for by id has a fate for each, not a score.
+    if !report.only {
+        rows.push(("Score", score_row(report, style)));
+    }
     rows
 }
 
@@ -1755,7 +1954,15 @@ fn delta(report: &Report, style: Style) -> String {
 /// PASS or FAIL, and why, on the Score line; with `--fail-on-new`, on the new misses.
 fn verdict(report: &Report, style: Style) -> String {
     let missed = report.count(Status::Survived);
-    if let Some(judged) = &report.fail_on_new {
+    if report.score().is_some() && !report.failing_alone().is_empty() {
+        format!(
+            "{} {}",
+            style.label("FAIL", RED),
+            style.red(
+                "A test that caught mutants fails on its own, with no mutant in, so its catches don't count: see the flaky tests above."
+            )
+        )
+    } else if let Some(judged) = &report.fail_on_new {
         on_new_misses(report, judged, style)
     } else if report.score().is_none() {
         format!(
@@ -1852,7 +2059,7 @@ fn not_mutated(report: &Report) -> Vec<String> {
             .found
             .not_built
             .iter()
-            .map(|(cfg, count)| format!("`{cfg}` ({count})"))
+            .map(|(cfg, count)| format!("`{}` ({count})", untrusted::value(cfg)))
             .collect();
         lines.push(format!("not built here: {}", by_cfg.join(", ")));
     }
@@ -1861,15 +2068,20 @@ fn not_mutated(report: &Report) -> Vec<String> {
 
 fn agent(report: &Report, style: Style) -> String {
     let words = style.words;
-    let view = View { report };
+    let view = View {
+        report,
+        shown: true,
+    };
+    if report.only && !report.results.is_empty() {
+        return agent_fates(&view, words);
+    }
     let mut out = String::new();
     let missed = report.count(Status::Survived);
     let not_covered = report.count(Status::NoCoverage);
     let skipped = report.count(Status::Ignored);
-    let dir = &report.project.given;
     let _ = writeln!(
         out,
-        "mutastic: {} · score {} ({}{}) · {missed} {}, {not_covered} {}, {} {} of {} mutants{}",
+        "mutastic: {} · score {} ({}{}) · {missed} {}, {not_covered} {}, {} {} of {}{}",
         agent_verdict(report),
         report
             .score()
@@ -1888,7 +2100,7 @@ fn agent(report: &Report, style: Style) -> String {
         words.not_covered(),
         report.count(Status::Killed) + report.count(Status::Timeout),
         words.detected(),
-        report.results.len() - skipped,
+        crate::progress::count(report.results.len() - skipped, "mutant"),
         if skipped == 0 {
             String::new()
         } else {
@@ -1899,10 +2111,14 @@ fn agent(report: &Report, style: Style) -> String {
         let _ = writeln!(out, "no tests: {}", none.replacen("Found", "found", 1));
     }
     for flaky in &report.flaky {
+        if flaky.fails_alone {
+            out.push_str(&failing_alone_line(flaky));
+            continue;
+        }
         let _ = writeln!(
             out,
             "flaky: {} failed, then passed when run again; left out of this run, so its catches don't count. {} Never remove, disable or loosen it to get a run through",
-            flaky.test,
+            untrusted::value(&flaky.test),
             flaky_advice(flaky)
         );
     }
@@ -1918,13 +2134,15 @@ fn agent(report: &Report, style: Style) -> String {
     for (test, mutants) in likely_flaky(report) {
         let _ = writeln!(
             out,
-            "likely flaky: {test}; with the code unchanged, whether it catches {} changed since the last run. Its catches can't be trusted until it's fixed",
-            mutants.join(", ")
+            "likely flaky: {}; with the code unchanged, whether it catches {} changed since the last run. Its catches can't be trusted until it's fixed",
+            untrusted::value(&test),
+            names(&mutants)
         );
     }
     let _ = writeln!(
         out,
-        "rules: {RULE}; a fix counts when `mutastic verify <id> {dir}` passes"
+        "rules: {RULE}; a fix counts when `{}` passes",
+        view.command("verify", "<id>")
     );
     let _ = writeln!(
         out,
@@ -1939,12 +2157,20 @@ fn agent(report: &Report, style: Style) -> String {
         Some(judged) => new_first(&view, ranked, &judged.baseline),
         None => ranked,
     };
+    // From here on, each line quotes the code or the test run: fenced, so none of it reads as
+    // mutastic's own instructions.
+    let mut quoted = String::new();
     for (index, entry) in entries.iter().take(10).enumerate() {
-        let _ = write!(out, "\n{}. {}", index + 1, agent_entry(&view, entry, words));
+        let _ = write!(
+            quoted,
+            "\n{}. {}",
+            index + 1,
+            agent_entry(&view, entry, words)
+        );
     }
     if entries.len() > 10 {
         let _ = writeln!(
-            out,
+            quoted,
             "\n…and {} more: run with --format=jsonl for them all",
             entries.len() - 10
         );
@@ -1953,7 +2179,7 @@ fn agent(report: &Report, style: Style) -> String {
     let places = not_covered_places(&view);
     if !places.is_empty() {
         let _ = writeln!(
-            out,
+            quoted,
             "\nnot covered (no test reaches these lines{}{}):",
             or_only_flaky(report),
             if entries.is_empty() {
@@ -1969,7 +2195,7 @@ fn agent(report: &Report, style: Style) -> String {
         for (place, mutants) in places {
             let count = mutants.len();
             let _ = writeln!(
-                out,
+                quoted,
                 "- {place} ({count} mutant{})",
                 if count == 1 { "" } else { "s" }
             );
@@ -1985,7 +2211,7 @@ fn agent(report: &Report, style: Style) -> String {
                     .map(|(_, id)| id.as_str())
                     .collect();
                 let _ = writeln!(
-                    out,
+                    quoted,
                     "  or propose{}: {}",
                     if lines.len() == 1 {
                         String::new()
@@ -1997,11 +2223,69 @@ fn agent(report: &Report, style: Style) -> String {
             }
         }
     }
+    if !quoted.is_empty() {
+        out.push_str(&untrusted::fence(&quoted));
+    }
     out
+}
+
+/// A run of mutants asked for by id, for an agent: each one's fate is the verdict, not a score,
+/// and a missed one has the rules and its entry, as the Java edition gives them.
+fn agent_fates(view: &View, words: Vocabulary) -> String {
+    let fates: Vec<String> = view
+        .report
+        .results
+        .iter()
+        .map(|result| {
+            let id = &view.mutant(result).id;
+            let fate = match result.status {
+                Status::Killed => format!(
+                    "is {} by {}",
+                    words.detected(),
+                    untrusted::value(result.killed_by.as_deref().unwrap_or("a test"))
+                ),
+                Status::Timeout => {
+                    format!(
+                        "is {}: its tests stopped finishing in time",
+                        words.detected()
+                    )
+                }
+                Status::Survived => format!("is still {}", words.undetected()),
+                Status::NoCoverage => "isn't reached by any test".to_string(),
+                Status::Ignored => format!(
+                    "is skipped: {}",
+                    untrusted::value(result.reason.as_deref().unwrap_or_default())
+                ),
+                Status::RuntimeError => format!(
+                    "crashes where a crash proves nothing ({}): it's left out of the score",
+                    untrusted::value(result.reason.as_deref().unwrap_or_default())
+                ),
+            };
+            let mut out = format!("mutastic: {id} {fate}\n");
+            if result.status == Status::Survived {
+                let _ = writeln!(
+                    out,
+                    "rules: {RULE}; a fix counts when `{}` passes\n",
+                    view.command("verify", id)
+                );
+                let entry = Entry {
+                    main: result,
+                    also: Vec::new(),
+                };
+                // The entry quotes the code and the test run: fenced, as the whole run's are.
+                out.push_str(&untrusted::fence(&agent_entry(view, &entry, words)));
+            }
+            out
+        })
+        .collect();
+    fates.join("\n")
 }
 
 /// `PASS` or `FAIL`; with `--fail-on-new`, the new misses that decided it.
 fn agent_verdict(report: &Report) -> String {
+    if !report.failing_alone().is_empty() {
+        return "FAIL (a test that caught mutants fails on its own, with no mutant in)".into();
+    }
     match &report.fail_on_new {
         Some(judged) => judged.verdict(report),
         None if report.passed() => "PASS".into(),
@@ -2048,8 +2332,12 @@ fn agent_entry(view: &View, entry: &Entry, words: Vocabulary) -> String {
     }
     let _ = writeln!(
         out,
-        "   covered by: {}; all still pass with the change",
-        result.covered_by.join(", ")
+        "   covered by: {}; all still pass with the change{}",
+        names(&result.covered_by),
+        result
+            .false_catch_by
+            .as_deref()
+            .map_or(String::new(), |test| format!(" ({})", false_catch(test)))
     );
     for note in &advice.notes {
         let _ = writeln!(out, "   evidence: {note}");
@@ -2120,7 +2408,10 @@ pub fn run_started(
 
 /// The `mutastic.events/v1` stream.
 fn jsonl(report: &Report) -> String {
-    let view = View { report };
+    let view = View {
+        report,
+        shown: false,
+    };
     let mut lines = Vec::new();
     // Streamed as the build finished, when the run's progress went out live.
     if !report.streamed {
@@ -2131,8 +2422,18 @@ fn jsonl(report: &Report) -> String {
             report.share.as_ref().map(crate::shares::Tag::json),
         ));
     }
+    // A mutant run again without a test that fails on its own gives its first result here, and its
+    // last in a `mutant-revised`, which replaces it, as the Java edition sends them.
     for result in &report.results {
-        lines.push(mutant_event(&view, result));
+        let first = report.revised.get(&result.mutant).unwrap_or(result);
+        lines.push(mutant_event(&view, first));
+    }
+    for result in &report.results {
+        if report.revised.contains_key(&result.mutant) {
+            let mut revised = mutant_event(&view, result);
+            revised["reason"] = json!("mutant-revised");
+            lines.push(revised);
+        }
     }
     let mut finished = json!({
         "schema": SCHEMA,
@@ -2167,6 +2468,13 @@ fn jsonl(report: &Report) -> String {
         finished["newMisses"] = json!(judged.new_misses(report));
         finished["inBaseline"] = json!(judged.in_baseline(report));
     }
+    // A run of mutants asked for by id: the first one found, as the Java edition gives it.
+    if report.only {
+        finished["only"] = report
+            .results
+            .first()
+            .map_or(Value::Null, |result| json!(view.mutant(result).id));
+    }
     finished["coveredScore"] = report
         .covered_score()
         .map_or(Value::Null, |s| json!(round1(s)));
@@ -2181,13 +2489,20 @@ fn jsonl(report: &Report) -> String {
     finished["flakyEvidence"] = json!(report
         .flaky
         .iter()
-        .map(|f| json!({
-            "test": f.test,
-            "failure": [],
-            "reaches": f.reaches,
-            "reachesInTest": f.reaches_in_test,
-            "outside": false,
-        }))
+        .map(|f| {
+            let mut evidence = json!({
+                "test": f.test,
+                "failure": [],
+                "reaches": f.reaches,
+                "reachesInTest": f.reaches_in_test,
+            });
+            // A flag: there only when true, as the schema says, so a reader checks for it.
+            if f.fails_alone {
+                evidence["failsAlone"] = json!(true);
+            }
+            evidence["outside"] = json!(false);
+            evidence
+        })
         .collect::<Vec<_>>());
     if let Some(found) = &report.comparison {
         finished["previousScore"] = found
@@ -2342,6 +2657,9 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
     if let Some(failure) = &result.killed_with {
         event["caughtWith"] = json!(failure);
     }
+    if let Some(test) = &result.false_catch_by {
+        event["falseCatchBy"] = json!(test);
+    }
     if let Some(inputs) = inputs(result) {
         event["inputs"] = inputs;
     }
@@ -2470,7 +2788,10 @@ pub fn last_run(report_file: &std::path::Path, id: &str) -> Option<LastRun> {
 /// gets its card; anything else a card that says what happened instead, without help or a test to
 /// add; then what the change is, its operator, its id, its site and how the last full run went.
 pub fn explained(report: &Report, last: Option<LastRun>, style: Style) -> String {
-    let view = View { report };
+    let view = View {
+        report,
+        shown: true,
+    };
     let mut out = String::new();
     let Some(result) = report.results.first() else {
         return out;
@@ -2503,10 +2824,10 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
             ),
             format!(
                 "caught by {}{}",
-                result.killed_by.as_deref().unwrap_or("a test"),
+                untrusted::value(result.killed_by.as_deref().unwrap_or("a test")),
                 match result.killed_with.as_deref() {
                     Some(how) if how.starts_with("crash") => {
-                        format!(", by a crash ({how})")
+                        format!(", by a crash ({})", untrusted::value(how))
                     }
                     _ => String::new(),
                 }
@@ -2527,12 +2848,12 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
             style.label("SKIPPED", CYAN),
             format!(
                 "crashed where a crash proves nothing: {}",
-                result.reason.as_deref().unwrap_or_default()
+                untrusted::value(result.reason.as_deref().unwrap_or_default())
             ),
         ),
         Status::Ignored | Status::Survived => (
             style.label("SKIPPED", CYAN),
-            result.reason.clone().unwrap_or_default(),
+            untrusted::value(result.reason.as_deref().unwrap_or_default()),
         ),
     };
     let _ = writeln!(out, "\n {label} {}", style.bold(&outcome));
@@ -2542,8 +2863,9 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
     let mut notes = advice.notes.clone();
     if !result.covered_by.is_empty() {
         // Whether they still pass is a miss's to say: here, only which tests reach it.
-        notes.push(format!("covered by {}", result.covered_by.join(", ")));
+        notes.push(format!("covered by {}", names(&result.covered_by)));
     }
+    notes.extend(result.false_catch_by.as_deref().map(false_catch));
     for (index, note) in notes.iter().enumerate() {
         if index == 0 {
             let _ = writeln!(
@@ -2614,6 +2936,23 @@ impl About {
     }
 }
 
+impl About {
+    /// The same, its text of the project's (the code, names, what the last run says) as it's
+    /// shown.
+    fn shown(self) -> About {
+        About {
+            from: untrusted::value(&self.from),
+            to: untrusted::value(&self.to),
+            operator_description: untrusted::escape(&self.operator_description),
+            id: untrusted::escape(&self.id),
+            function: untrusted::value(&self.function),
+            site: untrusted::escape(&self.site),
+            last_words: untrusted::escape(&self.last_words),
+            ..self
+        }
+    }
+}
+
 /// What the last full run said of the mutant, in words.
 fn last_words(last: Option<&LastRun>) -> String {
     match last {
@@ -2647,7 +2986,7 @@ fn about(
     last: Option<LastRun>,
     style: Style,
 ) {
-    let about = About::of(view, result, last);
+    let about = About::of(view, result, last).shown();
     let title = " About this mutant ";
     let _ = writeln!(
         out,
@@ -2692,7 +3031,10 @@ fn about(
 /// `mutant-explained` event with what `About this mutant` says, a field for each row, as the Java
 /// edition writes it: `applied` is at the source level here, where Java's is at the bytecode.
 pub fn explained_jsonl(report: &Report, last: Option<LastRun>) -> String {
-    let view = View { report };
+    let view = View {
+        report,
+        shown: false,
+    };
     let mut out = jsonl(report);
     let Some(result) = report.results.first() else {
         return out;

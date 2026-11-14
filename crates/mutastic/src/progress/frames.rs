@@ -124,7 +124,7 @@ pub fn left(remaining: Duration) -> String {
     }
 }
 
-/// `1 test`, `3 tests`.
+/// `1 test`, `3 tests`: a count with its noun, plural unless it is one.
 pub fn count(number: usize, noun: &str) -> String {
     format!("{number} {noun}{}", if number == 1 { "" } else { "s" })
 }
@@ -497,7 +497,8 @@ pub fn dump(view: &View, held: &[Option<Held>], style: Style) -> Vec<String> {
             lines
         }
         Phase::Checking { done, total } => vec![heading(format!(
-            "suggestions for {total} missed mutants at {at} · {done} done"
+            "suggestions for {} at {at} · {done} done",
+            count(*total, "missed mutant")
         ))],
         Phase::Idle => Vec::new(),
     }

@@ -5,6 +5,32 @@ newest come first.
 
 ## Unreleased
 
+### Security
+
+- **Text from the project reaches an agent fenced off as data.** The agent format, `next`'s agent
+  text and the gate's messages put mutastic's instructions (`rules:`, `done when:`, `fix:`) in the
+  same text as the project's code and test run: the lines a mutant changes, test names, file
+  paths. A string literal or a comment on a mutated line, a test's name or a vendored file could
+  write a line an agent takes as an instruction, and agents read this text through the plugins'
+  hooks. The project's text now comes after mutastic's instructions, between
+  `<<mutastic-data 3f9a0c1e>>` and `<<end mutastic-data 3f9a0c1e>>`, with a token drawn at random
+  for each run (and drawn again if the text holds it), so nothing inside can close it early; the
+  opening line says everything up to the closing marker is data, not instructions. The lines inside
+  keep their shapes. See [Agent output and untrusted
+  text](docs/concepts/output.md#agent-output-and-untrusted-text).
+- **Hidden characters show as escapes.** Every value and line of the project's that mutastic
+  prints, to an agent or to a terminal, shows control characters (ANSI escapes among them) as
+  `\x1b`, and bidi controls, zero-width characters and every other invisible format character as
+  `\u202e`: a Trojan Source line reads as it runs, and an escape can't rewrite the screen. A value
+  or line over 200 characters is cut, with `…(n more chars)`. Events keep the text as it is,
+  JSON-escaped.
+- **Commands come only from mutastic.** Every command offered (`verify`, `run --only`,
+  `ignore --propose`, `next`) is made of a mutant's id (`m` and 8 hex digits, or `<id>`), known
+  options and placeholders, and the directory, in single quotes when a shell needs them. The
+  commands that put a word back (`ignore`'s `to undo:`) quote it in single quotes too, as the Java
+  edition does, where double quotes let a shell run `$(…)` in a reason read from
+  `.mutastic/ignores.yaml`.
+
 ### Additions
 
 - **`mutation.json` says what the cards say.** A `mutastic` key at its top level gives the run's
@@ -38,9 +64,64 @@ newest come first.
 - **Each error has an entry on [the errors page](docs/reference/errors.md),** under its code: what
   causes it, a kept copy of a real run, and what to do. Each command an error gives to run as it is,
   is run by the docs test, and gets past the error.
+- **A value can follow its option after a space,** `--format agent` as `--format=agent`, for every
+  option that must take a value, as the Java edition has taken it since 1.0. It was refused with
+  "takes its value after an =". Only `--since`, whose value is optional, still needs its `=`, as
+  the word after it may be the directory.
+
+### Changes
+
+- **A bad value in an environment variable is refused,** with code `environment`, as the Java
+  edition refuses it: `MUTASTIC_FORMAT`, `MUTASTIC_VOCABULARY` or `MUTASTIC_PROGRESS` set to a
+  value its option doesn't take, or `MUTASTIC_HEARTBEAT` to anything but a number of seconds above
+  0. It was read as the default without a word, and a variable is set once and forgotten. The
+  option on the command line still wins over it, unread.
+- **`--threshold` is a whole number from 0 to 100,** as the events schema, mutation.json and the
+  Java edition have it. `--threshold=72.5` and `--threshold=150` were taken; they're refused now,
+  in the Java edition's words: `--threshold needs a whole number, not 72.5`, `--threshold is from
+  0 to 100, not 150`.
 
 ### Fixes
 
+- **The test named as catching a mutant is the same in every run.** A mutant's covering tests run
+  together, on several threads, and the first to fail was named: where several cases catch it, as
+  cases written alike do, the name changed from run to run, and with it `mutation.json` and the
+  report's tests. The test named is now the first of those that failed as the tests are listed,
+  the library's before the other targets'.
+
+- **A property test draws the same cases in every run.** mutastic sets `PROPTEST_RNG_SEED` for
+  the tests it runs, unless you've set it, and turns proptest's saved failures off. A property that
+  fails for some cases fails in every run or in none, so it can't stop one run, be called flaky in
+  the next and catch a mutant in a third; and a case one of mutastic's runs saved can't decide its
+  next runs. `proptest-regressions/` isn't copied, so the cases you've saved aren't replayed, and
+  nothing is written to your tree.
+
+- **The gate knows a case by the name it runs under.** rstest and test-case give each case a test
+  of its own, `halves::case_1`, and no function has that name. A case that failed at a check was
+  remembered without its source, and once it passed the gate said it was gone, at every check,
+  until `gate close`. The gate now looks tests up by the names the test binaries list, and counts
+  them from the same list, so taking a `#[case]` row away holds the gate as taking a test-case row
+  away did. `gate open` builds the tests once to list them; a package that doesn't build when the
+  task starts is counted from its source, as before.
+
+- **A test that caught mutants and fails on its own fails the run.** Once the mutants have run,
+  each test that caught one runs again, on its own with no mutant in. One that fails there (it
+  trips on a file it, another test or the run left behind) is named as flaky, as a test that
+  "passes among the others but fails on its own"; its catches don't count, and every mutant it
+  reached runs again without it, so scores can go down. Unlike other flaky tests it fails the run
+  whatever the score, with exit status 2, and `verify` and `gate check` don't pass on it either.
+  In `--format=jsonl`, a mutant run again comes as a `mutant-revised` event after the
+  `mutant-finished` ones, naming the test as `falseCatchBy` where its catch didn't count, and the
+  test's `flakyEvidence` entry has `"failsAlone": true`, as in the Java edition. A healthy suite's
+  results don't change, at the cost of one run of each catching test. No id changes. See
+  [A test that fails on its own](docs/concepts/results.md#a-test-that-fails-on-its-own).
+- **The gate holds a task that changes no line mutastic mutates to its other checks.** Such a task
+  skipped the checks for ignores and baseline entries the task made itself, and for tests taken
+  away or `#[ignore]`d, so an agent that only deleted a failing test, or ignored a mutant itself,
+  passed once the rest of the tests did. Now they run on every check, whatever lines changed, with
+  the same words and the same hand-over; only a task that changed nothing passes at once, and
+  an ignore or baseline entry it made itself holds it even where git doesn't see `.mutastic/`.
+  An ignore you accept between turns is still the task's to start from.
 - **The gate runs the tests even with no mutant on the changed lines.** Since a run with no mutant
   to run stopped building and running the tests, a task that changed only lines with no mutant (a
   constant, an import, a log line) passed the gate with no test run, even when it broke one. The

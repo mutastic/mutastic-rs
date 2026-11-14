@@ -306,7 +306,7 @@ pub const OPTIONS: &[CliOption] = &[
         kind: Kind::Value,
         group: "Running",
         choices: &[],
-        help: "The score a run must reach to pass; 80 unless set",
+        help: "The score a run must reach to pass, a whole number from 0 to 100; 80 unless set",
         commands: &["run"],
         environment: "",
         example: "--threshold=70",
@@ -626,7 +626,8 @@ pub const ENVIRONMENT: &[Entry] = &[
     Entry {
         name: "MUTASTIC_FORMAT",
         meaning: "The format when --format isn't given",
-        detail: "For a machine or a CI job that always wants the same format, `concise` say.",
+        detail: "For a machine or a CI job that always wants the same format, `concise` say. A \
+                 format mutastic doesn't have is refused, as the option's is.",
     },
     Entry {
         name: "MUTASTIC_AGENT=1",
@@ -638,7 +639,7 @@ pub const ENVIRONMENT: &[Entry] = &[
         name: "MUTASTIC_VOCABULARY",
         meaning: "plain or classic, when --vocabulary isn't given",
         detail: "`classic` says killed and survived instead of caught and missed. The JSON report \
-                 and the event stream always use the standard names.",
+                 and the event stream always use the standard names. Any other value is refused.",
     },
     Entry {
         name: "NO_COLOR",
@@ -659,7 +660,8 @@ pub const ENVIRONMENT: &[Entry] = &[
     Entry {
         name: "MUTASTIC_PROGRESS",
         meaning: "auto, bar, counter or none, when --progress isn't given",
-        detail: "For a Gradle or Maven build, or a CI job, that always wants the same.",
+        detail: "For a Gradle or Maven build, or a CI job, that always wants the same. Any other \
+                 value is refused.",
     },
     Entry {
         name: "MUTASTIC_TERM_PROGRESS",
@@ -671,7 +673,8 @@ pub const ENVIRONMENT: &[Entry] = &[
         name: "MUTASTIC_HEARTBEAT",
         meaning: "Seconds a log may go without a progress line",
         detail: "30 unless set. Off a terminal, a line with the phase, its counts and its clock is \
-                 printed whenever this long has passed since the last.",
+                 printed whenever this long has passed since the last. A value that isn't a number \
+                 above 0 is refused.",
     },
     Entry {
         name: "CI",
@@ -759,7 +762,8 @@ pub const EXIT_CODES: &[Entry] = &[
         meaning: "mutastic couldn't run: an unknown option, a word the command doesn't take, not \
                   a Cargo package, a workspace's root, a test that fails with no mutant in, an id \
                   that isn't a mutant of the package, shares --from-shards can't put together as one \
-                  run, --fail-on-new with no baseline, or no task open for gate check",
+                  run, --fail-on-new with no baseline, or no task open for gate check; or, for run \
+                  and verify, a test that caught mutants fails on its own, with no mutant in",
         detail: "",
     },
 ];

@@ -300,6 +300,9 @@ pub fn cargo() -> String {
 /// Files whose copy has other text than the original: the rewritten sources.
 pub type Overrides = std::collections::BTreeMap<PathBuf, String>;
 
+/// Where proptest saves a failing case, beside the test's source.
+pub const PROPTEST_SAVED: &str = "proptest-regressions";
+
 /// Brings the copy up to date with the workspace, writing only what changed, with `overrides` in
 /// place of the originals.
 pub fn sync(project: &Project, overrides: &Overrides) -> Result<(), String> {
@@ -380,7 +383,10 @@ fn copy_tree(
         let path = relative.join(&name);
         let source = from.join(&path);
         let top_target = name == "target" && relative.as_os_str().is_empty();
-        if name == ".git" || source == project.target || top_target {
+        // proptest's saved cases: its runs in the copy neither replay nor write them, so a case
+        // one of mutastic's runs found can't decide the next.
+        let saved_cases = name == PROPTEST_SAVED;
+        if name == ".git" || source == project.target || top_target || saved_cases {
             continue;
         }
         let kind = entry.file_type()?;
@@ -409,7 +415,9 @@ fn remove_stale(
     for entry in std::fs::read_dir(copy.join(relative))? {
         let entry = entry?;
         let path = relative.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
+        if entry.file_name() == PROPTEST_SAVED {
+            std::fs::remove_dir_all(copy.join(&path))?;
+        } else if entry.file_type()?.is_dir() {
             remove_stale(copy, &path, kept)?;
         } else if !kept.contains(&path) && path != Path::new("Cargo.lock") {
             std::fs::remove_file(copy.join(&path))?;

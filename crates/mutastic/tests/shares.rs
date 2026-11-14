@@ -97,6 +97,9 @@ fn forget_last_runs(dir: &Path) {
 /// A human format without the rows that tell the time, or how many tests ran.
 fn untimed_text(text: &str) -> String {
     let varies = ["  Start at", "  Duration", " Test runs"];
+    // Each run draws its own token for the fence an agent's text puts the project's text in.
+    let token = regex::Regex::new(r"mutastic-data [0-9a-f]{8}").unwrap();
+    let text = token.replace_all(text, "mutastic-data <token>");
     text.lines()
         .filter(|line| !varies.iter().any(|row| line.starts_with(row)))
         .collect::<Vec<_>>()

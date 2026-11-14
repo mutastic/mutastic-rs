@@ -200,7 +200,7 @@ fn plain(text: &str) -> String {
 }
 
 /// What changes from run to run or machine to machine: timings, when the run started, the
-/// compiler's version, the number of workers, which follows the cores, and how many tests ran,
+/// compiler's version, the fence token in an agent's text, the number of workers, which follows the cores, and how many tests ran,
 /// which follows timing too: a mutant tries the binary whose tests were fastest first, and stops at
 /// the first that fails.
 fn steady(text: &str) -> String {
@@ -223,6 +223,8 @@ fn steady(text: &str) -> String {
         // The commit a gate's task starts from, which changes with each repository a run makes.
         (r"(?<w>from |--since=)[0-9a-f]{7,40}\b", "$w…"),
         (r"(?<c>\x1b\[[0-9;]*m|\b)\d+ workers?\b", "${c}… workers"),
+        // The fence around the project's text in an agent's: each run draws its own token.
+        (r"mutastic-data [0-9a-f]{8}>>", "mutastic-data 3f9a0c1e>>"),
         (r#""workers(?<s>Started)?": ?\d+"#, r#""workers$s":…"#),
     ];
     rules
@@ -1297,7 +1299,7 @@ const ERRORS: &[Error] = &[
     ),
     (
         "option-value",
-        &["run", "fixtures/pricing", "--format", "agent"],
+        &["run", "fixtures/pricing", "--vocabulary=clasic"],
         &[],
     ),
     (
@@ -1317,6 +1319,11 @@ const ERRORS: &[Error] = &[
         &[],
     ),
     ("config", &["run", "configured"], &[]),
+    (
+        "environment",
+        &["run", "fixtures/pricing"],
+        &[("MUTASTIC_VOCABULARY", "xyz")],
+    ),
     (
         "no-baseline",
         &["run", "fixtures/pricing", "--fail-on-new"],

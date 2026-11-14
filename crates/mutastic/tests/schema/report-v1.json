@@ -45,7 +45,7 @@
           "additionalProperties": { "type": "string" }
         },
         "score": { "type": ["number", "null"], "description": "The mutation score, as the run reported it, to one decimal place; null when nothing was scored." },
-        "threshold": { "type": "integer", "description": "The score the run had to reach." },
+        "threshold": { "type": "number", "description": "The score the run had to reach." },
         "passed": { "type": "boolean", "description": "Whether the run passed, as its exit code says: on the threshold, or with `--fail-on-new` on new misses." },
         "toolchain": {
           "type": "object",

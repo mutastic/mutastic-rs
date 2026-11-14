@@ -37,7 +37,9 @@ for the conventions the code is held to, [AGENTS.md](AGENTS.md).
    time limit, on `--workers` threads. The first failing test catches it. A process that dies
    without a test failing is run again, one test at a time, to see how: in safe code that's caught
    by the crash, and near unsafe code, or in std's own check of an unsafe precondition, it's a
-   `RuntimeError`, out of the score. Near-unsafe mutants run with one test thread.
+   `RuntimeError`, out of the score. Near-unsafe mutants run with one test thread. Then `guard`
+   runs each test that caught a mutant again, on its own with no mutant in: one that fails there
+   is left out as flaky, the run can't pass, and each mutant it reached runs again without it.
 6. **Suggested tests.** For each missed mutant whose function a test can call with whole numbers
    alone (`sites/callable.rs`), `suggest` runs the probe `schema` built beside that function: a
    test of mutastic's own, left out of the test list, that calls it on candidate inputs, as the
@@ -72,6 +74,7 @@ All the code is in `crates/mutastic/src`:
 | `wrapper` | mutastic as Cargo's `RUSTC_WORKSPACE_WRAPPER`, adding flags to the user's crate only |
 | `testrun` | Lists and runs libtest binaries' tests, with a time limit, and runs work side by side |
 | `flaky` | Flaky tests: how many reruns, what a test reaches that varies, and the words for a test that always fails |
+| `guard` | The false-catch guard: each catching test run again on its own after the mutants, and what a test that fails there reached run again without it |
 | `engine` | A run: finds, builds, records coverage, runs each mutant, and decides its status |
 | `words` | What a card says: the gap, the change, the inputs seen and the help |
 | `suggest` | Suggested tests: candidate inputs, running the probes, and the test written out |
@@ -121,7 +124,8 @@ editions' contract names. Every event says `"edition": "rust"`. Where the editio
 `pricing` (the Java edition's sample, ported), `operators` (an example of each operator), `truth`
 (each shape a mutated expression can take), `unsafety`, `loops`, `places`, `platforms`, `ranking`,
 `suggestions`, `repeats` (identical lines in one function), `flaky` (a test that fails on its first
-try, and passes after) and `workspace`. `samples.rs` and
+try, and passes after), `false-catches` (a test that passes before any mutant and fails on its own
+after them) and `workspace`. `samples.rs` and
 `truth.rs` run mutastic on them in place, so its copy goes in each fixture's own `target/`;
 `docs.rs` copies them to the system's temporary directory first, so the commands it captures read
 as a person types them at the repository's root.

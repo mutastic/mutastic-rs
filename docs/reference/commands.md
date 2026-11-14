@@ -179,7 +179,7 @@ mutastic mutants fixtures/pricing --operators=stronger
 
 ### `--threshold`
 
-`--threshold=N`, for [`run`](#run). The score a run must reach to pass; 80 unless set.
+`--threshold=N`, for [`run`](#run). The score a run must reach to pass, a whole number from 0 to 100; 80 unless set.
 
 ```sh
 mutastic run --threshold=70
@@ -432,15 +432,15 @@ mutastic verify mb2f8ae57 --edition=rust
 
 ## Environment
 
-- `MUTASTIC_FORMAT`: The format when --format isn't given. For a machine or a CI job that always wants the same format, `concise` say.
+- `MUTASTIC_FORMAT`: The format when --format isn't given. For a machine or a CI job that always wants the same format, `concise` say. A format mutastic doesn't have is refused, as the option's is.
 - `MUTASTIC_AGENT=1`: The agent format, for coding agents. Coding agents set it, so mutastic answers in the format they read best, with progress as lines. `MUTASTIC_FORMAT` still wins.
-- `MUTASTIC_VOCABULARY`: plain or classic, when --vocabulary isn't given. `classic` says killed and survived instead of caught and missed. The JSON report and the event stream always use the standard names.
+- `MUTASTIC_VOCABULARY`: plain or classic, when --vocabulary isn't given. `classic` says killed and survived instead of caught and missed. The JSON report and the event stream always use the standard names. Any other value is refused.
 - `NO_COLOR`: No colour. Set to anything, it turns colour off, as it does for many tools.
 - `FORCE_COLOR`: Colour even off a terminal. Set to anything, it turns colour on where mutastic can't tell a person is reading, such as a CI log that shows colour. It wins over `NO_COLOR`.
 - `TERM=dumb`: No colour, unless `FORCE_COLOR` is set, and progress as lines.
-- `MUTASTIC_PROGRESS`: auto, bar, counter or none, when --progress isn't given. For a Gradle or Maven build, or a CI job, that always wants the same.
+- `MUTASTIC_PROGRESS`: auto, bar, counter or none, when --progress isn't given. For a Gradle or Maven build, or a CI job, that always wants the same. Any other value is refused.
 - `MUTASTIC_TERM_PROGRESS`: true or false: whether the terminal's tab shows the run's progress. Unset, it does in Windows Terminal, ConEmu, Ghostty and WezTerm, which say they draw it. Cargo's `CARGO_TERM_PROGRESS_TERM_INTEGRATION` is read too.
-- `MUTASTIC_HEARTBEAT`: Seconds a log may go without a progress line. 30 unless set. Off a terminal, a line with the phase, its counts and its clock is printed whenever this long has passed since the last.
+- `MUTASTIC_HEARTBEAT`: Seconds a log may go without a progress line. 30 unless set. Off a terminal, a line with the phase, its counts and its clock is printed whenever this long has passed since the last. A value that isn't a number above 0 is refused.
 - `CI`: Progress as lines, not redrawn in place. Set to anything but `false` or `0`; as are `TF_BUILD`, `GITHUB_ACTIONS`, `GITLAB_CI`, `BUILDKITE`, `JENKINS_URL`, `TEAMCITY_VERSION` and `CIRCLECI`, since some CI services pretend to be a terminal.
 - `CLAUDECODE`: Progress as lines, for a coding agent. As are `CLAUDE_CODE`, `GEMINI_CLI`, `CODEX_SANDBOX`, `CODEX_THREAD_ID`, `OPENCODE`, `COPILOT_AGENT`, `COPILOT_CLI`, `CURSOR_AGENT`, `REPL_ID`, `JUNIE_DATA`, `GOOSE_PROVIDER` and `AUGMENT_AGENT`, which coding agents set. Only progress changes: the format is still `--format`'s.
 - `CARGO`: The cargo mutastic runs. Cargo sets it for `cargo mutastic`; `cargo` on the `PATH` otherwise.
@@ -457,4 +457,4 @@ mutastic verify mb2f8ae57 --edition=rust
 
 - **0**: The score reaches the threshold, or with --fail-on-new no miss is new; for verify, each mutant named is caught, skipped, or crashed where a crash proves nothing; for gate check, the task is done; for next, nothing missed is left but what's proposed for ignoring.
 - **1**: The score is below the threshold, or with --fail-on-new a miss is new; for verify, a mutant named is still missed or not covered; for gate check, the task isn't done; for ignore --accept or --remove, the mutant isn't proposed or ignored; for next, something is queued; for baseline, there's one already, or none to prune.
-- **2**: mutastic couldn't run: an unknown option, a word the command doesn't take, not a Cargo package, a workspace's root, a test that fails with no mutant in, an id that isn't a mutant of the package, shares --from-shards can't put together as one run, --fail-on-new with no baseline, or no task open for gate check.
+- **2**: mutastic couldn't run: an unknown option, a word the command doesn't take, not a Cargo package, a workspace's root, a test that fails with no mutant in, an id that isn't a mutant of the package, shares --from-shards can't put together as one run, --fail-on-new with no baseline, or no task open for gate check; or, for run and verify, a test that caught mutants fails on its own, with no mutant in.
