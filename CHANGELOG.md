@@ -88,6 +88,11 @@ newest come first.
 
 ### Fixes
 
+- **A property test's command sets its seed.** When a property test fails before any mutant, the
+  command mutastic offers to run it alone sets `PROPTEST_RNG_SEED` to the seed mutastic drew its
+  cases from, `PROPTEST_RNG_SEED=0 cargo test …`, and a line says so: without it, the test may pass
+  when run again.
+
 - **A property test's inputs don't flood a card.** Past 10 values, "inputs seen" shows the five
   smallest and five largest and how many: `a = -931, -923, -791, -777, -723, …, 884, 909, 948,
   950 (62 values)`. Where a property test passed a name that many values, the suggested test tries
