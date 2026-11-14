@@ -2072,33 +2072,111 @@ fn the_commands_reference_is_the_parsers_declarations() {
     }
 }
 
-/// Unsafe code lives in one module, `terminal`, and every block there says why it's sound.
-#[test]
-fn unsafe_code_stays_in_the_terminal_module() {
-    let allow = regex::Regex::new(r"allow\(\s*unsafe_code").unwrap();
-    let mut stack = vec![root().join("crates/mutastic/src")];
+/// The `[lints...]` tables of a manifest, each line of each kept as it is, in order.
+fn lint_tables(manifest: &str) -> BTreeMap<String, Vec<String>> {
+    let mut tables: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut table = None;
+    for line in manifest.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            table = line.contains("lints").then(|| line.to_string());
+            if let Some(table) = &table {
+                tables.entry(table.clone()).or_default();
+            }
+        } else if let (Some(table), false) = (&table, line.is_empty() || line.starts_with('#')) {
+            tables.get_mut(table).unwrap().push(line.to_string());
+        }
+    }
+    tables
+}
+
+/// Every Rust file under `dir`, `target/` left out.
+fn rust_files(dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
     while let Some(dir) = stack.pop() {
         for entry in std::fs::read_dir(&dir).unwrap() {
             let path = entry.unwrap().path();
-            if path.is_dir() {
+            if path.is_dir() && !path.ends_with("target") {
                 stack.push(path);
-                continue;
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                files.push(path);
             }
-            // The workspace denies unsafe code, so a module needs to allow it to have any.
-            let text = std::fs::read_to_string(&path).unwrap();
-            let allows = allow.is_match(&text);
-            if path.ends_with("terminal.rs") {
-                assert!(allows);
+        }
+    }
+    files
+}
+
+/// Unsafe code lives in one crate, `mutastic-terminal`, the audit boundary. The workspace forbids
+/// it, which no `#[allow]` can undo, and every other member takes the workspace's lints. The
+/// terminal crate copies them, unsafe code denied but for its `ffi` modules, with the lints an
+/// audit asks for; and there, every `unsafe` block says why it's sound.
+#[test]
+fn unsafe_code_stays_in_mutastic_terminal() {
+    let workspace = lint_tables(&std::fs::read_to_string(root().join("Cargo.toml")).unwrap());
+    let rust = &workspace["[workspace.lints.rust]"];
+    assert!(rust.iter().any(|line| line == r#"unsafe_code = "forbid""#));
+    let terminal = root().join("crates/mutastic-terminal");
+    let allow = regex::Regex::new(r"(?:allow|expect)\(\s*unsafe_code").unwrap();
+    let on_ffi =
+        regex::Regex::new(r#"#\[allow\(\s*unsafe_code,\s*reason = "[^"]+"\s*\)\]\s*mod ffi \{"#)
+            .unwrap();
+    for entry in std::fs::read_dir(root().join("crates")).unwrap() {
+        let member = entry.unwrap().path();
+        let manifest = std::fs::read_to_string(member.join("Cargo.toml")).unwrap();
+        let tables = lint_tables(&manifest);
+        let files = rust_files(&member);
+        if member == terminal {
+            let own = &tables["[lints.rust]"];
+            assert!(own.iter().any(|line| line == r#"unsafe_code = "deny""#));
+            assert!(own
+                .iter()
+                .any(|line| line == r#"unsafe_op_in_unsafe_fn = "deny""#));
+            let clippy = &tables["[lints.clippy]"];
+            for lint in [
+                "undocumented_unsafe_blocks",
+                "multiple_unsafe_ops_per_block",
+                "missing_safety_doc",
+            ] {
+                assert!(
+                    clippy.contains(&format!(r#"{lint} = "deny""#)),
+                    "mutastic-terminal doesn't deny {lint}"
+                );
+            }
+            for line in &workspace["[workspace.lints.clippy]"] {
+                assert!(
+                    clippy.contains(line),
+                    "mutastic-terminal's lints don't have the workspace's `{line}`"
+                );
+            }
+            for file in files {
+                let text = std::fs::read_to_string(&file).unwrap();
                 assert_eq!(
                     text.matches("unsafe {").count(),
                     text.matches("// SAFETY: ").count(),
-                    "an unsafe block without its reason"
+                    "{}: an unsafe block without its reason",
+                    file.display()
                 );
-            } else {
+                assert_eq!(
+                    allow.find_iter(&text).count(),
+                    on_ffi.find_iter(&text).count(),
+                    "{}: unsafe code is allowed only on an `ffi` module",
+                    file.display()
+                );
+            }
+        } else {
+            assert_eq!(
+                tables.get("[lints]").map(Vec::as_slice),
+                Some(&["workspace = true".to_string()][..]),
+                "{} doesn't take the workspace's lints, which forbid unsafe code",
+                member.display()
+            );
+            for file in files {
+                let text = std::fs::read_to_string(&file).unwrap();
                 assert!(
-                    !allows,
-                    "{} allows unsafe code: it belongs in terminal.rs",
-                    path.display()
+                    !allow.is_match(&text),
+                    "{} allows unsafe code: it belongs in crates/mutastic-terminal",
+                    file.display()
                 );
             }
         }
@@ -2114,14 +2192,13 @@ fn every_variable_read_is_declared() {
         .map(|entry| entry.name.split('=').next().unwrap())
         .collect();
     for source in [
-        "cli.rs",
-        "java.rs",
-        "workspace.rs",
-        "progress.rs",
-        "terminal.rs",
+        "crates/mutastic/src/cli.rs",
+        "crates/mutastic/src/java.rs",
+        "crates/mutastic/src/workspace.rs",
+        "crates/mutastic/src/progress.rs",
+        "crates/mutastic-terminal/src/lib.rs",
     ] {
-        let text =
-            std::fs::read_to_string(root().join("crates/mutastic/src").join(source)).unwrap();
+        let text = std::fs::read_to_string(root().join(source)).unwrap();
         for found in read.captures_iter(&text) {
             let name = &found["name"];
             assert!(

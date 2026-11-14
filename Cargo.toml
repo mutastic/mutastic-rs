@@ -1,5 +1,10 @@
 [workspace]
-members = ["crates/mutastic", "crates/cargo-mutastic", "crates/mutastic-rs"]
+members = [
+    "crates/mutastic",
+    "crates/mutastic-terminal",
+    "crates/cargo-mutastic",
+    "crates/mutastic-rs",
+]
 exclude = ["fixtures"]
 resolver = "2"
 
@@ -18,9 +23,11 @@ categories = ["development-tools::testing", "development-tools::cargo-plugins", 
 rust-version = "1.91"
 
 [workspace.lints.rust]
-# Denied everywhere but `terminal`, which asks the C library for the terminal's width, its input
-# mode and signals, rather than take a dependency for a handful of calls; a test keeps it there.
-unsafe_code = "deny"
+# Forbidden, not denied: an `#[allow]` further down can't switch it back on. Only
+# crates/mutastic-terminal has unsafe code, which asks the C library for the terminal's width, its
+# input mode and signals rather than take a dependency for a handful of calls; it takes these lints
+# as its own, with unsafe code allowed in its `ffi` modules alone, and a test keeps it so.
+unsafe_code = "forbid"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

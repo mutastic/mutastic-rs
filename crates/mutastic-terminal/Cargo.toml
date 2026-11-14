@@ -1,0 +1,42 @@
+[package]
+name = "mutastic-terminal"
+description = "The terminal's width, its input mode and signals, for mutastic: its one crate with unsafe code"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+publish = false
+
+# No dependencies: mutastic calls the C library directly rather than take one for a handful of
+# calls. libc and windows-sys are only the tests', which hold each struct and constant declared
+# here to theirs: what Miri can't check, since it can't call C.
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Console"] }
+
+# The workspace's lints, which it forbids unsafe code under, can't be taken here: a forbid can't
+# be allowed back. So they're copied, and a test keeps the copy in step. Unsafe code is denied in
+# the crate too, and allowed only in each platform's `ffi` module, where the C calls are.
+[lints.rust]
+unsafe_code = "deny"
+# An unsafe fn's body is not one big unsafe block.
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+allow_attributes_without_reason = "warn"
+set_contains_or_insert = "warn"
+# Every unsafe block has a `// SAFETY:` comment, which covers one operation, not five; and every
+# public unsafe fn says what its callers must hold, under `# Safety`.
+undocumented_unsafe_blocks = "deny"
+multiple_unsafe_ops_per_block = "deny"
+missing_safety_doc = "deny"
