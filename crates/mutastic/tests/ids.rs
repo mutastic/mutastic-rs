@@ -28,6 +28,7 @@ const FIXTURES: &[&str] = &[
     "suggestions",
     "truth",
     "unsafety",
+    "untrusted",
 ];
 
 fn kept_path() -> std::path::PathBuf {

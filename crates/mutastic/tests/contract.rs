@@ -837,6 +837,8 @@ fn the_agent_format_has_the_contracts_lines() {
     let mut at = 0;
     if sequence(&lines, &mut at, &agent["head"], true, &mut found) {
         while at < lines.len() && sequence(&lines, &mut at, &agent["entry"], false, &mut found) {}
+        // The fence's close, after the entries: what quotes the project ends there.
+        sequence(&lines, &mut at, &agent["tail"], true, &mut found);
         if at < lines.len() {
             found.push(self::found(
                 "agent:extra",
