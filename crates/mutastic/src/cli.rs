@@ -1534,7 +1534,7 @@ fn prune(dir: &str) -> Result<ExitCode, String> {
 /// single quotes, where nothing in it is run, and with what can't be seen escaped. As the Java
 /// edition's `Invocation.quoted`.
 fn shell(word: &str) -> String {
-    crate::report::shell_word(&untrusted::escape(word))
+    crate::report::shell_word(word)
 }
 
 /// `gate open`, `gate check` or `gate close`, as the Java edition's: see [`gate`].

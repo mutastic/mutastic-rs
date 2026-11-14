@@ -532,7 +532,8 @@ pub fn next_command(dir: &str) -> String {
 
 /// A directory, or another word typed into a command mutastic offers, as a shell takes it: as it
 /// is when it's plain (letters, digits and `_./:@%+=,-`, and on Windows `\` and `~`), else in
-/// single quotes, a quote in it written `'\''`. As the Java edition's `Invocation.quoted`.
+/// single quotes, a quote in it written `'\''`, and what can't be seen [`untrusted::escape`]d.
+/// As the Java edition's `Invocation.quoted`.
 pub fn shell_word(word: &str) -> String {
     let plain = |c: char| {
         c.is_ascii_alphanumeric()
@@ -542,7 +543,7 @@ pub fn shell_word(word: &str) -> String {
     if !word.is_empty() && word.chars().all(plain) {
         word.to_string()
     } else {
-        format!("'{}'", word.replace('\'', "'\\''"))
+        format!("'{}'", untrusted::escape(word).replace('\'', "'\\''"))
     }
 }
 
