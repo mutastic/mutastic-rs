@@ -875,7 +875,7 @@ fn fail_on_new_judges_a_run_by_its_baseline() {
     assert_eq!(code, 0, "{out}");
     assert!(
         out.starts_with(
-            "mutastic: 1 mutants no test catches are in .mutastic/baseline.yaml: commit it. A miss \
+            "mutastic: 1 mutant no test catches is in .mutastic/baseline.yaml: commit it. A miss \
              that isn't in it is new: the gate holds only new misses, and next offers them first\n"
         ),
         "{out}"
@@ -1258,7 +1258,7 @@ fn mutastic_yaml_is_read_as_the_java_editions() {
     // --operators replaces operators:, and can name the rules file's.
     let (_, only) = mutastic(&["mutants", &dir, "--operators=acme/remove-trim"]);
     assert!(
-        only.contains("acme/remove-trim") && only.contains("\n1 mutants\n"),
+        only.contains("acme/remove-trim") && only.contains("\n1 mutant\n"),
         "{only}"
     );
     // What mutastic doesn't understand is an error that names the line.
