@@ -245,25 +245,25 @@ fn a_word_a_command_doesnt_take_stops_it() {
     };
     assert_eq!(
         stopped(&["run", &dir, "--operators=stronger", "explain", "md3a59003"]),
-        "mutastic: run doesn't take explain md3a59003: mutastic run [dir] [options]\n"
+        "mutastic: run doesn't take explain md3a59003: mutastic run [DIR] [OPTIONS]\n"
     );
     assert_eq!(
         stopped(&["explain", &dir]),
         format!(
             "mutastic: explain needs a mutant's id, m and eight hex digits as a card shows it, \
-             and {dir} is a directory: mutastic explain <id> [dir], as in mutastic explain \
+             and {dir} is a directory: mutastic explain ID [DIR], as in mutastic explain \
              m1a2b3c4d {dir}\n"
         )
     );
     assert_eq!(
         stopped(&["verify", "m1a2b3c4d,total", &dir]),
         "mutastic: verify needs a mutant's id, m and eight hex digits as a card shows it, and \
-         m1a2b3c4d,total isn't one: mutastic verify <id>[,<id>…] [<id>…] [dir], as in mutastic verify \
+         m1a2b3c4d,total isn't one: mutastic verify ID... [DIR], as in mutastic verify \
          m1a2b3c4d\n"
     );
     assert_eq!(
         stopped(&["verify", "mb2f8ae57", "m0b3873d0", &dir, "extra"]),
-        "mutastic: verify doesn't take extra: mutastic verify <id>[,<id>…] [<id>…] [dir]\n"
+        "mutastic: verify doesn't take extra: mutastic verify ID... [DIR]\n"
     );
     // Ids split by spaces, as the Java edition takes them, then the directory.
     let (code, out) = mutastic(&["verify", "mb2f8ae57", "m0b3873d0", &dir]);
@@ -3331,7 +3331,7 @@ fn a_command_run_in_the_wrong_place_ends_in_the_one_to_run() {
     );
     let help = ran(&root, &["--help"], &[]);
     assert_eq!(help.status.code(), Some(0));
-    assert!(String::from_utf8_lossy(&help.stdout).contains("\nOptions:\n  --only=<id>"));
+    assert!(String::from_utf8_lossy(&help.stdout).contains("\nRunning:\n  --threshold=N "));
 
     // Below a package, the package runs: its ignores, its mutastic.yaml and --since are read
     // from its directory.
