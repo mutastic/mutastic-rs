@@ -12,12 +12,16 @@ use crate::report::{self, Format, Style};
 use crate::shares::EVENTS;
 use crate::sites::UnsafeMode;
 use crate::{
-    baseline, commands, gate, ignores, java, sites, testrun, untrusted, workspace, wrapper,
+    baseline, commands, gate, gate_count, ignores, java, sites, testrun, untrusted, workspace,
+    wrapper,
 };
 
 pub fn main(args: Vec<OsString>) -> ExitCode {
     if wrapper::active(&args) {
         return wrapper::run(&args);
+    }
+    if gate_count::active() {
+        return gate_count::run(&args);
     }
     let mut args: Vec<String> = args
         .iter()
@@ -1553,6 +1557,7 @@ fn gate_command(parsed: &Parsed) -> Result<ExitCode, String> {
     match action.as_str() {
         "open" => gate_open(hooked, &project, here, &session),
         "close" => {
+            gate_count::stop(&work);
             let closed = gate::State::close(&work);
             if !hooked {
                 stdout_line!(
@@ -1609,17 +1614,21 @@ fn gate_open(
         return Err("the gate needs a git repository with a commit".into());
     };
     let base = base.trim().to_string();
-    // The tests as libtest lists them, each case its own; from the source where the package
-    // doesn't build yet, and fixing that is the task.
-    let shape = gate::listed(project).map_or_else(
-        |_| gate::Shape::of(here),
-        |names| gate::Shape::listed(&names),
-    );
+    // The tests as libtest lists them, each case its own, are counted in the background, so the
+    // agent needn't wait for a build: a check reads the count, and until then the source's test
+    // attributes stand in.
+    let counting = gate_count::start(here, work, &gate::tree(here));
     let state = gate::State {
         session: session.to_string(),
         base: base.clone(),
         ignored: ignored_ids(here)?,
-        shape,
+        shape: gate::Shape::of(here),
+        uncounted: if counting.is_empty() {
+            "the count couldn't start".into()
+        } else {
+            String::new()
+        },
+        counting,
         ..gate::State::default()
     };
     state.write(work)?;
@@ -1658,7 +1667,8 @@ fn gate_check(
         // Nothing gated: a hooked agent may stop.
         return Ok(ExitCode::from(if hooked { 0 } else { 2 }));
     };
-    let verdict = gate_verdict(parsed, project, here, &open)?;
+    let open = counted(open, here, work)?;
+    let verdict = uncounted_note(&open, gate_verdict(parsed, project, here, &open)?);
     let mut state = open.clone();
     state.red.extend(verdict.red.clone());
     // As a hook, a check that lets the agent stop notes what's ignored: what's ignored after it, and
@@ -1706,6 +1716,45 @@ fn gate_check(
     state.write(work)?;
     let answer = for_the_person(here, &open, gate::Verdict::pass(text));
     Ok(gate_answer(hooked, &answer))
+}
+
+/// The gate with the count of the tests the task started with read, once a check needs it: a
+/// task that changed nothing needs no count. A count that failed, or isn't done within
+/// [`gate_count::WAIT`], leaves the source's test attributes standing in, and says why.
+fn counted(
+    mut open: gate::State,
+    here: &std::path::Path,
+    work: &std::path::Path,
+) -> Result<gate::State, String> {
+    if open.counting.is_empty() || open.shape.listed || gate::untouched(here, &open.base) {
+        return Ok(open);
+    }
+    match gate_count::wait(work, &open.counting, gate_count::WAIT) {
+        Ok(names) => open.shape = gate::Shape::listed(&names),
+        Err(why) => {
+            gate_count::stop(work);
+            open.uncounted = why;
+        }
+    }
+    open.counting.clear();
+    open.write(work)?;
+    Ok(open)
+}
+
+/// A pass, saying so when the tests the task started with couldn't be counted as libtest lists
+/// them, as the Java edition says it of its count.
+fn uncounted_note(state: &gate::State, verdict: gate::Verdict) -> gate::Verdict {
+    if !verdict.passes || state.uncounted.is_empty() {
+        return verdict;
+    }
+    gate::Verdict {
+        text: format!(
+            "{}. The tests the task started with couldn't be counted ({}), so the gate compared the test attributes in the source only",
+            verdict.text,
+            untrusted::value(&state.uncounted)
+        ),
+        ..verdict
+    }
 }
 
 /// A pass or a hand-over, with the tests there when the task started that it changed what they

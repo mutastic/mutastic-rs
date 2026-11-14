@@ -115,8 +115,9 @@ newest come first.
   remembered without its source, and once it passed the gate said it was gone, at every check,
   until `gate close`. The gate now looks tests up by the names the test binaries list, and counts
   them from the same list, so taking a `#[case]` row away holds the gate as taking a test-case row
-  away did. `gate open` builds the tests once to list them; a package that doesn't build when the
-  task starts is counted from its source, as before.
+  away did. `gate open` returns at once and lists the tests in the background; a check waits for
+  that list, up to four minutes, and where it failed (a package that doesn't build when the task
+  starts) or isn't done, counts from the source, as before, and a pass says so.
 
 - **A test that caught mutants and fails on its own fails the run.** Once the mutants have run,
   each test that caught one runs again, on its own with no mutant in. One that fails there (it

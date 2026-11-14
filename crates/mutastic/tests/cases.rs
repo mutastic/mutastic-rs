@@ -481,3 +481,104 @@ fn caught_by_is_stable_across_runs() {
         "{minus}"
     );
 }
+
+/// The gate's state, as `gate open` or a check left it.
+fn gate_state(dir: &Path) -> String {
+    std::fs::read_to_string(dir.join("target/mutastic/gate.properties")).unwrap()
+}
+
+/// `gate open` returns at once: the tests the task starts with are listed in the background, and
+/// until a check reads that count, the source's test attributes stand in. A check that needs the
+/// count reads it, and from then on counts every case.
+#[test]
+fn the_gate_counts_the_cases_in_the_background() {
+    let dir = copy("gate-background");
+    let _git = committed(&dir);
+    // The copy a run builds in, gone: open mustn't make it.
+    std::fs::remove_dir_all(dir.join("target/mutastic/copy")).ok();
+    let (code, out) = mutastic(&dir, &["gate", "open"]);
+    assert_eq!(code, 0, "{out}");
+    let opened = gate_state(&dir);
+    assert!(opened.contains("\ncounted=source\n"), "{opened}");
+    assert!(
+        !opened.contains("\ncounting=\n"),
+        "a count started: {opened}"
+    );
+    assert!(
+        dir.join("target/mutastic/gate-count.pid").exists(),
+        "{opened}"
+    );
+    assert!(
+        !dir.join("target/mutastic/copy").exists(),
+        "open built nothing of its own"
+    );
+    edit(
+        &dir.join("src/lib.rs"),
+        "    #[case::just_under(99, 0)]\n",
+        "",
+    );
+    let (code, out) = mutastic(&dir, &["gate", "check"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("(13, 0 ignored; now 12, 0 ignored)"),
+        "the cases, counted: {out}"
+    );
+    let checked = gate_state(&dir);
+    assert!(
+        checked.contains("\ncounted=list\n") && checked.contains("\ncounting=\n"),
+        "{checked}"
+    );
+}
+
+/// A count that fails, here because the task starts from a package that doesn't build, leaves the
+/// source's test attributes standing in, and a pass says so.
+#[test]
+fn a_count_that_fails_is_said_on_a_pass() {
+    let dir = copy("gate-uncounted");
+    let lib = dir.join("src/lib.rs");
+    let kept = std::fs::read_to_string(&lib).unwrap();
+    append(
+        &lib,
+        "\npub fn broken() -> i64 {\n    \"not a number\"\n}\n",
+    );
+    let _git = committed(&dir);
+    let (code, out) = mutastic(&dir, &["gate", "open"]);
+    assert_eq!(code, 0, "{out}");
+    std::fs::write(&lib, kept).unwrap();
+    let (code, out) = mutastic(&dir, &["gate", "check"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains(". The tests the task started with couldn't be counted (")
+            && out.ends_with("), so the gate compared the test attributes in the source only\n"),
+        "{out}"
+    );
+}
+
+/// `gate close` stops a count still running, with its builds, and removes what it made.
+#[test]
+fn closing_the_gate_stops_the_count() {
+    let dir = copy("gate-close");
+    let _git = committed(&dir);
+    let (code, out) = mutastic(&dir, &["gate", "open"]);
+    assert_eq!(code, 0, "{out}");
+    let pid_file = dir.join("target/mutastic/gate-count.pid");
+    let noted = std::fs::read_to_string(&pid_file).unwrap();
+    let mut words = noted.split_whitespace();
+    let (pid, token) = (words.next().unwrap(), words.next().unwrap());
+    let (code, out) = mutastic(&dir, &["gate", "close"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(!pid_file.exists());
+    assert!(!dir.join("target/mutastic/gate-count.properties").exists());
+    assert!(!std::env::temp_dir()
+        .join(format!("mutastic-gate-count-{token}"))
+        .exists());
+    if cfg!(unix) {
+        // Its process group is gone: no count, and no build it started.
+        let alive = Command::new("kill")
+            .args(["-0", "--", &format!("-{pid}")])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(!alive.success(), "the count's group {pid} still runs");
+    }
+}
