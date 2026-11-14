@@ -396,7 +396,9 @@ fn remove_stale(
     for entry in std::fs::read_dir(copy.join(relative))? {
         let entry = entry?;
         let path = relative.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
+        if entry.file_name() == PROPTEST_SAVED {
+            std::fs::remove_dir_all(copy.join(&path))?;
+        } else if entry.file_type()?.is_dir() {
             remove_stale(copy, &path, kept)?;
         } else if !kept.contains(&path) && path != Path::new("Cargo.lock") {
             std::fs::remove_file(copy.join(&path))?;
