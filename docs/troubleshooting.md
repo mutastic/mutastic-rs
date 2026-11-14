@@ -171,8 +171,7 @@ such as `-v` is an option it doesn't have, and `mutastic run --help` lists run's
 ## A word mutastic doesn't take
 
 A command, option or value mutastic doesn't have is never guessed at and run. When one it has is
-close, the error says so and ends in your line again with only that word changed; a value goes
-after an `=`, never a space:
+close, the error says so and ends in your line again with only that word changed:
 
 <!-- output: troubleshooting/mistyped -->
 ```text

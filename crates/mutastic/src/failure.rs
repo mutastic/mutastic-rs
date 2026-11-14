@@ -69,6 +69,15 @@ pub const CODES: &[(&str, &[&str])] = &[
     ),
     ("option-not-taken", &[" doesn't take --"]),
     (
+        "environment",
+        &[
+            "MUTASTIC_FORMAT: ",
+            "MUTASTIC_VOCABULARY: ",
+            "MUTASTIC_PROGRESS: ",
+            "MUTASTIC_HEARTBEAT: ",
+        ],
+    ),
+    (
         "option-value",
         &[
             "takes its value after an =",
@@ -76,6 +85,8 @@ pub const CODES: &[(&str, &[&str])] = &[
             "isn't one of",
             "isn't a number",
             "isn't a positive number",
+            "needs a whole number",
+            "--threshold is from ",
             "takes no value",
             "--hook: ",
             "--shard needs",
@@ -235,7 +246,10 @@ mod tests {
             ("run has no option --formt. There's one called --format.\n  mutastic run --format=agent", "unknown-option"),
             ("run has no option -v.\nmutastic's options are long ones", "unknown-option"),
             ("mutastic has no command rnu. There's one called run.\n  mutastic run", "unknown-command"),
-            ("--format takes its value after an =, not a space.\n  mutastic run --format=agent", "option-value"),
+            ("--format: agnt isn't one of full, brief, concise, grouped, agent or jsonl. There's one called agent.\n  mutastic run --format=agent", "option-value"),
+            ("--threshold is from 0 to 100, not 150", "option-value"),
+            ("--threshold needs a whole number, not 72.5", "option-value"),
+            ("MUTASTIC_VOCABULARY: xyz isn't one of plain or classic", "environment"),
             ("there's no directory shpo in /p.\n", "no-directory"),
             ("this is a workspace's root, and mutastic tests one package at a time.", "workspace-root"),
             ("t fails without any mutant, so mutastic can't judge one.", "red-baseline"),

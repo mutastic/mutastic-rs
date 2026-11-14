@@ -184,7 +184,7 @@
         },
         "docs": {
           "type": "string",
-          "description": "Where docs.mutastic.io describes the operator, in the docs of the mutastic that ran: in the Java edition its row on the operators page, `https://docs.mutastic.io/concepts/operators/#boundary`; in Rust's its section in the Rust docs, `https://docs.mutastic.io/rust/operators/conditions/#boundary`. Only for mutastic's own operators: a plugin's has none."
+          "description": "Where docs.mutastic.io describes the operator, in the docs of the mutastic that ran: its section of its family's page, by the edition's path, `https://docs.mutastic.io/<edition>/operators/<family>/#<id>`: `https://docs.mutastic.io/java/operators/conditions/#boundary`, `https://docs.mutastic.io/rust/operators/conditions/#boundary`. Before 1.2.0 the Java edition linked its row on the operators page, `https://docs.mutastic.io/concepts/operators/#boundary`. Only for mutastic's own operators: a plugin's has none."
         },
         "location": {
           "type": "object",
