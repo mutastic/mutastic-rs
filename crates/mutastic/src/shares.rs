@@ -499,6 +499,7 @@ impl Shares {
             comparison: None,
             fail_on_new: None,
             built: true,
+            only: false,
         }
     }
 

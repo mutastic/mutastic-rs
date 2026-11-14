@@ -158,6 +158,13 @@ changed, a different result is just the change at work, and nothing is named. A 
 skipped, or that crashed where a crash proves nothing, is out of the score in either run, so a
 change to or from one isn't counted.
 
+A run of mutants asked for by id (`--only`) is judged on each one, as `verify` judges it, not on a
+score: it passes when each is caught, skipped, or crashed where a crash proves nothing, whatever
+the threshold. Its summary has no Score row and no `Next:`, and ends on each mutant's fate, such as
+`[MISSED] mb2f8ae57 is still missed · done when mutastic verify mb2f8ae57 fixtures/pricing passes`;
+in `--format=jsonl`, `run-finished` has `passed` judged the same way, and `only`, the first mutant
+it ran.
+
 Only a full run compares and records: a run of one mutant (`--only`, `verify`, `explain`) says
 nothing about the others, and a run of a change (`--since`) has a different score by design. A
 run with no mutant to run measured nothing, so it isn't kept either. A
