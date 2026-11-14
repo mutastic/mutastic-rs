@@ -286,7 +286,12 @@ mod tests {
                 .filter_map(|line| line.strip_prefix("Docs: "))
                 .map(str::to_string)
                 .collect();
-            assert_eq!(docs, [format!("{root}reference/{page}/")], "{}", command.name);
+            assert_eq!(
+                docs,
+                [format!("{root}reference/{page}/")],
+                "{}",
+                command.name
+            );
         }
         assert!(general().ends_with(&format!("Docs: {root}")));
     }
