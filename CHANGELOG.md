@@ -57,6 +57,12 @@ newest come first.
 
 ### Fixes
 
+- **The test named as catching a mutant is the same in every run.** A mutant's covering tests run
+  together, on several threads, and the first to fail was named: where several cases catch it, as
+  cases written alike do, the name changed from run to run, and with it `mutation.json` and the
+  report's tests. The test named is now the first of those that failed as the tests are listed,
+  the library's before the other targets'.
+
 - **A property test draws the same cases in every run.** mutastic sets `PROPTEST_RNG_SEED` for
   the tests it runs, unless you've set it, and turns proptest's saved failures off. A property that
   fails for some cases fails in every run or in none, so it can't stop one run, be called flaky in
