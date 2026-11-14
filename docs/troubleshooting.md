@@ -321,6 +321,37 @@ removes. Its catches don't count, every mutant it reached ran again without it, 
 with exit status 2 until it passes on its own. Make it set up what it needs, in a file or directory
 of its own, and clean up what it leaves. See [Results](concepts/results.md#a-test-that-fails-on-its-own).
 
+## Tables of cases and property tests
+
+**Each case is a test of its own.** An rstest `#[case]`, a test-case row and each cell of a
+`#[values]` matrix runs, covers and catches as the test libtest lists:
+`rstest_tests::discounts::case_2_at_the_edge`, `rows::multiplies::test_case_1_one_by_one`,
+`rstest_tests::multiplying_by_one_keeps_it::a_1_2::b_1_1`. The number in a name is the row's place,
+so a row put in above another renames it. Name your cases, `#[case::at_the_edge(100, 10)]` or
+`#[test_case(1, 1, 1 ; "one by one")]`, and a card says which row caught a mutant, or reached it and
+didn't. The gate counts the tests the same way: taking a row away is taking a test away.
+
+**A loop over rows is one test.** A `#[test]` that loops over a table of rows is one test to
+mutastic, however many rows it has, and a card can't say which row failed. Put the row in the
+assertion's message, `assert_eq!(subtract(a, b), difference, "subtract({a}, {b})")`, so the test's
+own output does.
+
+**Keep `--exact`.** Every command mutastic offers runs a test by its whole name with `--exact`.
+Without it, `case_1` is a filter that also runs `case_10` and `case_11`.
+
+**A property test draws the same cases every run.** mutastic sets `PROPTEST_RNG_SEED` to `0` for the
+tests it runs, unless you've set it yourself, so a property that fails for some cases fails in every
+run or in none: it can't catch a mutant in one run and miss it in the next. To try other cases, set
+`PROPTEST_RNG_SEED` before you run mutastic; to see a property fail as mutastic saw it, run its
+command with `PROPTEST_RNG_SEED=0` set. mutastic turns proptest's saved failures off and doesn't copy
+`proptest-regressions/`: the cases you've saved there aren't replayed in its runs, and nothing is
+written to your tree. A property passes a function many values, so a card's `inputs seen` shows the
+smallest and largest few and how many, and the test it suggests tries small numbers first.
+
+**A crash is not a check.** A `#[values]` matrix whose rows multiply by 0 catches `*` becoming `/`
+by dividing by zero: the mutant counts as caught, with `panic: attempt to divide by zero`, though no
+row checks a product. Leave 0 out of a matrix that isn't about it, as the cases fixture does.
+
 ## A kept id names another line, or nothing
 
 A mutant's id comes from what it is and its place in its function, counted from the top among
