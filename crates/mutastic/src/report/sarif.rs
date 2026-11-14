@@ -24,7 +24,10 @@ pub const SCHEMA: &str = "https://json.schemastore.org/sarif-2.1.0.json";
 pub const FINGERPRINT: &str = "mutasticId/v1";
 
 pub fn document(report: &Report) -> Value {
-    let view = View { report };
+    let view = View {
+        report,
+        shown: false,
+    };
     let flagged: Vec<&MutantResult> = report
         .results
         .iter()
