@@ -611,6 +611,54 @@ fn a_full_run_writes_the_report_files() {
     );
 }
 
+/// `run --only` judges each mutant named, as `verify` and the Java edition do, not a score: the
+/// summary has no Score row and no `Next:`, and ends on each one's fate; the event's `passed` is
+/// whether each is caught, with `only` naming the first. A threshold of 0, which every score
+/// reaches, doesn't pass a mutant still missed.
+#[test]
+fn a_run_of_mutants_by_id_is_judged_on_each_ones_fate() {
+    let dir = fixture("pricing");
+    let missed = ["run", &dir, "--only=mb2f8ae57", "--threshold=0"];
+    let (code, human) = mutastic(&[&missed[..], &["--format=concise"]].concat());
+    assert_eq!(code, 1, "{human}");
+    assert!(
+        human.ends_with(&format!(
+            "\n\n [MISSED] mb2f8ae57 is still missed · done when mutastic verify mb2f8ae57 {dir} passes\n"
+        )),
+        "{human}"
+    );
+    assert!(!human.contains("Score"), "{human}");
+    assert!(!human.contains("Next:"), "{human}");
+
+    let (_, jsonl) = mutastic(&[&missed[..], &["--format=jsonl"]].concat());
+    let finished = events(&jsonl).pop().unwrap();
+    assert_eq!(finished["passed"], false, "{finished}");
+    assert_eq!(finished["only"], "mb2f8ae57", "{finished}");
+
+    let (_, agent) = mutastic(&[&missed[..], &["--format=agent"]].concat());
+    assert!(
+        agent.starts_with("mutastic: mb2f8ae57 is still missed\nrules: "),
+        "{agent}"
+    );
+    assert!(agent.contains("\nmissed mb2f8ae57: "), "{agent}");
+
+    let caught = [
+        "run",
+        &dir,
+        "--only=m95f96847,mb2f8ae57",
+        "--format=concise",
+    ];
+    let (code, both) = mutastic(&caught);
+    assert_eq!(code, 1, "one still missed fails the run: {both}");
+    assert!(
+        both.contains("\n [CAUGHT] m95f96847 is caught by "),
+        "{both}"
+    );
+    let (code, alone) = mutastic(&["run", &dir, "--only=m95f96847", "--format=jsonl"]);
+    assert_eq!(code, 0, "{alone}");
+    assert_eq!(events(&alone).pop().unwrap()["passed"], true);
+}
+
 /// A copy of a fixture this test process has to itself, to change.
 fn copy_of(name: &str, label: &str) -> std::path::PathBuf {
     common::own_copy(name, &format!("samples-{label}"))

@@ -65,6 +65,12 @@ impl Status {
     pub fn detected(self) -> bool {
         matches!(self, Status::Killed | Status::Timeout)
     }
+
+    /// Whether a mutant asked for by id passes, as `verify` judges it: caught, skipped, or crashed
+    /// where a crash proves nothing, which leaves nothing for a test to catch.
+    pub fn settled(self) -> bool {
+        self.detected() || matches!(self, Status::Ignored | Status::RuntimeError)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -134,6 +140,9 @@ pub struct Report {
     /// Whether the build and the coverage pass ran: not when no mutant was there to run, unless
     /// `--force-coverage` asked for them anyway.
     pub built: bool,
+    /// Whether the run was of mutants asked for by id (`--only`): each one's fate is the verdict,
+    /// not a score, as the Java edition judges it.
+    pub only: bool,
 }
 
 impl Report {
@@ -163,6 +172,9 @@ impl Report {
     /// Whether the run passes: with `--fail-on-new`, when no mutant no test catches is new;
     /// otherwise when the score reaches the threshold.
     pub fn passed(&self) -> bool {
+        if self.only {
+            return self.results.iter().all(|result| result.status.settled());
+        }
         match &self.fail_on_new {
             Some(judged) => judged.passes(self),
             None => self.score().is_none_or(|score| score >= self.threshold),
@@ -498,6 +510,7 @@ pub fn run(
         comparison: None,
         fail_on_new: None,
         built: true,
+        only: !options.only.is_empty(),
     })
 }
 
@@ -568,6 +581,7 @@ fn nothing_to_run(
         comparison: None,
         fail_on_new: None,
         built: false,
+        only: !options.only.is_empty(),
     }
 }
 

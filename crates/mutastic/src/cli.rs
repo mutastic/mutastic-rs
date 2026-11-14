@@ -1239,8 +1239,7 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, String> {
                 result.reason.as_deref().unwrap_or("crash")
             ),
         };
-        settled &= result.status.detected()
-            || matches!(result.status, Status::Ignored | Status::RuntimeError);
+        settled &= result.status.settled();
         stdout_line!("mutastic: {} {fate}", mutant.id);
     }
     Ok(if settled {
