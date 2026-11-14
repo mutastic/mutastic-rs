@@ -9,6 +9,7 @@ use std::path::Path;
 use serde_json::{json, Value};
 
 use super::{Status, View};
+use crate::commands::DOCS;
 use crate::engine::{MutantResult, Report};
 
 /// The viewer the HTML report embeds: mutation-testing-elements 3.9.0, unchanged, as the Java
@@ -104,7 +105,77 @@ pub fn json(report: &Report) -> Value {
             "initialRun": report.coverage.as_millis() as u64,
             "mutation": report.took.saturating_sub(report.coverage).as_millis() as u64,
         },
+        "mutastic": run(&view),
     })
+}
+
+/// What mutastic knows of the run beyond the report schema (`report/v1`, under `mutastic`): the
+/// commands its output gives for a mutant, with `<id>` for the mutant's id, where its docs are,
+/// and how the run ended, as `run-finished` says it.
+fn run(view: &View) -> Value {
+    let report = view.report;
+    let command = |verb: &str| super::mutant_command(verb, "<id>", &report.project.given);
+    let mut operators = serde_json::Map::new();
+    for result in &report.results {
+        let mutant = view.mutant(result);
+        let page = crate::operator_docs::url(mutant.operator)
+            .and_then(|url| url.strip_prefix(DOCS).map(str::to_string));
+        if let Some(page) = page {
+            operators.insert(mutator_name(mutant.operator).to_string(), json!(page));
+        }
+    }
+    operators.sort_keys();
+    json!({
+        "edition": super::EDITION,
+        "commands": {
+            "verify": command("verify"),
+            "run": command("run"),
+            "ignore": command("ignore"),
+            "propose": command("propose"),
+        },
+        "docsBase": DOCS,
+        "operatorDocs": operators,
+        "score": report.score().map_or(Value::Null, |s| json!(super::round1(s))),
+        "threshold": number(report.threshold),
+        "passed": report.passed(),
+        "toolchain": { "name": "rustc", "version": report.rustc },
+        "startedAt": utc(report.started),
+    })
+}
+
+/// `boundary` for `mutastic/boundary`: the report schema's `mutatorName`.
+fn mutator_name(operator: &str) -> &str {
+    operator.strip_prefix("mutastic/").unwrap_or(operator)
+}
+
+/// `2026-11-13T20:34:31Z`: a time in UTC, to the second.
+fn utc(time: std::time::SystemTime) -> String {
+    let seconds = time
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    let (days, rest) = (seconds / 86_400, seconds % 86_400);
+    // Days since 1970-01-01 to a date in the proleptic Gregorian calendar (Howard Hinnant's
+    // `civil_from_days`), in 400-year eras that start on 1 March.
+    let z = days + 719_468;
+    let era = z / 146_097;
+    let day_of_era = z % 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let shifted_month = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * shifted_month + 2) / 5 + 1;
+    let month = if shifted_month < 10 {
+        shifted_month + 3
+    } else {
+        shifted_month - 9
+    };
+    let year = year_of_era + era * 400 + u64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+        rest / 3600,
+        rest % 3600 / 60,
+        rest % 60
+    )
 }
 
 /// A whole number as one, as the Java edition writes its integer threshold.
@@ -146,7 +217,7 @@ fn mutant_entry(view: &View, result: &MutantResult) -> Value {
     let (range, replacement) = mutant.claim();
     let mut entry = json!({
         "id": mutant.id,
-        "mutatorName": mutant.operator.strip_prefix("mutastic/").unwrap_or(mutant.operator),
+        "mutatorName": mutator_name(mutant.operator),
         "replacement": replacement,
         "description": advice.change,
         "location": {
@@ -165,7 +236,57 @@ fn mutant_entry(view: &View, result: &MutantResult) -> Value {
     }
     entry["testsCompleted"] = json!(result.tests_run);
     entry["duration"] = json!(result.took.as_millis() as u64);
+    let more = mutant_more(view, result, &advice);
+    if !more.is_empty() {
+        entry["mutastic"] = Value::Object(more);
+    }
     entry
+}
+
+/// What mutastic knows of a mutant beyond the report schema, as its card and its event say it:
+/// where it is, and for a miss, the card's evidence and fix and the test to add. Only what there
+/// is.
+fn mutant_more(
+    view: &View,
+    result: &MutantResult,
+    advice: &crate::words::Advice,
+) -> serde_json::Map<String, Value> {
+    let mutant = view.mutant(result);
+    let missed = result.status == Status::Survived;
+    let mut more = serde_json::Map::new();
+    more.insert(
+        "method".into(),
+        json!(super::qualified(&view.report.found, mutant)),
+    );
+    if missed && !advice.notes.is_empty() {
+        more.insert("evidence".into(), json!(advice.notes));
+    }
+    if missed {
+        more.insert("fix".into(), json!(advice.help));
+    }
+    if let Some(inputs) = super::inputs(result) {
+        more.insert("inputs".into(), inputs);
+    }
+    if let Some((mut test, found)) = missed.then(|| super::suggested(view, result)).flatten() {
+        let found = found.unwrap_or_default();
+        // The value of each of the function's own parameters, by name, as the call passes it.
+        let arguments: serde_json::Map<String, Value> = found["parameters"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .zip(found["arguments"].as_array().into_iter().flatten())
+            .map(|(name, value)| (name.to_string(), value.clone()))
+            .collect();
+        if !arguments.is_empty() {
+            test["arguments"] = Value::Object(arguments);
+        }
+        more.insert("suggestedTest".into(), test);
+    }
+    if let Some(near) = mutant.near_unsafe {
+        more.insert("nearUnsafe".into(), json!(near));
+    }
+    more
 }
 
 /// `{"line": 26, "column": 18}` for a byte offset: 1-based, the column in characters.
@@ -182,34 +303,49 @@ fn status_reason(result: &MutantResult, headline: &str) -> String {
     match result.status {
         Status::Ignored | Status::RuntimeError => result.reason.clone().unwrap_or_default(),
         Status::Killed => result.killed_with.clone().unwrap_or_default(),
-        Status::Survived => crate::words::plain(headline),
+        Status::Survived => headline.to_string(),
         Status::Timeout => "the tests didn't finish in time".into(),
         Status::NoCoverage => "no test reaches this line".into(),
     }
 }
 
-/// The tests, by the module that holds them: `pricing::tests` → its tests.
+/// The tests, by the file that holds them, relative to `projectRoot`, as the Java edition keys
+/// them: each file's text, and its tests, with where each is declared when that's known. A test no
+/// target of the package holds is under its module's name, `tests`, with no text.
 fn test_files(report: &Report) -> Value {
-    let mut by_module: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for result in &report.results {
-        for test in &result.covered_by {
-            let module = test.rsplit_once("::").map_or("", |(module, _)| module);
-            by_module
-                .entry(module.to_string())
-                .or_default()
-                .push(test.clone());
-        }
+    let tests: std::collections::BTreeSet<&String> = report
+        .results
+        .iter()
+        .flat_map(|result| &result.covered_by)
+        .collect();
+    let mut by_file: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    for id in tests {
+        let mut test = json!({ "id": id, "name": id.rsplit("::").next().unwrap_or(id) });
+        let file = match crate::test_files::place(&report.project, id) {
+            Some(place) => {
+                if let Some((line, column)) = place.at {
+                    test["location"] = json!({ "start": { "line": line, "column": column } });
+                }
+                crate::workspace::slashed(&place.file)
+            }
+            None => id
+                .rsplit_once("::")
+                .map_or("", |(module, _)| module)
+                .to_string(),
+        };
+        by_file.entry(file).or_default().push(test);
     }
-    by_module
+    by_file
         .into_iter()
-        .map(|(module, mut tests)| {
-            tests.sort();
-            tests.dedup();
-            let tests: Vec<Value> = tests
-                .iter()
-                .map(|id| json!({ "id": id, "name": id.rsplit("::").next().unwrap_or(id) }))
-                .collect();
-            (module, json!({ "tests": tests }))
+        .map(|(file, tests)| {
+            let mut entry = json!({ "tests": tests });
+            let path = Path::new(&file);
+            if path.extension().is_some_and(|extension| extension == "rs") {
+                if let Ok(source) = std::fs::read_to_string(report.project.workspace.join(path)) {
+                    entry["source"] = json!(source);
+                }
+            }
+            (file, entry)
         })
         .collect::<serde_json::Map<_, _>>()
         .into()
@@ -236,4 +372,18 @@ fn escape(text: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_time_is_written_in_utc() {
+        let at = |seconds| utc(std::time::UNIX_EPOCH + std::time::Duration::from_secs(seconds));
+        assert_eq!(at(0), "1970-01-01T00:00:00Z");
+        assert_eq!(at(951_782_400), "2000-02-29T00:00:00Z");
+        assert_eq!(at(1_794_601_271), "2026-11-13T20:21:11Z");
+        assert_eq!(at(4_102_444_799), "2099-12-31T23:59:59Z");
+    }
 }

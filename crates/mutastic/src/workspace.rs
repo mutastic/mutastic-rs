@@ -20,6 +20,10 @@ pub struct Project {
     pub package_dir: PathBuf,
     /// Crate roots of the package's library and binaries, relative to the workspace.
     pub roots: Vec<PathBuf>,
+    /// Every target of the package, whose tests a run may list: its name, whether it's the
+    /// library, and its crate root, relative to the workspace (`pricing`, false,
+    /// `tests/pricing.rs`).
+    pub targets: Vec<Target>,
     /// The package's library's crate name (`semver`), or its first binary's.
     pub crate_name: String,
     /// The package's Rust edition, `2021`.
@@ -64,6 +68,14 @@ impl Project {
         };
         format!("cargo {words}{manifest} -p {}{after}", self.package)
     }
+}
+
+/// A target of the package: its name, whether it's the library, and its crate root.
+#[derive(Clone, Debug)]
+pub struct Target {
+    pub name: String,
+    pub lib: bool,
+    pub root: PathBuf,
 }
 
 /// What `cargo metadata` says of the workspace that holds a directory: its root, its target
@@ -188,6 +200,7 @@ pub fn read(dir: &str) -> Result<Project, String> {
             .unwrap_or(real)
     };
     let mut roots = Vec::new();
+    let mut targets = Vec::new();
     let mut crate_name = String::new();
     for target in package["targets"].as_array().cloned().unwrap_or_default() {
         let kinds: Vec<&str> = target["kind"]
@@ -201,6 +214,11 @@ pub fn read(dir: &str) -> Result<Project, String> {
             ));
         }
         let is_lib = kinds.iter().any(|kind| kind.ends_with("lib"));
+        targets.push(Target {
+            name: target["name"].as_str().unwrap_or_default().to_string(),
+            lib: is_lib,
+            root: relative(Path::new(target["src_path"].as_str().unwrap_or_default())),
+        });
         if is_lib || kinds.contains(&"bin") {
             let src = PathBuf::from(target["src_path"].as_str().unwrap_or_default());
             roots.push(relative(&src));
@@ -223,6 +241,7 @@ pub fn read(dir: &str) -> Result<Project, String> {
         target,
         package: package["name"].as_str().unwrap_or_default().to_string(),
         roots,
+        targets,
         crate_name,
         edition: package["edition"].as_str().unwrap_or("2021").to_string(),
         features: crate::cfg::default_features(&package["features"]),

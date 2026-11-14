@@ -740,7 +740,7 @@ fn child_modules(
     children
 }
 
-fn path_attribute(module: &ast::Module) -> Option<String> {
+pub(crate) fn path_attribute(module: &ast::Module) -> Option<String> {
     module.attrs().find_map(|attr| {
         let text = attr.syntax().text().to_string();
         let inner = text.strip_prefix("#[")?.strip_suffix(']')?.trim();

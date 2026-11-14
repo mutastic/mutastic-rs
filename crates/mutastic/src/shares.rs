@@ -490,6 +490,7 @@ impl Shares {
                 "debug_assertions": profile["debugAssertions"],
             }),
             started_at: engine::clock(),
+            started: std::time::SystemTime::now(),
             reports: Vec::new(),
             stale_ignores,
             scope: None,

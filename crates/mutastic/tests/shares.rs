@@ -107,6 +107,11 @@ fn untimed_text(text: &str) -> String {
 fn untimed_report(file: &Path) -> Value {
     let mut report: Value = serde_json::from_str(&std::fs::read_to_string(file).unwrap()).unwrap();
     report.as_object_mut().unwrap().remove("performance");
+    // When the run started: a run put together from shares starts when they're put together.
+    report["mutastic"]
+        .as_object_mut()
+        .unwrap()
+        .remove("startedAt");
     for file in report["files"].as_object_mut().unwrap().values_mut() {
         for mutant in file["mutants"].as_array_mut().unwrap() {
             let fields = mutant.as_object_mut().unwrap();

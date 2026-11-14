@@ -7,6 +7,16 @@ newest come first.
 
 ### Additions
 
+- **`mutation.json` says what the cards say.** A `mutastic` key at its top level gives the run's
+  edition, the commands its output gives for a mutant (with `<id>`), where its docs are, its
+  score, threshold, whether it passed, its toolchain and when it started; one on each mutant gives
+  its function (`Pricing::discount()`), and for a miss the card's evidence and fix, the inputs seen
+  and the test to add, with the value it passes each parameter. Both editions write the same,
+  described by the schema `report/v1`, so one HTML report can read either. `testFiles` keys the
+  tests by the file each is written in (`tests/pricing.rs`), with its text and where each test is
+  declared, as the Java edition does, where it keyed them by module. A miss's `statusReason`
+  keeps the headline's backticks. Tools that read the report schema read it as before. See
+  [What mutastic adds](docs/reference/reports.md#what-mutastic-adds).
 - **A run with no mutant to run builds nothing and runs no test.** `mutastic run --since=HEAD` on
   a clean tree took a build and a pass of every test, a minute and more on a big crate, to say
   there was nothing to measure. When no mutant is there to run (no changed lines, changed lines
