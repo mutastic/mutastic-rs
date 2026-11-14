@@ -57,8 +57,8 @@ pub fn built(callable: &Callable, covered_by: &[String]) -> Option<Built> {
         return None;
     }
     covered_by.iter().find_map(|test| {
-        let name = test.rsplit("::").next()?;
-        let body = fn_body(tests, name)?;
+        // A generated case, `adds::case_1`, is written as the function a segment before it names.
+        let body = test.rsplit("::").find_map(|name| fn_body(tests, name))?;
         let values = first_made(body, &opener, closer, fields.map(Vec::as_slice), arity)?;
         Some(Built {
             test: test.clone(),
@@ -797,6 +797,11 @@ mod tests {
             })
         );
         assert_eq!(built(&callable, &["tests::gone".to_string()]), None);
+        // A generated case, rstest's or test-case's, is written as its function.
+        assert_eq!(
+            built(&callable, &["tests::small_orders::case_1".to_string()]).map(|made| made.values),
+            Some(vec![50])
+        );
         let literal = Callable {
             receiver: Some(Receiver {
                 type_name: "Delivery".into(),
