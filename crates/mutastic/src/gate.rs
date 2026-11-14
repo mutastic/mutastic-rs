@@ -10,7 +10,9 @@
 //! task.
 //!
 //! With `--hook=claude`, each reads a Claude Code hook's input on stdin and answers as a hook does:
-//! `open` once per session, `check` with a block and its reason, or a message for the person.
+//! `open` once per session, `check` with a block and its reason, or a message for the person. An
+//! ignore the person accepts between turns, after a check let the agent stop and before the next
+//! prompt, joins where the task starts; one made while the agent has the turn stays the agent's.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -38,6 +40,9 @@ pub struct State {
     pub tree: String,
     /// The tests that failed at a check since the gate opened, each with its body's fingerprint.
     pub red: BTreeMap<String, String>,
+    /// The ignores when a hooked check last let the agent stop, until the next prompt: `None` while
+    /// the agent has the turn. What's ignored after it is the person's, made between turns.
+    pub stopped: Option<BTreeSet<String>>,
 }
 
 impl State {
@@ -52,13 +57,8 @@ impl State {
             match key {
                 "session" => state.session = value,
                 "base" => state.base = value,
-                "ignored" => {
-                    state.ignored = value
-                        .split(',')
-                        .filter(|id| !id.is_empty())
-                        .map(str::to_string)
-                        .collect()
-                }
+                "ignored" => state.ignored = ids(&value),
+                "stopped" => state.stopped = Some(ids(&value)),
                 "tests" => state.shape.tests = value.parse().unwrap_or(0),
                 "disabled" => state.shape.disabled = value.parse().unwrap_or(0),
                 "blocks" => state.blocks = value.parse().unwrap_or(0),
@@ -87,6 +87,12 @@ impl State {
             format!("blocks={}", self.blocks),
             format!("tree={}", self.tree),
         ];
+        if let Some(stopped) = &self.stopped {
+            lines.push(format!(
+                "stopped={}",
+                stopped.iter().cloned().collect::<Vec<_>>().join(",")
+            ));
+        }
         for (test, body) in &self.red {
             lines.push(format!("{RED}{test}={body}"));
         }
@@ -98,10 +104,38 @@ impl State {
         std::fs::remove_file(work.join(FILE)).is_ok()
     }
 
+    /// A new prompt, with what's ignored `now`: the ignores the person made between turns, after the
+    /// agent stopped, are the task's to start from, as those there when it opened are; one the
+    /// agent made in its turn stays the agent's, whatever the person says next. With no stop since
+    /// the last prompt, the agent still has the turn, and nothing changes.
+    pub fn prompted(&self, now: &BTreeSet<String>) -> State {
+        let Some(stopped) = &self.stopped else {
+            return self.clone();
+        };
+        State {
+            ignored: now
+                .iter()
+                .filter(|id| self.ignored.contains(*id) || !stopped.contains(*id))
+                .cloned()
+                .collect(),
+            stopped: None,
+            ..self.clone()
+        }
+    }
+
     /// Whether the agent was sent back, and has changed nothing since.
     pub fn unchanged_since_blocked(&self, now: &str) -> bool {
         self.blocks > 0 && !self.tree.is_empty() && self.tree == now
     }
+}
+
+/// Ids as [`FILE`] keeps them: separated by commas.
+fn ids(value: &str) -> BTreeSet<String> {
+    value
+        .split(',')
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 /// How many tests the package's sources have, and how many of them are ignored.
@@ -495,12 +529,35 @@ mod tests {
             blocks: 2,
             tree: "fedc".into(),
             red: [("tests::adds".to_string(), "00ff".to_string())].into(),
+            stopped: Some(["m1".to_string()].into()),
         };
         state.write(&work).unwrap();
         assert_eq!(State::read(&work), Some(state));
         assert!(State::close(&work));
         assert_eq!(State::read(&work), None);
         std::fs::remove_dir_all(&work).ok();
+    }
+
+    /// Only what's ignored between turns, after the agent stopped, joins where the task starts: an
+    /// ignore the agent made in its turn stays its own after the next prompt, and with no stop since
+    /// the last prompt, the agent's turn goes on.
+    #[test]
+    fn only_an_ignore_made_between_turns_joins_the_start() {
+        let set = |ids: &[&str]| ids.iter().map(|id| id.to_string()).collect::<BTreeSet<_>>();
+        let state = State {
+            ignored: set(&["m0", "gone"]),
+            stopped: Some(set(&["m0", "gone", "agents"])),
+            ..State::default()
+        };
+        let now = set(&["m0", "agents", "persons"]);
+        let prompted = state.prompted(&now);
+        assert_eq!(prompted.ignored, set(&["m0", "persons"]));
+        assert_eq!(prompted.stopped, None);
+        assert_eq!(
+            prompted.prompted(&now),
+            prompted,
+            "no stop since: still the agent's turn"
+        );
     }
 
     #[test]

@@ -120,7 +120,7 @@ mutastic baseline --prune
 
 `mutastic gate open [dir]`
 
-Start gating a coding agent's task: keep where it starts. Keeps the commit the task starts from, its ignores, and how many tests run and are ignored, in target/mutastic, so gate check can say whether the task is done. With --hook, once for each of the agent's sessions.
+Start gating a coding agent's task: keep where it starts. Keeps the commit the task starts from, its ignores, and how many tests run and are ignored, in target/mutastic, so gate check can say whether the task is done. With --hook, once for each of the agent's sessions; at a later prompt, it takes in the ignores made since the agent stopped.
 
 ```sh
 mutastic gate open

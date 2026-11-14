@@ -222,9 +222,10 @@ When a mutant's case can't happen, the agent proposes an ignore, with its reason
 `.mutastic/proposals.yaml`. It counts as missed until you accept it, but it doesn't hold the gate,
 which names it as waiting on a person. Read the reason against the code.
 
-To accept it, run `mutastic ignore --accept ID` yourself, not the agent. Do it when you're done
-with the session, or in the pull request's review: the gate counts the ignores from the session's
-first prompt, so one accepted before you prompt again counts as the task's own, and holds it.
+To accept it, run `mutastic ignore --accept ID` yourself, not the agent. Do it any time between
+turns, once the agent has stopped and before you prompt again, or leave it to the pull request's
+review. The gate takes in what you accepted at your next prompt. An ignore added while the agent
+has the turn counts as the task's own, whoever added it, and holds the gate.
 
 To say no, run `mutastic ignore --remove ID`, and tell the agent why, so it writes the test:
 

@@ -1437,6 +1437,143 @@ fn the_gate_holds_a_task_to_its_changed_lines() {
     assert!(out.contains("mutastic gate: closed\n"), "{out}");
 }
 
+/// An ignore the person accepts between turns, after the gate let the agent stop and before their
+/// next prompt, is the task's to start from: the next check passes. One the agent accepts in its
+/// turn, or writes into `.mutastic/ignores.yaml` itself, stays the agent's, after the person's next
+/// prompt too: re-reading the ignores at every prompt would pass whatever the agent ignored.
+#[test]
+fn the_gate_takes_an_ignore_the_person_accepts_between_turns() {
+    for who in ["person", "agent", "file"] {
+        let dir = copy_of("pricing", &format!("gate-accept-{who}"));
+        let git = |args: &[&str]| {
+            let output = Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "git {args:?}");
+        };
+        git(&["init", "-q"]);
+        std::fs::write(dir.join(".gitignore"), "target\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "start"]);
+        let hook = |action: &str| -> Value {
+            let (code, out) = mutastic_with_input(
+                &dir,
+                &["gate", action, ".", "--hook=claude"],
+                r#"{"session_id": "s1"}"#,
+            );
+            assert_eq!(code, 0, "{out}");
+            if action == "open" {
+                return Value::Null;
+            }
+            serde_json::from_str(out.trim()).unwrap()
+        };
+        hook("open");
+
+        // The agent's turn: a change no test checks, its mutants proposed, and the gate lets it stop.
+        let lib = dir.join("src/lib.rs");
+        let text = std::fs::read_to_string(&lib).unwrap();
+        std::fs::write(
+            &lib,
+            format!("{text}\npub fn double(x: u32) -> u32 {{\n    x * 2\n}}\n"),
+        )
+        .unwrap();
+        let (_, ids) = mutastic_in(&dir, &["mutants"]);
+        let ids: Vec<String> = ids
+            .lines()
+            .filter(|line| line.contains(" in double"))
+            .filter_map(|line| line.split_whitespace().next().map(str::to_string))
+            .collect();
+        assert!(!ids.is_empty(), "double has mutants");
+        assert_eq!(hook("check")["decision"], "block");
+        for id in &ids {
+            let (code, out) = mutastic_in(
+                &dir,
+                &[
+                    "ignore",
+                    id,
+                    "--propose",
+                    "--as=accepted-risk",
+                    "--reason=only doubles",
+                ],
+            );
+            assert_eq!(code, 0, "{out}");
+        }
+        let accept_all = || {
+            for id in &ids {
+                let (code, out) = mutastic_in(&dir, &["ignore", "--accept", id]);
+                assert_eq!(code, 0, "{out}");
+            }
+        };
+        let proposals = dir.join(".mutastic/proposals.yaml");
+        match who {
+            "agent" => accept_all(),
+            // The agent moves the proposals into the ignores by hand, rather than accept them.
+            "file" => {
+                std::fs::rename(&proposals, dir.join(".mutastic/ignores.yaml")).unwrap();
+            }
+            _ => {}
+        }
+        let stop = hook("check");
+        if who == "person" {
+            assert!(
+                stop["systemMessage"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("mutastic gate: passed"),
+                "{stop}"
+            );
+            // Between turns: the person accepts what the agent proposed, and prompts again.
+            accept_all();
+        } else {
+            // Held; sent back, the agent changes nothing, so it's over to the person, with the
+            // ignores still the agent's.
+            assert_eq!(stop["decision"], "block", "{who}: {stop}");
+            assert!(
+                stop["reason"]
+                    .as_str()
+                    .unwrap()
+                    .contains("itself, and whether a mutant is worth a test"),
+                "{who}: {stop}"
+            );
+            let handed = hook("check");
+            assert!(
+                handed["systemMessage"]
+                    .as_str()
+                    .unwrap()
+                    .contains("so it's over to you"),
+                "{who}: {handed}"
+            );
+        }
+        hook("open");
+        let next = hook("check");
+        if who == "person" {
+            assert!(
+                next["systemMessage"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with("mutastic gate: passed"),
+                "{next}"
+            );
+        } else {
+            assert_eq!(next["decision"], "block", "{who}: {next}");
+            assert!(
+                next["reason"]
+                    .as_str()
+                    .unwrap()
+                    .contains(&format!("the task ignored {}", ids[0])),
+                "{who}: {next}"
+            );
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}
+
 /// The mutants of one line, from `mutastic mutants`: id, then where it is, as `src/lib.rs:6:5`.
 fn mutants_where(dir: &Path) -> Vec<(String, String)> {
     let (code, out) = mutastic_in(dir, &["mutants"]);
