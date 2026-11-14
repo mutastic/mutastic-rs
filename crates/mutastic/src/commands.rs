@@ -1,5 +1,5 @@
 //! The commands and options `mutastic` takes, declared once. The parser accepts an option only as
-//! declared here, and only on the commands it names; `gate <action> --help` is written from these;
+//! declared here, and only on the commands it names; `--help` is written from these ([`crate::help`]);
 //! and so is `docs/commands.json`, the docs site's reference pages, in the Java edition's shape
 //! (`mutastic.commands/v1`). The docs test fails while the committed copy differs from
 //! [`model`]: `MUTASTIC_DOCS_WRITE=1 cargo test --test docs` writes it again.
@@ -121,9 +121,9 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "run",
         page: "run",
-        synopsis: "mutastic run [dir] [options]",
+        synopsis: "mutastic run [DIR] [OPTIONS]",
         summary: "Mutate the package and run its tests against each mutant",
-        detail: "dir is the package's directory, here unless given; in a workspace, a member's. The \
+        detail: "DIR is the package's directory, here unless given; in a workspace, a member's. The \
                  run passes when the score reaches the threshold, or with --fail-on-new when every \
                  mutant no test catches is in the baseline. A full run, one without --only, \
                  writes report files, and offers the commands to work on each missed mutant. Its \
@@ -146,7 +146,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "verify",
         page: "verify",
-        synopsis: "mutastic verify <id>[,<id>…] [<id>…] [dir]",
+        synopsis: "mutastic verify ID... [DIR]",
         summary: "Run mutants' tests: it passes when they catch every one not skipped",
         detail: "How a fix is proved: each missed mutant offers it as \"done when\", and a card \
                  with several mutants names them all, split by commas; spaces split them too, and \
@@ -164,7 +164,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "explain",
         page: "explain",
-        synopsis: "mutastic explain <id> [dir]",
+        synopsis: "mutastic explain ID [DIR]",
         summary: "Everything known of one mutant, with its tests run",
         detail: "Its card when it's missed, or what became of it otherwise, then what the change \
                  is, its operator, how its id is made, where it is, and how the last run of every \
@@ -179,7 +179,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "ignore",
         page: "ignore",
-        synopsis: "mutastic ignore <id> [dir] --reason=<why>",
+        synopsis: "mutastic ignore ID [DIR] --reason=WHY",
         summary: "Record a decision not to test one mutant",
         detail: "It goes in .mutastic/ignores.yaml in the package's directory with its line and \
                  the reason, to commit and review, and lapses when that line changes: the mutant \
@@ -204,7 +204,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "next",
         page: "next",
-        synopsis: "mutastic next [dir] [options]",
+        synopsis: "mutastic next [DIR] [OPTIONS]",
         summary: "Show the missed mutant most worth a test first, and why",
         detail: "The missed mutants as a queue, one line's at a time, in the order a run ranks \
                  them: its card, why it's first, and the command that says when it's done. --top \
@@ -226,7 +226,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "baseline",
         page: "baseline",
-        synopsis: "mutastic baseline [dir] [options]",
+        synopsis: "mutastic baseline [DIR]",
         summary: "Record every mutant missed now, so later misses are told from them",
         detail: "Runs the mutants and writes each one missed or not covered, by id, to \
                  .mutastic/baseline.yaml in the package's directory, to commit. From then on a \
@@ -241,7 +241,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "gate open",
         page: "gate-open",
-        synopsis: "mutastic gate open [dir]",
+        synopsis: "mutastic gate open [DIR]",
         summary: "Start gating a coding agent's task: keep where it starts",
         detail: "Keeps the commit the task starts from, its ignores, and how many tests run and \
                  are ignored, in target/mutastic, so gate check can say whether the task is done. \
@@ -255,7 +255,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "gate check",
         page: "gate-check",
-        synopsis: "mutastic gate check [dir]",
+        synopsis: "mutastic gate check [DIR]",
         summary: "Say whether a gated task is done: its changed lines' mutants caught",
         detail: "Runs the tests and the mutants on the lines changed since gate open: the tests \
                  run even with no mutant on those lines, and only a task that changed nothing \
@@ -274,7 +274,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "gate close",
         page: "gate-close",
-        synopsis: "mutastic gate close [dir]",
+        synopsis: "mutastic gate close [DIR]",
         summary: "Stop gating a task: forget where it started",
         detail: "The next gate open starts a new task.",
         exits: "0 whether a task was open or not: it says which, or with --hook says nothing.",
@@ -284,7 +284,7 @@ pub const COMMANDS: &[Command] = &[
     Command {
         name: "mutants",
         page: "mutants",
-        synopsis: "mutastic mutants [dir]",
+        synopsis: "mutastic mutants [DIR]",
         summary: "List the mutants, without building or running anything",
         detail: "One line each: its id, place, operator, the change, and the function it's in. A \
                  mutant near unsafe code says why it's marked, and the last lines count what was \
@@ -614,7 +614,7 @@ pub const OPTIONS: &[CliOption] = &[
         kind: Kind::Value,
         group: "Editions",
         choices: &["rust", "java"],
-        help: "Which edition runs; unless set, the build file in dir, or the nearest above it: \
+        help: "Which edition runs; unless set, the build file in DIR, or the nearest above it: \
                Cargo.toml for rust, pom.xml, build.gradle or settings.gradle for java",
         commands: EVERY_COMMAND,
         environment: "",
@@ -804,34 +804,6 @@ pub fn accepts(command: Option<&Command>, name: &str, value: Option<&str>) -> Re
         return Err(format!("--{name} takes no value"));
     }
     Ok(())
-}
-
-/// `gate <action> --help`: the command, what it does, its options, and how it exits.
-pub fn help(command: &Command) -> String {
-    let taken: Vec<&CliOption> = options_for(command.name)
-        .into_iter()
-        .filter(|option| option.name != "edition")
-        .collect();
-    // Each option's text starts in one column, two spaces after the longest.
-    let width = taken
-        .iter()
-        .map(|option| option.synopsis().chars().count())
-        .max()
-        .unwrap_or(0)
-        + 2;
-    let options: Vec<String> = taken
-        .iter()
-        .map(|option| format!("  {:<width$}{}", option.synopsis(), option.help))
-        .collect();
-    let listed = if options.is_empty() {
-        String::new()
-    } else {
-        format!("Options:\n{}\n\n", options.join("\n"))
-    };
-    format!(
-        "{}\n\n{}. {}\n\n{listed}Exit status: {}",
-        command.synopsis, command.summary, command.detail, command.exits
-    )
 }
 
 /// `commands.json`: the commands and options as the docs site's reference pages read them, in the

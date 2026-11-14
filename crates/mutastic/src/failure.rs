@@ -258,8 +258,8 @@ mod tests {
             ("m00000000 isn't a mutant of pricing. To see its mutants:\n  mutastic mutants .", "unknown-id"),
             ("mutastic.yaml line 1: expected extends:", "config"),
             ("--since needs a git repository", "git"),
-            ("run doesn't take --top: mutastic run [dir] [options]", "option-not-taken"),
-            ("run doesn't take explain m1: mutastic run [dir] [options]", "extra-words"),
+            ("run doesn't take --top: mutastic run [DIR] [OPTIONS]", "option-not-taken"),
+            ("run doesn't take explain m1: mutastic run [DIR] [OPTIONS]", "extra-words"),
             ("disk full", OTHER),
         ] {
             assert_eq!(code(message), expected, "{message}");

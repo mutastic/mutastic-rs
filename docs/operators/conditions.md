@@ -252,6 +252,7 @@ pub fn share(total: u32, parts: NonZeroU32) -> u32 {
     "method": "share"
   },
   "mutation": {
+    "original": "parts.get() == 0",
     "replacement": "false",
     "description": "`parts.get() == 0` is always false",
     "applied": {

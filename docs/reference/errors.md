@@ -18,6 +18,20 @@ mutant, and 4 for a bug in mutastic itself. The Rust edition keeps 2 for both un
 script that wraps `mutastic` should treat any status above 1 as "couldn't run", and read the event's
 `code` for which. See [Differences from the Java edition](../differences-from-java.md).
 
+## The same error in the Java edition
+
+Most codes are the same in both editions. Two name a failure the Java edition names another way,
+so a script that reads both should treat each pair as one kind:
+
+| Rust edition | Java edition | The error |
+|---|---|---|
+| `no-cargo` | `no-build-tool` | No build tool to run the build with |
+| `workspace-root` | `module-without-java`, at a build's root | The root of a workspace (a build of modules), which mutastic doesn't test as one; it names the packages to test |
+
+Both editions keep these names for 1.x, as renaming either would break a script that reads it. A
+new edition uses the general name of each pair: `no-build-tool`, and `build-root` for the root of a
+build of modules.
+
 ## `no-directory`
 
 The directory named isn't there. mutastic says where it looked, offers a package or directory whose
@@ -140,7 +154,7 @@ mutastic verify mb2f8ae57 fixtures/pricing --threshold=70
 
 <!-- output: errors/option-not-taken -->
 ```text
-mutastic: verify doesn't take --threshold: mutastic verify <id>[,<id>…] [<id>…] [dir]
+mutastic: verify doesn't take --threshold: mutastic verify ID... [DIR]
 ```
 
 ## `extra-words`
@@ -153,7 +167,7 @@ mutastic mutants fixtures/pricing fixtures/workspace
 
 <!-- output: errors/extra-words -->
 ```text
-mutastic: mutants doesn't take fixtures/workspace: mutastic mutants [dir]
+mutastic: mutants doesn't take fixtures/workspace: mutastic mutants [DIR]
 ```
 
 ## `needs-id`
@@ -167,7 +181,7 @@ mutastic verify fixtures/pricing
 
 <!-- output: errors/needs-id -->
 ```text
-mutastic: verify needs a mutant's id, m and eight hex digits as a card shows it, and fixtures/pricing is a directory: mutastic verify <id>[,<id>…] [<id>…] [dir], as in mutastic verify m1a2b3c4d fixtures/pricing
+mutastic: verify needs a mutant's id, m and eight hex digits as a card shows it, and fixtures/pricing is a directory: mutastic verify ID... [DIR], as in mutastic verify m1a2b3c4d fixtures/pricing
 ```
 
 ## `unknown-id`

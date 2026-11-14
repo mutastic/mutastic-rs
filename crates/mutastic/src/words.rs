@@ -280,6 +280,14 @@ fn range_end(
     }
 }
 
+/// The start of the note a missed return's card gives: a caught one's mustn't.
+const RETURN_MISSED: &str = "tests reach this return, but none fails when it returns ";
+
+/// Whether a note says the mutant was missed, which only a missed mutant's card can say.
+pub fn says_missed(note: &str) -> bool {
+    note.starts_with(RETURN_MISSED)
+}
+
 fn returns(method: &str, value: &str, seen: &BTreeMap<String, Vec<i128>>) -> Advice {
     let today = match value {
         "true" => Some("false".to_string()),
@@ -287,9 +295,7 @@ fn returns(method: &str, value: &str, seen: &BTreeMap<String, Vec<i128>>) -> Adv
         _ if value.starts_with('1') => Some(format!("0{}", &value[1..])),
         _ => None,
     };
-    let mut notes = vec![format!(
-        "tests reach this return, but none fails when it returns `{value}`"
-    )];
+    let mut notes = vec![format!("{RETURN_MISSED}`{value}`")];
     notes.extend(inputs_seen(seen));
     let help = match (&today, value) {
         (Some(was), _) => format!("add a test where {method} returns `{was}` here, and assert it"),

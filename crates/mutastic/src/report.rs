@@ -2573,6 +2573,10 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
     let function = &view.report.found.functions[mutant.function];
     let advice = view.advice(result);
     let mut mutation = json!({});
+    let text = view.text(mutant);
+    // What the claim replaces, as written: a returned expression, a condition, a body.
+    let (claimed, claimed_with) = mutant.claim();
+    let replaced = &text[claimed];
     match &mutant.change {
         Change::Boundary { before, after }
         | Change::Reversed { before, after }
@@ -2581,14 +2585,20 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
             mutation["original"] = json!(before);
             mutation["replacement"] = json!(after);
         }
-        Change::Returns { value } => mutation["replacement"] = json!(value),
+        Change::Returns { .. } => {
+            mutation["original"] = json!(replaced);
+            mutation["replacement"] = json!(claimed_with);
+        }
         Change::Swapped { before, after }
         | Change::Replaced { before, after }
         | Change::Compared { before, after, .. } => {
             mutation["original"] = json!(before);
             mutation["replacement"] = json!(after);
         }
-        Change::Body { value } => mutation["replacement"] = json!(value),
+        Change::Body { .. } => {
+            mutation["original"] = json!(replaced);
+            mutation["replacement"] = json!(claimed_with);
+        }
         Change::ArmRemoved { pattern } => {
             mutation["original"] = json!(pattern);
             mutation["replacement"] = json!(mutant.replacement);
@@ -2601,12 +2611,14 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
             mutation["original"] = json!(statement);
             mutation["replacement"] = json!(mutant.replacement);
         }
-        Change::Always { truth, .. } => mutation["replacement"] = json!(truth.to_string()),
+        Change::Always { .. } => {
+            mutation["original"] = json!(replaced);
+            mutation["replacement"] = json!(claimed_with);
+        }
     }
     mutation["description"] = json!(advice.change);
     // `applied` is the change as the engine makes it, and at what level: here, to the source, the
     // whole site before and after, which no other field has for every change.
-    let text = view.text(mutant);
     mutation["applied"] = json!({
         "level": "source",
         "text": format!("{} -> {}", sites_plain(&text[mutant.site.clone()]), mutant.replacement),
@@ -2840,7 +2852,13 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
     let docs = crate::operator_docs::url(mutant.operator);
     let g = frame(out, view, mutant, &advice, docs.as_deref(), style);
     before_and_after(out, &g, &view.changed_lines(mutant), style);
-    let mut notes = advice.notes.clone();
+    // A note that says no test fails is a miss's, and this mutant wasn't missed.
+    let mut notes: Vec<String> = advice
+        .notes
+        .iter()
+        .filter(|note| !crate::words::says_missed(note))
+        .cloned()
+        .collect();
     if !result.covered_by.is_empty() {
         // Whether they still pass is a miss's to say: here, only which tests reach it.
         notes.push(format!("covered by {}", names(&result.covered_by)));

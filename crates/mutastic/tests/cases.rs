@@ -421,6 +421,27 @@ fn inputs_seen_is_bounded() {
     );
     assert!(out.contains("fn add_with_a_0_and_b_1() {"), "{out}");
 }
+/// `explain` on a caught return says what caught it, never a missed card's note that no test
+/// fails when it returns that value.
+#[test]
+fn a_caught_return_has_no_missed_note() {
+    let dir = copy("explain");
+    let (_, listed) = mutastic(&dir, &["mutants", "."]);
+    let id = listed
+        .lines()
+        .find(|line| line.contains("returns 0 instead in discount"))
+        .and_then(|line| line.split_whitespace().next())
+        .unwrap()
+        .to_string();
+    let (code, out) = mutastic(&dir, &["explain", &id, "."]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains("[✓ CAUGHT] caught by rstest_tests::discounts::case_2_at_the_edge"),
+        "{out}"
+    );
+    assert!(!out.contains("none fails"), "{out}");
+    assert!(out.contains("= note: inputs seen: total = 100\n"), "{out}");
+}
 
 /// Where several cases catch a mutant, as cases written alike do, the one named is the same in
 /// every run: the first as the tests are listed, the library's before the other targets', not the

@@ -132,6 +132,7 @@ Near-unsafe mutants run differently:
     "method": "checked"
   },
   "mutation": {
+    "original": "x < 0",
     "replacement": "true",
     "description": "`x < 0` is always true",
     "applied": {
@@ -150,7 +151,7 @@ Near-unsafe mutants run differently:
     ]
   },
   "testsRun": 1,
-  "durationMs": 4
+  "durationMs": 11
 }
 ```
 
@@ -183,6 +184,7 @@ stops it. That's std's catch, not a test's, so it's a `RuntimeError` too, wherev
     "method": "positive"
   },
   "mutation": {
+    "original": "x > 0",
     "replacement": "false",
     "description": "returns `false` instead",
     "applied": {
@@ -201,7 +203,7 @@ stops it. That's std's catch, not a test's, so it's a `RuntimeError` too, wherev
     ]
   },
   "testsRun": 1,
-  "durationMs": 4
+  "durationMs": 6
 }
 ```
 

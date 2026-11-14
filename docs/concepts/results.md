@@ -65,6 +65,7 @@ crashed, not by a test's check`), and in the event stream the mutant has `caught
     "method": "guarded"
   },
   "mutation": {
+    "original": "x < 0",
     "replacement": "true",
     "description": "`x < 0` is always true",
     "applied": {
@@ -82,7 +83,7 @@ crashed, not by a test's check`), and in the event stream the mutant has `caught
     ]
   },
   "testsRun": 1,
-  "durationMs": 4
+  "durationMs": 8
 }
 ```
 
