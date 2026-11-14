@@ -16,7 +16,7 @@ newest come first.
   no mutant to run`, with no test runs row; `run-finished` has `tests` 0 and no build rounds, and `run-started` comes with the results and leaves out the `optLevel` Cargo
   didn't report. Such a run leaves the last run's record and report files as they were, unless a
   `--report` is asked for, so `explain` and the next run's comparison still read the last run
-  that measured something. The gate passes a task that changed no mutant's line as fast.
+  that measured something. The gate still runs the tests: see the fixes.
   `--force-coverage` builds and runs the tests anyway, as before, to check or time the suite. See
   [When there's nothing to run](docs/concepts/how-a-run-works.md#when-theres-nothing-to-run).
 - **An error is an event too.** In `--format=jsonl` and `--format=agent`, when mutastic can't run,
@@ -31,6 +31,13 @@ newest come first.
 
 ### Fixes
 
+- **The gate runs the tests even with no mutant on the changed lines.** Since a run with no mutant
+  to run stopped building and running the tests, a task that changed only lines with no mutant (a
+  constant, an import, a log line) passed the gate with no test run, even when it broke one. The
+  gate's run now always builds and runs the tests, as `--force-coverage` does, and a test that
+  fails holds the task as a red suite does, with the same words and the same hand-over. A task
+  that changed only files mutastic doesn't mutate (a test's data, `Cargo.toml`) runs the tests
+  too; only one that changed nothing skips them. A plain `run --since` keeps the fast path.
 - **An ignore you accept between turns doesn't hold the gate.** The gate counted the ignores from
   a session's first prompt, so a proposal you accepted and then prompted again counted as the
   task's own (`the task ignored … itself`). Now, as a hook, a check that lets the agent stop notes

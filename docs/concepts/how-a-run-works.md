@@ -132,7 +132,9 @@ mutastic run fixtures/pricing --since=HEAD
 ```
 
 Such a run leaves the last run's record and report files as they were. `--force-coverage` builds
-the crate and runs the tests anyway, to check that they pass or to time them.
+the crate and runs the tests anyway, to check that they pass or to time them. [The
+gate](../test-first-agent.md#when-it-says-its-done) always does: a change to a line with no mutant
+can still break a test, so it runs the tests unless the task changed nothing.
 
 ## Running it again
 
