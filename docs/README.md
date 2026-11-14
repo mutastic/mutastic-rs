@@ -20,6 +20,8 @@ page stands alone and links to the others by relative path.
 
 ## Concepts
 
+- [Coverage and mutants](coverage-and-mutants.md): why tests can reach every line and branch and
+  still check nothing, and what mutants find that coverage can't, measured on one crate.
 - [How a run works](concepts/how-a-run-works.md): one build for every mutant, switches, what
   happens to a mutant that doesn't compile, one run split across CI jobs, and CI that fails only
   on new misses.

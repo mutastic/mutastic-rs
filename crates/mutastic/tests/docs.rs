@@ -3,7 +3,8 @@
 //! fails while a fresh run prints anything else. A page shows its copy without colour, as GitHub
 //! can't show it; the docs site shows the captured colour.
 //! Every Rust block is either an excerpt of a fixture these runs build, word for word, the test
-//! the getting-started page adds, or the test-first pages' cycles, which this writes and runs.
+//! the getting-started page adds, or the test-first pages' cycles and the coverage page's tests,
+//! which this writes and runs.
 //! Every link between pages resolves, every `mutastic` command a page shows parses, and every id it names is a mutant of its fixture. And
 //! every missed mutant's card on the operators fixture says something true: written into the
 //! source as the card claims it, the fixture's tests still pass.
@@ -92,6 +93,7 @@ const LISTED: &[&str] = &["mutastic/regex-constant", "bigdecimal/remove-step"];
 /// Fixtures the docs may quote: each is built by a run here, so what's quoted compiles.
 const BUILT: &[&str] = &[
     "pricing",
+    "checkout",
     "operators",
     "unsafety",
     "loops",
@@ -1206,6 +1208,180 @@ fn test_first_agent(work: &Path, shown: &mut BTreeMap<String, String>) {
     shown.insert("test-first-agent/check".into(), check.stdout);
 }
 
+/// The coverage page, under `docs`, and the tests its steps change: the checkout fixture's, which
+/// check too little until the page changes them.
+const COVERAGE_PAGE: &str = "coverage-and-mutants.md";
+const CHECKOUT_TESTS: &str = "fixtures/checkout/tests/checkout.rs";
+
+/// The coverage page's steps, in order: each block marked `changed in` or `added to`, with what it
+/// marks.
+fn coverage_steps() -> Vec<(String, String)> {
+    let text = std::fs::read_to_string(docs().join(COVERAGE_PAGE)).unwrap();
+    blocks(&text)
+        .into_iter()
+        .filter_map(|b| match b.marker {
+            Some((kind, path)) if kind == "added to" || kind == "changed in" => {
+                assert_eq!(path, CHECKOUT_TESTS, "{COVERAGE_PAGE} changes {path}");
+                Some((kind, text[b.text].to_string()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// One of the coverage page's steps, made to the checkout fixture's tests as the page says: tests
+/// added go at the end of the file, and each test a change shows replaces the one of its name.
+fn coverage_step(tests: &Path, (kind, code): &(String, String)) {
+    let mut source = std::fs::read_to_string(tests).unwrap();
+    if kind == "added to" {
+        source = format!("{}\n\n{code}", source.trim_end());
+    } else {
+        for test in code.trim_end().split("\n\n") {
+            let name = cycle_test(test);
+            let at = source.find(&format!("fn {name}(")).unwrap();
+            let start = source[..at].rfind("#[test]").unwrap();
+            let end = at + source[at..].find("\n}\n").unwrap() + "\n}".len();
+            source.replace_range(start..end, test);
+        }
+    }
+    std::fs::write(tests, source).unwrap();
+}
+
+/// `cargo llvm-cov`'s summary of the checkout fixture's tests, as the coverage page runs it, from a
+/// fresh build: lcov's, which counts lines, functions and branches, and not regions, whose count
+/// changes from one compiler to the next. Where it isn't installed, nothing: CI installs it, and sets
+/// `MUTASTIC_DOCS_COVERAGE`, which makes it a failure to be without it.
+fn llvm_cov(work: &Path) -> Option<String> {
+    std::fs::remove_dir_all(work.join("fixtures/checkout/target/llvm-cov-target")).ok();
+    let output = Command::new("cargo")
+        .args([
+            "llvm-cov",
+            "--manifest-path",
+            "fixtures/checkout/Cargo.toml",
+            "--lcov",
+            "--summary-only",
+            "--remap-path-prefix",
+        ])
+        .current_dir(work)
+        .env_remove("CARGO_TARGET_DIR")
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !output.status.success() {
+        assert!(
+            std::env::var_os("MUTASTIC_DOCS_COVERAGE").is_none(),
+            "cargo llvm-cov: {stderr}"
+        );
+        eprintln!(
+            "cargo llvm-cov didn't run, so the coverage page's coverage isn't checked: {stderr}"
+        );
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// The coverage page's example. The checkout fixture's tests check too little, and the page's
+/// check the results: `cargo llvm-cov` measures the same coverage for both, and mutastic misses
+/// mutants of the first that the second catches, all but the boundary. The edge's tests catch that,
+/// and `stronger` finds what every test buying one item hides, which the page's last test catches.
+fn coverage(work: &Path, shown: &mut BTreeMap<String, String>) {
+    let steps = coverage_steps();
+    let kinds: Vec<&str> = steps.iter().map(|(kind, _)| kind.as_str()).collect();
+    assert_eq!(
+        kinds,
+        ["changed in", "added to", "added to"],
+        "{COVERAGE_PAGE}: the tests that check the results, the edge's, then the quantity's"
+    );
+    let tests = work.join(CHECKOUT_TESTS);
+    let weak = llvm_cov(work);
+    let run = ran(work, &["run", "fixtures/checkout", "--format=concise"]);
+    assert_eq!(run.code, 1, "{}", run.stdout);
+    shown.insert("coverage-and-mutants/weak".into(), run.stdout);
+    forget_last_runs(&work.join("fixtures/checkout"));
+    let full = ran(work, &["run", "fixtures/checkout"]);
+    let found = found_in(work, "checkout");
+    for (name, operator) in [
+        ("arithmetic", "mutastic/math"),
+        ("returns", "mutastic/return-value"),
+        ("calls", "mutastic/remove-void-call"),
+    ] {
+        let ids = ids_in(&found, "pay", operator);
+        let missed = card(&full.stdout, &ids)
+            .unwrap_or_else(|| panic!("no card for {operator} in pay(): {}", full.stdout));
+        shown.insert(format!("coverage-and-mutants/{name}"), missed);
+    }
+
+    coverage_step(&tests, &steps[0]);
+    let strong = llvm_cov(work);
+    if let (Some(weak), Some(strong)) = (weak, strong) {
+        assert_eq!(weak, strong, "the two sets of tests' coverage");
+        // Every line and function: as many hit as found.
+        for (found, hit) in [("LF", "LH"), ("FNF", "FNH")] {
+            let count = |key: &str| {
+                weak.lines()
+                    .find_map(|line| line.strip_prefix(&format!("{key}:")))
+                    .unwrap()
+                    .to_string()
+            };
+            assert_eq!(count(found), count(hit), "{weak}");
+        }
+        shown.insert("coverage-and-mutants/llvm-cov-weak".into(), weak);
+        shown.insert("coverage-and-mutants/llvm-cov-strong".into(), strong);
+    }
+    forget_last_runs(&work.join("fixtures/checkout"));
+    // Above the threshold, so it passes, with the one card.
+    let run = ran(work, &["run", "fixtures/checkout"]);
+    assert_eq!(run.code, 0, "{}", run.stdout);
+    let boundary = ids_in(&found, "discount", "mutastic/boundary");
+    assert!(card(&run.stdout, &boundary).is_some(), "{}", run.stdout);
+    assert_eq!(
+        plain(&run.stdout).matches("[✗ MISSED]").count(),
+        1,
+        "{}",
+        run.stdout
+    );
+    shown.insert("coverage-and-mutants/strong".into(), run.stdout);
+
+    coverage_step(&tests, &steps[1]);
+    forget_last_runs(&work.join("fixtures/checkout"));
+    let run = ran(work, &["run", "fixtures/checkout"]);
+    assert_eq!(run.code, 0, "{}", run.stdout);
+    shown.insert("coverage-and-mutants/edges".into(), run.stdout);
+
+    shown.insert(
+        "coverage-and-mutants/stronger-mutants".into(),
+        ran(
+            work,
+            &["mutants", "fixtures/checkout", "--operators=stronger"],
+        )
+        .stdout,
+    );
+    let run = ran(work, &["run", "fixtures/checkout", "--operators=stronger"]);
+    assert_eq!(run.code, 0, "{}", run.stdout);
+    let kept = ids_in(&found, "pay", "mutastic/keep-operand");
+    let done = plain(&run.stdout)
+        .lines()
+        .find_map(|line| {
+            line.trim_start()
+                .strip_prefix("done when")
+                .map(str::to_string)
+        })
+        .expect("the stronger run has a card");
+    let ids = done.split_whitespace().nth(2).unwrap().to_string();
+    assert!(kept.contains(&ids), "{ids} is keep-operand's, in pay()");
+    let text = std::fs::read_to_string(docs().join(COVERAGE_PAGE)).unwrap();
+    assert!(
+        text.contains(&format!("mutastic verify {ids} fixtures/checkout\n")),
+        "{COVERAGE_PAGE}: verify the stronger card's mutant, {ids}"
+    );
+    shown.insert("coverage-and-mutants/stronger".into(), run.stdout);
+
+    coverage_step(&tests, &steps[2]);
+    let verify = ran(work, &["verify", &ids, "fixtures/checkout"]);
+    assert_eq!(verify.code, 0, "{}", verify.stdout);
+    shown.insert("coverage-and-mutants/stronger-verify".into(), verify.stdout);
+}
+
 /// Runs the pages show as a Unix build makes them: code and tests under `cfg(unix)` are in it, and
 /// a Windows build leaves them out, so there they're run but the pages' copies are kept.
 const UNIX_BUILDS: &[&str] = &[
@@ -1515,6 +1691,11 @@ fn the_docs_show_what_an_agent_sees_test_first() {
     section("test-first-agent", &["pricing"], test_first_agent);
 }
 
+#[test]
+fn the_docs_show_what_coverage_misses() {
+    section("coverage", &["checkout"], coverage);
+}
+
 /// The lines of `text` without the indent they share.
 fn dedent(lines: &[&str]) -> Vec<String> {
     let indent = lines
@@ -1561,10 +1742,14 @@ fn every_rust_example_is_compiled() {
                         && path.starts_with("fixtures/operators/src/");
                     let cycle = CYCLES.iter().any(|name| page == docs().join(name));
                     let started = kind == "added to" && page == docs().join("getting-started.md");
+                    let covered = page == docs().join(COVERAGE_PAGE) && path == CHECKOUT_TESTS;
                     assert!(
-                        path == "fixtures/pricing/src/lib.rs" && (started || cycle) || catching,
-                        "{place}: only the getting-started test, the test-first cycles' code and \
-                         the operators' tests that catch them are added and run"
+                        path == "fixtures/pricing/src/lib.rs" && (started || cycle)
+                            || catching
+                            || covered,
+                        "{place}: only the getting-started test, the test-first cycles' code, the \
+                         coverage page's tests and the operators' tests that catch them are added \
+                         and run"
                     );
                 }
                 _ => assert!(

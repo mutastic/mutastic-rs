@@ -1,0 +1,38 @@
+m669a0afd src/lib.rs:9:5 mutastic/return-value returns 1 instead in discount
+ma4286e9f src/lib.rs:6:14 mutastic/boundary >= becomes > in discount
+ma7d1f59d src/lib.rs:6:8 mutastic/remove-conditional total >= 100 is always true in discount
+m0f966c12 src/lib.rs:6:8 mutastic/remove-conditional total >= 100 is always false in discount
+m5d1ed654 src/lib.rs:6:14 mutastic/other-comparison >= becomes < in discount
+m11accdd0 src/lib.rs:6:14 mutastic/comparison >= becomes == in discount
+m690ba6b7 src/lib.rs:6:14 mutastic/other-comparison >= becomes <= in discount
+m0f0e5084 src/lib.rs:6:14 mutastic/other-comparison >= becomes != in discount
+me72201ca src/lib.rs:6:17 mutastic/constant-value 100 becomes 101 in discount
+m5c8c3354 src/lib.rs:6:17 mutastic/constant-value 100 becomes 99 in discount
+m6be83c47 src/lib.rs:6:17 mutastic/constant-value 100 becomes 0 in discount
+m1b68d277 src/lib.rs:6:17 mutastic/constant-value 100 becomes 1 in discount
+m6061aa93 src/lib.rs:7:16 mutastic/return-value returns 0 instead in discount
+mf4c6bfb8 src/lib.rs:7:22 mutastic/math / becomes * in discount
+macebcc29 src/lib.rs:7:22 mutastic/other-arithmetic / becomes + in discount
+m5c7b95a4 src/lib.rs:7:22 mutastic/other-arithmetic / becomes - in discount
+mf2ae8a59 src/lib.rs:7:22 mutastic/other-arithmetic / becomes % in discount
+mdece90bd src/lib.rs:7:16 mutastic/keep-operand total / 10 becomes total in discount
+m0081b732 src/lib.rs:7:24 mutastic/constant-value 10 becomes 11 in discount
+mc7fcffe2 src/lib.rs:7:24 mutastic/constant-value 10 becomes 9 in discount
+m9103d5c4 src/lib.rs:7:24 mutastic/constant-value 10 becomes 0 in discount
+m668fb60f src/lib.rs:7:24 mutastic/constant-value 10 becomes 1 in discount
+mc509a35e src/lib.rs:17:5 mutastic/return-value returns 0 instead in pay
+m3590a884 src/lib.rs:14:26 mutastic/math * becomes / in pay
+m29b08789 src/lib.rs:14:26 mutastic/other-arithmetic * becomes + in pay
+m3bbb410a src/lib.rs:14:26 mutastic/other-arithmetic * becomes - in pay
+ma7d5b2b0 src/lib.rs:14:26 mutastic/other-arithmetic * becomes % in pay
+mf0c43a93 src/lib.rs:14:17 mutastic/keep-operand quantity * price becomes quantity in pay
+md6d95190 src/lib.rs:14:17 mutastic/keep-operand quantity * price becomes price in pay
+m784fc10e src/lib.rs:15:15 mutastic/omit-call discount(total) becomes total in pay
+ma1e58306 src/lib.rs:16:5 mutastic/remove-void-call receipt.push(format!("discount {off}")); is removed in pay
+mee18531c src/lib.rs:17:11 mutastic/math - becomes + in pay
+m515e777e src/lib.rs:17:11 mutastic/other-arithmetic - becomes * in pay
+mbf8a1505 src/lib.rs:17:11 mutastic/other-arithmetic - becomes / in pay
+m1127474d src/lib.rs:17:11 mutastic/other-arithmetic - becomes % in pay
+m2e132563 src/lib.rs:17:5 mutastic/keep-operand total - off becomes total in pay
+m4d187d19 src/lib.rs:17:5 mutastic/keep-operand total - off becomes off in pay
+37 mutants
