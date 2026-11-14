@@ -827,7 +827,7 @@ fn fail_on_new_judges_a_run_by_its_baseline() {
     assert_eq!(code, 0, "{out}");
     assert!(
         out.starts_with(
-            "mutastic: 1 mutants no test catches are in .mutastic/baseline.yaml: commit it. A miss \
+            "mutastic: 1 mutant no test catches is in .mutastic/baseline.yaml: commit it. A miss \
              that isn't in it is new: the gate holds only new misses, and next offers them first\n"
         ),
         "{out}"
@@ -1210,7 +1210,7 @@ fn mutastic_yaml_is_read_as_the_java_editions() {
     // --operators replaces operators:, and can name the rules file's.
     let (_, only) = mutastic(&["mutants", &dir, "--operators=acme/remove-trim"]);
     assert!(
-        only.contains("acme/remove-trim") && only.contains("\n1 mutants\n"),
+        only.contains("acme/remove-trim") && only.contains("\n1 mutant\n"),
         "{only}"
     );
     // What mutastic doesn't understand is an error that names the line.
@@ -1673,6 +1673,165 @@ fn the_gate_takes_an_ignore_the_person_accepts_between_turns() {
                     .contains(&format!("the task ignored {}", ids[0])),
                 "{who}: {next}"
             );
+        }
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}
+
+/// A task that changes no line mutastic mutates is still held to the gate's other checks: it
+/// mustn't take a test away, or ignore a mutant or add one to the baseline itself. Without them,
+/// an agent passes by deleting the test that fails, once the rest pass. Its own ignore or baseline
+/// entry holds it where git doesn't see `.mutastic/` too. An ignore the person accepts between
+/// turns is still the task's to start from, and a task that changed nothing passes at once.
+#[test]
+fn the_gate_holds_a_task_that_changes_no_mutated_line() {
+    // A test the task starts with, failing: what an agent would rather take away than pass, in a
+    // file of its own or beside another.
+    const FAILING: &str = "#[test]\nfn shipping_is_free_from_forty() {\n    assert_eq!(pricing::Pricing::new().shipping(45), 0);\n}\n";
+    let tasks = [
+        "deletes-file",
+        "removes-test",
+        "ignores",
+        "baselines",
+        "ignores-unseen",
+        "baselines-unseen",
+        "person-ignores",
+        "nothing",
+    ];
+    for task in tasks {
+        let dir = copy_of("pricing", &format!("gate-no-mutated-{task}"));
+        let git = |args: &[&str]| {
+            let output = Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "git {args:?}");
+        };
+        let tests = dir.join("tests/pricing.rs");
+        let text = std::fs::read_to_string(&tests).unwrap();
+        match task {
+            "deletes-file" => std::fs::write(dir.join("tests/forty.rs"), FAILING).unwrap(),
+            "removes-test" => std::fs::write(&tests, format!("{text}\n{FAILING}")).unwrap(),
+            _ => {}
+        }
+        // A project whose git doesn't see `.mutastic/`: the tree looks untouched.
+        let unseen = task.ends_with("-unseen");
+        std::fs::write(
+            dir.join(".gitignore"),
+            if unseen {
+                "target\n.mutastic/\n"
+            } else {
+                "target\n"
+            },
+        )
+        .unwrap();
+        git(&["init", "-q"]);
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "start"]);
+        let hook = |action: &str| -> Value {
+            let (code, out) = mutastic_with_input(
+                &dir,
+                &["gate", action, ".", "--hook=claude"],
+                r#"{"session_id": "s1"}"#,
+            );
+            assert_eq!(code, 0, "{out}");
+            serde_json::from_str(out.trim()).unwrap_or(Value::Null)
+        };
+        hook("open");
+        let (_, mutants) = mutastic_in(&dir, &["mutants"]);
+        let id = mutants
+            .lines()
+            .find(|line| line.starts_with('m'))
+            .and_then(|line| line.split_whitespace().next())
+            .unwrap()
+            .to_string();
+        let ignore = || {
+            let (code, out) = mutastic_in(
+                &dir,
+                &[
+                    "ignore",
+                    &id,
+                    "--as=accepted-risk",
+                    "--reason=a person's call",
+                ],
+            );
+            assert_eq!(code, 0, "{out}");
+        };
+        let held = match task {
+            "deletes-file" => {
+                std::fs::remove_file(dir.join("tests/forty.rs")).unwrap();
+                Some("mutastic gate: fewer tests run than when the task started (4, 0 ignored; now 3, 0 ignored). Put them back: the gate doesn't pass a change by taking tests away".to_string())
+            }
+            "removes-test" => {
+                std::fs::write(&tests, &text).unwrap();
+                Some("mutastic gate: fewer tests run than when the task started (4, 0 ignored; now 3, 0 ignored). Put them back: the gate doesn't pass a change by taking tests away".to_string())
+            }
+            "ignores" | "ignores-unseen" => {
+                ignore();
+                Some(format!("mutastic gate: the task ignored {id} itself, and whether a mutant is worth a test is a person's call"))
+            }
+            "baselines" | "baselines-unseen" => {
+                std::fs::create_dir_all(dir.join(".mutastic")).unwrap();
+                std::fs::write(
+                    dir.join(".mutastic/baseline.yaml"),
+                    format!("baseline:\n  - id: {id}\n    at: 'x'\n    change: 'y'\n"),
+                )
+                .unwrap();
+                Some(format!("mutastic gate: the task added {id} to .mutastic/baseline.yaml itself, and whether a miss is the project's backlog is a person's call"))
+            }
+            "person-ignores" => {
+                // The agent's turn changes nothing, and the gate lets it stop. Between turns the
+                // person ignores a mutant, and prompts again.
+                let stop = hook("check");
+                assert!(
+                    stop["systemMessage"]
+                        .as_str()
+                        .unwrap()
+                        .starts_with("mutastic gate: passed"),
+                    "{stop}"
+                );
+                ignore();
+                hook("open");
+                None
+            }
+            _ => None,
+        };
+        let answer = hook("check");
+        match held {
+            Some(words) => {
+                assert_eq!(answer["decision"], "block", "{task}: {answer}");
+                assert!(
+                    answer["reason"].as_str().unwrap().starts_with(&words),
+                    "{task}: {answer}"
+                );
+                // Sent back, the agent changes nothing: over to the person, with the same words.
+                let handed = hook("check");
+                let handed = handed["systemMessage"].as_str().unwrap();
+                assert!(
+                    handed.starts_with(
+                        "mutastic gate: nothing changed since the agent was sent back"
+                    ),
+                    "{task}: {handed}"
+                );
+                assert!(handed.contains(&words), "{task}: {handed}");
+            }
+            None => {
+                let passed = answer["systemMessage"].as_str().unwrap();
+                assert_eq!(
+                    passed,
+                    if task == "nothing" {
+                        "mutastic gate: passed: the task changed no lines mutastic mutates"
+                    } else {
+                        "mutastic gate: passed: the tests pass, and the task changed no lines mutastic mutates"
+                    },
+                    "{task}"
+                );
+            }
         }
         std::fs::remove_dir_all(&dir).ok();
     }

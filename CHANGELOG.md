@@ -68,6 +68,13 @@ newest come first.
   test's `flakyEvidence` entry has `"failsAlone": true`, as in the Java edition. A healthy suite's
   results don't change, at the cost of one run of each catching test. No id changes. See
   [A test that fails on its own](docs/concepts/results.md#a-test-that-fails-on-its-own).
+- **The gate holds a task that changes no line mutastic mutates to its other checks.** Such a task
+  skipped the checks for ignores and baseline entries the task made itself, and for tests taken
+  away or `#[ignore]`d, so an agent that only deleted a failing test, or ignored a mutant itself,
+  passed once the rest of the tests did. Now they run on every check, whatever lines changed, with
+  the same words and the same hand-over; only a task that changed nothing passes at once, and
+  an ignore or baseline entry it made itself holds it even where git doesn't see `.mutastic/`.
+  An ignore you accept between turns is still the task's to start from.
 - **The gate runs the tests even with no mutant on the changed lines.** Since a run with no mutant
   to run stopped building and running the tests, a task that changed only lines with no mutant (a
   constant, an import, a log line) passed the gate with no test run, even when it broke one. The
