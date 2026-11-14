@@ -1,5 +1,5 @@
 //! The Rust edition keeps the editions' contract, `mutastic.contract/v1`, which lives in the Java
-//! repository beside the events schema (`docs/public/schemas/contract/v1.json`): its command line,
+//! repository beside the events schema (`docs/public/contract/v1.json`): its command line,
 //! its help's layout, the error code and exit code of each error case, the human summary's rows,
 //! the agent format's lines, the events' key paths and order, and mutation.json's key paths. Each
 //! is found by running the built binary on a copy of `fixtures/pricing`, as a person does, and
@@ -122,7 +122,7 @@ fn names(patterns: &[String], item: &str) -> bool {
 /// this edition with items on one of `surfaces` (`help`, `error`) none of which was found. Java's
 /// `EditionContract` judges the same way.
 fn unrecorded(found: &[Found], surfaces: &[&str]) -> Vec<String> {
-    let file = "docs/public/schemas/contract/v1.json in mutastic/mutastic";
+    let file = "docs/public/contract/v1.json in mutastic/mutastic";
     let mine: Vec<&Value> = contract()["differences"]
         .as_array()
         .unwrap()

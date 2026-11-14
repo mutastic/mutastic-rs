@@ -76,7 +76,7 @@ crates the tests run mutastic on.
 
 The Rust and Java editions are held to one contract, `mutastic.contract/v1`, kept in the Java
 repository at
-[`docs/public/schemas/contract/v1.json`](https://github.com/mutastic/mutastic/blob/main/docs/public/schemas/contract/v1.json).
+[`docs/public/contract/v1.json`](https://github.com/mutastic/mutastic/blob/main/docs/public/contract/v1.json).
 It holds what both must agree on (the command line, error codes and exit codes, help's layout,
 the summary's rows, the agent format's lines, the events' and mutation.json's key paths, the
 schemas by hash) and a `differences` list: each way an edition differs, as `engine` (with a
