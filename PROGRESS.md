@@ -151,10 +151,10 @@ the misses it's about. The Duration row names every phase it timed.
 ```
 
 The verdicts: `[PASS] Every mutant was caught.`, `[PASS] 1 missed, above the threshold of 80.`,
-`[FAIL] Below the threshold of 80: 6 missed, 0 not covered.`, `[PASS] Nothing to measure: no
-mutants to score.`, and with `--fail-on-new`, `[PASS] No new misses: 1 in the baseline.` or
-`[FAIL] 1 new miss, not in the baseline (0 in it): mb2f8ae57.` In colour `[PASS]` is ` PASS ` on
-green, `[FAIL]` on red.
+`[PASS] 1 missed, with no threshold set.` (at `--threshold=0`), `[FAIL] Below the threshold of 80: 6
+missed, 0 not covered.`, `[PASS] Nothing to measure: no mutants to score.`, and with
+`--fail-on-new`, `[PASS] No new misses: 1 in the baseline.` or `[FAIL] 1 new miss, not in the
+baseline (0 in it): mb2f8ae57.` In colour `[PASS]` is ` PASS ` on green, `[FAIL]` on red.
 
 ## Anywhere else: heartbeats
 
