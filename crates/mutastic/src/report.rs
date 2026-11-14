@@ -2852,7 +2852,13 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
     let docs = crate::operator_docs::url(mutant.operator);
     let g = frame(out, view, mutant, &advice, docs.as_deref(), style);
     before_and_after(out, &g, &view.changed_lines(mutant), style);
-    let mut notes = advice.notes.clone();
+    // A note that says no test fails is a miss's, and this mutant wasn't missed.
+    let mut notes: Vec<String> = advice
+        .notes
+        .iter()
+        .filter(|note| !crate::words::says_missed(note))
+        .cloned()
+        .collect();
     if !result.covered_by.is_empty() {
         // Whether they still pass is a miss's to say: here, only which tests reach it.
         notes.push(format!("covered by {}", names(&result.covered_by)));

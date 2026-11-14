@@ -1,0 +1,17 @@
+ [41;30;1m ✗ MISSED [0m no test checks what [1mpay()[0m returns here
+    [2m┌─[0m src/lib.rs:17
+    [2m│[0m
+ [2m16[0m [2m│[0m     receipt.push(format!("discount {off}"));
+ [2m17[0m [2m│[0m     total - off
+    [2m│[0m     [1;31m^^^^^^^^^^^ now returns 0[0m
+ [2m18[0m [2m│[0m }
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mtotal - off
+              [32m+ [0m0
+    [2m=[0m [1;34m[1mnote[0m[0m: tests reach this return, but none fails when it returns [1m0[0m
+            [2minputs seen: price = 50, 250; quantity = 1[0m
+            [2mcovered by checkout::big_orders_get_a_discount, checkout::small_orders_pay_full_price (all 2 covering tests still pass)[0m
+    [2m=[0m [32m[1mhelp[0m[0m: assert the value [1mpay()[0m returns on this path, with inputs where it isn't [1m0[0m
+
+    [2mdone when [0m mutastic verify mc509a35e fixtures/checkout [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=mc509a35e fixtures/checkout
