@@ -227,3 +227,122 @@ fn removing_a_case_row_is_fewer_tests() {
         "{out}"
     );
 }
+
+/// What a jsonl run says of each mutant that can change from one run to the next: its status,
+/// what caught it, the inputs seen and the test suggested.
+fn outcomes(stdout: &str) -> Vec<String> {
+    finished(stdout)
+        .iter()
+        .map(|m| {
+            format!(
+                "{} {} {} {} {}",
+                m["id"], m["status"], m["caughtBy"], m["inputs"], m["suggestedTest"]["name"]
+            )
+        })
+        .collect()
+}
+
+/// Every saved proptest case under `dir`, but its build's.
+fn saved_cases(dir: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(at) = stack.pop() {
+        for entry in std::fs::read_dir(&at).into_iter().flatten().flatten() {
+            let path = entry.path();
+            let name = entry.file_name();
+            if name == "proptest-regressions" {
+                found.push(path);
+            } else if path.is_dir() && name != "target" && name != "build" {
+                stack.push(path);
+            }
+        }
+    }
+    found.sort();
+    found
+}
+
+/// A proptest that fails for about half the cases it could draw, one case a run, as a property
+/// with a rare counterexample does. Its cases are drawn from a fixed seed, so every run is the
+/// same run: it can't fail in one, be caught as flaky in the next, and stop a third. Before, its
+/// first failure saved the case, the check's reruns replayed it and failed, and the run stopped
+/// on a test that passes most of the time. Nothing is saved: not in the copy, where a later run
+/// would replay it, and never in the person's tree, where a case they saved is left as it was.
+#[test]
+fn proptest_runs_are_deterministic() {
+    let dir = copy("proptest");
+    append(
+        &dir.join("src/lib.rs"),
+        "\n#[cfg(test)]\nmod rare {\n    use super::*;\n    use proptest::prelude::*;\n\n    \
+         proptest! {\n        #![proptest_config(ProptestConfig::with_cases(1))]\n\n        \
+         #[test]\n        fn discounts_stay_small(total in 0i64..2000) {\n            \
+         prop_assert!(discount(total) < 90);\n        }\n    }\n}\n",
+    );
+    let kept = "# Seeds for failure cases proptest has generated in the past.\n\
+                cc 0000000000000000000000000000000000000000000000000000000000000001\n";
+    std::fs::create_dir_all(dir.join("proptest-regressions")).unwrap();
+    std::fs::write(dir.join("proptest-regressions/lib.txt"), kept).unwrap();
+    let runs: Vec<(i32, Vec<String>)> = (0..3)
+        .map(|_| {
+            let (code, stdout) = mutastic(&dir, &["run", ".", "--format=jsonl"]);
+            assert!(code == 1 || code == 2, "{stdout}");
+            let said = if code == 2 {
+                stdout
+                    .lines()
+                    .filter(|line| !line.starts_with('{'))
+                    .map(str::to_string)
+                    .collect()
+            } else {
+                outcomes(&stdout)
+            };
+            (code, said)
+        })
+        .collect();
+    assert_eq!(runs[0], runs[1]);
+    assert_eq!(runs[1], runs[2]);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("proptest-regressions/lib.txt")).unwrap(),
+        kept,
+        "the person's own"
+    );
+    assert_eq!(saved_cases(&dir), [dir.join("proptest-regressions")]);
+    assert_eq!(
+        saved_cases(&dir.join("target/mutastic/copy")),
+        Vec::<PathBuf>::new()
+    );
+}
+
+/// A property that fails at random, whatever the code does, can't catch a mutant: with its cases
+/// drawn from a fixed seed it fails every run or none, and the guard checks each catch. So the
+/// mutants only it reaches are never caught by it, in any run.
+#[test]
+fn a_property_failing_at_random_catches_nothing() {
+    let dir = copy("random");
+    append(
+        &dir.join("src/lib.rs"),
+        "\npub fn triple(x: i64) -> i64 {\n    x * 3\n}\n\n\
+         #[cfg(test)]\nmod tripling {\n    use super::*;\n    use proptest::prelude::*;\n\n    \
+         proptest! {\n        #![proptest_config(ProptestConfig::with_cases(1))]\n\n        \
+         #[test]\n        fn triples_stay_small(x in 0i64..2000) {\n            \
+         prop_assert!(triple(x) >= 0 && x >= 1000);\n        }\n    }\n}\n",
+    );
+    let mut seen = Vec::new();
+    for _ in 0..3 {
+        let (code, stdout) = mutastic(&dir, &["run", ".", "--format=jsonl"]);
+        assert!(code == 1 || code == 2, "{stdout}");
+        let tripled: Vec<String> = finished(&stdout)
+            .iter()
+            .filter(|m| m["coveredBy"] == serde_json::json!(["tripling::triples_stay_small"]))
+            .map(|m| format!("{} {} {}", m["id"], m["status"], m["caughtBy"]))
+            .collect();
+        assert!(
+            !tripled.is_empty(),
+            "the seed draws a case it passes: {stdout}"
+        );
+        for said in &tripled {
+            assert!(!said.contains("\"Killed\""), "{said}");
+        }
+        seen.push((code, tripled));
+    }
+    assert_eq!(seen[0], seen[1]);
+    assert_eq!(seen[1], seen[2]);
+}
