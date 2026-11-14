@@ -229,21 +229,33 @@ struct Entry<'a> {
     also: Vec<&'a MutantResult>,
 }
 
+/// What the formats read of a run: its mutants, its package and its results.
 struct View<'a> {
-    report: &'a Report,
+    found: &'a Crate,
+    project: &'a crate::workspace::Project,
+    results: &'a [MutantResult],
     /// Whether what it gives of the project's text is shown: [`untrusted::value`]d, for a person's
     /// or an agent's reading. Events and report files keep it as it is.
     shown: bool,
 }
 
 impl<'a> View<'a> {
+    fn of(report: &'a Report, shown: bool) -> View<'a> {
+        View {
+            found: &report.found,
+            project: &report.project,
+            results: &report.results,
+            shown,
+        }
+    }
+
     fn mutant(&self, result: &MutantResult) -> &'a Mutant {
-        &self.report.found.mutants[result.mutant]
+        &self.found.mutants[result.mutant]
     }
 
     fn advice(&self, result: &MutantResult) -> Advice {
         let mutant = self.mutant(result);
-        let name = &self.report.found.functions[mutant.function].name;
+        let name = &self.found.functions[mutant.function].name;
         let mut advice = words::advise(mutant, name, &result.inputs);
         if let Some(named) = self.named(result).filter(|named| !named.meaning.is_empty()) {
             named_notes(&mut advice.notes, &named, result);
@@ -280,7 +292,7 @@ impl<'a> View<'a> {
     /// the callers made.
     fn beyond_callers(&self, result: &MutantResult) -> Option<String> {
         let suggestion = result.suggestion.as_ref()?;
-        let function = &self.report.found.functions[self.mutant(result).function];
+        let function = &self.found.functions[self.mutant(result).function];
         if function.public {
             return None;
         }
@@ -307,9 +319,7 @@ impl<'a> View<'a> {
     fn named(&self, result: &MutantResult) -> Option<suggest::Named> {
         let suggestion = result.suggestion.as_ref()?;
         let mutant = self.mutant(result);
-        let callable = self.report.found.functions[mutant.function]
-            .callable
-            .as_ref()?;
+        let callable = self.found.functions[mutant.function].callable.as_ref()?;
         suggest::named(
             callable,
             &mutant.operands,
@@ -320,8 +330,7 @@ impl<'a> View<'a> {
     }
 
     fn text(&self, mutant: &Mutant) -> &'a str {
-        self.report
-            .found
+        self.found
             .files
             .iter()
             .find(|file| file.path == mutant.file)
@@ -376,9 +385,7 @@ impl<'a> View<'a> {
         }
         let suggestion = result.suggestion.as_ref()?;
         let mutant = self.mutant(result);
-        let callable = self.report.found.functions[mutant.function]
-            .callable
-            .as_ref()?;
+        let callable = self.found.functions[mutant.function].callable.as_ref()?;
         let at = self.named(result);
         let edge = suggest::edge(mutant.operator, &mutant.operands);
         let test = suggest::test(
@@ -412,7 +419,7 @@ impl<'a> View<'a> {
     /// The missed mutants `kept` keeps, a line's together, the line's most telling first.
     fn entries_where(&self, kept: impl Fn(&MutantResult) -> bool) -> Vec<Entry<'a>> {
         let mut by_line: BTreeMap<(String, usize), Vec<&'a MutantResult>> = BTreeMap::new();
-        for result in &self.report.results {
+        for result in self.results {
             if result.status == Status::Survived && kept(result) {
                 let mutant = self.mutant(result);
                 by_line
@@ -468,7 +475,7 @@ impl<'a> View<'a> {
     }
 
     fn command(&self, verb: &str, ids: &str) -> String {
-        mutant_command(verb, ids, &self.report.project.given)
+        mutant_command(verb, ids, &self.project.given)
     }
 
     /// Where an entry stands in the order a run ranks its misses.
@@ -856,10 +863,7 @@ pub fn file_finished(
 }
 
 fn human(report: &Report, style: Style, format: Format) -> String {
-    let view = View {
-        report,
-        shown: true,
-    };
+    let view = View::of(report, true);
     let mut out = String::new();
     let entries = view.entries();
     if !entries.is_empty() {
@@ -889,7 +893,7 @@ fn human(report: &Report, style: Style, format: Format) -> String {
                     out,
                     "\n {} {}  {}",
                     style.blue("❯"),
-                    style.bold(&style.link(&view.report.project.workspace.join(&file), &file)),
+                    style.bold(&style.link(&view.project.workspace.join(&file), &file)),
                     style.dim(&format!(
                         "{missed} {} in {} function{}",
                         style.words.undetected(),
@@ -913,7 +917,7 @@ fn human(report: &Report, style: Style, format: Format) -> String {
                     " {} {} {} {}",
                     style.red("✗"),
                     style.link(
-                        &view.report.project.workspace.join(&mutant.file),
+                        &view.project.workspace.join(&mutant.file),
                         &format!("{}:{}", view.file(mutant), mutant.line)
                     ),
                     style.code(&view.advice(entry.main).headline),
@@ -922,7 +926,7 @@ fn human(report: &Report, style: Style, format: Format) -> String {
             }
         }
     }
-    not_covered(&mut out, &view, style);
+    not_covered(&mut out, &view, or_only_flaky(report), style);
     warnings(&mut out, report, style);
     summary(&mut out, report, style);
     out
@@ -1035,7 +1039,7 @@ fn frame(
         "{g}{} {}",
         style.dim("┌─"),
         style.link(
-            &view.report.project.workspace.join(&mutant.file),
+            &view.project.workspace.join(&mutant.file),
             &format!("{}:{}", view.file(mutant), mutant.line)
         )
     );
@@ -1232,14 +1236,14 @@ fn grouped(out: &mut String, view: &View, entries: &[Entry], style: Style) {
         }
     }
     for (file, functions) in by_file {
-        let linked = style.link(&view.report.project.workspace.join(&file), &file);
+        let linked = style.link(&view.project.workspace.join(&file), &file);
         let _ = writeln!(out, "\n {}", style.bold(&linked));
         for (function, mut results) in functions {
             results.sort_by_key(|result| {
                 let mutant = view.mutant(result);
                 (mutant.line, mutant.column, mutant.ordinal)
             });
-            let name = untrusted::value(&view.report.found.functions[function].name);
+            let name = untrusted::value(&view.found.functions[function].name);
             let _ = writeln!(
                 out,
                 "   {}() {}",
@@ -1446,7 +1450,7 @@ const NOT_COVERED_SHOWN: usize = 50;
 /// mutants' line and id, in the order found.
 fn not_covered_places(view: &View) -> Vec<(String, Vec<(usize, String)>)> {
     let mut by_function: Vec<(usize, Vec<(usize, String)>)> = Vec::new();
-    for result in &view.report.results {
+    for result in view.results {
         if result.status == Status::NoCoverage {
             let mutant = view.mutant(result);
             let found = (mutant.line, mutant.id.clone());
@@ -1463,7 +1467,7 @@ fn not_covered_places(view: &View) -> Vec<(String, Vec<(usize, String)>)> {
                 mutants.iter().map(|(line, _)| *line).min().unwrap_or(0),
                 mutants.iter().map(|(line, _)| *line).max().unwrap_or(0),
             );
-            let f = &view.report.found.functions[function];
+            let f = &view.found.functions[function];
             let place = if from == to {
                 from.to_string()
             } else {
@@ -1483,7 +1487,7 @@ fn not_covered_places(view: &View) -> Vec<(String, Vec<(usize, String)>)> {
 
 /// `Not covered (no test reaches these lines)`, then each function with mutants no test reaches:
 /// `○ src/lib.rs:18-20 tier() (4 mutants)`, in the order found, as the Java edition shows them.
-fn not_covered(out: &mut String, view: &View, style: Style) {
+fn not_covered(out: &mut String, view: &View, or_only_flaky: &str, style: Style) {
     let places = not_covered_places(view);
     if places.is_empty() {
         return;
@@ -1492,10 +1496,7 @@ fn not_covered(out: &mut String, view: &View, style: Style) {
         out,
         "\n{}{}",
         style.amber(&style.bold(" Not covered ")),
-        style.dim(&format!(
-            "(no test reaches these lines{})",
-            or_only_flaky(view.report)
-        ))
+        style.dim(&format!("(no test reaches these lines{})", or_only_flaky))
     );
     for (place, mutants) in places.iter().take(NOT_COVERED_SHOWN) {
         let count = mutants.len();
@@ -1547,18 +1548,7 @@ fn summary(out: &mut String, report: &Report, style: Style) {
             let _ = writeln!(out, " {}", verdict(report, style));
         }
         for result in &report.results {
-            let _ = writeln!(
-                out,
-                " {}",
-                fate(
-                    &View {
-                        report,
-                        shown: true,
-                    },
-                    result,
-                    style
-                )
-            );
+            let _ = writeln!(out, " {}", fate(&View::of(report, true), result, style));
         }
     }
 }
@@ -2056,10 +2046,7 @@ fn not_mutated(report: &Report) -> Vec<String> {
 
 fn agent(report: &Report, style: Style) -> String {
     let words = style.words;
-    let view = View {
-        report,
-        shown: true,
-    };
+    let view = View::of(report, true);
     if report.only && !report.results.is_empty() {
         return agent_fates(&view, words);
     }
@@ -2221,7 +2208,6 @@ fn agent(report: &Report, style: Style) -> String {
 /// and a missed one has the rules and its entry, as the Java edition gives them.
 fn agent_fates(view: &View, words: Vocabulary) -> String {
     let fates: Vec<String> = view
-        .report
         .results
         .iter()
         .map(|result| {
@@ -2396,10 +2382,7 @@ pub fn run_started(
 
 /// The `mutastic.events/v1` stream.
 fn jsonl(report: &Report) -> String {
-    let view = View {
-        report,
-        shown: false,
-    };
+    let view = View::of(report, false);
     let mut lines = Vec::new();
     // Streamed as the build finished, when the run's progress went out live.
     if !report.streamed {
@@ -2411,8 +2394,9 @@ fn jsonl(report: &Report) -> String {
         ));
     }
     // A mutant run again without a test that fails on its own gives its first result here, and its
-    // last in a `mutant-revised`, which replaces it, as the Java edition sends them.
-    for result in &report.results {
+    // last in a `mutant-revised`, which replaces it, as the Java edition sends them. Each first
+    // result went out live, as its mutant finished, when the run's progress did.
+    for result in report.results.iter().filter(|_| !report.streamed) {
         let first = report.revised.get(&result.mutant).unwrap_or(result);
         lines.push(mutant_event(&view, first));
     }
@@ -2556,9 +2540,25 @@ fn round1(value: f64) -> f64 {
     (value * 10.0).round() / 10.0
 }
 
+/// A mutant's `mutant-finished`, as it finishes, for the live events: `found` holds the mutant,
+/// and `project` is the package the run is of.
+pub fn mutant_finished(
+    found: &Crate,
+    project: &crate::workspace::Project,
+    result: &MutantResult,
+) -> Value {
+    let view = View {
+        found,
+        project,
+        results: std::slice::from_ref(result),
+        shown: false,
+    };
+    mutant_event(&view, result)
+}
+
 fn mutant_event(view: &View, result: &MutantResult) -> Value {
     let mutant = view.mutant(result);
-    let function = &view.report.found.functions[mutant.function];
+    let function = &view.found.functions[mutant.function];
     let advice = view.advice(result);
     let mut mutation = json!({});
     match &mutant.change {
@@ -2613,7 +2613,7 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
             "column": mutant.column,
             // The schema's names: the item that holds the function (`pricing::Pricing`), and
             // the function.
-            "class": function.path.rsplit_once("::").map_or(view.report.project.crate_name.as_str(), |(holder, _)| holder),
+            "class": function.path.rsplit_once("::").map_or(view.project.crate_name.as_str(), |(holder, _)| holder),
             "method": function.name,
         },
         "mutation": mutation,
@@ -2695,9 +2695,7 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
 /// events need for the card to be written again from them. The receiver's numbers come first in
 /// what the probe found, then the function's own.
 fn suggestion(view: &View, mutant: &Mutant, found: &suggest::Suggestion, call: &str) -> Value {
-    let callable = view.report.found.functions[mutant.function]
-        .callable
-        .as_ref();
+    let callable = view.found.functions[mutant.function].callable.as_ref();
     let receiver = callable.and_then(|callable| callable.receiver.as_ref());
     let taken = receiver.map_or(0, |receiver| receiver.parameters.len());
     let (made, own) = found.values.split_at(taken.min(found.values.len()));
@@ -2756,10 +2754,7 @@ pub fn last_run(report_file: &std::path::Path, id: &str) -> Option<LastRun> {
 /// gets its card; anything else a card that says what happened instead, without help or a test to
 /// add; then what the change is, its operator, its id, its site and how the last full run went.
 pub fn explained(report: &Report, last: Option<LastRun>, style: Style) -> String {
-    let view = View {
-        report,
-        shown: true,
-    };
+    let view = View::of(report, true);
     let mut out = String::new();
     let Some(result) = report.results.first() else {
         return out;
@@ -2875,7 +2870,7 @@ struct About {
 impl About {
     fn of(view: &View, result: &MutantResult, last: Option<LastRun>) -> About {
         let mutant = view.mutant(result);
-        let function = &view.report.found.functions[mutant.function];
+        let function = &view.found.functions[mutant.function];
         let text = view.text(mutant);
         let from = sites_plain(&text[mutant.site.clone()]);
         let operator_description = crate::callrules::find(mutant.operator).map_or_else(
@@ -2999,10 +2994,7 @@ fn about(
 /// `mutant-explained` event with what `About this mutant` says, a field for each row, as the Java
 /// edition writes it: `applied` is at the source level here, where Java's is at the bytecode.
 pub fn explained_jsonl(report: &Report, last: Option<LastRun>) -> String {
-    let view = View {
-        report,
-        shown: false,
-    };
+    let view = View::of(report, false);
     let mut out = jsonl(report);
     let Some(result) = report.results.first() else {
         return out;

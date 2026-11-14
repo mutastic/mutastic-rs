@@ -2470,7 +2470,7 @@ fn a_run_with_no_mutant_to_run_builds_nothing() {
     let forced = json_lines(&jsonl);
     assert_eq!(
         phases(&forced),
-        ["reading", "building", "coverage", "mutants"],
+        ["reading", "building", "coverage", "mutants", "checking"],
         "{jsonl}"
     );
     let finished = forced.last().unwrap();
@@ -3524,7 +3524,25 @@ fn jsonl_streams_phases_and_progress_as_they_happen() {
         .filter(|e| e["reason"] == "phase-started")
         .map(|e| e["phase"].as_str().unwrap())
         .collect();
-    assert_eq!(phases, ["reading", "building", "coverage", "mutants"]);
+    assert_eq!(
+        phases,
+        ["reading", "building", "coverage", "mutants", "checking"]
+    );
+    // Each mutant's result goes out as it finishes, before the phase it ran in ends (decision 7).
+    let mutants_end = events
+        .iter()
+        .position(|e| e["reason"] == "phase-finished" && e["phase"] == "mutants")
+        .unwrap();
+    let finished: Vec<usize> = (0..events.len())
+        .filter(|&at| events[at]["reason"] == "mutant-finished")
+        .collect();
+    assert!(!finished.is_empty(), "{reasons:?}");
+    assert!(
+        finished
+            .iter()
+            .all(|&at| at > run_started && at < mutants_end),
+        "{reasons:?}"
+    );
     let progress: Vec<&Value> = events
         .iter()
         .filter(|e| e["reason"] == "progress")

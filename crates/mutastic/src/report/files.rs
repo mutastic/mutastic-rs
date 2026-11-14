@@ -88,10 +88,7 @@ pub fn shown(given: &Path, file: &Path) -> String {
 /// The report-schema document. Statuses are the schema's (`Killed`, `Survived`, …); locations are
 /// 1-based, with an exclusive end.
 pub fn json(report: &Report) -> Value {
-    let view = View {
-        report,
-        shown: false,
-    };
+    let view = View::of(report, false);
     let threshold = report.threshold;
     json!({
         "$schema": "https://raw.githubusercontent.com/stryker-mutator/mutation-testing-elements/master/packages/report-schema/src/mutation-testing-report-schema.json",
@@ -122,7 +119,7 @@ fn number(value: f64) -> Value {
 /// Each source file's entry, by its path: its text and its mutants.
 fn files(view: &View) -> Value {
     let mut files: BTreeMap<String, (String, Vec<Value>)> = BTreeMap::new();
-    for result in &view.report.results {
+    for result in view.results {
         let mutant = view.mutant(result);
         files
             .entry(view.file(mutant))
