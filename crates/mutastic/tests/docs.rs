@@ -1467,7 +1467,7 @@ const ERRORS: &[Error] = &[
     ),
     (
         "option-value",
-        &["run", "fixtures/pricing", "--format", "agent"],
+        &["run", "fixtures/pricing", "--vocabulary=clasic"],
         &[],
     ),
     (
@@ -1487,6 +1487,11 @@ const ERRORS: &[Error] = &[
         &[],
     ),
     ("config", &["run", "configured"], &[]),
+    (
+        "environment",
+        &["run", "fixtures/pricing"],
+        &[("MUTASTIC_VOCABULARY", "xyz")],
+    ),
     (
         "no-baseline",
         &["run", "fixtures/pricing", "--fail-on-new"],

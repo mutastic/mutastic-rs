@@ -26,6 +26,9 @@ pub struct Outcome {
     pub timed_out: bool,
     /// The first test that failed, by libtest's name.
     pub failed: Option<String>,
+    /// Every test that failed, by libtest's name, in the order they finished: with several
+    /// threads, an order that changes from run to run.
+    pub failures: Vec<String>,
     /// How it failed: `panic`, or `crash` for a process that died another way.
     pub failure: Option<String>,
     pub took: Duration,
@@ -41,37 +44,79 @@ pub struct Outcome {
 pub fn list(binaries: &[Binary], cwd: &Path) -> Result<Vec<Test>, String> {
     let mut tests = Vec::new();
     for (index, binary) in binaries.iter().enumerate() {
-        let names = |extra: &[&str]| -> Result<Vec<String>, String> {
-            let output = Command::new(&binary.path)
-                .args(["--list", "--format=terse"])
-                .args(extra)
-                .current_dir(cwd)
-                .output()
-                .map_err(|error| format!("couldn't list {}: {error}", binary.path.display()))?;
-            Ok(String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .filter_map(|line| line.strip_suffix(": test"))
-                .map(str::to_string)
-                .collect())
-        };
-        let ignored = names(&["--ignored"])?;
-        for name in names(&[])? {
+        let ignored = listed(binary, cwd, &["--ignored"])?;
+        for name in listed(binary, cwd, &[])? {
             if ignored.contains(&name) || is_probe(&name) {
                 continue;
             }
-            let display = if binary.kind == "lib" {
-                name.clone()
-            } else {
-                format!("{}::{name}", binary.target)
-            };
             tests.push(Test {
                 binary: index,
+                display: shown(binary, &name),
                 name,
-                display,
             });
         }
     }
     Ok(tests)
+}
+
+/// Every test the binaries hold, by the name a run shows, as libtest lists them: each `#[case]`,
+/// test-case row and matrix cell is a test of its own. Mutastic's probes aren't the project's.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Names {
+    /// Those that run.
+    pub run: std::collections::BTreeSet<String>,
+    /// Those `#[ignore]`d.
+    pub ignored: std::collections::BTreeSet<String>,
+}
+
+impl Names {
+    pub fn of(binaries: &[Binary], cwd: &Path) -> Result<Names, String> {
+        let mut names = Names::default();
+        for binary in binaries {
+            let ignored = listed(binary, cwd, &["--ignored"])?;
+            for name in listed(binary, cwd, &[])? {
+                if is_probe(&name) {
+                    continue;
+                }
+                let shown = shown(binary, &name);
+                if ignored.contains(&name) {
+                    names.ignored.insert(shown);
+                } else {
+                    names.run.insert(shown);
+                }
+            }
+        }
+        Ok(names)
+    }
+
+    /// Whether `test` is one of them, run or ignored.
+    pub fn has(&self, test: &str) -> bool {
+        self.run.contains(test) || self.ignored.contains(test)
+    }
+}
+
+/// The tests one binary lists, by libtest's name, with `extra` arguments (`--ignored`).
+fn listed(binary: &Binary, cwd: &Path, extra: &[&str]) -> Result<Vec<String>, String> {
+    let output = Command::new(&binary.path)
+        .args(["--list", "--format=terse"])
+        .args(extra)
+        .current_dir(cwd)
+        .output()
+        .map_err(|error| format!("couldn't list {}: {error}", binary.path.display()))?;
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.strip_suffix(": test"))
+        .map(str::to_string)
+        .collect())
+}
+
+/// The name a run shows: libtest's for the library's tests, with the target for the others.
+fn shown(binary: &Binary, name: &str) -> String {
+    if binary.kind == "lib" {
+        name.to_string()
+    } else {
+        format!("{}::{name}", binary.target)
+    }
 }
 
 /// Whether a test is one of mutastic's probes, which it builds beside a function to call it: not
@@ -102,6 +147,10 @@ pub fn probes(binaries: &[Binary], cwd: &Path) -> std::collections::BTreeMap<Str
     found
 }
 
+/// The seed proptest draws its cases from in mutastic's runs, where the person hasn't set
+/// `PROPTEST_RNG_SEED`: any fixed value, kept so a project's results stay as they were.
+pub const PROPTEST_SEED: &str = "0";
+
 /// Runs the named tests of one binary, with `env` set, killing it after `timeout`.
 pub fn run(
     binary: &Binary,
@@ -121,9 +170,17 @@ pub fn run(
         .env_remove("MUTASTIC_ACTIVE")
         .env_remove("MUTASTIC_COVERAGE")
         .env("RUST_BACKTRACE", "0")
+        // A failing proptest saves its case, and every later run replays it first: a run's own
+        // failures would decide its next runs, the flaky check's and the guard's among them.
+        .env("PROPTEST_DISABLE_FAILURE_PERSISTENCE", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    // The same cases in every run, unless the person picked a seed: drawn afresh, a property's
+    // cases would make a mutant caught in one run and missed in the next.
+    if std::env::var_os("PROPTEST_RNG_SEED").is_none() {
+        command.env("PROPTEST_RNG_SEED", PROPTEST_SEED);
+    }
     for (key, value) in env {
         command.env(key, value);
     }
@@ -132,6 +189,7 @@ pub fn run(
             passed: false,
             timed_out: false,
             failed: None,
+            failures: Vec::new(),
             failure: Some("couldn't start".into()),
             took: started.elapsed(),
             stdout: String::new(),
@@ -165,6 +223,7 @@ pub fn run(
             passed: false,
             timed_out: true,
             failed: None,
+            failures: Vec::new(),
             failure: None,
             took,
             stdout: text,
@@ -172,11 +231,15 @@ pub fn run(
             signal: None,
         };
     };
-    let failed = text.lines().find_map(|line| {
-        line.strip_prefix("test ")
-            .and_then(|rest| rest.strip_suffix(" ... FAILED"))
-            .map(str::to_string)
-    });
+    let failures: Vec<String> = text
+        .lines()
+        .filter_map(|line| {
+            line.strip_prefix("test ")
+                .and_then(|rest| rest.strip_suffix(" ... FAILED"))
+                .map(str::to_string)
+        })
+        .collect();
+    let failed = failures.first().cloned();
     let failure = if status.success() {
         None
     } else if failed.is_some() {
@@ -188,6 +251,7 @@ pub fn run(
         passed: status.success(),
         timed_out: false,
         failed,
+        failures,
         failure,
         took,
         stdout: text,

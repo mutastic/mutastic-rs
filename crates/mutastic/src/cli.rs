@@ -92,6 +92,7 @@ pub fn main(args: Vec<OsString>) -> ExitCode {
     if args.first().is_some_and(|arg| arg == "mutastic") {
         args.remove(0);
     }
+    let args = joined(args);
     let args = match edition::chosen(&args)
         .and_then(|(chosen, args)| front_door(chosen, &args).map(|forwarded| (forwarded, args)))
     {
@@ -103,6 +104,32 @@ pub fn main(args: Vec<OsString>) -> ExitCode {
         Ok(code) => code,
         Err(message) => failed(&args, &message),
     }
+}
+
+/// The line with each value given after a space joined to its option, `--format agent` as
+/// `--format=agent`, for an option that must take a value, as the Java edition has taken it since
+/// 1.0 (decision 1). Only an optional value, `--since`, needs its `=`, as the word after it may be
+/// the directory. Joined first, so every reader of the line, from the edition's choice to the
+/// directory an error names, sees one form.
+fn joined(args: Vec<String>) -> Vec<String> {
+    let mut line = Vec::with_capacity(args.len());
+    let mut words = args.into_iter().peekable();
+    while let Some(word) = words.next() {
+        let takes_value = word
+            .strip_prefix("--")
+            .and_then(commands::option)
+            .is_some_and(|option| {
+                matches!(
+                    option.kind,
+                    commands::Kind::Value | commands::Kind::Repeated
+                )
+            });
+        match words.next_if(|next| takes_value && !next.starts_with('-')) {
+            Some(value) => line.push(format!("{word}={value}")),
+            None => line.push(word),
+        }
+    }
+    line
 }
 
 /// mutastic couldn't run: why, on stderr; and in the agent and jsonl formats, the same as the
@@ -353,11 +380,7 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
                 )
                 })?)
             }
-            "threshold" => {
-                parsed.threshold = value
-                    .parse()
-                    .map_err(|_| format!("--threshold: {value} isn't a number"))?
-            }
+            "threshold" => parsed.threshold = f64::from(whole("--threshold", value, 0, 100)?),
             "workers" => {
                 parsed.workers = value
                     .parse()
@@ -467,6 +490,16 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
     Ok(parsed)
 }
 
+/// `value` as a whole number from `min` to `max`, in the Java edition's words: a score is a whole
+/// percentage, as the schema and mutation.json's thresholds have it.
+fn whole(option: &str, value: &str, min: u32, max: u32) -> Result<u32, String> {
+    match (value.parse::<u32>(), value.parse::<i64>()) {
+        (Ok(number), _) if (min..=max).contains(&number) => Ok(number),
+        (_, Ok(number)) => Err(format!("{option} is from {min} to {max}, not {number}")),
+        _ => Err(format!("{option} needs a whole number, not {value}")),
+    }
+}
+
 /// A word such as `-v`, where a directory goes: mutastic's options are all long ones, so it's an
 /// option mutastic doesn't have, not a directory.
 fn short_option(command: &str, word: &str) -> String {
@@ -479,6 +512,7 @@ fn short_option(command: &str, word: &str) -> String {
 /// Whether `args` (without the program's name) is a command mutastic takes, with options it knows,
 /// without running it: for checking the commands the docs show.
 pub fn check(args: &[String]) -> Result<(), String> {
+    let args = joined(args.to_vec());
     let Some(command) = args.first() else {
         return Err("no command".into());
     };
@@ -492,7 +526,7 @@ pub fn check(args: &[String]) -> Result<(), String> {
                 None => Ok(()),
             }
         }
-        _ => Err(crate::mistyped::command(args)),
+        _ => Err(crate::mistyped::command(&args)),
     }
 }
 
@@ -726,6 +760,13 @@ fn dispatch(args: &[String]) -> Result<ExitCode, String> {
     }
     let mut parsed = parse(command, &args[1..])?;
     arguments(command, &parsed)?;
+    if let Some(declared) = declared(command, &args[1..]) {
+        let given = |option: &str| {
+            let typed = format!("--{option}=");
+            args.iter().any(|arg| arg.starts_with(&typed))
+        };
+        crate::environment::check(declared.name, given, |name| std::env::var(name).ok())?;
+    }
     if let Err(error) = locate(command, args, &mut parsed) {
         // A hook runs in whatever project the agent is in: where mutastic reads no Cargo package,
         // there's nothing to gate, and it says nothing.
@@ -1573,7 +1614,7 @@ fn gate_command(parsed: &Parsed) -> Result<ExitCode, String> {
     let work = project.mutastic_dir();
     let here = std::path::Path::new(dir);
     match action.as_str() {
-        "open" => gate_open(hooked, here, &work, &session),
+        "open" => gate_open(hooked, &project, here, &session),
         "close" => {
             let closed = gate::State::close(&work);
             if !hooked {
@@ -1613,10 +1654,11 @@ fn no_gate_action(action: &str) -> String {
 /// the task is gated, and how to check its work as it goes.
 fn gate_open(
     hooked: bool,
+    project: &workspace::Project,
     here: &std::path::Path,
-    work: &std::path::Path,
     session: &str,
 ) -> Result<ExitCode, String> {
+    let work = &project.mutastic_dir();
     let open =
         gate::State::read(work).filter(|state| !session.is_empty() && state.session == session);
     if let Some(open) = open.filter(|_| hooked) {
@@ -1630,11 +1672,17 @@ fn gate_open(
         return Err("the gate needs a git repository with a commit".into());
     };
     let base = base.trim().to_string();
+    // The tests as libtest lists them, each case its own; from the source where the package
+    // doesn't build yet, and fixing that is the task.
+    let shape = gate::listed(project).map_or_else(
+        |_| gate::Shape::of(here),
+        |names| gate::Shape::listed(&names),
+    );
     let state = gate::State {
         session: session.to_string(),
         base: base.clone(),
         ignored: ignored_ids(here)?,
-        shape: gate::Shape::of(here),
+        shape,
         ..gate::State::default()
     };
     state.write(work)?;
@@ -1766,8 +1814,18 @@ fn gate_verdict(
     here: &std::path::Path,
     state: &gate::State,
 ) -> Result<gate::Verdict, String> {
+    let untouched = gate::untouched(here, &state.base);
+    // The tests there now, by the names a run gives them, where a check below needs them.
+    let names = if !state.red.is_empty() || (state.shape.listed && !untouched) {
+        Some(gate::listed(project)?)
+    } else {
+        None
+    };
     // First: taking the test away may leave no line changed.
-    let gone = gate::gone(&state.red, here);
+    let gone = names
+        .as_ref()
+        .map(|names| gate::gone(&state.red, names, here))
+        .unwrap_or_default();
     if !gone.is_empty() {
         let one = gone.len() == 1;
         let names: Vec<String> = gone.iter().map(|test| untrusted::value(test)).collect();
@@ -1811,12 +1869,16 @@ fn gate_verdict(
         )));
     }
     // A task that changed nothing else can't have taken a test away or broken one.
-    if gate::untouched(here, &state.base) {
+    if untouched {
         return Ok(gate::Verdict::pass(
             "mutastic gate: passed: the task changed no lines mutastic mutates".into(),
         ));
     }
-    let (before, now) = (state.shape, gate::Shape::of(here));
+    let now = match &names {
+        Some(names) if state.shape.listed => gate::Shape::listed(names),
+        _ => gate::Shape::of(here),
+    };
+    let before = state.shape;
     if now.fewer_than(&before) {
         return Ok(gate::Verdict::block(format!(
             "mutastic gate: fewer tests run than when the task started ({}, {} ignored; now {}, {} ignored). Put them back: the gate doesn't pass a change by taking tests away",
@@ -1965,8 +2027,8 @@ fn red_verdict(
     let before: Vec<&String> = failing
         .iter()
         .filter(|test| {
-            let name = test.rsplit("::").next().unwrap_or(test);
-            crate::since::git(here, &["grep", "-q", "-w", name, &state.base, "--", "."]).is_some()
+            let name = gate::function_of(test, here);
+            crate::since::git(here, &["grep", "-q", "-w", &name, &state.base, "--", "."]).is_some()
         })
         .collect();
     let named: Vec<String> = listed
@@ -2315,11 +2377,9 @@ mod tests {
             "verfy mb2f8ae57",
             "run --formt=agent",
             "run --formt agent",
-            "run --format agent fixtures/pricing",
             "run --format=agnet",
             "run --thresold=70 --format=brief",
             "run --since main",
-            "next --top 3",
             "verify mb2f8ae57 --workrs=2",
             "--format=agent run",
             "run --report=jsno",
@@ -2336,6 +2396,32 @@ mod tests {
                 .unwrap_or_else(|| panic!("{typed}: {refused}"));
             assert_eq!(check(&words(line)), Ok(()), "{typed}: {refused}");
             assert!(refused.lines().count() <= 3, "{typed}: {refused}");
+        }
+    }
+
+    /// Decision 1: an option that must take a value takes it after a space too; an optional one,
+    /// `--since`, needs its `=`, and an option with nothing after it, or another option, has none.
+    #[test]
+    fn a_value_after_a_space_is_taken() {
+        for typed in [
+            "run --format agent fixtures/pricing",
+            "next --top 3",
+            "run --report json --report sarif:out.sarif",
+            "ignore mb2f8ae57 --reason why",
+            "run --edition rust",
+        ] {
+            assert_eq!(check(&words(typed)), Ok(()), "{typed}");
+        }
+        assert_eq!(
+            joined(words("run --format agent --propose x --since main")),
+            words("run --format=agent --propose x --since main")
+        );
+        for typed in [
+            "run --since main",
+            "run --format",
+            "run --format --threshold=70",
+        ] {
+            assert!(check(&words(typed)).is_err(), "{typed}");
         }
     }
 
