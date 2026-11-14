@@ -79,6 +79,20 @@ All the code is in `crates/mutastic/src`:
 | `nextrun` | What the last `mutastic next` left uncaught, and the hash of the code under test, its test code taken out, that says whether only those run again |
 | `shares` | A run split across machines: which share a mutant is in (`--shard`), a share's events, and the whole run put back together from them (`--from-shards`) |
 
+`crates/mutastic-terminal` is mutastic's one crate with unsafe code, which `mutastic` reads as
+`mutastic::terminal`: the terminal's width, its input read a key at a time for `t`, and the signals
+a run listens for and leaves the terminal as it was on. It calls the C library directly rather
+than take a dependency for a handful of calls, so the crate is the audit boundary. The workspace
+forbids unsafe code, which no `#[allow]` can undo; this crate denies it, allows it only in each
+platform's `ffi` module, and denies `unsafe_op_in_unsafe_fn`, `undocumented_unsafe_blocks`,
+`multiple_unsafe_ops_per_block` and `missing_safety_doc`: one operation to an `unsafe` block, each
+with a `// SAFETY:` comment. Everything else in it is safe logic over a trait of those calls,
+tested against a fake. Nightly, `.github/workflows/unsafe.yml` runs its tests under Miri, which
+can't call C, for each platform it lays out C's structs for, and under AddressSanitizer on a
+terminal, the C calls included. The tests also hold each struct and constant declared for C to the
+`libc` and `windows-sys` crates', its only dependencies, and only its tests'. `tests/docs.rs` keeps
+the unsafe code there. It's `publish = false`, as `mutastic` is.
+
 `crates/cargo-mutastic` and `crates/mutastic-rs` hold the other two names reserved on crates.io.
 They're empty, and `publish = false`.
 

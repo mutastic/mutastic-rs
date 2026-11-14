@@ -22,6 +22,8 @@ name = "cargo-mutastic"
 path = "src/bin/cargo-mutastic.rs"
 
 [dependencies]
+# The terminal's width, its input mode and signals: the workspace's one crate with unsafe code.
+mutastic-terminal = { path = "../mutastic-terminal" }
 # rust-analyzer's parser: error-tolerant and lossless. Pinned, and moved forward on purpose,
 # because it ships about weekly as 0.0.x.
 ra_ap_syntax = "=0.0.331"

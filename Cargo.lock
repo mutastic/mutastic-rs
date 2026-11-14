@@ -529,6 +529,7 @@ name = "mutastic"
 version = "1.1.0"
 dependencies = [
  "jsonschema",
+ "mutastic-terminal",
  "ra_ap_syntax",
  "regex",
  "serde_json",
@@ -538,6 +539,14 @@ dependencies = [
 [[package]]
 name = "mutastic-rs"
 version = "1.1.0"
+
+[[package]]
+name = "mutastic-terminal"
+version = "1.1.0"
+dependencies = [
+ "libc",
+ "windows-sys",
+]
 
 [[package]]
 name = "num"

@@ -1,0 +1,66 @@
+# The unsafe code in crates/mutastic-terminal, nightly, checked where the build can't: Miri runs the
+# crate's tests in an interpreter that stops at undefined behaviour, and AddressSanitizer runs them
+# natively, the C calls included. Both need nightly. Actions are pinned to a commit: a tag can be
+# moved.
+#
+# Miri can't call C, so the tests that do are ignored under it, and run under AddressSanitizer on a
+# terminal. Miri runs the rest for each platform mutastic ships for or lays out C's structs for,
+# from Linux, without that platform's C library: the logic against a fake, and the layout tests,
+# which hold each struct and constant declared for C to the libc crate's.
+#
+# It runs on a pull request that changes this file or the crate, so a change is tried before it
+# lands.
+name: Unsafe code
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # 03:00 UTC
+  workflow_dispatch:
+  pull_request:
+    paths: [".github/workflows/unsafe.yml", "crates/mutastic-terminal/**"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  miri:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+          - aarch64-apple-darwin
+          - x86_64-pc-windows-msvc
+          - x86_64-unknown-freebsd
+          - aarch64-linux-android
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, 16 Oct 2026
+        with:
+          toolchain: nightly
+          components: miri, rust-src
+      # Only the crate that keeps the unsafe code.
+      - run: cargo +nightly miri test -p mutastic-terminal --locked --target ${{ matrix.target }}
+
+  asan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, 16 Oct 2026
+        with:
+          toolchain: nightly
+      # On a terminal, sized as one would be, so the tests that take it, ask its width and send
+      # it signals run for real: `script` gives them one, and fails here if it isn't one.
+      - name: Test under AddressSanitizer, on a terminal
+        env:
+          RUSTFLAGS: -Zsanitizer=address
+        run: >
+          script -qec "test -t 0 && test -t 2 && stty cols 120 rows 40 &&
+          cargo +nightly test -p mutastic-terminal --locked --lib --target x86_64-unknown-linux-gnu"
+          /dev/null

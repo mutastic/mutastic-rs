@@ -64,8 +64,9 @@ pub mod similar;
 pub mod since;
 pub mod sites;
 pub mod suggest;
-pub mod terminal;
 pub mod testrun;
 pub mod words;
 pub mod workspace;
 pub mod wrapper;
+
+pub use mutastic_terminal as terminal;
