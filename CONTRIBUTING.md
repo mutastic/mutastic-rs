@@ -72,6 +72,33 @@ crates the tests run mutastic on.
 - **Dependencies:** commit `Cargo.lock` with the change. A new dependency's licence must be one
   [deny.toml](deny.toml) allows.
 
+## Keeping the editions level
+
+The Rust and Java editions are held to one contract, `mutastic.contract/v1`, kept in the Java
+repository at
+[`docs/public/schemas/contract/v1.json`](https://github.com/mutastic/mutastic/blob/main/docs/public/schemas/contract/v1.json).
+It holds what both must agree on (the command line, error codes and exit codes, help's layout,
+the summary's rows, the agent format's lines, the events' and mutation.json's key paths, the
+schemas by hash) and a `differences` list: each way an edition differs, as `engine` (with a
+reason), `dated` (with an `until`) or `pending` (with an issue).
+[Keeping the editions level](https://github.com/mutastic/mutastic/blob/main/CONTRIBUTING.md#keeping-the-editions-level)
+in the Java repository says how it works.
+
+- **The check** is `tests/contract.rs`. It runs the built binary on a copy of `fixtures/pricing`,
+  reads `docs/commands.json`, and fails on any difference the contract doesn't record for `rust`,
+  and on a recorded one that has gone ("now matches").
+- **The pin.** [`contract.json`](contract.json) names the Java repository's commit the check
+  reads, fetched once into the target directory. `MUTASTIC_CONTRACT=<file> cargo test --test
+  contract` checks against a working copy instead, while a contract change is being written.
+- **Adding an option, or closing a gap:** change the contract in a mutastic pull request first
+  (the option, or `rust` taken out of its pending entry), then move `contract.json`'s `commit` to
+  that merge commit in the pull request that changes mutastic-rs.
+- **The weekly drift job** (`.github/workflows/contract-drift.yml`) runs the check against mutastic
+  main, and fails visibly when the two have moved apart.
+- **A new edition** built on this one (Swift) starts from `tests/contract.rs` and its own port of
+  the pricing fixture, adds itself to the contract's `editions`, and records each failure as a
+  difference.
+
 ## Pull requests
 
 - One change per pull request, with a description of what it changes and why. The template asks.
