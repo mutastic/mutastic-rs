@@ -573,12 +573,20 @@ fn closing_the_gate_stops_the_count() {
         .join(format!("mutastic-gate-count-{token}"))
         .exists());
     if cfg!(unix) {
-        // Its process group is gone: no count, and no build it started.
-        let alive = Command::new("kill")
-            .args(["-0", "--", &format!("-{pid}")])
-            .stderr(std::process::Stdio::null())
-            .status()
-            .unwrap();
-        assert!(!alive.success(), "the count's group {pid} still runs");
+        // Its process group is gone: no count, and no build it started; once the killed
+        // processes are reaped, which takes the system a moment.
+        let alive = || {
+            Command::new("kill")
+                .args(["-0", "--", &format!("-{pid}")])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        };
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while alive() && std::time::Instant::now() < until {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        assert!(!alive(), "the count's group {pid} still runs");
     }
 }
