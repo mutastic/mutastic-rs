@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::edition::{self, CARGO_BUILD, JVM_BUILDS};
+use crate::failure::{Code, Failure};
 use crate::workspace::{self, Metadata};
 
 /// How many of a workspace's packages are shown as commands; past this many, by name.
@@ -46,10 +47,12 @@ pub struct Located {
 /// directory, the package that holds it when it's below one, or the package of that name when
 /// there's no such directory and it's a package's name exactly. Anything else is said, with the
 /// command to run instead: no such directory, no project at all, or a workspace's root.
-pub fn resolve(given: &str, line: &Line) -> Result<Located, String> {
+pub fn resolve(given: &str, line: &Line) -> Result<Located, Failure> {
     let cwd = std::env::current_dir()
         .and_then(std::fs::canonicalize)
-        .map_err(|error| format!("couldn't read the current directory: {error}"))?;
+        .map_err(|error| {
+            Code::Other.with(format!("couldn't read the current directory: {error}"))
+        })?;
     let unchanged = Ok(Located {
         dir: given.to_string(),
         note: None,
@@ -57,7 +60,8 @@ pub fn resolve(given: &str, line: &Line) -> Result<Located, String> {
     if !Path::new(given).is_dir() {
         return missing(given, line, &cwd);
     }
-    let here = std::fs::canonicalize(given).map_err(|error| format!("{given}: {error}"))?;
+    let here = std::fs::canonicalize(given)
+        .map_err(|error| Code::Other.with(format!("{given}: {error}")))?;
     if !any_above(&here, &[CARGO_BUILD]) {
         // Only `--edition=rust` brings a Java build here: Cargo says what it makes of it.
         return if any_above(&here, JVM_BUILDS) {
@@ -108,25 +112,25 @@ fn shown(given: &str, cwd: &Path, dir: &Path) -> String {
 }
 
 /// No build file of either edition in `here` or above it.
-fn no_project(given: &str, here: &Path, line: &Line) -> String {
+fn no_project(given: &str, here: &Path, line: &Line) -> Failure {
     let place = if given == "." {
         "here".to_string()
     } else {
         format!("in {given}")
     };
-    format!(
+    Code::NoProject.with(format!(
         "there's no project {place} for mutastic to test.\n\
          It looked in {} and every directory above it, for Cargo.toml, pom.xml, \
          build.gradle(.kts) or settings.gradle(.kts).\n\
          Go to your project, or name its directory:\n{}",
         here.display(),
         line.commands(&["<project directory>".to_string()])
-    )
+    ))
 }
 
 /// `here` is in a workspace but in none of its packages: at its root, or in a directory of its
 /// own. Each package, as the command to test it.
-pub fn not_a_package(given: &str, here: &Path, metadata: &Metadata, line: &Line) -> String {
+pub fn not_a_package(given: &str, here: &Path, metadata: &Metadata, line: &Line) -> Failure {
     let root = std::fs::canonicalize(&metadata.workspace).unwrap_or(metadata.workspace.clone());
     let what = match (given == ".", here == root) {
         (true, true) => "this is a workspace's root".to_string(),
@@ -137,10 +141,10 @@ pub fn not_a_package(given: &str, here: &Path, metadata: &Metadata, line: &Line)
     let cwd = std::env::current_dir()
         .and_then(std::fs::canonicalize)
         .unwrap_or_default();
-    format!(
+    Code::WorkspaceRoot.with(format!(
         "{what}, and mutastic tests one package at a time.\n{}",
         packages("It", given, &cwd, &metadata.members(), line)
-    )
+    ))
 }
 
 /// A workspace's packages, as commands to copy, or by name past [`LISTED`] of them.
@@ -172,7 +176,7 @@ fn packages(
 
 /// `given` isn't a directory. A package's name typed alone runs that package, and says so; else
 /// what's wrong, the one name close to it, if any, and the command.
-fn missing(given: &str, line: &Line, cwd: &Path) -> Result<Located, String> {
+fn missing(given: &str, line: &Line, cwd: &Path) -> Result<Located, Failure> {
     let path = Path::new(given);
     let base = match path.parent() {
         Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
@@ -238,7 +242,7 @@ fn missing(given: &str, line: &Line, cwd: &Path) -> Result<Located, String> {
             ),
         },
     };
-    Err(format!("{headline}\n{rest}"))
+    Err(Code::NoDirectory.with(format!("{headline}\n{rest}")))
 }
 
 /// The one package or directory whose name is close to `name`: what to call it, and its

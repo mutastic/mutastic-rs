@@ -287,7 +287,11 @@ pub fn present() -> Option<(String, PathBuf)> {
 }
 
 /// The Java edition's command: `MUTASTIC_JAVA_ENGINE`, a kept release, or one fetched now.
-pub fn engine() -> Result<PathBuf, String> {
+pub fn engine() -> Result<PathBuf, crate::failure::Failure> {
+    found_engine().map_err(|error| crate::failure::Code::JavaEdition.with(error))
+}
+
+fn found_engine() -> Result<PathBuf, String> {
     if let Some(given) = std::env::var_os("MUTASTIC_JAVA_ENGINE").filter(|g| !g.is_empty()) {
         let given = PathBuf::from(given);
         return if given.is_file() {
