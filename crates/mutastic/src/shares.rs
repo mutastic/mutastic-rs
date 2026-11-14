@@ -17,6 +17,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::engine::{self, MutantResult, Options, Progress, Report, Status};
+use crate::failure::{Code, Failure};
 use crate::flaky::Flaky;
 use crate::workspace::Project;
 
@@ -37,14 +38,14 @@ impl Shard {
     pub const MOST: usize = 64;
 
     /// `2/4`, as `--shard` takes it.
-    pub fn parse(value: &str) -> Result<Shard, String> {
+    pub fn parse(value: &str) -> Result<Shard, Failure> {
         let Some((number, of)) = value.split_once('/') else {
-            return Err(format!(
+            return Err(Code::OptionValue.with(format!(
                 "--shard needs a share and how many, as 2/4, not {value}"
-            ));
+            )));
         };
-        let of = whole_number(of, Shard::MOST)?;
-        let number = whole_number(number, of)?;
+        let of = whole_number(of, Shard::MOST).map_err(|error| Code::OptionValue.with(error))?;
+        let number = whole_number(number, of).map_err(|error| Code::OptionValue.with(error))?;
         Ok(Shard { number, of })
     }
 
@@ -110,10 +111,10 @@ impl Tag {
 /// A hash of the code a run tests: every Rust file and Cargo manifest in the workspace, by its
 /// path and its bytes, skipping what mutastic's copy skips (`.git` and the target directory). The
 /// same in every share of one run, and in the run that puts them together.
-pub fn code(project: &Project) -> Result<String, String> {
+pub fn code(project: &Project) -> Result<String, Failure> {
     let mut files = BTreeMap::new();
     sources(&project.workspace, Path::new(""), project, &mut files)
-        .map_err(|error| format!("couldn't read the workspace: {error}"))?;
+        .map_err(|error| Code::Other.with(format!("couldn't read the workspace: {error}")))?;
     let mut hasher = Sha256::new();
     for (path, bytes) in files {
         hasher.update(path.as_bytes());
@@ -161,22 +162,22 @@ fn sources(
 
 /// Forgets the events a share kept in `file` before: a share that doesn't finish this time
 /// mustn't leave the last time's to be put together with the other shares'.
-pub fn forget(file: &Path) -> Result<(), String> {
+pub fn forget(file: &Path) -> Result<(), Failure> {
     match std::fs::remove_file(file) {
         Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-            Err(format!("couldn't remove {}: {error}", file.display()))
+            Err(Code::Other.with(format!("couldn't remove {}: {error}", file.display())))
         }
         _ => Ok(()),
     }
 }
 
 /// Keeps a share's events in `file`.
-pub fn keep(file: &Path, events: &str) -> Result<(), String> {
+pub fn keep(file: &Path, events: &str) -> Result<(), Failure> {
     let written = file
         .parent()
         .map_or(Ok(()), std::fs::create_dir_all)
         .and_then(|()| std::fs::write(file, events));
-    written.map_err(|error| format!("couldn't write {}: {error}", file.display()))
+    written.map_err(|error| Code::Other.with(format!("couldn't write {}: {error}", file.display())))
 }
 
 /// One share, read: where from, which it is, and its events.
@@ -230,27 +231,28 @@ pub struct Shares {
 impl Shares {
     /// Every share's events in `directory`, at any depth, checked to be all of one run's, made by
     /// this mutastic, `version`.
-    pub fn read(directory: &Path, version: &str) -> Result<Shares, String> {
+    pub fn read(directory: &Path, version: &str) -> Result<Shares, Failure> {
+        let shards = |error: String| Code::Shards.with(error);
         let mut shares = Vec::new();
         for file in events_in(directory)? {
-            shares.push(share(&file)?);
+            shares.push(share(&file).map_err(shards)?);
         }
         if shares.is_empty() {
-            return Err(format!(
+            return Err(shards(format!(
                 "{} holds no share's {EVENTS}: each run with --shard keeps its own in \
                  shares/N-of-M, in target/mutastic",
                 directory.display()
-            ));
+            )));
         }
         shares.sort_by_key(|read| read.tag.number);
         let found = Shares {
             directory: directory.to_path_buf(),
             shares,
         };
-        found.check_counts()?;
-        found.check_finished()?;
-        found.check_made_alike(version)?;
-        found.check_apart()?;
+        found.check_counts().map_err(shards)?;
+        found.check_finished().map_err(shards)?;
+        found.check_made_alike(version).map_err(shards)?;
+        found.check_apart().map_err(shards)?;
         Ok(found)
     }
 
@@ -366,25 +368,27 @@ impl Shares {
         code: &str,
         options: &Options,
         progress: &(dyn Fn(Progress) + Sync),
-    ) -> Result<Report, String> {
+    ) -> Result<Report, Failure> {
         let first = &self.shares[0];
         if first.project() != project.package {
-            return Err(format!(
+            return Err(Code::Shards.with(format!(
                 "the shares in {} are of {}, not {}",
                 self.directory.display(),
                 first.project(),
                 project.package
-            ));
+            )));
         }
         if first.tag.code != code {
-            return Err(format!(
+            return Err(Code::Shards.with(format!(
                 "the shares in {} ran on other code than this: put them together on the commit \
                  they ran on",
                 self.directory.display()
-            ));
+            )));
         }
         let (found, stale_ignores) = engine::find_for_run(project, options)?;
-        let results = self.results(&found)?;
+        let results = self
+            .results(&found)
+            .map_err(|error| Code::Shards.with(error))?;
         let summary = self.summary();
         progress(Progress::FromShares {
             summary: &summary,
@@ -547,15 +551,16 @@ fn skipped_alike(skipped_here: bool, result: &MutantResult) -> bool {
 }
 
 /// Every share's events file in `directory`, at any depth, in the order of their paths.
-fn events_in(directory: &Path) -> Result<Vec<PathBuf>, String> {
+fn events_in(directory: &Path) -> Result<Vec<PathBuf>, Failure> {
     if !directory.is_dir() {
-        return Err(format!("there's no directory {}", directory.display()));
+        return Err(Code::NoDirectory.with(format!("there's no directory {}", directory.display())));
     }
     let mut found = Vec::new();
     let mut stack = vec![directory.to_path_buf()];
     while let Some(dir) = stack.pop() {
-        let entries = std::fs::read_dir(&dir)
-            .map_err(|error| format!("couldn't read {}: {error}", dir.display()))?;
+        let entries = std::fs::read_dir(&dir).map_err(|error| {
+            Code::Other.with(format!("couldn't read {}: {error}", dir.display()))
+        })?;
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {

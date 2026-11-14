@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 use crate::engine::Progress;
+use crate::failure::{Code, Failure};
 use crate::schema::{self, Emitted};
 use crate::sites::Crate;
 use crate::workspace::{self, Overrides, Project};
@@ -67,7 +68,7 @@ pub fn build(
     live: &BTreeSet<usize>,
     recorders: &BTreeSet<usize>,
     progress: &(dyn Fn(Progress) + Sync),
-) -> Result<Built, String> {
+) -> Result<Built, Failure> {
     let mut live = live.clone();
     let mut probes: BTreeSet<usize> = recorders
         .iter()
@@ -120,9 +121,9 @@ pub fn build(
             }
         }
     }
-    Err(format!(
+    Err(Code::BuildFailed.with(format!(
         "the build still fails after {MAX_ROUNDS} rounds of withdrawing mutants"
-    ))
+    )))
 }
 
 /// The rewritten files: each with live mutants or a recorder, and every crate root, which holds
@@ -157,7 +158,7 @@ fn cargo(
     phase: &'static str,
     round: usize,
     progress: &(dyn Fn(Progress) + Sync),
-) -> Result<(bool, String), String> {
+) -> Result<(bool, String), Failure> {
     let mut command = Command::new(workspace::cargo());
     match phase {
         "check" => command.arg("check"),
@@ -175,9 +176,9 @@ fn cargo(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| format!("couldn't run cargo: {error}"))?;
+        .map_err(|error| Code::NoCargo.with(format!("couldn't run cargo: {error}")))?;
     let (Some(out), Some(err)) = (child.stdout.take(), child.stderr.take()) else {
-        return Err("couldn't read cargo's output".into());
+        return Err(Code::Other.with("couldn't read cargo's output"));
     };
     let seen = std::sync::Mutex::new((0, String::new()));
     let tell = |crates: Option<usize>, last: Option<String>| {
@@ -209,9 +210,9 @@ fn cargo(
     });
     let status = child
         .wait()
-        .map_err(|error| format!("couldn't run cargo: {error}"))?;
+        .map_err(|error| Code::NoCargo.with(format!("couldn't run cargo: {error}")))?;
     if !status.success() && !stdout.contains("\"compiler-message\"") {
-        return Err(format!("cargo failed in the copy:\n{stderr}"));
+        return Err(Code::BuildFailed.with(format!("cargo failed in the copy:\n{stderr}")));
     }
     Ok((status.success(), stdout))
 }
@@ -223,10 +224,10 @@ const ERRORS_NAMED: usize = 3;
 /// said of the package as the person wrote it, from Cargo's check of the package itself: the
 /// copy's columns, and even its lines where a mutant's expression spans several, are mutastic's.
 /// When the package builds and only the copy doesn't, that's mutastic's doing, and said so.
-fn unbuilt(project: &Project, copy_errors: &[String]) -> String {
+fn unbuilt(project: &Project, copy_errors: &[String]) -> Failure {
     let rerun = project.cargo_command("test --no-run", "");
     match own_errors(project) {
-        Some(errors) if errors.is_empty() => format!(
+        Some(errors) if errors.is_empty() => Code::CopyBuildFailed.with(format!(
             "mutastic's copy of {package} doesn't build, though {package} does: that's a bug in \
              mutastic, not in your code. The copy is in {copy}. Its first error:\n{first}\n\
              To report it, with the error above:\n  https://github.com/mutastic/mutastic-rs/issues",
@@ -236,7 +237,7 @@ fn unbuilt(project: &Project, copy_errors: &[String]) -> String {
                 &project.copy_dir()
             ),
             first = copy_errors.first().map_or("", |error| error.trim_end()),
-        ),
+        )),
         Some(errors) => {
             let said = match errors.as_slice() {
                 [only] => format!("The error is in {}.", only.said()),
@@ -255,17 +256,17 @@ fn unbuilt(project: &Project, copy_errors: &[String]) -> String {
                 }
             };
             let whole = if errors.len() == 1 { "it" } else { "them" };
-            format!(
+            Code::BuildFailed.with(format!(
                 "{} doesn't build, before any mutant is in it.\n{said}\n\
                  To see {whole} in full:\n  {rerun}",
                 project.package,
-            )
+            ))
         }
-        None => format!(
+        None => Code::BuildFailed.with(format!(
             "the build fails, and not because of a mutant:\n{}\nTo see it in your own code:\n  \
              {rerun}",
             copy_errors.join("\n")
-        ),
+        )),
     }
 }
 

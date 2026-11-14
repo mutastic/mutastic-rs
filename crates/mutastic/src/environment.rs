@@ -4,6 +4,7 @@
 //! 5): the mistake would otherwise hide for as long as the variable stays set.
 
 use crate::commands;
+use crate::failure::{Code, Failure};
 
 /// Each variable that stands in for an option, and the option, whose choices it takes.
 const STAND_INS: &[(&str, &str)] = &[
@@ -22,7 +23,7 @@ pub fn check(
     command: &str,
     given: impl Fn(&str) -> bool,
     variable: impl Fn(&str) -> Option<String>,
-) -> Result<(), String> {
+) -> Result<(), Failure> {
     let taken = |name: &str| commands::option(name).filter(|o| o.commands.contains(&command));
     let set = |name: &str| variable(name).filter(|value| !value.is_empty());
     for (name, option) in STAND_INS {
@@ -30,19 +31,19 @@ pub fn check(
             continue;
         };
         if let Some(value) = set(name).filter(|value| !option.choices.contains(&value.as_str())) {
-            return Err(format!(
+            return Err(Code::Environment.with(format!(
                 "{name}: {value} isn't one of {}",
                 crate::mistyped::listed(option.choices)
-            ));
+            )));
         }
     }
     if taken("progress").is_some() {
         if let Some(value) =
             set(HEARTBEAT).filter(|value| crate::progress::seconds(value).is_none())
         {
-            return Err(format!(
+            return Err(Code::Environment.with(format!(
                 "{HEARTBEAT}: {value} isn't a number of seconds above 0"
-            ));
+            )));
         }
     }
     Ok(())
@@ -66,22 +67,22 @@ mod tests {
         let none = |_: &str| false;
         assert_eq!(
             check("run", none, with(&[("MUTASTIC_VOCABULARY", "xyz")])),
-            Err("MUTASTIC_VOCABULARY: xyz isn't one of plain or classic".into())
+            Err(Code::Environment.with("MUTASTIC_VOCABULARY: xyz isn't one of plain or classic"))
         );
         assert_eq!(
             check("next", none, with(&[("MUTASTIC_FORMAT", "agnt")])),
-            Err(
+            Err(Code::Environment.with(
                 "MUTASTIC_FORMAT: agnt isn't one of full, brief, concise, grouped, agent or jsonl"
-                    .into()
-            )
+            ))
         );
         assert_eq!(
             check("verify", none, with(&[("MUTASTIC_PROGRESS", "bars")])),
-            Err("MUTASTIC_PROGRESS: bars isn't one of auto, bar, counter or none".into())
+            Err(Code::Environment
+                .with("MUTASTIC_PROGRESS: bars isn't one of auto, bar, counter or none"))
         );
         assert_eq!(
             check("baseline", none, with(&[("MUTASTIC_HEARTBEAT", "0")])),
-            Err("MUTASTIC_HEARTBEAT: 0 isn't a number of seconds above 0".into())
+            Err(Code::Environment.with("MUTASTIC_HEARTBEAT: 0 isn't a number of seconds above 0"))
         );
     }
 
