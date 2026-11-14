@@ -28,6 +28,10 @@ the code. See [Troubleshooting](troubleshooting.md#a-workspace).
 - **Test names** are libtest's, `tests::small_orders_pay_full_price` for a unit test, and the
   target's name first for an integration test, `pricing::big_orders_get_ten_percent_off` for one in
   `tests/pricing.rs`, where the Java edition writes `PricingTest#smallOrdersPayFullPrice`.
+- **A case is a test.** Each rstest `#[case]`, test-case row and `#[values]` cell is a test of its
+  own, as libtest lists it, `rstest_tests::discounts::case_2_at_the_edge`, where the Java edition
+  counts a parameterized method as one test. See [Tables of cases and property
+  tests](troubleshooting.md#tables-of-cases-and-property-tests).
 - **A test that fails with no mutant in** runs again on its own, in both: one that then passes is
   flaky, left out of the run and reported, and one that fails every time stops the run. What a
   flaky test reaches that varies is read from source: calls such as `SystemTime::now`,
@@ -114,8 +118,10 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
   method's name, since mutastic reads source without types; a rewrite that doesn't fit doesn't
   compile, and is withdrawn. See [Configuration](reference/configuration.md).
 - **The gate** is the Java edition's, so the coding agents' plugins run it unchanged. A test it
-  counts is a `#[test]`-like function in `src` or `tests`, and one turned off is `#[ignore]`, where
-  Java counts `@Test` and `@Disabled`.
+  counts is one the test binaries list, each `#[case]` and test-case row a test of its own, and one
+  turned off is `#[ignore]`, where Java counts `@Test` and `@Disabled` in the source. Where the
+  package doesn't build when the task starts, it counts `#[test]`-like functions in `src` and
+  `tests` instead.
 - **Skipped as arid:** a statement that only writes output, `println!`, `eprintln!`, `dbg!` or a
   logger's macro, where the Java edition skips a call to a logger or `System.out`.
 - **Skipped as equivalent:** a `?` that only passes on a formatter's error, inside the `fmt` of
