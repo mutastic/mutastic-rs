@@ -401,6 +401,26 @@ fn a_property_failing_at_random_catches_nothing() {
     assert_eq!(seen[0], seen[1]);
     assert_eq!(seen[1], seen[2]);
 }
+/// A property test passes `add` dozens of values: the card shows the smallest and largest few and
+/// how many, not a line of them, and the test it suggests is named for small numbers, not for one
+/// the generator drew.
+#[test]
+fn inputs_seen_is_bounded() {
+    let dir = copy("inputs");
+    let (code, out) = mutastic(&dir, &["run", ".", "--format=agent"]);
+    assert_eq!(code, 1, "{out}");
+    let seen = out
+        .lines()
+        .find(|line| line.contains("evidence: inputs seen: a = -"))
+        .unwrap();
+    let shown = seen.matches(", ").count() + 1;
+    assert!(shown <= 13, "{seen}");
+    assert!(
+        seen.contains(", …, ") && seen.contains(" values); b = 0"),
+        "{seen}"
+    );
+    assert!(out.contains("fn add_with_a_0_and_b_1() {"), "{out}");
+}
 /// `explain` on a caught return says what caught it, never a missed card's note that no test
 /// fails when it returns that value.
 #[test]

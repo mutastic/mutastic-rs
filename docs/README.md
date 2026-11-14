@@ -70,7 +70,8 @@ page stands alone and links to the others by relative path.
 
 ## Help
 
-- [Troubleshooting](troubleshooting.md): unviable mutants, slow runs, workspaces, and test code.
+- [Troubleshooting](troubleshooting.md): unviable mutants, slow runs, workspaces, test code, and
+  tables of cases and property tests.
 - [Differences from the Java edition](differences-from-java.md): only where you'd do something
   different.
 
