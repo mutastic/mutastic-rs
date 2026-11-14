@@ -12,7 +12,9 @@ use crate::report::files::Kind;
 use crate::report::{self, Format, Style};
 use crate::shares::EVENTS;
 use crate::sites::UnsafeMode;
-use crate::{baseline, commands, gate, ignores, java, sites, testrun, workspace, wrapper};
+use crate::{
+    baseline, commands, gate, ignores, java, sites, testrun, untrusted, workspace, wrapper,
+};
 
 pub fn main(args: Vec<OsString>) -> ExitCode {
     if wrapper::active(&args) {
@@ -87,7 +89,8 @@ fn joined(args: Vec<String>) -> Vec<String> {
 /// mutastic couldn't run: why, on stderr; and in the agent and jsonl formats, the same as the
 /// stream's last event, `run-failed`, on stdout, which is all a tool reading the stream reads.
 fn failed(args: &[String], failure: &Failure) -> ExitCode {
-    stderr_line!("mutastic: {failure}");
+    // A build's or a test's output comes with it: escaped, a line at a time.
+    stderr_line!("mutastic: {}", untrusted::escape_lines(&failure.message));
     if streams_events(args) {
         stdout_line!(
             "{}",
@@ -1263,11 +1266,11 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, Failure> {
             Status::NoCoverage => "isn't reached by any test".to_string(),
             Status::Ignored => format!(
                 "is skipped ({}), so it isn't run and needs no test",
-                result.reason.as_deref().unwrap_or("skipped")
+                untrusted::value(result.reason.as_deref().unwrap_or("skipped"))
             ),
             Status::RuntimeError => format!(
                 "crashes, and no test can be said to catch it ({}): it's left out of the score; check the unsafe code it reaches with Miri",
-                result.reason.as_deref().unwrap_or("crash")
+                untrusted::value(result.reason.as_deref().unwrap_or("crash"))
             ),
         };
         settled &= result.status.detected()
@@ -1341,7 +1344,11 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, Failure> {
     let here = std::path::Path::new(&dir);
     let command = |words: &[&str]| {
         let words: Vec<String> = words.iter().map(|word| shell(word)).collect();
-        format!("mutastic ignore {} {dir}", words.join(" "))
+        format!(
+            "mutastic ignore {} {}",
+            words.join(" "),
+            crate::report::shell_word(&dir)
+        )
     };
     if parsed.accept {
         return accept(&id, here, &command);
@@ -1368,7 +1375,10 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, Failure> {
     };
     let mutant = &found.mutants[index];
     if let Some(skipped) = &mutant.skipped {
-        stdout_line!("mutastic: {id} doesn't run anyway ({skipped}): nothing to ignore");
+        stdout_line!(
+            "mutastic: {id} doesn't run anyway ({}): nothing to ignore",
+            untrusted::value(skipped)
+        );
         return Ok(ExitCode::SUCCESS);
     }
     let function = &found.functions[mutant.function];
@@ -1389,7 +1399,8 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, Failure> {
         proposals.push(entry);
         ignores::propose(here, &proposals)?;
         stdout_line!(
-            "mutastic: {id} is proposed for ignoring: {reason}\n  recorded in {}: it counts as missed until a person accepts it\n  to accept: {}\n  to withdraw: {}",
+            "mutastic: {id} is proposed for ignoring: {}\n  recorded in {}: it counts as missed until a person accepts it\n  to accept: {}\n  to withdraw: {}",
+            untrusted::value(&reason),
             ignores::PROPOSALS,
             command(&["--accept", &id]),
             command(&["--remove", &id])
@@ -1405,7 +1416,8 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, Failure> {
     // Decided now: a proposal for it is settled.
     ignores::propose(here, &proposals)?;
     stdout_line!(
-        "mutastic: {id} is ignored: {reason}\n  recorded in {}: commit it, as a decision to review\n  to undo: {}",
+        "mutastic: {id} is ignored: {}\n  recorded in {}: commit it, as a decision to review\n  to undo: {}",
+        untrusted::value(&reason),
         ignores::FILE,
         command(&["--remove", &id])
     );
@@ -1459,7 +1471,7 @@ fn accept(
     ignores::propose(here, &left)?;
     stdout_line!(
         "mutastic: {id} is ignored, as proposed: {}\n  recorded in {}: commit it, as a decision to review\n  to undo: {}",
-        proposal.reason,
+        untrusted::value(&proposal.reason),
         ignores::FILE,
         command(&["--remove", id])
     );
@@ -1534,7 +1546,10 @@ fn prune(dir: &str) -> Result<ExitCode, Failure> {
         return Ok(ExitCode::SUCCESS);
     }
     ignores::write(here, &kept)?;
-    let mut ids: Vec<&str> = stale.iter().map(|entry| entry.id.as_str()).collect();
+    let mut ids: Vec<String> = stale
+        .iter()
+        .map(|entry| untrusted::value(&entry.id))
+        .collect();
     ids.sort();
     stdout_line!(
         "mutastic: removed {} ignore{} that no longer hold: {}\n  from {}\n  to undo: git checkout -- {}",
@@ -1547,14 +1562,11 @@ fn prune(dir: &str) -> Result<ExitCode, Failure> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// A word as a shell takes it: in double quotes when it has a space or a quote.
+/// A word of a command mutastic offers, as a shell takes it: as it is when it's plain, else in
+/// single quotes, where nothing in it is run, and with what can't be seen escaped. As the Java
+/// edition's `Invocation.quoted`.
 fn shell(word: &str) -> String {
-    match word.split_once('=') {
-        Some((flag, value)) if value.contains([' ', '\'', '"']) => {
-            format!("{flag}=\"{}\"", value.replace('"', "\\\""))
-        }
-        _ => word.to_string(),
-    }
+    crate::report::shell_word(word)
 }
 
 /// `gate open`, `gate check` or `gate close`, as the Java edition's: see [`gate`].
@@ -1759,11 +1771,12 @@ fn for_the_person(
     if changed.is_empty() {
         return verdict;
     }
+    let files: Vec<String> = changed.iter().map(|file| untrusted::value(file)).collect();
     gate::Verdict {
         text: format!(
-            "{}\n\nThe task changed what tests that were there when it started expect, in {}: check that's what you asked for",
+            "{}\n\nThe task changed what tests that were there when it started expect, in the files below: check that's what you asked for\n\n{}",
             verdict.text,
-            changed.into_iter().collect::<Vec<_>>().join(", ")
+            untrusted::fence(&files.join("\n"))
         ),
         ..verdict
     }
@@ -1794,11 +1807,17 @@ fn gate_verdict(
     let gone = gate::gone(&state.red, here);
     if !gone.is_empty() {
         let one = gone.len() == 1;
+        let names: Vec<String> = gone.iter().map(|test| untrusted::value(test)).collect();
         return Ok(gate::Verdict::block(format!(
-            "mutastic gate: {} failed at an earlier check, and {} gone now. Put {} back: the gate doesn't pass a task by taking a failing test away. Leave a failing test in place and make the code pass it, unless the spec or plan is what's wrong, in which case say so and stop",
-            gone.join(", "),
+            "mutastic gate: {} failed at an earlier check, and {} gone now. Put {} back: the gate doesn't pass a task by taking a failing test away. Leave a failing test in place and make the code pass it, unless the spec or plan is what's wrong, in which case say so and stop\n\n{}",
+            if one {
+                "the test named below".to_string()
+            } else {
+                format!("the {} tests named below", gone.len())
+            },
             if one { "it's" } else { "they're" },
-            if one { "it" } else { "them" }
+            if one { "it" } else { "them" },
+            untrusted::fence(&names.join("\n"))
         )));
     }
     let changed = crate::since::changed_since(here, &state.base)?;
@@ -1830,7 +1849,7 @@ fn gate_verdict(
     if !added.is_empty() {
         return Ok(gate::Verdict::block(format!(
             "mutastic gate: the task ignored {} itself, and whether a mutant is worth a test is a person's call. Take it back with `mutastic ignore --remove ID`, and propose it instead: `mutastic ignore ID --propose --as=KIND --reason=\"…\"`",
-            added.join(", ")
+            ids_shown(&added)
         )));
     }
     let older = baseline::ids(here);
@@ -1842,7 +1861,7 @@ fn gate_verdict(
         let one = baselined.len() == 1;
         return Ok(gate::Verdict::block(format!(
             "mutastic gate: the task added {} to {} itself, and whether a miss is the project's backlog is a person's call. Take {} out, and write the test, or propose ignoring it: `mutastic ignore ID --propose --as=KIND --reason=\"…\"`",
-            baselined.join(", "),
+            ids_shown(&baselined),
             baseline::FILE,
             if one { "it" } else { "them" }
         )));
@@ -1967,7 +1986,12 @@ fn red_verdict(
     let Some((failing, error)) = crate::flaky::failing_tests(&failure.message) else {
         return Err(failure.clone());
     };
-    let error = error.as_str();
+    // `the tests fail without any mutant: a (it timed out), b; their output is in <log>`: the
+    // tests' names are the project's, so they're named in a fence, after what to do.
+    let (listed, log) = error
+        .strip_prefix("the tests fail without any mutant: ")
+        .and_then(|rest| rest.rsplit_once("; their output is in "))
+        .unwrap_or_default();
     let before: Vec<&String> = failing
         .iter()
         .filter(|test| {
@@ -1975,17 +1999,33 @@ fn red_verdict(
             crate::since::git(here, &["grep", "-q", "-w", name, &state.base, "--", "."]).is_some()
         })
         .collect();
+    let named: Vec<String> = listed
+        .split(", ")
+        .map(|test| {
+            let name = test.trim_end_matches(" (it timed out)");
+            let there = if before.iter().any(|was| was.as_str() == name) {
+                " (there when the task started)"
+            } else {
+                ""
+            };
+            format!("{}{there}", untrusted::value(test))
+        })
+        .collect();
+    let fenced = untrusted::fence(&named.join("\n"));
+    let log = untrusted::value(log);
     let text = if before.is_empty() {
         format!(
-            "mutastic gate: {error}. Make them pass first, unless the spec or plan is what's wrong, in which case say so and stop. Either way, leave a failing test in place: the gate doesn't pass a task by taking it away"
+            "mutastic gate: the tests named below fail without any mutant; their output is in {log}. Make them pass first, unless the spec or plan is what's wrong, in which case say so and stop. Either way, leave a failing test in place: the gate doesn't pass a task by taking it away\n\n{fenced}"
         )
     } else {
         let one = before.len() == 1;
-        let names: Vec<&str> = before.iter().map(|test| test.as_str()).collect();
         format!(
-            "mutastic gate: {error}.\n\n{} {} there when the task started: if {} passed then, the task's change broke {}. Find out whether the change or the test is wrong. Don't change what a test expects, or take it away, to make it pass unless the task asked for that behaviour, and if you're not sure, ask",
-            names.join(", "),
-            if one { "was" } else { "were" },
+            "mutastic gate: the tests named below fail without any mutant; their output is in {log}.\n\n{} there when the task started, marked so below: if {} passed then, the task's change broke {}. Find out whether the change or the test is wrong. Don't change what a test expects, or take it away, to make it pass unless the task asked for that behaviour, and if you're not sure, ask\n\n{fenced}",
+            if one {
+                "One was".to_string()
+            } else {
+                format!("{} were", before.len())
+            },
             if one { "it" } else { "they" },
             if one { "it" } else { "them" }
         )
@@ -1996,16 +2036,29 @@ fn red_verdict(
     })
 }
 
+/// Ids from a file the project keeps (ignores, a baseline), as a message names them: each
+/// [`untrusted::value`]d, since nothing but mutastic checks what's in them.
+fn ids_shown(ids: &[String]) -> String {
+    ids.iter()
+        .map(|id| untrusted::value(id))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn caught(result: &engine::MutantResult) -> String {
     let how = result.killed_with.as_deref().unwrap_or("panic");
     if let Some(crash) = how.strip_prefix("crash: ") {
         return format!(
-            "is caught only because the test process crashed ({crash}): no test's check caught it"
+            "is caught only because the test process crashed ({}): no test's check caught it",
+            untrusted::value(crash)
         );
     }
-    let test = result.killed_by.as_deref().unwrap_or("a test");
+    let test = untrusted::value(result.killed_by.as_deref().unwrap_or("a test"));
     match how.strip_prefix("panic: ") {
-        Some(message) => format!("is caught by {test}, through a panic: {message}"),
+        Some(message) => format!(
+            "is caught by {test}, through a panic: {}",
+            untrusted::value(message)
+        ),
         None => format!("is caught by {test}"),
     }
 }
@@ -2019,14 +2072,14 @@ fn mutants(parsed: &Parsed) -> Result<ExitCode, Failure> {
         stdout_line!(
             "{} {}:{}:{} {} {} in {}{}",
             mutant.id,
-            mutant.file.display(),
+            untrusted::value(&mutant.file.display().to_string()),
             mutant.line,
             mutant.column,
             mutant.operator,
-            crate::words::plain(
+            untrusted::escape(&crate::words::plain(
                 &crate::words::advise(mutant, &function.name, &Default::default()).change
-            ),
-            function.path,
+            )),
+            untrusted::value(&function.path),
             mutant
                 .near_unsafe
                 .map(|near| format!(" (near unsafe: {near})"))
@@ -2041,7 +2094,7 @@ fn mutants(parsed: &Parsed) -> Result<ExitCode, Failure> {
         );
     }
     for (cfg, count) in &found.not_built {
-        stdout_line!("not built here: `{cfg}` ({count})");
+        stdout_line!("not built here: `{}` ({count})", untrusted::value(cfg));
     }
     Ok(ExitCode::SUCCESS)
 }

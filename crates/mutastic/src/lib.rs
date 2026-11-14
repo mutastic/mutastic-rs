@@ -67,6 +67,7 @@ pub mod since;
 pub mod sites;
 pub mod suggest;
 pub mod testrun;
+pub mod untrusted;
 pub mod words;
 pub mod workspace;
 pub mod wrapper;

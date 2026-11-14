@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://docs.mutastic.io/schemas/events/v1.json",
   "title": "mutastic events, v1",
-  "description": "One event of `mutastic run --format=jsonl`: each line of its output is one JSON object, keyed on its `reason`. A run writes `run-started` first, then `mutant-finished` for each mutant, `mutant-revised` for each mutant run again once a test turned out to fail on its own, then `run-finished`; as each phase of the run starts and ends, `phase-started` and `phase-finished`, and while it runs `progress`, come among them. `mutastic explain ID --format=jsonl` writes the same three for its one mutant, then `mutant-explained`. From 1.0.0, within v1, events only gain fields, event reasons and enum values: read what you know, and ignore a field or an event you don't. See https://docs.mutastic.io/reference/schemas/.",
+  "description": "One event of `mutastic run --format=jsonl`: each line of its output is one JSON object, keyed on its `reason`. The order: `phase-started` and `phase-finished` for the phases before the mutants run (reading and building the project) may come first; `run-started` comes before the first `mutant-finished`; each `mutant-finished` is written as its mutant finishes, before the phase it ran in ends; `mutant-revised` comes for each mutant run again once a test turned out to fail on its own; and `run-finished`, or `run-failed` when mutastic can't run, is last. While a phase runs, `progress` comes among them. `mutastic explain ID --format=jsonl` writes the same three for its one mutant, then `mutant-explained`. From 1.0.0, within v1, events only gain fields, event reasons and enum values: read what you know, and ignore a field or an event you don't. See https://docs.mutastic.io/reference/schemas/.",
   "type": "object",
   "required": ["schema", "edition", "reason"],
   "properties": {
@@ -106,7 +106,7 @@
     },
     "runStarted": {
       "type": "object",
-      "description": "The first event: the run has started.",
+      "description": "The run has started: written once the project has been read, before the first `mutant-finished`. Only phase events come before it.",
       "required": ["schema", "reason", "project", "rule", "decline"],
       "properties": {
         "schema": { "$ref": "#/$defs/schema" },
@@ -153,7 +153,7 @@
     },
     "mutantFinished": {
       "type": "object",
-      "description": "One mutant's result, written as it finishes (`mutant-finished`). With `--tests-from`, every mutant's comes at the end, once all the tests have run. A mutant a test reached that turned out to fail on its own, with no mutant in, runs again without that test once every mutant has its first result, and comes again as `mutant-revised`, with the same fields: that result replaces the first.",
+      "description": "One mutant's result, written as it finishes (`mutant-finished`), before the phase it ran in ends. With `--tests-from`, every mutant's comes at the end, once all the tests have run. A mutant a test reached that turned out to fail on its own, with no mutant in, runs again without that test once every mutant has its first result, and comes again as `mutant-revised`, with the same fields: that result replaces the first.",
       "required": [
         "schema",
         "reason",

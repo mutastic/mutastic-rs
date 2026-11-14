@@ -1269,7 +1269,8 @@ pub fn not_a_mutant(id: &str, package: &str, dir: &str, found: &Crate) -> Failur
         format!(" There's one called {close}.")
     });
     Code::UnknownId.with(format!(
-        "{id} isn't a mutant of {package}.{close} To see its mutants:\n  mutastic mutants {dir}"
+        "{id} isn't a mutant of {package}.{close} To see its mutants:\n  mutastic mutants {}",
+        crate::report::shell_word(dir)
     ))
 }
 
