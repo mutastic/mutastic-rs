@@ -33,6 +33,10 @@ newest come first.
 
 ### Additions
 
+- **With more than one test to write, the agent format says how to take them.** After `rules:`
+  and `decline:`, a `tasks:` line asks the agent to make a task list, one item per mutant grouped
+  by file, then write each test, run its `mutastic verify` and mark it done before the next. The
+  Java edition and the HTML report's Copy as prompt say the same.
 - **A run with no mutant to run builds nothing and runs no test.** `mutastic run --since=HEAD` on
   a clean tree took a build and a pass of every test, a minute and more on a big crate, to say
   there was nothing to measure. When no mutant is there to run (no changed lines, changed lines
@@ -61,6 +65,17 @@ newest come first.
 
 ### Changes
 
+- **Help is written from the commands' declarations, in the Java edition's layout.** `mutastic
+  --help` was written by hand, and had fallen behind: it left out `--report=sarif`, the ignore and
+  gate options, the environment and every exit code but a line's worth. Now both it and `mutastic
+  <command> --help` are made from `src/commands.rs`, as the docs are: a `Usage:` line, what the
+  command does, an `Exits` paragraph, examples, every option it takes, `--edition` included, with
+  its values and variables, the exit codes, and its page on the docs site, every line within 100
+  columns. An example too long for that is broken with ` \`, so it still pastes as one command.
+  `mutastic` with nothing after it prints the help on stderr, not stdout, and exits 2 as before.
+- **Synopses are written in capitals,** `mutastic verify ID... [DIR]` for `mutastic verify
+  <id>[,<id>…] [<id>…] [dir]`, as the Java edition writes them and as option values already were
+  (`--threshold=N`). They show in help, in `commands.json` and in the errors that give a usage.
 - **A bad value in an environment variable is refused,** with code `environment`, as the Java
   edition refuses it: `MUTASTIC_FORMAT`, `MUTASTIC_VOCABULARY` or `MUTASTIC_PROGRESS` set to a
   value its option doesn't take, or `MUTASTIC_HEARTBEAT` to anything but a number of seconds above
@@ -72,6 +87,10 @@ newest come first.
   0 to 100, not 150`.
 
 ### Fixes
+
+- **`explain` on a caught return doesn't say no test fails.** The card for a caught or uncovered
+  return-value mutant gave the missed card's note, "tests reach this return, but none fails when
+  it returns `0`", under the test that caught it.
 
 - **The test named as catching a mutant is the same in every run.** A mutant's covering tests run
   together, on several threads, and the first to fail was named: where several cases catch it, as

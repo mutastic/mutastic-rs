@@ -1,1 +1,1 @@
-mutastic: mutants doesn't take fixtures/workspace: mutastic mutants [dir]
+mutastic: mutants doesn't take fixtures/workspace: mutastic mutants [DIR]

@@ -23,10 +23,6 @@ pub const SCHEMA: &str = "https://json.schemastore.org/sarif-2.1.0.json";
 /// The key the mutant's id goes under in `partialFingerprints`.
 pub const FINGERPRINT: &str = "mutasticId/v1";
 
-/// Where each operator is described: the table of every operator, at its row.
-const OPERATORS: &str =
-    "https://github.com/mutastic/mutastic-rs/blob/main/docs/operators.md#every-operator";
-
 pub fn document(report: &Report) -> Value {
     let view = View {
         report,
@@ -74,22 +70,31 @@ pub fn document(report: &Report) -> Value {
     })
 }
 
-/// An operator as a rule: a rules file's own explanation, or where mutastic's own are described.
+/// An operator as a rule: a rules file's own explanation, or, for mutastic's own, its section in
+/// the docs, `https://docs.mutastic.io/rust/operators/conditions/#boundary`, as its `helpUri`. A
+/// rules file's operator has no section there, so no `helpUri`.
 fn rule(operator: &str) -> Value {
     let explained = crate::callrules::find(operator).map(|rule| rule.explanation.clone());
+    let docs = crate::operator_docs::url(operator);
     let short = format!("A mutant of {operator} that no test catches");
-    let help = explained.clone().unwrap_or_else(|| {
-        format!("What {operator} changes, and the bug it stands for: {OPERATORS}")
-    });
-    json!({
-        "id": operator,
-        "shortDescription": { "text": short },
-        "fullDescription": { "text": explained.unwrap_or_else(|| short.clone()) },
-        "helpUri": OPERATORS,
-        "help": { "text": help },
-        "defaultConfiguration": { "level": "warning" },
-        "properties": { "tags": ["mutation-testing", "tests"] },
-    })
+    let help = match (&explained, &docs) {
+        (Some(explanation), _) => explanation.clone(),
+        (None, Some(url)) => format!("What {operator} changes, and the bug it stands for: {url}"),
+        (None, None) => short.clone(),
+    };
+    let mut rule = serde_json::Map::new();
+    rule.insert("id".into(), json!(operator));
+    rule.insert("shortDescription".into(), json!({ "text": short }));
+    let full = explained.unwrap_or_else(|| short.clone());
+    rule.insert("fullDescription".into(), json!({ "text": full }));
+    if let Some(url) = docs {
+        rule.insert("helpUri".into(), json!(url));
+    }
+    rule.insert("help".into(), json!({ "text": help }));
+    rule.insert("defaultConfiguration".into(), json!({ "level": "warning" }));
+    let tags = json!({ "tags": ["mutation-testing", "tests"] });
+    rule.insert("properties".into(), tags);
+    Value::Object(rule)
 }
 
 fn result_entry(

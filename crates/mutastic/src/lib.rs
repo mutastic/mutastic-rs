@@ -49,6 +49,7 @@ pub mod failure;
 pub mod flaky;
 pub mod gate;
 pub mod guard;
+pub mod help;
 pub mod id;
 pub mod ignores;
 pub mod java;

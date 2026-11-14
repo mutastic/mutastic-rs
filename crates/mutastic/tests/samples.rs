@@ -90,6 +90,42 @@ fn pricing_misses_only_the_edge_of_the_discount() {
         missed["mutation"]["applied"]["text"],
         "total >= 100 -> (total) > (100)"
     );
+    // `original` is the source span replaced and `replacement` what replaces it, as the Java
+    // edition gives them: written over the location, each makes its mutant's line.
+    let source = std::fs::read_to_string(Path::new(&dir).join("src/lib.rs")).unwrap();
+    let lines: Vec<&str> = source.lines().collect();
+    let mut mutated = Vec::new();
+    for mutant in &mutants {
+        let mutation = &mutant["mutation"];
+        let original = mutation["original"]
+            .as_str()
+            .expect("every mutant has an original");
+        let replacement = mutation["replacement"].as_str().unwrap();
+        let line = lines[mutant["location"]["line"].as_u64().unwrap() as usize - 1];
+        let column = mutant["location"]["column"].as_u64().unwrap() as usize - 1;
+        let (before, from) = line.split_at(line.char_indices().nth(column).unwrap().0);
+        let after = from
+            .strip_prefix(original)
+            .unwrap_or_else(|| panic!("{original:?} isn't at the location of {mutant}"));
+        mutated.push(format!("{} {before}{replacement}{after}", mutant["id"]));
+    }
+    mutated.sort();
+    assert_eq!(
+        mutated,
+        [
+            "\"m1636f6d5\"         if false {",
+            "\"m383e0002\"         1",
+            "\"m3be6b420\"         if true {",
+            "\"m6d05659f\"             return 0;",
+            "\"m7d92063c\"         if total <= self.free_shipping_from {",
+            "\"m89be540d\"         if false {",
+            "\"m95f96847\"             return total * 10;",
+            "\"mb2f8ae57\"         if total > 100 {",
+            "\"mbddcd9c4\"             return 0;",
+            "\"mc9e13290\"         1",
+            "\"md56e8c39\"         if true {",
+        ]
+    );
     let finished = events.last().unwrap();
     assert_eq!(finished["reason"], "run-finished");
     assert_eq!(finished["score"], 90.9);
@@ -209,25 +245,25 @@ fn a_word_a_command_doesnt_take_stops_it() {
     };
     assert_eq!(
         stopped(&["run", &dir, "--operators=stronger", "explain", "md3a59003"]),
-        "mutastic: run doesn't take explain md3a59003: mutastic run [dir] [options]\n"
+        "mutastic: run doesn't take explain md3a59003: mutastic run [DIR] [OPTIONS]\n"
     );
     assert_eq!(
         stopped(&["explain", &dir]),
         format!(
             "mutastic: explain needs a mutant's id, m and eight hex digits as a card shows it, \
-             and {dir} is a directory: mutastic explain <id> [dir], as in mutastic explain \
+             and {dir} is a directory: mutastic explain ID [DIR], as in mutastic explain \
              m1a2b3c4d {dir}\n"
         )
     );
     assert_eq!(
         stopped(&["verify", "m1a2b3c4d,total", &dir]),
         "mutastic: verify needs a mutant's id, m and eight hex digits as a card shows it, and \
-         m1a2b3c4d,total isn't one: mutastic verify <id>[,<id>…] [<id>…] [dir], as in mutastic verify \
+         m1a2b3c4d,total isn't one: mutastic verify ID... [DIR], as in mutastic verify \
          m1a2b3c4d\n"
     );
     assert_eq!(
         stopped(&["verify", "mb2f8ae57", "m0b3873d0", &dir, "extra"]),
-        "mutastic: verify doesn't take extra: mutastic verify <id>[,<id>…] [<id>…] [dir]\n"
+        "mutastic: verify doesn't take extra: mutastic verify ID... [DIR]\n"
     );
     // Ids split by spaces, as the Java edition takes them, then the directory.
     let (code, out) = mutastic(&["verify", "mb2f8ae57", "m0b3873d0", &dir]);
@@ -487,6 +523,29 @@ fn missed_mutants_are_ranked_as_the_java_edition_ranks_them() {
         ["src/lib.rs:15", "src/lib.rs:11", "src/lib.rs:6"],
         "is_small's condition (3 tests), is_big's (1 test), then doubled's arithmetic (3 tests):\n{stdout}"
     );
+}
+
+/// With more than one mutant to write a test for, the agent format says to take them as a task
+/// list, one at a time, after the rules and before the fenced entries; with one, it doesn't.
+#[test]
+fn more_than_one_miss_is_a_task_list() {
+    let ranking = fixture("ranking");
+    let (_, many) = mutastic(&["run", &ranking, "--format=agent", "--report=none"]);
+    let line = format!(
+        "tasks: {}",
+        mutastic::report::tasks(&format!("mutastic verify <id> {ranking}"))
+    );
+    let at = many.find(&line).unwrap_or_else(|| panic!("{line}\n{many}"));
+    assert!(at > many.find("\ndecline: ").unwrap(), "{many}");
+    assert!(at < many.find("<<mutastic-data ").unwrap(), "{many}");
+
+    let (_, one) = mutastic(&[
+        "run",
+        &fixture("pricing"),
+        "--format=agent",
+        "--report=none",
+    ]);
+    assert!(!one.contains("\ntasks: "), "{one}");
 }
 
 /// At a terminal, the phase's line is a live block redrawn in place, with wrapping off while it's
@@ -2522,9 +2581,11 @@ fn the_sarif_report_is_a_result_for_each_miss_keyed_by_its_id() {
     let missed = &results[0];
     assert_eq!(missed["level"], "warning");
     assert_eq!(missed["ruleId"], "mutastic/boundary");
+    let rule = &run["tool"]["driver"]["rules"][missed["ruleIndex"].as_u64().unwrap() as usize];
+    assert_eq!(rule["id"], "mutastic/boundary");
     assert_eq!(
-        run["tool"]["driver"]["rules"][missed["ruleIndex"].as_u64().unwrap() as usize]["id"],
-        "mutastic/boundary"
+        rule["helpUri"], "https://docs.mutastic.io/rust/operators/conditions/#boundary",
+        "a rule links its operator's section, as events and explain do"
     );
     assert_eq!(missed["partialFingerprints"]["mutasticId/v1"], "mb2f8ae57");
     assert!(missed.get("fixes").is_none());
@@ -3272,7 +3333,7 @@ fn a_command_run_in_the_wrong_place_ends_in_the_one_to_run() {
     );
     let help = ran(&root, &["--help"], &[]);
     assert_eq!(help.status.code(), Some(0));
-    assert!(String::from_utf8_lossy(&help.stdout).contains("\nOptions:\n  --only=<id>"));
+    assert!(String::from_utf8_lossy(&help.stdout).contains("\nRunning:\n  --threshold=N "));
 
     // Below a package, the package runs: its ignores, its mutastic.yaml and --since are read
     // from its directory.

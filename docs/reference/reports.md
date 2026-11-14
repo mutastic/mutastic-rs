@@ -99,8 +99,11 @@ See [`--report`](commands.md#--report) for the option itself.
 `--report=sarif` writes a result for each missed mutant, as a warning, and each one no test
 reaches, as a note, on the line it's on, with the card's headline as its message: `no test checks
 discount() at total == 100`. Caught and skipped mutants aren't results. Each operator that made a
-result is a rule, which links to the operator's row in [Operators](../operators.md#every-operator),
-or says what a rules file's operator does in the file's own words.
+result is a rule, whose `helpUri` is the operator's section in the docs, by the pattern both
+editions use, `https://docs.mutastic.io/<edition>/operators/<family>/#<id>`:
+`https://docs.mutastic.io/rust/operators/conditions/#boundary`, the same link a mutant's event
+carries as `docs` and `explain` prints. A rules file's operator has no section there, so its rule
+has no `helpUri` and says what the operator does in the file's own words.
 
 A result carries the mutant's id in `partialFingerprints` (`mutasticId/v1`), and the id stays the
 same when code above it moves, so an alert follows its mutant from one run to the next instead of
