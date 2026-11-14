@@ -57,6 +57,13 @@ newest come first.
 
 ### Fixes
 
+- **A property test draws the same cases in every run.** mutastic sets `PROPTEST_RNG_SEED` for
+  the tests it runs, unless you've set it, and turns proptest's saved failures off. A property that
+  fails for some cases fails in every run or in none, so it can't stop one run, be called flaky in
+  the next and catch a mutant in a third; and a case one of mutastic's runs saved can't decide its
+  next runs. `proptest-regressions/` isn't copied, so the cases you've saved aren't replayed, and
+  nothing is written to your tree.
+
 - **A test that caught mutants and fails on its own fails the run.** Once the mutants have run,
   each test that caught one runs again, on its own with no mutant in. One that fails there (it
   trips on a file it, another test or the run left behind) is named as flaky, as a test that
