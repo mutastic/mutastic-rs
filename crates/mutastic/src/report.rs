@@ -1759,6 +1759,12 @@ fn verdict(report: &Report, style: Style) -> String {
             style.label("PASS", GREEN),
             style.green(&if missed == 0 {
                 style.words.all_detected().to_string()
+            } else if report.threshold <= 0.0 {
+                // A threshold of 0 passes every run: there's nothing to be above.
+                format!(
+                    "{missed} {}, with no threshold set.",
+                    style.words.undetected()
+                )
             } else {
                 format!(
                     "{missed} {}, above the threshold of {}.",

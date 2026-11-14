@@ -881,6 +881,16 @@ fn fail_on_new_judges_a_run_by_its_baseline() {
     );
     assert_eq!(code, 1, "{out}");
     assert!(run_finished(&out).get("failOnNew").is_none(), "{out}");
+    // A threshold of 0 passes any score: there's nothing to be above.
+    let (code, out) = mutastic_in(&dir, &["run", "--threshold=0", "--report=none"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.lines()
+            .last()
+            .is_some_and(|last| last
+                .starts_with("     Score  90.9%  [PASS] 1 missed, with no threshold set.")),
+        "{out}"
+    );
 
     // Taken out of the baseline, the miss is new.
     std::fs::write(&file, BASELINE_HEADER).unwrap();
