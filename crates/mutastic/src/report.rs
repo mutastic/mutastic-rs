@@ -1424,17 +1424,12 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
         rows.push((
             "Changed",
             format!(
-                "{} line{} in {} file{} since {}{}",
+                "{} line{} in {} file{} since {}",
                 scope.lines,
                 if scope.lines == 1 { "" } else { "s" },
                 scope.files,
                 if scope.files == 1 { "" } else { "s" },
-                scope.since,
-                match (report.built, scope.lines) {
-                    (true, _) => "",
-                    (false, 0) => ", so nothing to build or run",
-                    (false, _) => ", none with a mutant to run, so nothing to build or run",
-                }
+                scope.since
             ),
         ));
     }
@@ -1475,8 +1470,8 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
             ),
         ));
         rows.push(("Test runs", test_runs_row(report, style)));
-    } else if report.scope.is_none() {
-        rows.push(("Build", "nothing to build or run: no mutant to run".into()));
+    } else {
+        rows.push(("Build", format!("nothing built: {NOTHING_TO_RUN}")));
     }
     if let Some(started) = &report.started_at {
         rows.push(("Start at", started.clone()));
@@ -1489,24 +1484,29 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
             style.dim(&format!("({})", phases(report)))
         ),
     ));
-    if report.built {
-        rows.push((
-            "Tests",
+    rows.push((
+        "Tests",
+        if report.built {
             format!(
                 "{} on rustc {} · {} worker{}",
                 report.tests,
                 report.rustc,
                 report.workers,
                 if report.workers == 1 { "" } else { "s" }
-            ),
-        ));
-    }
+            )
+        } else {
+            format!("none ran: {NOTHING_TO_RUN}")
+        },
+    ));
     if !report.reports.is_empty() {
         rows.push(("Reports", report.reports.join(&style.dim(" · "))));
     }
     rows.push(("Score", score_row(report, style)));
     rows
 }
+
+/// Why a run built nothing and ran no test, as the Java edition says it.
+const NOTHING_TO_RUN: &str = "no mutant to run";
 
 /// The run's time by phase, `setup 3.5s, build 9m41s, coverage 7m23s, mutants 34m12s, checking
 /// 51.0s`: the build and checking where they were timed.

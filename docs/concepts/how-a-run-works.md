@@ -112,7 +112,7 @@ time to see how it died. What that means depends on where the mutant is: see
 A run of a change that touched no mutant's line, of skipped mutants only, or of a share that holds
 none has nothing to measure, and building the crate and running every test would take minutes to
 find that out. So mutastic builds nothing and runs no test: it finds the mutants, lists the skipped
-ones with their reasons, and passes with nothing to measure, in a second or so:
+ones with their reasons, and passes with nothing to measure, in a second or so. On a clean tree:
 
 ```sh
 mutastic run fixtures/pricing --since=HEAD
@@ -123,9 +123,11 @@ mutastic run fixtures/pricing --since=HEAD
 
     Files  0 clean (0)
   Mutants  ✓ 0 caught (0)
-  Changed  0 lines in 0 files since HEAD, so nothing to build or run
- Start at  19:19:22
- Duration  43ms (setup 43ms)
+  Changed  0 lines in 0 files since HEAD
+    Build  nothing built: no mutant to run
+ Start at  19:31:48
+ Duration  74ms (setup 74ms)
+    Tests  none ran: no mutant to run
     Score  none  [PASS] Nothing to measure: no mutants to score.
 ```
 

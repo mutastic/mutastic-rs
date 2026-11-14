@@ -1130,10 +1130,7 @@ fn since_runs_the_changed_lines_mutants() {
         "{out}"
     );
     assert!(
-        out.contains(
-            "  Changed  1 line in 1 file since HEAD, none with a mutant to run, so nothing to \
-             build or run\n"
-        ),
+        out.contains("  Tests  none ran: no mutant to run\n"),
         "{out}"
     );
     let (_, out) = mutastic_in(
@@ -1829,11 +1826,14 @@ fn a_run_with_no_mutant_to_run_builds_nothing() {
     );
     let (code, full) = mutastic_in(&copy, &["run", dir, "--since=HEAD", "--format=full"]);
     assert_eq!(code, 0, "{full}");
-    assert!(
-        full.contains("  Changed  0 lines in 0 files since HEAD, so nothing to build or run\n"),
-        "{full}"
-    );
-    for row in ["Build", "Test runs", "Tests", "Reports"] {
+    for row in [
+        "  Changed  0 lines in 0 files since HEAD\n",
+        "    Build  nothing built: no mutant to run\n",
+        "    Tests  none ran: no mutant to run\n",
+    ] {
+        assert!(full.contains(row), "{row}{full}");
+    }
+    for row in ["Test runs", "Reports"] {
         assert!(!full.contains(&format!(" {row}  ")), "{row}: {full}");
     }
     assert!(

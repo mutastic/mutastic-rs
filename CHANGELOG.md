@@ -12,9 +12,8 @@ newest come first.
   there was nothing to measure. When no mutant is there to run (no changed lines, changed lines
   with no mutant, `--only` with skipped mutants only, a share that holds none, or a package with
   none), mutastic now finds the mutants, lists the skipped ones with their reasons, and passes in
-  a second or so: `Changed  0 lines in 0 files since HEAD, so nothing to build or run`. The
-  summary leaves out the build, test runs and tests rows, `run-finished` has `tests` 0 and no
-  build rounds, and `run-started` comes with the results and leaves out the `optLevel` Cargo
+  a second or so. The summary says `Build  nothing built: no mutant to run` and `Tests  none ran:
+  no mutant to run`, with no test runs row; `run-finished` has `tests` 0 and no build rounds, and `run-started` comes with the results and leaves out the `optLevel` Cargo
   didn't report. Such a run leaves the last run's record and report files as they were, unless a
   `--report` is asked for, so `explain` and the next run's comparison still read the last run
   that measured something. The gate passes a task that changed no mutant's line as fast.
