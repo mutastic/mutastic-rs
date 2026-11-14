@@ -55,7 +55,9 @@ const FAILED: u8 = 2;
 fn hook_panics(args: &[String]) {
     let args = args.to_vec();
     std::panic::set_hook(Box::new(move |panic| {
-        failed(&args, &crate::failure::internal(panic));
+        // failed() says the failure and gives back FAILED, the status exit() ends with here: a
+        // hook returns nothing.
+        let _ = failed(&args, &crate::failure::internal(panic));
         std::process::exit(i32::from(FAILED));
     }));
 }
