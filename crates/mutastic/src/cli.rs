@@ -61,6 +61,8 @@ Options:
                         kept, found anywhere in dir, as the whole run
   --no-suggestions      Don't look for a test that catches each missed mutant, which runs the
                         missed mutant's function outside the tests
+  --force-coverage      Build and run every test even when no mutant is there to run, to check
+                        or time the suite
   --top=<n>             How many of next's queue to show, at most one a function and two a
                         file (default 1, at most 25)
   --progress=<mode>     auto (default): a line redrawn in place at a terminal, none for agent
@@ -227,6 +229,8 @@ struct Parsed {
     /// `--no-suggestions`: no test is looked for, so none of the project's code runs outside its
     /// tests.
     no_suggestions: bool,
+    /// `--force-coverage`: the build and the coverage pass run even with no mutant to run.
+    force_coverage: bool,
     /// `--shard`: the share of the mutants this run runs.
     shard: Option<crate::shares::Shard>,
     /// `--from-shards`: the directory of the shares this run is made of.
@@ -278,6 +282,7 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
         hook: String::new(),
         tries: 3,
         no_suggestions: false,
+        force_coverage: false,
         shard: None,
         from_shards: None,
         top: 1,
@@ -387,6 +392,7 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
             "since" => parsed.since = Some(value.to_string()),
             "help" => parsed.help = true,
             "no-suggestions" => parsed.no_suggestions = true,
+            "force-coverage" => parsed.force_coverage = true,
             "shard" => parsed.shard = Some(crate::shares::Shard::parse(value)?),
             "from-shards" if value.is_empty() => {
                 return Err("--from-shards needs the shares' directory: --from-shards=DIR".into())
@@ -543,6 +549,7 @@ fn sharing(parsed: &Parsed) -> Result<(), String> {
         ("--shard", parsed.shard.is_some()),
         ("--only", !parsed.only.is_empty()),
         ("--since", parsed.since.is_some()),
+        ("--force-coverage", parsed.force_coverage),
     ];
     match given.iter().find(|(_, given)| *given) {
         Some((option, _)) => Err(format!(
@@ -860,6 +867,7 @@ fn options(parsed: &Parsed, only: Vec<String>) -> Options {
         rules: parsed.rules.clone(),
         suggestions: false,
         shard: None,
+        force_coverage: parsed.force_coverage,
     }
 }
 
@@ -967,13 +975,16 @@ fn finish(
         || report.project.mutastic_dir(),
         std::path::Path::to_path_buf,
     );
+    // A run with no mutant to run measured nothing: the last run that did stays the one `explain`,
+    // `next` and the next run read, unless a report was asked for by name.
+    let kept = report.built || report.share.is_some();
     // Only a run of every mutant compares with the last one and is kept for the next: a run of one
     // says nothing about the others, and a change's score says nothing about the whole package's.
-    if parsed.only.is_empty() && report.scope.is_none() {
+    if parsed.only.is_empty() && report.scope.is_none() && kept {
         report.comparison = recorded(&report, &folder)?;
     }
     // Only a full run writes reports: a run of some mutants would leave out the rest.
-    if parsed.only.is_empty() {
+    if parsed.only.is_empty() && (kept || parsed.reports.is_some()) {
         let reports = parsed.reports.clone().unwrap_or_else(|| {
             report::files::DEFAULT
                 .iter()
@@ -1164,7 +1175,7 @@ fn next_pass(
     }
     let mut report = engine::run(project, &options, &|step| progress.step(step))?;
     progress.finished();
-    if whole && report.scope.is_none() {
+    if whole && report.scope.is_none() && report.built {
         let folder = project.mutastic_dir();
         report.comparison = recorded(&report, &folder)?;
         let reports: Vec<(Kind, Option<String>)> = report::files::DEFAULT

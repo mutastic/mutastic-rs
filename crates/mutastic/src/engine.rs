@@ -131,6 +131,9 @@ pub struct Report {
     /// With `--fail-on-new`, the baseline the run is judged by: it passes on the misses the
     /// baseline doesn't hold, not on its score.
     pub fail_on_new: Option<crate::baseline::FailOnNew>,
+    /// Whether the build and the coverage pass ran: not when no mutant was there to run, unless
+    /// `--force-coverage` asked for them anyway.
+    pub built: bool,
 }
 
 impl Report {
@@ -182,6 +185,8 @@ pub struct Options {
     pub suggestions: bool,
     /// `--shard`: only this share of the mutants runs.
     pub shard: Option<crate::shares::Shard>,
+    /// `--force-coverage`: build and run the coverage pass even when no mutant is there to run.
+    pub force_coverage: bool,
 }
 
 /// The change a run was scoped to: what it's since, and the crate's lines and files it touched.
@@ -264,6 +269,8 @@ pub enum Progress<'a> {
     },
     /// The results are the shares' (`--from-shards`): none run here.
     FromShares { summary: &'a str, mutants: usize },
+    /// No mutant is there to run, so nothing is built and no test runs.
+    NothingToRun,
     /// A worker starts a mutant, expected to take `expected`, as its covering tests did; it's
     /// slow past `slow`.
     MutantStarted {
@@ -344,6 +351,24 @@ pub fn run(
             }
         }
     }
+    // A skipped mutant isn't built or run: it's there for its id and its reason.
+    let live: BTreeSet<usize> = selected
+        .iter()
+        .copied()
+        .filter(|&m| found.mutants[m].skipped.is_none())
+        .collect();
+    // With no mutant to run, a build and a pass of every test would take minutes to measure
+    // nothing.
+    if live.is_empty() && !options.force_coverage {
+        progress(Progress::NothingToRun);
+        let unbuilt = Unbuilt {
+            started,
+            started_at,
+            stale_ignores,
+            scope,
+        };
+        return Ok(nothing_to_run(project, options, found, &selected, unbuilt));
+    }
     let recorders: BTreeSet<usize> = selected
         .iter()
         .map(|&m| found.mutants[m].function)
@@ -351,12 +376,6 @@ pub fn run(
     progress(Progress::Building {
         mutants: selected.len(),
     });
-    // A skipped mutant isn't built or run: it's there for its id and its reason.
-    let live: BTreeSet<usize> = selected
-        .iter()
-        .copied()
-        .filter(|&m| found.mutants[m].skipped.is_none())
-        .collect();
     let building = Instant::now();
     let built = compile::build(project, &found, &live, &recorders, progress)?;
     let build_took = building.elapsed();
@@ -478,7 +497,78 @@ pub fn run(
         operators: options.operators.clone(),
         comparison: None,
         fail_on_new: None,
+        built: true,
     })
+}
+
+/// What a run knows before its build: when it started, the ignores that no longer hold, and the
+/// change it's scoped to.
+struct Unbuilt {
+    started: Instant,
+    started_at: Option<String>,
+    stale_ignores: Vec<String>,
+    scope: Option<Scope>,
+}
+
+/// The report of a run with no mutant to run: the skipped mutants it selected, with their ids and
+/// reasons, and no build, test or score.
+fn nothing_to_run(
+    project: &Project,
+    options: &Options,
+    found: Crate,
+    selected: &BTreeSet<usize>,
+    unbuilt: Unbuilt,
+) -> Report {
+    let results = selected
+        .iter()
+        .filter_map(|&index| {
+            let reason = found.mutants[index].skipped.clone()?;
+            Some(MutantResult {
+                mutant: index,
+                status: Status::Ignored,
+                reason: Some(reason),
+                covered_by: Vec::new(),
+                killed_by: None,
+                killed_with: None,
+                tests_run: 0,
+                took: Duration::ZERO,
+                inputs: BTreeMap::new(),
+                suggestion: None,
+            })
+        })
+        .collect();
+    let setup = unbuilt.started.elapsed();
+    Report {
+        project: project.clone(),
+        found,
+        results,
+        tests: 0,
+        test_runs: 0,
+        rounds: 0,
+        workers: options.workers,
+        rustc: rustc_version(),
+        threshold: options.threshold,
+        setup,
+        build: Duration::ZERO,
+        coverage: Duration::ZERO,
+        mutants: Duration::ZERO,
+        checking: None,
+        streamed: false,
+        took: setup,
+        unsafe_mode: options.unsafe_mode,
+        // Nothing was built, so Cargo reported nothing: only what mutastic's own profile forces.
+        profile: serde_json::json!({ "overflow_checks": true, "debug_assertions": true }),
+        started_at: unbuilt.started_at,
+        reports: Vec::new(),
+        stale_ignores: unbuilt.stale_ignores,
+        scope: unbuilt.scope,
+        flaky: Vec::new(),
+        share: None,
+        operators: options.operators.clone(),
+        comparison: None,
+        fail_on_new: None,
+        built: false,
+    }
 }
 
 /// The mutants a run finds, with what the project decided not to test skipped, and the ids of
