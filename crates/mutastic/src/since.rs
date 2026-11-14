@@ -7,6 +7,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use crate::failure::{Code, Failure};
+
 /// The lines changed since a commit, by file (whole paths), and what they're since, as given.
 #[derive(Clone, Debug, Default)]
 pub struct ChangedLines {
@@ -26,10 +28,10 @@ impl ChangedLines {
 
 /// The Rust lines changed in the repository holding `dir` since `since`, or since its default
 /// branch for `""`.
-pub fn changed_since(dir: &Path, since: &str) -> Result<ChangedLines, String> {
+pub fn changed_since(dir: &Path, since: &str) -> Result<ChangedLines, Failure> {
     let root = PathBuf::from(
         git(dir, &["rev-parse", "--show-toplevel"])
-            .ok_or("--since needs a git repository")?
+            .ok_or_else(|| Code::Git.with("--since needs a git repository"))?
             .trim(),
     );
     let reference = if since.is_empty() {
@@ -38,7 +40,7 @@ pub fn changed_since(dir: &Path, since: &str) -> Result<ChangedLines, String> {
         since.to_string()
     };
     let base = git(dir, &["merge-base", &reference, "HEAD"])
-        .ok_or_else(|| format!("git knows no commit {reference}"))?
+        .ok_or_else(|| Code::Git.with(format!("git knows no commit {reference}")))?
         .trim()
         .to_string();
     let diff = git(
@@ -54,7 +56,7 @@ pub fn changed_since(dir: &Path, since: &str) -> Result<ChangedLines, String> {
             "*.rs",
         ],
     )
-    .ok_or("git couldn't diff")?;
+    .ok_or_else(|| Code::Git.with("git couldn't diff"))?;
     let mut lines = BTreeMap::new();
     let mut current: Option<PathBuf> = None;
     for line in diff.lines() {
@@ -78,7 +80,7 @@ pub fn changed_since(dir: &Path, since: &str) -> Result<ChangedLines, String> {
             "*.rs",
         ],
     )
-    .ok_or("git couldn't list new files")?;
+    .ok_or_else(|| Code::Git.with("git couldn't list new files"))?;
     for name in untracked.lines().filter(|name| !name.trim().is_empty()) {
         let file = real(&root.join(name));
         let count = std::fs::read_to_string(&file)

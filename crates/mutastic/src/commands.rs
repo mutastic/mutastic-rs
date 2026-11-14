@@ -6,6 +6,8 @@
 
 use serde_json::{json, Value};
 
+use crate::failure::{Code, Failure};
+
 /// The version of `commands.json`'s shape, the Java edition's, for the docs site to check.
 pub const SCHEMA: &str = "mutastic.commands/v1";
 
@@ -788,20 +790,20 @@ pub fn options_for(command: &str) -> Vec<&'static CliOption> {
 
 /// Whether `command` takes `--name`, given `value` (`None` without an `=`): an option mutastic
 /// doesn't declare, one this command doesn't take, or a flag given a value is an error.
-pub fn accepts(command: Option<&Command>, name: &str, value: Option<&str>) -> Result<(), String> {
+pub fn accepts(command: Option<&Command>, name: &str, value: Option<&str>) -> Result<(), Failure> {
     let Some(option) = option(name) else {
-        return Err(format!("unknown option --{name}"));
+        return Err(Code::UnknownOption.with(format!("unknown option --{name}")));
     };
     if let Some(command) = command {
         if !option.commands.contains(&command.name) {
-            return Err(format!(
+            return Err(Code::OptionNotTaken.with(format!(
                 "{} doesn't take --{name}: {}",
                 command.name, command.synopsis
-            ));
+            )));
         }
     }
     if option.kind == Kind::Flag && value.is_some() {
-        return Err(format!("--{name} takes no value"));
+        return Err(Code::OptionValue.with(format!("--{name} takes no value")));
     }
     Ok(())
 }
