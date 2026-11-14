@@ -346,3 +346,24 @@ fn a_property_failing_at_random_catches_nothing() {
     assert_eq!(seen[0], seen[1]);
     assert_eq!(seen[1], seen[2]);
 }
+/// `explain` on a caught return says what caught it, never a missed card's note that no test
+/// fails when it returns that value.
+#[test]
+fn a_caught_return_has_no_missed_note() {
+    let dir = copy("explain");
+    let (_, listed) = mutastic(&dir, &["mutants", "."]);
+    let id = listed
+        .lines()
+        .find(|line| line.contains("returns 0 instead in discount"))
+        .and_then(|line| line.split_whitespace().next())
+        .unwrap()
+        .to_string();
+    let (code, out) = mutastic(&dir, &["explain", &id, "."]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains("[✓ CAUGHT] caught by rstest_tests::discounts::case_2_at_the_edge"),
+        "{out}"
+    );
+    assert!(!out.contains("none fails"), "{out}");
+    assert!(out.contains("= note: inputs seen: total = 100\n"), "{out}");
+}

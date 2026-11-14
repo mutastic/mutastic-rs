@@ -73,6 +73,10 @@ newest come first.
 
 ### Fixes
 
+- **`explain` on a caught return doesn't say no test fails.** The card for a caught or uncovered
+  return-value mutant gave the missed card's note, "tests reach this return, but none fails when
+  it returns `0`", under the test that caught it.
+
 - **A property test draws the same cases in every run.** mutastic sets `PROPTEST_RNG_SEED` for
   the tests it runs, unless you've set it, and turns proptest's saved failures off. A property that
   fails for some cases fails in every run or in none, so it can't stop one run, be called flaky in
