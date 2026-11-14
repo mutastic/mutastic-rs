@@ -1158,7 +1158,8 @@ fn result(
         result.status = Status::NoCoverage;
         return result;
     }
-    // Fastest binary first; within it, the covering tests run together.
+    // A binary at a time, the library's first, then by target, so the test that catches a mutant
+    // is the same in every run; within one, the covering tests run together.
     let mut by_binary: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
     for &t in &covering {
         by_binary.entry(tests[t].binary).or_default().push(t);
@@ -1167,7 +1168,14 @@ fn result(
         .into_iter()
         .map(|(binary, group)| (group.iter().map(|&t| reach[t].took).sum(), binary, group))
         .collect();
-    groups.sort();
+    groups.sort_by_key(|(_, binary, _)| {
+        let built = &built.binaries[*binary];
+        (
+            built.kind != "lib",
+            built.target.clone(),
+            built.kind.clone(),
+        )
+    });
     let started = Instant::now();
     for (baseline, binary, group) in groups {
         let mut names: Vec<&str> = group.iter().map(|&t| tests[t].name.as_str()).collect();
@@ -1203,13 +1211,13 @@ fn result(
             Some(message) => format!("panic: {message}"),
             None => "panic".into(),
         });
-        result.killed_by = outcome.failed.as_ref().map(|name| {
-            group
-                .iter()
-                .find(|&&t| &tests[t].name == name)
-                .map(|&t| tests[t].display.clone())
-                .unwrap_or_else(|| name.clone())
-        });
+        // Of the tests that failed, the first as they're listed, not the first to finish: the
+        // threads finish in a different order each run.
+        result.killed_by = group
+            .iter()
+            .find(|&&t| outcome.failures.contains(&tests[t].name))
+            .map(|&t| tests[t].display.clone())
+            .or_else(|| outcome.failed.clone());
         break;
     }
     result.took = started.elapsed();

@@ -83,6 +83,19 @@ newest come first.
   mutant was missed. A mutant run again without a test that fails on its own still gets its
   `mutant-revised` after the phases. The results, the score and the report files don't change.
   See [Events](docs/reference/events.md).
+- **The test named as catching a mutant is the same in every run.** A mutant's covering tests run
+  together, on several threads, and the first to fail was named: where several cases catch it, as
+  cases written alike do, the name changed from run to run, and with it `mutation.json` and the
+  report's tests. The test named is now the first of those that failed as the tests are listed,
+  the library's before the other targets'.
+
+- **A property test draws the same cases in every run.** mutastic sets `PROPTEST_RNG_SEED` for
+  the tests it runs, unless you've set it, and turns proptest's saved failures off. A property that
+  fails for some cases fails in every run or in none, so it can't stop one run, be called flaky in
+  the next and catch a mutant in a third; and a case one of mutastic's runs saved can't decide its
+  next runs. `proptest-regressions/` isn't copied, so the cases you've saved aren't replayed, and
+  nothing is written to your tree.
+
 - **The gate knows a case by the name it runs under.** rstest and test-case give each case a test
   of its own, `halves::case_1`, and no function has that name. A case that failed at a check was
   remembered without its source, and once it passed the gate said it was gone, at every check,

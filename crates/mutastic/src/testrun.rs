@@ -26,6 +26,9 @@ pub struct Outcome {
     pub timed_out: bool,
     /// The first test that failed, by libtest's name.
     pub failed: Option<String>,
+    /// Every test that failed, by libtest's name, in the order they finished: with several
+    /// threads, an order that changes from run to run.
+    pub failures: Vec<String>,
     /// How it failed: `panic`, or `crash` for a process that died another way.
     pub failure: Option<String>,
     pub took: Duration,
@@ -144,6 +147,10 @@ pub fn probes(binaries: &[Binary], cwd: &Path) -> std::collections::BTreeMap<Str
     found
 }
 
+/// The seed proptest draws its cases from in mutastic's runs, where the person hasn't set
+/// `PROPTEST_RNG_SEED`: any fixed value, kept so a project's results stay as they were.
+pub const PROPTEST_SEED: &str = "0";
+
 /// Runs the named tests of one binary, with `env` set, killing it after `timeout`.
 pub fn run(
     binary: &Binary,
@@ -163,9 +170,17 @@ pub fn run(
         .env_remove("MUTASTIC_ACTIVE")
         .env_remove("MUTASTIC_COVERAGE")
         .env("RUST_BACKTRACE", "0")
+        // A failing proptest saves its case, and every later run replays it first: a run's own
+        // failures would decide its next runs, the flaky check's and the guard's among them.
+        .env("PROPTEST_DISABLE_FAILURE_PERSISTENCE", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    // The same cases in every run, unless the person picked a seed: drawn afresh, a property's
+    // cases would make a mutant caught in one run and missed in the next.
+    if std::env::var_os("PROPTEST_RNG_SEED").is_none() {
+        command.env("PROPTEST_RNG_SEED", PROPTEST_SEED);
+    }
     for (key, value) in env {
         command.env(key, value);
     }
@@ -174,6 +189,7 @@ pub fn run(
             passed: false,
             timed_out: false,
             failed: None,
+            failures: Vec::new(),
             failure: Some("couldn't start".into()),
             took: started.elapsed(),
             stdout: String::new(),
@@ -207,6 +223,7 @@ pub fn run(
             passed: false,
             timed_out: true,
             failed: None,
+            failures: Vec::new(),
             failure: None,
             took,
             stdout: text,
@@ -214,11 +231,15 @@ pub fn run(
             signal: None,
         };
     };
-    let failed = text.lines().find_map(|line| {
-        line.strip_prefix("test ")
-            .and_then(|rest| rest.strip_suffix(" ... FAILED"))
-            .map(str::to_string)
-    });
+    let failures: Vec<String> = text
+        .lines()
+        .filter_map(|line| {
+            line.strip_prefix("test ")
+                .and_then(|rest| rest.strip_suffix(" ... FAILED"))
+                .map(str::to_string)
+        })
+        .collect();
+    let failed = failures.first().cloned();
     let failure = if status.success() {
         None
     } else if failed.is_some() {
@@ -230,6 +251,7 @@ pub fn run(
         passed: status.success(),
         timed_out: false,
         failed,
+        failures,
         failure,
         took,
         stdout: text,
