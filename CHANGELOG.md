@@ -54,6 +54,22 @@ newest come first.
 - **Each error has an entry on [the errors page](docs/reference/errors.md),** under its code: what
   causes it, a kept copy of a real run, and what to do. Each command an error gives to run as it is,
   is run by the docs test, and gets past the error.
+- **A value can follow its option after a space,** `--format agent` as `--format=agent`, for every
+  option that must take a value, as the Java edition has taken it since 1.0. It was refused with
+  "takes its value after an =". Only `--since`, whose value is optional, still needs its `=`, as
+  the word after it may be the directory.
+
+### Changes
+
+- **A bad value in an environment variable is refused,** with code `environment`, as the Java
+  edition refuses it: `MUTASTIC_FORMAT`, `MUTASTIC_VOCABULARY` or `MUTASTIC_PROGRESS` set to a
+  value its option doesn't take, or `MUTASTIC_HEARTBEAT` to anything but a number of seconds above
+  0. It was read as the default without a word, and a variable is set once and forgotten. The
+  option on the command line still wins over it, unread.
+- **`--threshold` is a whole number from 0 to 100,** as the events schema, mutation.json and the
+  Java edition have it. `--threshold=72.5` and `--threshold=150` were taken; they're refused now,
+  in the Java edition's words: `--threshold needs a whole number, not 72.5`, `--threshold is from
+  0 to 100, not 150`.
 
 ### Fixes
 
@@ -67,6 +83,14 @@ newest come first.
   mutant was missed. A mutant run again without a test that fails on its own still gets its
   `mutant-revised` after the phases. The results, the score and the report files don't change.
   See [Events](docs/reference/events.md).
+- **The gate knows a case by the name it runs under.** rstest and test-case give each case a test
+  of its own, `halves::case_1`, and no function has that name. A case that failed at a check was
+  remembered without its source, and once it passed the gate said it was gone, at every check,
+  until `gate close`. The gate now looks tests up by the names the test binaries list, and counts
+  them from the same list, so taking a `#[case]` row away holds the gate as taking a test-case row
+  away did. `gate open` builds the tests once to list them; a package that doesn't build when the
+  task starts is counted from its source, as before.
+
 - **A test that caught mutants and fails on its own fails the run.** Once the mutants have run,
   each test that caught one runs again, on its own with no mutant in. One that fails there (it
   trips on a file it, another test or the run left behind) is named as flaky, as a test that

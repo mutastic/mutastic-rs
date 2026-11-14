@@ -41,37 +41,79 @@ pub struct Outcome {
 pub fn list(binaries: &[Binary], cwd: &Path) -> Result<Vec<Test>, String> {
     let mut tests = Vec::new();
     for (index, binary) in binaries.iter().enumerate() {
-        let names = |extra: &[&str]| -> Result<Vec<String>, String> {
-            let output = Command::new(&binary.path)
-                .args(["--list", "--format=terse"])
-                .args(extra)
-                .current_dir(cwd)
-                .output()
-                .map_err(|error| format!("couldn't list {}: {error}", binary.path.display()))?;
-            Ok(String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .filter_map(|line| line.strip_suffix(": test"))
-                .map(str::to_string)
-                .collect())
-        };
-        let ignored = names(&["--ignored"])?;
-        for name in names(&[])? {
+        let ignored = listed(binary, cwd, &["--ignored"])?;
+        for name in listed(binary, cwd, &[])? {
             if ignored.contains(&name) || is_probe(&name) {
                 continue;
             }
-            let display = if binary.kind == "lib" {
-                name.clone()
-            } else {
-                format!("{}::{name}", binary.target)
-            };
             tests.push(Test {
                 binary: index,
+                display: shown(binary, &name),
                 name,
-                display,
             });
         }
     }
     Ok(tests)
+}
+
+/// Every test the binaries hold, by the name a run shows, as libtest lists them: each `#[case]`,
+/// test-case row and matrix cell is a test of its own. Mutastic's probes aren't the project's.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Names {
+    /// Those that run.
+    pub run: std::collections::BTreeSet<String>,
+    /// Those `#[ignore]`d.
+    pub ignored: std::collections::BTreeSet<String>,
+}
+
+impl Names {
+    pub fn of(binaries: &[Binary], cwd: &Path) -> Result<Names, String> {
+        let mut names = Names::default();
+        for binary in binaries {
+            let ignored = listed(binary, cwd, &["--ignored"])?;
+            for name in listed(binary, cwd, &[])? {
+                if is_probe(&name) {
+                    continue;
+                }
+                let shown = shown(binary, &name);
+                if ignored.contains(&name) {
+                    names.ignored.insert(shown);
+                } else {
+                    names.run.insert(shown);
+                }
+            }
+        }
+        Ok(names)
+    }
+
+    /// Whether `test` is one of them, run or ignored.
+    pub fn has(&self, test: &str) -> bool {
+        self.run.contains(test) || self.ignored.contains(test)
+    }
+}
+
+/// The tests one binary lists, by libtest's name, with `extra` arguments (`--ignored`).
+fn listed(binary: &Binary, cwd: &Path, extra: &[&str]) -> Result<Vec<String>, String> {
+    let output = Command::new(&binary.path)
+        .args(["--list", "--format=terse"])
+        .args(extra)
+        .current_dir(cwd)
+        .output()
+        .map_err(|error| format!("couldn't list {}: {error}", binary.path.display()))?;
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| line.strip_suffix(": test"))
+        .map(str::to_string)
+        .collect())
+}
+
+/// The name a run shows: libtest's for the library's tests, with the target for the others.
+fn shown(binary: &Binary, name: &str) -> String {
+    if binary.kind == "lib" {
+        name.to_string()
+    } else {
+        format!("{}::{name}", binary.target)
+    }
 }
 
 /// Whether a test is one of mutastic's probes, which it builds beside a function to call it: not
