@@ -1776,28 +1776,9 @@ fn gate_verdict(
             untrusted::fence(&names.join("\n"))
         )));
     }
-    let changed = crate::since::changed_since(here, &state.base)?;
-    let found = engine::find_all(project);
-    let ours = found.files.iter().any(|file| {
-        std::fs::canonicalize(project.workspace.join(&file.path))
-            .is_ok_and(|path| changed.lines.contains_key(&path))
-    });
-    if !ours {
-        // A task that changed nothing can't have broken a test. One that changed a test, a build
-        // file or a test's data may have, so the tests run.
-        if gate::untouched(here, &state.base) {
-            return Ok(gate::Verdict::pass(
-                "mutastic gate: passed: the task changed no lines mutastic mutates".into(),
-            ));
-        }
-        return match gate_run(parsed, project, changed) {
-            Ok(_) => Ok(gate::Verdict::pass(
-                "mutastic gate: passed: the tests pass, and the task changed no lines mutastic mutates"
-                    .into(),
-            )),
-            Err(error) => red_verdict(here, state, &error),
-        };
-    }
+    // Whatever lines it changed: a task that only ignores a mutant itself changes none mutastic
+    // mutates, and mustn't pass for it. Checked even on a tree git sees as untouched, which it is
+    // when the project's git ignores `.mutastic/`.
     let added: Vec<String> = ignored_ids(here)?
         .difference(&state.ignored)
         .cloned()
@@ -1822,12 +1803,34 @@ fn gate_verdict(
             if one { "it" } else { "them" }
         )));
     }
+    // A task that changed nothing else can't have taken a test away or broken one.
+    if gate::untouched(here, &state.base) {
+        return Ok(gate::Verdict::pass(
+            "mutastic gate: passed: the task changed no lines mutastic mutates".into(),
+        ));
+    }
     let (before, now) = (state.shape, gate::Shape::of(here));
     if now.fewer_than(&before) {
         return Ok(gate::Verdict::block(format!(
             "mutastic gate: fewer tests run than when the task started ({}, {} ignored; now {}, {} ignored). Put them back: the gate doesn't pass a change by taking tests away",
             before.tests, before.disabled, now.tests, now.disabled
         )));
+    }
+    let changed = crate::since::changed_since(here, &state.base)?;
+    let found = engine::find_all(project);
+    let ours = found.files.iter().any(|file| {
+        std::fs::canonicalize(project.workspace.join(&file.path))
+            .is_ok_and(|path| changed.lines.contains_key(&path))
+    });
+    if !ours {
+        // A change to a test, a build file or a test's data may still break a test, so they run.
+        return match gate_run(parsed, project, changed) {
+            Ok(_) => Ok(gate::Verdict::pass(
+                "mutastic gate: passed: the tests pass, and the task changed no lines mutastic mutates"
+                    .into(),
+            )),
+            Err(error) => red_verdict(here, state, &error),
+        };
     }
     let mut report = match gate_run(parsed, project, changed) {
         Ok(report) => report,

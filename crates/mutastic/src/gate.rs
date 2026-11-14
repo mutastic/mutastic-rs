@@ -386,8 +386,18 @@ pub fn tree(dir: &Path) -> String {
         return String::new();
     };
     let index = std::env::temp_dir().join(format!("mutastic-gate-{}.index", std::process::id()));
-    if std::fs::copy(dir.join(real.trim()), &index).is_err() {
+    let real = dir.join(real.trim());
+    if std::fs::copy(&real, &index).is_err() {
         let _ = std::fs::remove_file(&index);
+    }
+    // The copy keeps the index's time: git trusts a file whose size and time it has, unless the
+    // file is as new as the index. A copy made now would hide a change made in the same second
+    // that kept the size, where git compares times to the second.
+    if let Ok(modified) = std::fs::metadata(&real).and_then(|meta| meta.modified()) {
+        let _ = std::fs::File::options()
+            .write(true)
+            .open(&index)
+            .and_then(|file| file.set_modified(modified));
     }
     let scratch = |args: &[&str]| {
         std::process::Command::new("git")
@@ -483,6 +493,37 @@ pub fn held_by(missed: &[String], uncovered: &[String], waiting: &[String]) -> S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A change made in the second the task started, that keeps the file's size, is a change:
+    /// where git compares times to the second (Linux's git, `core.checkStat=minimal`) a copy of
+    /// the index made later took the file for the one it had. (macOS's copy keeps the time
+    /// anyway, so it's on Linux this fails without the fix.)
+    #[test]
+    fn a_change_in_the_starting_second_is_seen() {
+        let dir = std::env::temp_dir().join(format!("mutastic-racy-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let run = |args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+                .args(args)
+                .current_dir(&dir)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "git {args:?}");
+            String::from_utf8_lossy(&output.stdout).trim().to_string()
+        };
+        run(&["init", "-q"]);
+        run(&["config", "core.checkStat", "minimal"]);
+        std::fs::write(dir.join("threshold"), "50\n").unwrap();
+        run(&["add", "."]);
+        run(&["commit", "-q", "-m", "start"]);
+        let base = run(&["rev-parse", "HEAD"]);
+        std::fs::write(dir.join("threshold"), "40\n").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        assert!(!untouched(&dir, &base));
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     /// The shape an eval met: both missed mutants proposed, and two no test reaches holding the
     /// gate. Every one that holds it is named, and the proposed ones aren't called missed.
