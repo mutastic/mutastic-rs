@@ -1,6 +1,6 @@
-# mutastic on itself: every mutant of crates/mutastic, nightly, with the report uploaded whether it
-# passes or not. A mutation tool should publish its own score. No threshold until the score is
-# known; the run fails only when mutastic does.
+# mutastic on itself: every mutant of crates/mutastic and crates/mutastic-terminal, nightly, with
+# the reports uploaded whether they pass or not. A mutation tool should publish its own score. No
+# threshold until the score is known; the run fails only when mutastic does.
 #
 # Each mutant runs mutastic's own tests, and each test process takes fixture copies no other holds
 # (slot in tests/common), so two mutants at once share no folder, and neither fails a test for the
@@ -80,6 +80,36 @@ jobs:
           path: target/mutastic/shares/
           if-no-files-found: error
           retention-days: 7
+
+  # The terminal crate, a package of its own: a run mutates one package and runs that package's
+  # tests. Its 75 mutants take under a minute, so it isn't split.
+  terminal:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 16 Oct 2026
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mutastic
+          path: bin
+      - run: chmod +x bin/mutastic
+      - name: Run crates/mutastic-terminal
+        run: |
+          bin/mutastic run crates/mutastic-terminal --workers=2 --threshold=0 --format=concise \
+            --progress=counter | tee summary.txt
+          { echo '```'; cat summary.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: report-terminal
+          path: |
+            target/mutastic/mutation.json
+            target/mutastic/mutation.html
+            summary.txt
+          if-no-files-found: error
+          retention-days: 30
 
   # The shares put together: the whole run's score, cards and report files.
   report:
