@@ -5,6 +5,18 @@ newest come first.
 
 ## Unreleased
 
+### HTML report
+
+- **`mutation.html` is mutastic's own report page,** the same as the Java edition's. It replaces
+  the generic viewer it embedded, and shows what the cards say: for each miss the change, why the
+  tests let it through, the inputs they used, the test to add and the `mutastic verify` that proves
+  it; tests to write, missed and not covered, with `j`/`k` through them; every mutant by status and
+  operator; each test with its source and what it let through; code coloured for Rust. **Copy**
+  puts a list's tests to write on the clipboard, a line each, for an issue or a pull request. It's
+  still one file that opens from disk with no network. The old view isn't an option:
+  `mutation.json` hasn't changed shape, so Stryker's report tools, which read it, still show it
+  the old way. See [Report files](docs/reference/reports.md).
+
 ### Security
 
 - **Text from the project reaches an agent fenced off as data.** The agent format, `next`'s agent
