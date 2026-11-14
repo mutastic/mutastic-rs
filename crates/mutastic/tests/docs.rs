@@ -1920,6 +1920,69 @@ fn every_id_in_the_words_is_a_mutant() {
     );
 }
 
+/// An event's `mutation` is the source span replaced and the source that replaces it, from its
+/// `location`, as the Java edition gives them: written over the file there, `replacement` makes
+/// the same source as the card's claim, for every operator, a body or a stage taken out included;
+/// a token swapped (`>=` to `>`) only leaves out the brackets the claim adds.
+fn every_event_splices_as_its_card_claims(jsonl: &str, found: &mutastic::sites::Crate) {
+    let mut wrong = Vec::new();
+    let mut operators = BTreeSet::new();
+    for event in events(jsonl)
+        .into_iter()
+        .filter(|e| e["reason"] == "mutant-finished")
+    {
+        let mutant = found.mutants.iter().find(|m| m.id == event["id"]).unwrap();
+        let file = found.files.iter().find(|f| f.path == mutant.file).unwrap();
+        let (range, with) = mutant.claim();
+        let mut claimed = file.text.clone();
+        claimed.replace_range(range, &with);
+        let location = &event["location"];
+        let line = location["line"].as_u64().unwrap() as usize;
+        let column = location["column"].as_u64().unwrap() as usize;
+        let start = file
+            .text
+            .split_inclusive('\n')
+            .take(line - 1)
+            .map(str::len)
+            .sum::<usize>();
+        let at = file.text[start..]
+            .char_indices()
+            .nth(column - 1)
+            .map_or(file.text.len(), |(offset, _)| start + offset);
+        let original = event["mutation"]["original"].as_str().unwrap();
+        let replacement = event["mutation"]["replacement"].as_str().unwrap();
+        let spliced = file.text[at..]
+            .strip_prefix(original)
+            .map(|after| format!("{}{replacement}{after}", &file.text[..at]));
+        // A token swapped is written without the brackets the claim adds to keep precedence.
+        let bare = |text: &str| text.replace(['(', ')'], "");
+        if spliced.as_deref().map(bare) != Some(bare(&claimed)) {
+            wrong.push(format!(
+                "{} {} at {line}:{column}: {original:?} -> {replacement:?}",
+                mutant.id, mutant.operator
+            ));
+        }
+        operators.insert(mutant.operator);
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    for operator in [
+        "mutastic/default-parameter",
+        "mutastic/null-parameter",
+        "mutastic/omit-call",
+        "stream/remove-stage",
+        "stream/remove-other-stage",
+        "optional/remove-filter",
+        "library/reverse-ordering",
+        "library/unchecked-arithmetic",
+        "mutastic/replace-body",
+    ] {
+        assert!(
+            operators.contains(operator),
+            "the fixture has no {operator}"
+        );
+    }
+}
+
 /// A card says what its mutant does. For every mutant the operators fixture's tests miss, this
 /// writes the card's change into a copy of its file, as the card claims it, puts every copy in one
 /// crate, and runs the fixture's tests in each: they must pass, as they did with the mutant.
@@ -1945,6 +2008,7 @@ fn every_missed_card_on_the_operators_fixture_is_true() {
     assert!(missed.len() > 40, "{} missed", missed.len());
     let project = workspace::read(&fixture.display().to_string()).unwrap();
     let found = engine::find_all(&project);
+    every_event_splices_as_its_card_claims(&jsonl.stdout, &found);
     let allow = "#[allow(warnings, unconditional_panic, arithmetic_overflow)]";
     let mut claims = String::new();
     let mut named = BTreeMap::new();

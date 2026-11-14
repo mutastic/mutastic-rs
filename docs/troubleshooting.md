@@ -32,7 +32,7 @@ the function returns a `String`:
   "location": {
     "file": "src/arguments.rs",
     "line": 4,
-    "column": 18,
+    "column": 17,
     "class": "arguments",
     "method": "username"
   },
