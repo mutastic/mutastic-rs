@@ -44,6 +44,7 @@ pub mod compile;
 pub mod config;
 pub mod edition;
 pub mod engine;
+pub mod environment;
 pub mod failure;
 pub mod flaky;
 pub mod gate;
