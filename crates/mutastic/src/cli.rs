@@ -1577,17 +1577,22 @@ fn no_gate_action(action: &str) -> String {
     )
 }
 
-/// Keeps where the task starts; with a hook, once for each session. A hook's output is the
-/// agent's to read: it's told the task is gated, and how to check its work as it goes.
+/// Keeps where the task starts; with a hook, once for each session, and at each later prompt takes
+/// in the ignores the person made between turns. A hook's output is the agent's to read: it's told
+/// the task is gated, and how to check its work as it goes.
 fn gate_open(
     hooked: bool,
     here: &std::path::Path,
     work: &std::path::Path,
     session: &str,
 ) -> Result<ExitCode, String> {
-    let open_for_session = !session.is_empty()
-        && gate::State::read(work).is_some_and(|state| state.session == session);
-    if hooked && open_for_session {
+    let open =
+        gate::State::read(work).filter(|state| !session.is_empty() && state.session == session);
+    if let Some(open) = open.filter(|_| hooked) {
+        // A later prompt: what the person ignored between turns is the task's to start from.
+        if open.stopped.is_some() {
+            open.prompted(&ignored_ids(here)?).write(work)?;
+        }
         return Ok(ExitCode::SUCCESS);
     }
     let Some(base) = crate::since::git(here, &["rev-parse", "HEAD"]) else {
@@ -1640,9 +1645,17 @@ fn gate_check(
     let verdict = gate_verdict(parsed, project, here, &open)?;
     let mut state = open.clone();
     state.red.extend(verdict.red.clone());
+    // As a hook, a check that lets the agent stop notes what's ignored: what's ignored after it, and
+    // before the next prompt, is the person's.
+    let stopped = if hooked {
+        Some(ignored_ids(here)?)
+    } else {
+        open.stopped.clone()
+    };
     if verdict.passes {
         state.blocks = 0;
         state.tree.clear();
+        state.stopped = stopped;
         state.write(work)?;
         return Ok(gate_answer(hooked, &for_the_person(here, &state, verdict)));
     }
@@ -1666,11 +1679,14 @@ fn gate_check(
         None
     };
     let Some(text) = handed_over else {
+        // Sent back, the agent has the turn: what it ignores now is its own.
+        state.stopped = None;
         state.write(work)?;
         return Ok(gate_answer(hooked, &verdict));
     };
     state.blocks = 0;
     state.tree.clear();
+    state.stopped = stopped;
     state.write(work)?;
     let answer = for_the_person(here, &open, gate::Verdict::pass(text));
     Ok(gate_answer(hooked, &answer))
