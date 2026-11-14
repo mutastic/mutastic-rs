@@ -83,6 +83,9 @@ pub struct MutantResult {
     pub covered_by: Vec<String>,
     pub killed_by: Option<String>,
     pub killed_with: Option<String>,
+    /// A test that failed against the mutant, then failed on its own with no mutant in too: its
+    /// catch didn't count, and the mutant ran again without it.
+    pub false_catch_by: Option<String>,
     pub tests_run: usize,
     pub took: Duration,
     /// The whole numbers its function was called with, by parameter.
@@ -126,8 +129,13 @@ pub struct Report {
     pub stale_ignores: Vec<String>,
     /// The change the run was scoped to, with `--since`.
     pub scope: Option<Scope>,
-    /// The tests that failed in the coverage pass and passed when run again: left out of the run.
+    /// The tests that failed in the coverage pass and passed when run again, then those that
+    /// caught a mutant and failed on their own with no mutant in: left out of the run.
     pub flaky: Vec<crate::flaky::Flaky>,
+    /// Each mutant that ran again without a test that fails on its own, by its index in
+    /// `found.mutants`: its first result, which its `mutant-finished` gives, before the
+    /// `mutant-revised` with the result in `results`.
+    pub revised: BTreeMap<usize, MutantResult>,
     /// Which share of a split run this is (`--shard`), and what it ran on.
     pub share: Option<crate::shares::Tag>,
     /// The operators the run used, by id: a score is a share of what they make.
@@ -169,9 +177,21 @@ impl Report {
         (scored > 0).then(|| 100.0 * detected as f64 / scored as f64)
     }
 
-    /// Whether the run passes: with `--fail-on-new`, when no mutant no test catches is new;
+    /// The tests that caught mutants and fail on their own with no mutant in.
+    pub fn failing_alone(&self) -> Vec<&crate::flaky::Flaky> {
+        self.flaky
+            .iter()
+            .filter(|flaky| flaky.fails_alone)
+            .collect()
+    }
+
+    /// Whether the run passes: never with a test that caught mutants and fails on its own, as its
+    /// catches can't be trusted; with `--fail-on-new`, when no mutant no test catches is new;
     /// otherwise when the score reaches the threshold.
     pub fn passed(&self) -> bool {
+        if !self.failing_alone().is_empty() {
+            return false;
+        }
         if self.only {
             return self.results.iter().all(|result| result.status.settled());
         }
@@ -465,6 +485,34 @@ pub fn run(
     });
     let mutants_took = mutants_started.elapsed();
     progress(Progress::Ran { took: mutants_took });
+    let runs = BuildRuns {
+        found: &found,
+        first: &first,
+        built: &built,
+        tests: &tests,
+        reach: &reach,
+        cwd: &cwd,
+        workers: options.workers,
+    };
+    let guarded = crate::guard::check(&mut results, &runs);
+    let mut flaky = flaky;
+    flaky.extend(guarded.failing_alone.iter().filter_map(|failing| {
+        let index = tests.iter().position(|test| &test.display == failing)?;
+        let mut evidence = flaky_evidence(
+            project,
+            &found,
+            &built.binaries,
+            &tests[index],
+            &reach[index],
+        );
+        evidence.fails_alone = true;
+        Some(evidence)
+    }));
+    let revised: BTreeMap<usize, MutantResult> = guarded
+        .first
+        .into_iter()
+        .map(|(index, first)| (results[index].mutant, first))
+        .collect();
     let looking = Instant::now();
     let checked = options.suggestions && results.iter().any(|r| r.status == Status::Survived);
     if options.suggestions {
@@ -480,7 +528,11 @@ pub fn run(
     let checking = checked.then(|| looking.elapsed());
     // The tests run against mutants; the coverage pass's runs aren't counted, as in the Java
     // edition, so the count compares with running every test on every mutant.
-    let test_runs = results.iter().map(|r| r.tests_run).sum::<usize>();
+    let test_runs = results
+        .iter()
+        .chain(revised.values())
+        .map(|r| r.tests_run)
+        .sum::<usize>();
     Ok(Report {
         project: project.clone(),
         found,
@@ -505,6 +557,7 @@ pub fn run(
         stale_ignores,
         scope,
         flaky,
+        revised,
         share: None,
         operators: options.operators.clone(),
         comparison: None,
@@ -543,6 +596,7 @@ fn nothing_to_run(
                 covered_by: Vec::new(),
                 killed_by: None,
                 killed_with: None,
+                false_catch_by: None,
                 tests_run: 0,
                 took: Duration::ZERO,
                 inputs: BTreeMap::new(),
@@ -576,6 +630,7 @@ fn nothing_to_run(
         stale_ignores: unbuilt.stale_ignores,
         scope: unbuilt.scope,
         flaky: Vec::new(),
+        revised: BTreeMap::new(),
         share: None,
         operators: options.operators.clone(),
         comparison: None,
@@ -629,6 +684,7 @@ fn flaky_evidence(
     );
     crate::flaky::Flaky {
         test: test.display.clone(),
+        fails_alone: false,
         reaches: crate::flaky::reaches(found, &reached),
         reaches_in_test: crate::flaky::reaches_in_test(&sources, &test.name),
     }
@@ -1032,6 +1088,7 @@ fn result(
             covered_by: Vec::new(),
             killed_by: None,
             killed_with: None,
+            false_catch_by: None,
             tests_run: 0,
             took: Duration::ZERO,
             inputs: BTreeMap::new(),
@@ -1056,6 +1113,7 @@ fn result(
         covered_by: covering.iter().map(|&t| tests[t].display.clone()).collect(),
         killed_by: None,
         killed_with: None,
+        false_catch_by: None,
         tests_run: 0,
         took: Duration::ZERO,
         inputs: function
@@ -1080,7 +1138,8 @@ fn result(
         result.status = Status::NoCoverage;
         return result;
     }
-    // Fastest binary first; within it, the covering tests run together.
+    // A binary at a time, the library's first, then by target, so the test that catches a mutant
+    // is the same in every run; within one, the covering tests run together.
     let mut by_binary: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
     for &t in &covering {
         by_binary.entry(tests[t].binary).or_default().push(t);
@@ -1089,7 +1148,14 @@ fn result(
         .into_iter()
         .map(|(binary, group)| (group.iter().map(|&t| reach[t].took).sum(), binary, group))
         .collect();
-    groups.sort();
+    groups.sort_by_key(|(_, binary, _)| {
+        let built = &built.binaries[*binary];
+        (
+            built.kind != "lib",
+            built.target.clone(),
+            built.kind.clone(),
+        )
+    });
     let started = Instant::now();
     for (baseline, binary, group) in groups {
         let mut names: Vec<&str> = group.iter().map(|&t| tests[t].name.as_str()).collect();
@@ -1125,17 +1191,89 @@ fn result(
             Some(message) => format!("panic: {message}"),
             None => "panic".into(),
         });
-        result.killed_by = outcome.failed.as_ref().map(|name| {
-            group
-                .iter()
-                .find(|&&t| &tests[t].name == name)
-                .map(|&t| tests[t].display.clone())
-                .unwrap_or_else(|| name.clone())
-        });
+        // Of the tests that failed, the first as they're listed, not the first to finish: the
+        // threads finish in a different order each run.
+        result.killed_by = group
+            .iter()
+            .find(|&&t| outcome.failures.contains(&tests[t].name))
+            .map(|&t| tests[t].display.clone())
+            .or_else(|| outcome.failed.clone());
         break;
     }
     result.took = started.elapsed();
     result
+}
+
+/// The false-catch guard's runs ([`crate::guard`]), on the run's build and the tests the coverage
+/// pass kept.
+struct BuildRuns<'a> {
+    found: &'a Crate,
+    /// For each mutant, the first live mutant at its site: what the coverage pass recorded.
+    first: &'a [u32],
+    built: &'a compile::Built,
+    tests: &'a [Test],
+    reach: &'a [Reach],
+    cwd: &'a std::path::Path,
+    workers: usize,
+}
+
+impl BuildRuns<'_> {
+    fn test(&self, display: &str) -> Option<usize> {
+        self.tests.iter().position(|test| test.display == display)
+    }
+}
+
+impl crate::guard::Runs for BuildRuns<'_> {
+    fn time_of(&self, test: &str) -> Duration {
+        self.test(test)
+            .map_or(Duration::ZERO, |index| self.reach[index].took)
+    }
+
+    /// On its own, with no mutant active, under the time limit a mutant's run of it has. A process
+    /// that couldn't start, or ran out of time, isn't evidence; one that failed or crashed is.
+    fn fails_alone(&self, display: &str) -> bool {
+        let Some(index) = self.test(display) else {
+            return false;
+        };
+        let test = &self.tests[index];
+        let limit = timeout(self.reach[index].took);
+        let outcome = testrun::run(
+            &self.built.binaries[test.binary],
+            self.cwd,
+            &[&test.name],
+            &[],
+            limit,
+        );
+        let ran = outcome.failed.is_some() || outcome.failure.as_deref() == Some("crash");
+        !outcome.passed && !outcome.timed_out && ran
+    }
+
+    fn run_again(
+        &self,
+        results: &[MutantResult],
+        indexes: &[usize],
+        left_out: &BTreeSet<String>,
+    ) -> Vec<MutantResult> {
+        let (tests, reach): (Vec<Test>, Vec<Reach>) = self
+            .tests
+            .iter()
+            .zip(self.reach)
+            .filter(|(test, _)| !left_out.contains(&test.display))
+            .map(|(test, reach)| (test.clone(), reach.clone()))
+            .unzip();
+        let mutants: Vec<usize> = indexes.iter().map(|&at| results[at].mutant).collect();
+        testrun::parallel(&mutants, self.workers, |&mutant| {
+            result(
+                self.found,
+                mutant,
+                self.first[mutant],
+                self.built,
+                &tests,
+                &reach,
+                self.cwd,
+            )
+        })
+    }
 }
 
 /// Looks for a test that catches each missed mutant whose function has a probe, side by side.

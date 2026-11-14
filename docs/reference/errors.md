@@ -130,17 +130,18 @@ mutastic: run has no option --formt. There's one called --format.
 
 ## `option-value`
 
-A value an option doesn't take, or one given after a space: values go after an `=`. The valid ones
-are listed, and a close one offered.
+A value an option doesn't take, or none where it needs one. The valid ones are listed, and a close
+one offered. A value goes after an `=` or a space, `--format=agent` or `--format agent`; only
+`--since`'s, which is optional, needs the `=`.
 
 ```sh
-mutastic run fixtures/pricing --format agent
+mutastic run fixtures/pricing --vocabulary=clasic
 ```
 
 <!-- output: errors/option-value -->
 ```text
-mutastic: --format takes its value after an =, not a space.
-  mutastic run fixtures/pricing --format=agent
+mutastic: --vocabulary: clasic isn't one of plain or classic. There's one called classic.
+  mutastic run fixtures/pricing --vocabulary=classic
 ```
 
 ## `option-not-taken`
@@ -210,6 +211,23 @@ mutastic run configured
 <!-- output: errors/config -->
 ```text
 mutastic: mutastic.yaml line 1: expected extends:, rules:, plugins:, filters: or operators:, not rulez:. There's one called rules:.
+```
+
+## `environment`
+
+A variable that stands in for an option, `MUTASTIC_FORMAT`, `MUTASTIC_VOCABULARY` or
+`MUTASTIC_PROGRESS`, set to a value the option doesn't take, or `MUTASTIC_HEARTBEAT` set to
+anything but a number of seconds above 0. A variable is set once and forgotten, so mutastic refuses
+it rather than quietly running with the default. Set it to one the error lists, or unset it; the
+option on the command line wins over it.
+
+```sh
+MUTASTIC_VOCABULARY=xyz mutastic run fixtures/pricing
+```
+
+<!-- output: errors/environment -->
+```text
+mutastic: MUTASTIC_VOCABULARY: xyz isn't one of plain or classic
 ```
 
 ## `no-baseline`

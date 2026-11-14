@@ -142,8 +142,9 @@ fn spaced(args: &[String], at: usize) -> Option<&str> {
 /// a reason for whoever reviews it.
 const SAY_WHAT_THEY_NEED: &[&str] = &["only", "from-shards", "reason"];
 
-/// `--name`, at `args[at]`, needs a value and has none after an `=`: given after a space, the line
-/// with the `=`; given none, the form it takes, and its choices.
+/// `--name`, at `args[at]`, needs a value and has none: the form it takes, and its choices. One
+/// that must take a value has its value after a space joined to it first (`cli::joined`); an
+/// optional one's, `--since main`, is said to need its `=`.
 pub fn value(option: &CliOption, args: &[String], at: usize) -> Option<String> {
     let name = option.name;
     match option.kind {
@@ -159,23 +160,19 @@ pub fn value(option: &CliOption, args: &[String], at: usize) -> Option<String> {
         }
         Kind::Flag => return None,
     }
-    Some(match spaced(args, at) {
-        Some(next) => format!(
-            "--{name} takes its value after an =, not a space.\n{}",
-            line(args, at, &format!("--{name}={next}"), 1)
-        ),
-        // These say what they need in their own words.
-        None if SAY_WHAT_THEY_NEED.contains(&name) => return None,
-        None if !option.choices.is_empty() => format!(
-            "--{name} needs a value, one of {}.\n{}",
-            listed(option.choices),
-            line(args, at, &option.synopsis(), 0)
-        ),
-        None => format!(
-            "--{name} needs a value.\n{}",
-            line(args, at, &option.synopsis(), 0)
-        ),
-    })
+    // These say what they need in their own words.
+    if SAY_WHAT_THEY_NEED.contains(&name) {
+        return None;
+    }
+    let one_of = if option.choices.is_empty() {
+        String::new()
+    } else {
+        format!(", one of {}", listed(option.choices))
+    };
+    Some(format!(
+        "--{name} needs a value{one_of}.\n{}",
+        line(args, at, &option.synopsis(), 0)
+    ))
 }
 
 /// `value`, given to `--name`, isn't one of its choices: they're listed, and a close one is offered,
@@ -256,10 +253,6 @@ mod tests {
     #[test]
     fn a_value_after_a_space_is_shown_after_an_equals() {
         let format = commands::option("format").unwrap();
-        assert_eq!(
-            value(format, &words("run --format agent ."), 1).unwrap(),
-            "--format takes its value after an =, not a space.\n  mutastic run --format=agent ."
-        );
         assert_eq!(
             value(format, &words("run --format"), 1).unwrap(),
             "--format needs a value, one of full, brief, concise, grouped, agent or jsonl.\n  \

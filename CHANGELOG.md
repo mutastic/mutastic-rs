@@ -33,6 +33,10 @@ newest come first.
 
 ### Additions
 
+- **With more than one test to write, the agent format says how to take them.** After `rules:`
+  and `decline:`, a `tasks:` line asks the agent to make a task list, one item per mutant grouped
+  by file, then write each test, run its `mutastic verify` and mark it done before the next. The
+  Java edition and the HTML report's Copy as prompt say the same.
 - **A run with no mutant to run builds nothing and runs no test.** `mutastic run --since=HEAD` on
   a clean tree took a build and a pass of every test, a minute and more on a big crate, to say
   there was nothing to measure. When no mutant is there to run (no changed lines, changed lines
@@ -54,9 +58,57 @@ newest come first.
 - **Each error has an entry on [the errors page](docs/reference/errors.md),** under its code: what
   causes it, a kept copy of a real run, and what to do. Each command an error gives to run as it is,
   is run by the docs test, and gets past the error.
+- **A value can follow its option after a space,** `--format agent` as `--format=agent`, for every
+  option that must take a value, as the Java edition has taken it since 1.0. It was refused with
+  "takes its value after an =". Only `--since`, whose value is optional, still needs its `=`, as
+  the word after it may be the directory.
+
+### Changes
+
+- **A bad value in an environment variable is refused,** with code `environment`, as the Java
+  edition refuses it: `MUTASTIC_FORMAT`, `MUTASTIC_VOCABULARY` or `MUTASTIC_PROGRESS` set to a
+  value its option doesn't take, or `MUTASTIC_HEARTBEAT` to anything but a number of seconds above
+  0. It was read as the default without a word, and a variable is set once and forgotten. The
+  option on the command line still wins over it, unread.
+- **`--threshold` is a whole number from 0 to 100,** as the events schema, mutation.json and the
+  Java edition have it. `--threshold=72.5` and `--threshold=150` were taken; they're refused now,
+  in the Java edition's words: `--threshold needs a whole number, not 72.5`, `--threshold is from
+  0 to 100, not 150`.
 
 ### Fixes
 
+- **The test named as catching a mutant is the same in every run.** A mutant's covering tests run
+  together, on several threads, and the first to fail was named: where several cases catch it, as
+  cases written alike do, the name changed from run to run, and with it `mutation.json` and the
+  report's tests. The test named is now the first of those that failed as the tests are listed,
+  the library's before the other targets'.
+
+- **A property test draws the same cases in every run.** mutastic sets `PROPTEST_RNG_SEED` for
+  the tests it runs, unless you've set it, and turns proptest's saved failures off. A property that
+  fails for some cases fails in every run or in none, so it can't stop one run, be called flaky in
+  the next and catch a mutant in a third; and a case one of mutastic's runs saved can't decide its
+  next runs. `proptest-regressions/` isn't copied, so the cases you've saved aren't replayed, and
+  nothing is written to your tree.
+
+- **The gate knows a case by the name it runs under.** rstest and test-case give each case a test
+  of its own, `halves::case_1`, and no function has that name. A case that failed at a check was
+  remembered without its source, and once it passed the gate said it was gone, at every check,
+  until `gate close`. The gate now looks tests up by the names the test binaries list, and counts
+  them from the same list, so taking a `#[case]` row away holds the gate as taking a test-case row
+  away did. `gate open` builds the tests once to list them; a package that doesn't build when the
+  task starts is counted from its source, as before.
+
+- **A test that caught mutants and fails on its own fails the run.** Once the mutants have run,
+  each test that caught one runs again, on its own with no mutant in. One that fails there (it
+  trips on a file it, another test or the run left behind) is named as flaky, as a test that
+  "passes among the others but fails on its own"; its catches don't count, and every mutant it
+  reached runs again without it, so scores can go down. Unlike other flaky tests it fails the run
+  whatever the score, with exit status 2, and `verify` and `gate check` don't pass on it either.
+  In `--format=jsonl`, a mutant run again comes as a `mutant-revised` event after the
+  `mutant-finished` ones, naming the test as `falseCatchBy` where its catch didn't count, and the
+  test's `flakyEvidence` entry has `"failsAlone": true`, as in the Java edition. A healthy suite's
+  results don't change, at the cost of one run of each catching test. No id changes. See
+  [A test that fails on its own](docs/concepts/results.md#a-test-that-fails-on-its-own).
 - **The gate holds a task that changes no line mutastic mutates to its other checks.** Such a task
   skipped the checks for ignores and baseline entries the task made itself, and for tests taken
   away or `#[ignore]`d, so an agent that only deleted a failing test, or ignored a mutant itself,

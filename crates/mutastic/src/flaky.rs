@@ -15,11 +15,15 @@ use crate::sites::Crate;
 /// failing, as in the Java edition: one rerun let a test that fails about half the time stop a run.
 pub const RERUNS: usize = 3;
 
-/// A test left out of the run because it failed, then passed when run again.
+/// A test left out of the run because it failed, then passed when run again; or because it caught
+/// mutants, then failed on its own with no mutant in.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Flaky {
     /// The test, as the run shows it: `raffle::a_draw_is_a_ticket`.
     pub test: String,
+    /// It caught mutants, then failed on its own with no mutant in, run again after them: it
+    /// passed among the others, so it counts on what something else sets up or leaves behind.
+    pub fails_alone: bool,
     /// What the code it ran reaches that answers differently every run: `SystemTime::now`.
     pub reaches: Vec<String>,
     /// The same, in the test's own code: its module, or its file under `tests/`.
@@ -69,37 +73,64 @@ pub fn reaches(found: &Crate, reached: &BTreeSet<usize>) -> Vec<String> {
 
 /// What the test `name` (libtest's, `tests::draws`) reaches in its own code: the `mod` it's in, or
 /// its whole file under `tests/`, as the Java edition reads the test's class. `sources` are the
-/// files to look in, with their text.
+/// files to look in, with their text. A generated test, `adds::case_1`, is written as the function
+/// an earlier segment names.
 pub fn reaches_in_test(sources: &[(bool, String)], name: &str) -> Vec<String> {
-    let last = name.rsplit("::").next().unwrap_or(name);
-    for (whole_file, text) in sources {
-        let file = SourceFile::parse(text, Edition::CURRENT).tree();
-        let test = file
-            .syntax()
-            .descendants()
-            .filter_map(ast::Fn::cast)
-            .find(|function| {
-                function.name().is_some_and(|n| n.text() == last)
-                    && function
-                        .attrs()
-                        .any(|attr| attr.syntax().text().to_string().contains("test"))
-            });
-        let Some(test) = test else {
-            continue;
-        };
-        let scope = test
-            .syntax()
-            .ancestors()
-            .find_map(ast::Module::cast)
-            .map(|module| module.syntax().clone());
-        let scope = match scope {
-            Some(module) => module,
-            None if *whole_file => file.syntax().clone(),
-            None => test.syntax().clone(),
-        };
-        return varying_calls(&scope).into_iter().collect();
+    let files: Vec<(bool, SyntaxNode)> = sources
+        .iter()
+        .map(|(whole_file, text)| (*whole_file, parse(text)))
+        .collect();
+    for segment in name.rsplit("::") {
+        for (whole_file, file) in &files {
+            let Some(test) = written_in(file, segment) else {
+                continue;
+            };
+            let scope = test
+                .ancestors()
+                .find_map(ast::Module::cast)
+                .map(|module| module.syntax().clone());
+            let scope = match scope {
+                Some(module) => module,
+                None if *whole_file => file.clone(),
+                None => test,
+            };
+            return varying_calls(&scope).into_iter().collect();
+        }
     }
     Vec::new()
+}
+
+/// Where the test function `name` is written in `file`: a function with a test's attribute, or
+/// else a macro whose input defines it, as `proptest! { #[test] fn name(..) {..} }` does.
+fn written_in(file: &SyntaxNode, name: &str) -> Option<SyntaxNode> {
+    let function = file
+        .descendants()
+        .filter_map(ast::Fn::cast)
+        .find(|function| {
+            function.name().is_some_and(|n| n.text() == name)
+                && function
+                    .attrs()
+                    .any(|attr| attr.syntax().text().to_string().contains("test"))
+        });
+    if let Some(function) = function {
+        return Some(function.syntax().clone());
+    }
+    file.descendants()
+        .filter_map(ast::MacroCall::cast)
+        .find(|call| {
+            call.token_tree()
+                .is_some_and(|tree| defines(&tree.syntax().text().to_string(), name))
+        })
+        .map(|call| call.syntax().clone())
+}
+
+/// Whether a macro's input has `fn name`.
+fn defines(input: &str, name: &str) -> bool {
+    let words: Vec<&str> = input
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .filter(|word| !word.is_empty())
+        .collect();
+    words.windows(2).any(|pair| pair == ["fn", name])
 }
 
 /// The sources a test may be in: for an integration test, `tests/<target>.rs` or
@@ -461,5 +492,22 @@ mod tests {
             ["Instant::now"]
         );
         assert!(reaches_in_test(&[(false, source.into())], "tests::other").is_empty());
+    }
+
+    /// A generated case is read as the function it's written as, and a test a macro defines as
+    /// the macro's module.
+    #[test]
+    fn a_case_s_function_and_a_macro_s_test_are_read() {
+        let source = "#[cfg(test)]\nmod cases {\n    fn clock() -> u128 { std::time::Instant::now().elapsed().as_nanos() }\n    #[rstest]\n    #[case(1)]\n    fn draws(#[case] n: u32) { clock(); }\n}\n\
+                      #[cfg(test)]\nmod props {\n    proptest! {\n        #[test]\n        fn picks(n in 0..9) { let _ = std::time::SystemTime::now(); }\n    }\n}\n";
+        let sources = [(false, source.to_string())];
+        assert_eq!(
+            reaches_in_test(&sources, "cases::draws::case_1"),
+            ["Instant::now"]
+        );
+        assert_eq!(
+            reaches_in_test(&sources, "props::picks"),
+            ["SystemTime::now"]
+        );
     }
 }

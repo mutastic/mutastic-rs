@@ -30,6 +30,15 @@ pub const RULE: &str =
 pub const NO_REWRITE: &str =
     "Never change production code to make a mutant go away: tell the person.";
 pub const DECLINE: &str = "if a mutant's case can't happen in practice, or the change is one no caller can see, don't contrive a test: propose ignoring it, for a person to accept, as the kind it is (equivalent, unreachable, telemetry, deprecated or accepted-risk), with the reason in two sentences: the one case where it differs, and why that can't happen";
+/// With two or more mutants to write a test for, how an agent takes them: a task list, then one at
+/// a time, each proved before the next. The Java edition and the HTML report's Copy as prompt say
+/// the same; `verify` is the run's own `mutastic verify` for `<id>`.
+pub fn tasks(verify: &str) -> String {
+    format!(
+        "first make a task list with one item per mutant, grouped by file; then take them one at a time: write its test, run `{verify}`, and mark it done before starting the next"
+    )
+}
+
 /// The reason a proposal gives, as the Java edition's: the one case where the mutant differs, and
 /// why that can't happen, for a person to check in place of a test.
 pub const REASON: &str = "Differs only when <case>. That can't happen because <why>.";
@@ -676,6 +685,35 @@ fn covered_by(result: &MutantResult) -> String {
     }
 }
 
+/// What a mutant's card says of the test whose catch of it was false, as the Java edition says it.
+fn false_catch(test: &str) -> String {
+    format!(
+        "{} failed against it, but fails on its own with no mutant in too: that catch doesn't count",
+        untrusted::value(test)
+    )
+}
+
+/// A line for each test that caught mutants and fails on its own, saying what to do: for `verify`
+/// and the gate, as for a run.
+pub fn failing_alone(report: &Report) -> String {
+    report
+        .failing_alone()
+        .into_iter()
+        .map(failing_alone_line)
+        .collect()
+}
+
+/// A test that caught mutants, then failed on its own with no mutant in, run again after them: it
+/// passed among the others, so it counts on what something else sets up or leaves behind. The Java
+/// edition's words, but for the way out it offers with `--exclude-tests`, which this edition
+/// doesn't have yet.
+fn failing_alone_line(flaky: &crate::flaky::Flaky) -> String {
+    format!(
+        "flaky: {} passes among the others but fails on its own, with no mutant in (run again after the mutants, it failed): it counts on something another test or the run sets up or leaves behind. It's left out, so its catches don't count: the mutants it reached ran again without it, and the run can't pass until it passes on its own. Make it set up what it needs and clean up what it leaves. Never remove, disable or loosen it to get a run through\n",
+        untrusted::value(&flaky.test)
+    )
+}
+
 /// Tests' names, or other values of the project's, as they're shown: each [`untrusted::value`]d,
 /// with commas between.
 fn names(names: &[String]) -> String {
@@ -907,6 +945,15 @@ fn warnings(out: &mut String, report: &Report, style: Style) {
     }
     out.push('\n');
     for flaky in &report.flaky {
+        if flaky.fails_alone {
+            let _ = writeln!(
+                out,
+                " {} {} passes among the others but fails on its own, with no mutant in (run again after the mutants, it failed); its catches don't count, the mutants it reached ran again without it, and the run can't pass until it passes on its own",
+                style.red("! flaky:"),
+                untrusted::value(&flaky.test)
+            );
+            continue;
+        }
         let _ = writeln!(
             out,
             " {} {} failed, then passed when run again; left out of this run{}",
@@ -1307,6 +1354,7 @@ fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
     }
     let mut notes: Vec<String> = advice.notes.clone();
     notes.push(covered_by(result));
+    notes.extend(result.false_catch_by.as_deref().map(false_catch));
     for (index, note) in notes.iter().enumerate() {
         if index == 0 {
             let _ = writeln!(
@@ -1903,7 +1951,15 @@ fn delta(report: &Report, style: Style) -> String {
 /// PASS or FAIL, and why, on the Score line; with `--fail-on-new`, on the new misses.
 fn verdict(report: &Report, style: Style) -> String {
     let missed = report.count(Status::Survived);
-    if let Some(judged) = &report.fail_on_new {
+    if report.score().is_some() && !report.failing_alone().is_empty() {
+        format!(
+            "{} {}",
+            style.label("FAIL", RED),
+            style.red(
+                "A test that caught mutants fails on its own, with no mutant in, so its catches don't count: see the flaky tests above."
+            )
+        )
+    } else if let Some(judged) = &report.fail_on_new {
         on_new_misses(report, judged, style)
     } else if report.score().is_none() {
         format!(
@@ -2052,6 +2108,10 @@ fn agent(report: &Report, style: Style) -> String {
         let _ = writeln!(out, "no tests: {}", none.replacen("Found", "found", 1));
     }
     for flaky in &report.flaky {
+        if flaky.fails_alone {
+            out.push_str(&failing_alone_line(flaky));
+            continue;
+        }
         let _ = writeln!(
             out,
             "flaky: {} failed, then passed when run again; left out of this run, so its catches don't count. {} Never remove, disable or loosen it to get a run through",
@@ -2086,6 +2146,9 @@ fn agent(report: &Report, style: Style) -> String {
         "decline: {DECLINE} (`{}`)",
         view.command("propose", "<id>")
     );
+    if report.count(Status::Survived) + report.count(Status::NoCoverage) >= 2 {
+        let _ = writeln!(out, "tasks: {}", tasks(&view.command("verify", "<id>")));
+    }
     for line in not_mutated(report) {
         let _ = writeln!(out, "{line}");
     }
@@ -2220,6 +2283,9 @@ fn agent_fates(view: &View, words: Vocabulary) -> String {
 
 /// `PASS` or `FAIL`; with `--fail-on-new`, the new misses that decided it.
 fn agent_verdict(report: &Report) -> String {
+    if !report.failing_alone().is_empty() {
+        return "FAIL (a test that caught mutants fails on its own, with no mutant in)".into();
+    }
     match &report.fail_on_new {
         Some(judged) => judged.verdict(report),
         None if report.passed() => "PASS".into(),
@@ -2266,8 +2332,12 @@ fn agent_entry(view: &View, entry: &Entry, words: Vocabulary) -> String {
     }
     let _ = writeln!(
         out,
-        "   covered by: {}; all still pass with the change",
-        names(&result.covered_by)
+        "   covered by: {}; all still pass with the change{}",
+        names(&result.covered_by),
+        result
+            .false_catch_by
+            .as_deref()
+            .map_or(String::new(), |test| format!(" ({})", false_catch(test)))
     );
     for note in &advice.notes {
         let _ = writeln!(out, "   evidence: {note}");
@@ -2352,8 +2422,18 @@ fn jsonl(report: &Report) -> String {
             report.share.as_ref().map(crate::shares::Tag::json),
         ));
     }
+    // A mutant run again without a test that fails on its own gives its first result here, and its
+    // last in a `mutant-revised`, which replaces it, as the Java edition sends them.
     for result in &report.results {
-        lines.push(mutant_event(&view, result));
+        let first = report.revised.get(&result.mutant).unwrap_or(result);
+        lines.push(mutant_event(&view, first));
+    }
+    for result in &report.results {
+        if report.revised.contains_key(&result.mutant) {
+            let mut revised = mutant_event(&view, result);
+            revised["reason"] = json!("mutant-revised");
+            lines.push(revised);
+        }
     }
     let mut finished = json!({
         "schema": SCHEMA,
@@ -2409,13 +2489,20 @@ fn jsonl(report: &Report) -> String {
     finished["flakyEvidence"] = json!(report
         .flaky
         .iter()
-        .map(|f| json!({
-            "test": f.test,
-            "failure": [],
-            "reaches": f.reaches,
-            "reachesInTest": f.reaches_in_test,
-            "outside": false,
-        }))
+        .map(|f| {
+            let mut evidence = json!({
+                "test": f.test,
+                "failure": [],
+                "reaches": f.reaches,
+                "reachesInTest": f.reaches_in_test,
+            });
+            // A flag: there only when true, as the schema says, so a reader checks for it.
+            if f.fails_alone {
+                evidence["failsAlone"] = json!(true);
+            }
+            evidence["outside"] = json!(false);
+            evidence
+        })
         .collect::<Vec<_>>());
     if let Some(found) = &report.comparison {
         finished["previousScore"] = found
@@ -2569,6 +2656,9 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
     }
     if let Some(failure) = &result.killed_with {
         event["caughtWith"] = json!(failure);
+    }
+    if let Some(test) = &result.false_catch_by {
+        event["falseCatchBy"] = json!(test);
     }
     if !result.inputs.is_empty() {
         event["inputs"] = json!(result
@@ -2755,6 +2845,7 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
         // Whether they still pass is a miss's to say: here, only which tests reach it.
         notes.push(format!("covered by {}", names(&result.covered_by)));
     }
+    notes.extend(result.false_catch_by.as_deref().map(false_catch));
     for (index, note) in notes.iter().enumerate() {
         if index == 0 {
             let _ = writeln!(
