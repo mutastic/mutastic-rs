@@ -33,6 +33,10 @@ newest come first.
 
 ### Additions
 
+- **With more than one test to write, the agent format says how to take them.** After `rules:`
+  and `decline:`, a `tasks:` line asks the agent to make a task list, one item per mutant grouped
+  by file, then write each test, run its `mutastic verify` and mark it done before the next. The
+  Java edition and the HTML report's Copy as prompt say the same.
 - **A run with no mutant to run builds nothing and runs no test.** `mutastic run --since=HEAD` on
   a clean tree took a build and a pass of every test, a minute and more on a big crate, to say
   there was nothing to measure. When no mutant is there to run (no changed lines, changed lines
@@ -61,6 +65,17 @@ newest come first.
 
 ### Changes
 
+- **Help is written from the commands' declarations, in the Java edition's layout.** `mutastic
+  --help` was written by hand, and had fallen behind: it left out `--report=sarif`, the ignore and
+  gate options, the environment and every exit code but a line's worth. Now both it and `mutastic
+  <command> --help` are made from `src/commands.rs`, as the docs are: a `Usage:` line, what the
+  command does, an `Exits` paragraph, examples, every option it takes, `--edition` included, with
+  its values and variables, the exit codes, and its page on the docs site, every line within 100
+  columns. An example too long for that is broken with ` \`, so it still pastes as one command.
+  `mutastic` with nothing after it prints the help on stderr, not stdout, and exits 2 as before.
+- **Synopses are written in capitals,** `mutastic verify ID... [DIR]` for `mutastic verify
+  <id>[,<id>…] [<id>…] [dir]`, as the Java edition writes them and as option values already were
+  (`--threshold=N`). They show in help, in `commands.json` and in the errors that give a usage.
 - **A bad value in an environment variable is refused,** with code `environment`, as the Java
   edition refuses it: `MUTASTIC_FORMAT`, `MUTASTIC_VOCABULARY` or `MUTASTIC_PROGRESS` set to a
   value its option doesn't take, or `MUTASTIC_HEARTBEAT` to anything but a number of seconds above
@@ -83,6 +98,22 @@ newest come first.
   mutant was missed. A mutant run again without a test that fails on its own still gets its
   `mutant-revised` after the phases. The results, the score and the report files don't change.
   See [Events](docs/reference/events.md).
+- **Each error's code is set where it's raised.** `run-failed`'s `code` was worked out afterwards
+  from the error's words, and two errors got `other` that way: `--report=xyz` and `gate` with no
+  action, which are now `option-value` and `unknown-command`. A mistyped gate action, `gate opn`,
+  is said as that before mutastic looks for a project, so outside one it no longer answers "there's
+  no project here". A file mutastic can't write is `other`, not `config`, and a git failure under
+  `--since` is `git`.
+- **A bad `--format` value ends the stream the environment asks for.** With
+  `MUTASTIC_FORMAT=jsonl`, `--format=xyz` was refused on stderr with no `run-failed` event.
+- **A panic ends as a failure.** A bug in mutastic exited 101 with Rust's own message and no
+  event. It now says `internal error:`, where, and where to report it, writes a `run-failed` event
+  with code `internal` in the agent and jsonl formats, and exits 2, as every failure does until
+  2.0.
+- **`explain` on a caught return doesn't say no test fails.** The card for a caught or uncovered
+  return-value mutant gave the missed card's note, "tests reach this return, but none fails when
+  it returns `0`", under the test that caught it.
+
 - **The test named as catching a mutant is the same in every run.** A mutant's covering tests run
   together, on several threads, and the first to fail was named: where several cases catch it, as
   cases written alike do, the name changed from run to run, and with it `mutation.json` and the

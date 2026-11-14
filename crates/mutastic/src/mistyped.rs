@@ -76,7 +76,7 @@ pub fn command_at(args: &[String], at: usize) -> String {
 
 /// The one line of usage for a command mutastic doesn't have, and where its commands are listed.
 fn commands_usage() -> String {
-    "Usage: mutastic <command> [dir] [options]. To see the commands:\n  mutastic --help".into()
+    "Usage: mutastic COMMAND [DIR] [OPTIONS]. To see the commands:\n  mutastic --help".into()
 }
 
 /// The options a command takes, and `help`, every command's; every option for a command that
@@ -105,7 +105,7 @@ pub fn option(
     let typed = command.map_or(args[0].as_str(), |command| command.name);
     let candidates = options_of(command);
     let Some(close) = similar::closest(name, candidates.iter().copied()) else {
-        let synopsis = command.map_or("mutastic gate open|check|close [dir]", |c| c.synopsis);
+        let synopsis = command.map_or("mutastic gate open|check|close [DIR]", |c| c.synopsis);
         return format!(
             "{typed} has no option --{name}.\nUsage: {synopsis}. To see its options:\n  mutastic {} --help",
             args[0]
@@ -222,7 +222,7 @@ mod tests {
         );
         assert_eq!(
             command(&words("build")),
-            "mutastic has no command build.\nUsage: mutastic <command> [dir] [options]. To see \
+            "mutastic has no command build.\nUsage: mutastic COMMAND [DIR] [OPTIONS]. To see \
              the commands:\n  mutastic --help"
         );
         assert_eq!(
@@ -245,7 +245,7 @@ mod tests {
         );
         assert_eq!(
             option(run, &words("run --verbose"), 1, "verbose", None),
-            "run has no option --verbose.\nUsage: mutastic run [dir] [options]. To see its \
+            "run has no option --verbose.\nUsage: mutastic run [DIR] [OPTIONS]. To see its \
              options:\n  mutastic run --help"
         );
     }

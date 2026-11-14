@@ -76,8 +76,11 @@ Formatting is rustfmt's, with its defaults: that is the spec, not taste.
   variable and exit status is declared once, in `src/commands.rs`. The parser takes an option only
   on the commands it names there, and `docs/commands.json`, which the docs site's page for each
   command is written from, and `docs/reference/commands.md`, the same reference for GitHub, are
-  written from the same declarations: the docs test fails while either is stale. Link a command
-  there (`commands.md#run`), never to the docs site's Rust section until it's published.
+  written from the same declarations: the docs test fails while either is stale. The docs site's
+  Rust section is published, at the release the docs pin names: link only pages that are live
+  there, such as each command's (`https://docs.mutastic.io/rust/reference/run/`), which help links
+  to; a page added since the pin returns 404 until it moves. Link anything else in this repository
+  (`commands.md#run`).
 - **Ids never change.** A mutant's id is a hash of what it is, never its line. A new operator,
   filter or output must not move an existing id: `tests/ids.rs` holds every fixture's mutants to
   `tests/ids/ids.tsv`, and the list only grows.

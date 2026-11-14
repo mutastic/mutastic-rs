@@ -372,7 +372,7 @@ let price = Decimal(x as i64 * 137).round_dp(1);
 <!-- output: operators/library/remove-step -->
 ```text
 ma0a93565 src/lib.rs:536:41 bigdecimal/remove-step .round_dp(1) is left out in patterns
-1 mutants
+1 mutant
 ```
 
 **The test that catches it:** an amount with more places than the step keeps, asserting what comes
