@@ -1565,7 +1565,7 @@ fn gate_command(parsed: &Parsed) -> Result<ExitCode, String> {
     let work = project.mutastic_dir();
     let here = std::path::Path::new(dir);
     match action.as_str() {
-        "open" => gate_open(hooked, here, &work, &session),
+        "open" => gate_open(hooked, &project, here, &session),
         "close" => {
             let closed = gate::State::close(&work);
             if !hooked {
@@ -1605,10 +1605,11 @@ fn no_gate_action(action: &str) -> String {
 /// the task is gated, and how to check its work as it goes.
 fn gate_open(
     hooked: bool,
+    project: &workspace::Project,
     here: &std::path::Path,
-    work: &std::path::Path,
     session: &str,
 ) -> Result<ExitCode, String> {
+    let work = &project.mutastic_dir();
     let open =
         gate::State::read(work).filter(|state| !session.is_empty() && state.session == session);
     if let Some(open) = open.filter(|_| hooked) {
@@ -1622,11 +1623,17 @@ fn gate_open(
         return Err("the gate needs a git repository with a commit".into());
     };
     let base = base.trim().to_string();
+    // The tests as libtest lists them, each case its own; from the source where the package
+    // doesn't build yet, and fixing that is the task.
+    let shape = gate::listed(project).map_or_else(
+        |_| gate::Shape::of(here),
+        |names| gate::Shape::listed(&names),
+    );
     let state = gate::State {
         session: session.to_string(),
         base: base.clone(),
         ignored: ignored_ids(here)?,
-        shape: gate::Shape::of(here),
+        shape,
         ..gate::State::default()
     };
     state.write(work)?;
@@ -1758,8 +1765,18 @@ fn gate_verdict(
     here: &std::path::Path,
     state: &gate::State,
 ) -> Result<gate::Verdict, String> {
+    let untouched = gate::untouched(here, &state.base);
+    // The tests there now, by the names a run gives them, where a check below needs them.
+    let names = if !state.red.is_empty() || (state.shape.listed && !untouched) {
+        Some(gate::listed(project)?)
+    } else {
+        None
+    };
     // First: taking the test away may leave no line changed.
-    let gone = gate::gone(&state.red, here);
+    let gone = names
+        .as_ref()
+        .map(|names| gate::gone(&state.red, names, here))
+        .unwrap_or_default();
     if !gone.is_empty() {
         let one = gone.len() == 1;
         let names: Vec<String> = gone.iter().map(|test| untrusted::value(test)).collect();
@@ -1803,12 +1820,16 @@ fn gate_verdict(
         )));
     }
     // A task that changed nothing else can't have taken a test away or broken one.
-    if gate::untouched(here, &state.base) {
+    if untouched {
         return Ok(gate::Verdict::pass(
             "mutastic gate: passed: the task changed no lines mutastic mutates".into(),
         ));
     }
-    let (before, now) = (state.shape, gate::Shape::of(here));
+    let now = match &names {
+        Some(names) if state.shape.listed => gate::Shape::listed(names),
+        _ => gate::Shape::of(here),
+    };
+    let before = state.shape;
     if now.fewer_than(&before) {
         return Ok(gate::Verdict::block(format!(
             "mutastic gate: fewer tests run than when the task started ({}, {} ignored; now {}, {} ignored). Put them back: the gate doesn't pass a change by taking tests away",
@@ -1954,8 +1975,8 @@ fn red_verdict(
     let before: Vec<&String> = failing
         .iter()
         .filter(|test| {
-            let name = test.rsplit("::").next().unwrap_or(test);
-            crate::since::git(here, &["grep", "-q", "-w", name, &state.base, "--", "."]).is_some()
+            let name = gate::function_of(test, here);
+            crate::since::git(here, &["grep", "-q", "-w", &name, &state.base, "--", "."]).is_some()
         })
         .collect();
     let named: Vec<String> = listed
