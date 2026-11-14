@@ -1,27 +1,39 @@
 #!/bin/sh
-# Squash-merges a pull request with a message main's commit check will pass, written before the
-# merge rather than found red after it:
+# Squash-merges a pull request through main's merge queue, with a message main's commit check
+# will pass, written before the merge rather than found red after it:
 #
-#   .githooks/merge-pr [--admin] <number> [body-file]
+#   .githooks/merge-pr [--wait] [--admin] <number> [body-file]
 #
 # The subject is the pull request's title and " (#<number>)", as GitHub writes it, and the body
-# is the file, or empty. Both go through commit-msg (check-title for the subject) first. It merges
-# only once every check on the pull request has passed, and only the head commit they ran on; the
-# branch on GitHub is deleted, and no local branch or checkout is touched. --admin merges without
-# waiting for the checks, with admin rights, for a check that can't pass; the message is still
-# checked.
+# is the file, or empty. Both go through commit-msg (check-title for the subject) first. It goes
+# on only once every check on the pull request has passed, and only for the head commit they ran
+# on. No local branch or checkout is touched.
+#
+# The merge queue tests the pull request merged with the latest main, and with every pull request
+# ahead of it, and merges it only if that passes too. merge-pr adds it to the queue and returns;
+# --wait stays until it lands and prints the commit on main, or says why it left the queue. Run
+# again with --wait on a pull request already queued, it only waits. The queue writes the squash
+# commit itself, and takes its body from the pull request's description when the repository's
+# squash message is the description (PR_BODY): merge-pr writes the body file there first. GitHub
+# deletes the branch once it lands.
+#
+# Without a merge queue on main, it merges straight away, as it did before there was one.
+# --admin merges past the queue and the checks, for a check that can't pass, where the rules let
+# an admin; the message is still checked.
 
 set -eu
 usage() {
-  echo "usage: merge-pr [--admin] <number> [body-file]" >&2
+  echo "usage: merge-pr [--wait] [--admin] <number> [body-file]" >&2
   exit 2
 }
 admin=
+wait=
 number=
 body=
 for arg in "$@"; do
   case $arg in
     --admin) admin=--admin ;;
+    --wait) wait=1 ;;
     -*) usage ;;
     *)
       if [ -z "$number" ]; then
@@ -42,8 +54,88 @@ fi
 hooks=$(cd "$(dirname "$0")" && pwd)
 
 repo=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-title=$(gh pr view "$number" --repo "$repo" --json title --jq .title)
-head=$(gh pr view "$number" --repo "$repo" --json headRefOid --jq .headRefOid)
+# The pull request as the queue sees it, one line of tab-separated fields: state, merge commit,
+# whether it's queued, whether it's waiting for its checks to join the queue, and where it is.
+state() {
+  gh api graphql -F owner="${repo%/*}" -F name="${repo#*/}" -F number="$number" -f query='
+    query($owner: String!, $name: String!, $number: Int!) {
+      repository(owner: $owner, name: $name) {
+        pullRequest(number: $number) {
+          state mergeCommit { oid } isInMergeQueue autoMergeRequest { enabledAt }
+          mergeQueueEntry { state position }
+        }
+      }
+    }' --jq '.data.repository.pullRequest |
+      [.state, (.mergeCommit.oid // "-"), .isInMergeQueue, (.autoMergeRequest != null),
+       (.mergeQueueEntry.state // "-"), (.mergeQueueEntry.position // "-")] | @tsv'
+}
+# Waits for the pull request to land, and prints the commit on main.
+await() {
+  last=
+  while :; do
+    pr_state=
+    IFS=$(printf '\t') read -r pr_state oid queued waiting entry position <<EOF || true
+$(state || true)
+EOF
+    if [ -z "$pr_state" ]; then
+      # No answer from GitHub this time: ask again.
+      sleep "${MERGE_PR_POLL:-30}"
+      continue
+    fi
+    case $pr_state in
+      MERGED)
+        echo "merge-pr: #$number landed on main as $oid:"
+        gh api "repos/$repo/commits/$oid" --jq .commit.message | sed 's/^/  /'
+        return 0
+        ;;
+      CLOSED)
+        echo "merge-pr: #$number was closed without merging" >&2
+        return 1
+        ;;
+    esac
+    if [ "$queued" != true ] && [ "$waiting" != true ]; then
+      echo "merge-pr: #$number left the merge queue without merging: it no longer passes with" >&2
+      echo "merge-pr: the main and pull requests ahead of it. The failed checks are on its" >&2
+      echo "merge-pr: pull request page; fix them, then run merge-pr again" >&2
+      return 1
+    fi
+    now="$queued $entry $position"
+    if [ "$now" != "$last" ]; then
+      if [ "$queued" = true ]; then
+        echo "merge-pr: #$number is in the merge queue, position $position ($entry)"
+      else
+        echo "merge-pr: #$number joins the merge queue once its checks pass"
+      fi
+      last=$now
+    fi
+    sleep "${MERGE_PR_POLL:-30}"
+  done
+}
+
+info=$(gh api graphql -F owner="${repo%/*}" -F name="${repo#*/}" -F number="$number" -f query='
+  query($owner: String!, $name: String!, $number: Int!) {
+    repository(owner: $owner, name: $name) {
+      squashMergeCommitMessage
+      pullRequest(number: $number) {
+        isMergeQueueEnabled isInMergeQueue autoMergeRequest { enabledAt } headRefOid title
+      }
+    }
+  }' --jq '.data.repository | [.squashMergeCommitMessage, .pullRequest.isMergeQueueEnabled,
+    (.pullRequest.isInMergeQueue or .pullRequest.autoMergeRequest != null),
+    .pullRequest.headRefOid, .pullRequest.title] | @tsv')
+IFS=$(printf '\t') read -r squash_message queue_enabled already head title <<EOF
+$info
+EOF
+queue=
+[ "$queue_enabled" = true ] && [ -z "$admin" ] && queue=1
+if [ -n "$queue" ] && [ "$already" = true ]; then
+  if [ -z "$wait" ]; then
+    echo "merge-pr: #$number is already queued; --wait waits for it to land"
+    exit 0
+  fi
+  await
+  exit
+fi
 
 sh "$hooks/check-title" "$number" "$title"
 message=$(mktemp)
@@ -80,6 +172,27 @@ if [ -z "$admin" ]; then
   fi
 fi
 
-# --repo keeps gh away from the local checkout: it deletes the branch on GitHub only.
-gh pr merge "$number" --repo "$repo" --squash --delete-branch $admin \
-  --match-head-commit "$head" --subject "$title (#$number)" --body-file "$message.body"
+# --repo keeps gh away from the local checkout.
+if [ -z "$queue" ]; then
+  gh pr merge "$number" --repo "$repo" --squash --delete-branch $admin \
+    --match-head-commit "$head" --subject "$title (#$number)" --body-file "$message.body"
+  exit
+fi
+
+# The queue's squash commit takes its body from the description, so the description becomes the
+# body. Changing it runs the commit checks again; the pull request joins the queue once they pass.
+if [ "$squash_message" = PR_BODY ]; then
+  current=$(gh pr view "$number" --repo "$repo" --json body --jq .body)
+  if [ "$current" != "$(cat "$message.body")" ]; then
+    gh pr edit "$number" --repo "$repo" --body-file "$message.body" > /dev/null
+    echo "merge-pr: #$number's description is now the body of its squash commit"
+  fi
+fi
+# gh adds the pull request to the queue, or once its checks pass if they're running again.
+gh pr merge "$number" --repo "$repo" --squash --match-head-commit "$head"
+if [ -z "$wait" ]; then
+  echo "merge-pr: #$number is queued; it lands once it passes with main and the pull requests"
+  echo "merge-pr: ahead of it. merge-pr --wait $number waits for it and prints the commit"
+  exit 0
+fi
+await
