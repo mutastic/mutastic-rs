@@ -135,7 +135,7 @@ mutastic gate open --hook=claude
 
 `mutastic gate check [dir]`
 
-Say whether a gated task is done: its changed lines' mutants caught. Runs the mutants on the lines changed since gate open. The task is done when each is caught or proposed for a person to ignore, no ignore was made by the task, and no test was taken away or ignored; until then it says what's left, as the agent format does. With --hook it answers as the agent's hook, and lets the agent stop, saying what's left, when it changed nothing since it was sent back, or after --tries.
+Say whether a gated task is done: its changed lines' mutants caught. Runs the tests and the mutants on the lines changed since gate open: the tests run even with no mutant on those lines, and only a task that changed nothing skips them. The task is done when the tests pass, each mutant is caught or proposed for a person to ignore, no ignore was made by the task, and no test was taken away or ignored; until then it says what's left, as the agent format does. With --hook it answers as the agent's hook, and lets the agent stop, saying what's left, when it changed nothing since it was sent back, or after --tries.
 
 ```sh
 mutastic gate check

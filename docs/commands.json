@@ -250,7 +250,7 @@
       "page": "gate-check",
       "synopsis": "mutastic gate check [dir]",
       "summary": "Say whether a gated task is done: its changed lines' mutants caught",
-      "detail": "Runs the mutants on the lines changed since gate open. The task is done when each is caught or proposed for a person to ignore, no ignore was made by the task, and no test was taken away or ignored; until then it says what's left, as the agent format does. With --hook it answers as the agent's hook, and lets the agent stop, saying what's left, when it changed nothing since it was sent back, or after --tries.",
+      "detail": "Runs the tests and the mutants on the lines changed since gate open: the tests run even with no mutant on those lines, and only a task that changed nothing skips them. The task is done when the tests pass, each mutant is caught or proposed for a person to ignore, no ignore was made by the task, and no test was taken away or ignored; until then it says what's left, as the agent format does. With --hook it answers as the agent's hook, and lets the agent stop, saying what's left, when it changed nothing since it was sent back, or after --tries.",
       "exits": "0 when the task is done, 1 when it isn't, 2 when no task is open. With --hook, 0 either way: the answer is what it prints, a block or a message, as the agent's hooks read it, and with nothing open the agent may stop.",
       "takesMutantId": false,
       "examples": [

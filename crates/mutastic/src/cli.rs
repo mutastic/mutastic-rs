@@ -1763,9 +1763,20 @@ fn gate_verdict(
             .is_ok_and(|path| changed.lines.contains_key(&path))
     });
     if !ours {
-        return Ok(gate::Verdict::pass(
-            "mutastic gate: passed: the task changed no lines mutastic mutates".into(),
-        ));
+        // A task that changed nothing can't have broken a test. One that changed a test, a build
+        // file or a test's data may have, so the tests run.
+        if gate::untouched(here, &state.base) {
+            return Ok(gate::Verdict::pass(
+                "mutastic gate: passed: the task changed no lines mutastic mutates".into(),
+            ));
+        }
+        return match gate_run(parsed, project, changed) {
+            Ok(_) => Ok(gate::Verdict::pass(
+                "mutastic gate: passed: the tests pass, and the task changed no lines mutastic mutates"
+                    .into(),
+            )),
+            Err(error) => red_verdict(here, state, &error),
+        };
     }
     let added: Vec<String> = ignored_ids(here)?
         .difference(&state.ignored)
@@ -1798,10 +1809,7 @@ fn gate_verdict(
             before.tests, before.disabled, now.tests, now.disabled
         )));
     }
-    let mut options = options(parsed, Vec::new());
-    options.since = Some(changed);
-    let progress = Progress::start(Shown::None, Style::default(), (false, parsed.workers), None);
-    let mut report = match engine::run(project, &options, &|step| progress.step(step)) {
+    let mut report = match gate_run(parsed, project, changed) {
         Ok(report) => report,
         Err(error) => return red_verdict(here, state, &error),
     };
@@ -1854,6 +1862,12 @@ fn gate_verdict(
                 if backlog == 1 { "is" } else { "are" }
             )
         };
+        if scored == 0 {
+            return Ok(gate::Verdict::pass(
+                "mutastic gate: passed: the tests pass, and the lines the task changed hold no mutant to run"
+                    .into(),
+            ));
+        }
         return Ok(gate::Verdict::pass(format!(
             "mutastic gate: passed: the tests catch {caught} of the {scored} mutants on the lines the task changed{waiting}{backlog}"
         )));
@@ -1879,6 +1893,21 @@ fn gate_verdict(
         "{}\n\n{cards}",
         gate::held_by(&open_missed, &open_uncovered, &waiting)
     )))
+}
+
+/// The gate's run of the lines the task changed. It always builds and runs the tests, as
+/// `--force-coverage` does: a change with no mutant on its lines (a constant, an import, a log line)
+/// can still break a test, and the gate mustn't pass it.
+fn gate_run(
+    parsed: &Parsed,
+    project: &workspace::Project,
+    changed: crate::since::ChangedLines,
+) -> Result<engine::Report, String> {
+    let mut options = options(parsed, Vec::new());
+    options.since = Some(changed);
+    options.force_coverage = true;
+    let progress = Progress::start(Shown::None, Style::default(), (false, parsed.workers), None);
+    engine::run(project, &options, &|step| progress.step(step))
 }
 
 /// Tests that fail before any mutant, each time they run. One that was there when the task
