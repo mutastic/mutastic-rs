@@ -1,7 +1,8 @@
 #!/bin/sh
 # Tests the commit-msg hook on messages it must pass and messages it must stop, each with the
-# error it must give, then check-commits on a small history of its own. Run it after changing
-# either: sh .githooks/test-commit-msg
+# error it must give, then check-commits on a small history of its own, check-title on pull
+# request titles, and merge-pr against a fake gh. Run it after changing any of them:
+# sh .githooks/test-commit-msg
 
 cd "$(dirname "$0")" || exit 2
 message=$(mktemp)
@@ -92,6 +93,25 @@ Note: a body line that looks like a trailer is still prose when it isn't last
 
 $long_trailer"
 
+# check-title: the squash merge's subject, " (#<number>)" and all, by commit-msg's rules.
+# titled <name> <status> <expected output, or none> <number> <title>
+titled() {
+  cases=$((cases + 1))
+  status=0
+  sh ./check-title "$4" "$5" > "$message" 2>&1 || status=$?
+  if [ "$status" -ne "$2" ] || { [ -n "$3" ] && ! grep -qF "$3" "$message"; }; then
+    echo "FAIL $1: expected status $2 and \"$3\", got $status: $(cat "$message")"
+    failures=$((failures + 1))
+  fi
+}
+titled "title of 44 at #59" 0 "" 59 "docs(engine): $(printf '%030d' 0)"
+titled "title of 45 at #59" 1 "the title of #59 can be at most 44 characters, and is 45" 59 \
+  "docs(engine): $(printf '%031d' 0)"
+titled "title of 43 at #1234" 1 "the title of #1234 can be at most 42 characters, and is 43" 1234 \
+  "docs(engine): $(printf '%029d' 0)"
+titled "title not conventional" 1 "needs \"type(scope): subject\"" 7 "Check the squash title"
+titled "number not a number" 2 "not a pull request number" "#7" "ci: check the squash title"
+
 # check-commits, on a history with the hook added part-way: a branch written before then and
 # merged after it keeps its older style, and a new commit in the older style still fails.
 repo=$(mktemp -d)
@@ -136,6 +156,63 @@ checks "older commit merged later" 0 "not checked, written 2026-01-02, before th
 checks "older commit counted" 0 "2 commit(s) since" "$base"
 commit_on 2026-02-04 "Keep the exit status, in the older style"
 checks "new commit in the older style" 1 "Keep the exit status, in the older style" "$base"
+
+# merge-pr, against a fake gh that answers for pull request #59 and writes down the merge it is
+# asked for.
+bin=$(mktemp -d)
+trap 'rm -f "$message" "$message.err"; rm -rf "$repo" "$bin"' EXIT
+cat > "$bin/gh" <<'GH'
+#!/bin/sh
+case "$1 $2" in
+  "repo view") echo mutastic/example ;;
+  "pr view") case "$*" in *headRefOid*) echo 1a2b3c ;; *) echo "$FAKE_TITLE" ;; esac ;;
+  "pr checks") echo "messages: status $FAKE_STATUS"; exit "$FAKE_STATUS" ;;
+  "pr merge")
+    printf '%s\n' "$*" > "$FAKE_MERGE"
+    while [ "$#" -gt 0 ]; do
+      [ "$1" = --body-file ] && cat "$2" >> "$FAKE_MERGE"
+      shift
+    done
+    ;;
+  *) echo "fake gh: unexpected $*" >&2; exit 1 ;;
+esac
+GH
+chmod +x "$bin/gh"
+printf '%s\n' "Main's check counts the squash merge's message." "" "$long_trailer" > "$bin/body"
+printf '%s\n' "$(printf '%073d' 0)" > "$bin/long-body"
+printf '%s\n' "#58 left this out." > "$bin/hash-body"
+export FAKE_MERGE="$bin/merge"
+# merged <name> <status> <expected output or merge> <title> <checks' status> [merge-pr arguments]
+merged() {
+  cases=$((cases + 1))
+  name=$1 expected_status=$2 expected=$3 pr_title=$4 checks=$5
+  shift 5
+  rm -f "$FAKE_MERGE"
+  status=0
+  FAKE_TITLE=$pr_title FAKE_STATUS=$checks PATH="$bin:$PATH" sh ./merge-pr "$@" > "$message" 2>&1 ||
+    status=$?
+  if [ -f "$FAKE_MERGE" ]; then
+    [ "$expected_status" -eq 0 ] || echo "merged anyway" >> "$message"
+    cat "$FAKE_MERGE" >> "$message"
+  fi
+  if [ "$status" -ne "$expected_status" ] || ! grep -qF -- "$expected" "$message" ||
+    grep -q "merged anyway" "$message"; then
+    echo "FAIL $name: expected status $expected_status and \"$expected\", got $status: $(cat "$message")"
+    failures=$((failures + 1))
+  fi
+}
+title="ci: check the squash title"
+merged "merge" 0 "--subject ci: check the squash title (#59)" "$title" 0 59
+merged "merge the head checked" 0 "--match-head-commit 1a2b3c" "$title" 0 59
+merged "merge with a body" 0 "Main's check counts the squash merge's message." "$title" 0 59 "$bin/body"
+merged "checks running" 1 "still running" "$title" 8 59
+merged "checks failed" 1 "not every check on #59 has passed" "$title" 1 59
+merged "checks failed, --admin" 0 "--admin" "$title" 1 --admin 59
+merged "title too long" 1 "can be at most 44 characters, and is 45" \
+  "docs(engine): $(printf '%031d' 0)" 0 59
+merged "body too wide" 1 "line 3 is 73 characters" "$title" 0 59 "$bin/long-body"
+merged "body with #" 1 "lines starting with #" "$title" 0 59 "$bin/hash-body"
+merged "no number" 2 "usage: merge-pr" "$title" 0
 
 echo "test-commit-msg: $cases cases, $failures failed"
 [ "$failures" -eq 0 ]

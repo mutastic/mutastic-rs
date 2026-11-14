@@ -1,0 +1,33 @@
+#!/bin/sh
+# Checks a pull request's title as the subject of its squash merge. GitHub writes the subject as
+# "<title> (#<number>)", and main's commit check counts all of it, so a title of 46 to 50
+# characters passes on its own and fails once merged. CI runs this on each pull request, and
+# merge-pr runs it before it merges:
+#
+#   .githooks/check-title <number> <title>
+#
+# The rules are commit-msg's, run on the subject GitHub will write.
+
+if [ "$#" -ne 2 ]; then
+  echo "usage: check-title <number> <title>" >&2
+  exit 2
+fi
+case $1 in
+  '' | *[!0-9]*)
+    echo "check-title: \"$1\" is not a pull request number" >&2
+    exit 2
+    ;;
+esac
+
+message=$(mktemp)
+trap 'rm -f "$message"' EXIT
+printf '%s (#%s)\n' "$2" "$1" > "$message"
+if sh "$(dirname "$0")/commit-msg" "$message"; then
+  exit 0
+fi
+# " (#<number>)" takes 4 characters and the number's digits.
+limit=$((50 - ${#1} - 4))
+length=$(printf '%s' "$2" | LC_ALL=C awk '{ gsub(/[\200-\277]/, ""); n += length } END { print n + 0 }')
+echo "check-title: the squash merge's subject would be \"$2 (#$1)\"" >&2
+echo "check-title: the title of #$1 can be at most $limit characters, and is $length" >&2
+exit 1
