@@ -15,11 +15,15 @@ use crate::sites::Crate;
 /// failing, as in the Java edition: one rerun let a test that fails about half the time stop a run.
 pub const RERUNS: usize = 3;
 
-/// A test left out of the run because it failed, then passed when run again.
+/// A test left out of the run because it failed, then passed when run again; or because it caught
+/// mutants, then failed on its own with no mutant in.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Flaky {
     /// The test, as the run shows it: `raffle::a_draw_is_a_ticket`.
     pub test: String,
+    /// It caught mutants, then failed on its own with no mutant in, run again after them: it
+    /// passed among the others, so it counts on what something else sets up or leaves behind.
+    pub fails_alone: bool,
     /// What the code it ran reaches that answers differently every run: `SystemTime::now`.
     pub reaches: Vec<String>,
     /// The same, in the test's own code: its module, or its file under `tests/`.

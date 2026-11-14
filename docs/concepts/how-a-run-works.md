@@ -103,6 +103,10 @@ by side, one process each, on `--workers` threads.
 Each run has a time limit, set from how long its tests took in the coverage pass, so a mutant
 that makes a loop run forever is stopped and counted as timed out, which counts as caught.
 
+Once every mutant has its result, each test that caught one runs again, on its own with no mutant
+in. One that fails there didn't need a mutant to fail: its catches don't count, and each mutant it
+reached runs again without it. See [Results](results.md#a-test-that-fails-on-its-own).
+
 A test process that dies without a test failing, by a signal or an abort, is run again one test at a
 time to see how it died. What that means depends on where the mutant is: see
 [Results](results.md#caught-only-because-the-test-process-crashed).

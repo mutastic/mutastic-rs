@@ -314,6 +314,13 @@ code the test runs) or `its own code reaches Instant::now` (the test itself). Ma
 every run, with a seed or a fixed clock through the code's own seam, is usually the fix. Don't
 remove the test, turn it off or loosen what it checks to get a run through.
 
+A test that caught mutants, then failed when run again on its own with no mutant in, once the
+mutants had run, is flaky too: `! flaky: … passes among the others but fails on its own, with no
+mutant in`. It counts on something the run left behind, most often a file it writes and never
+removes. Its catches don't count, every mutant it reached ran again without it, and the run fails
+with exit status 2 until it passes on its own. Make it set up what it needs, in a file or directory
+of its own, and clean up what it leaves. See [Results](concepts/results.md#a-test-that-fails-on-its-own).
+
 ## A kept id names another line, or nothing
 
 A mutant's id comes from what it is and its place in its function, counted from the top among

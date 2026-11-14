@@ -1925,6 +1925,161 @@ fn a_flaky_test_is_left_out_and_one_that_always_fails_stops_the_run() {
     assert!(log.contains("fails every time"), "{log}");
 }
 
+/// A test whose catches aren't the mutants' doing, found when each test that caught one runs again
+/// on its own after the mutants, as in the Java edition. In the `false-catches` fixture,
+/// `a_new_ledger_takes_an_amount_less_its_fee` keeps a file it never cleans up: it passes the first
+/// time it runs, before any mutant, then fails against every mutant it reaches, and on its own.
+/// Taken at face value the tests caught all 20 mutants, a pass at 100%.
+#[test]
+fn a_false_catch_is_found_and_the_mutants_it_reached_run_again() {
+    let dir = copy_of("false-catches", "false-catches");
+    let broken = "ledger::a_new_ledger_takes_an_amount_less_its_fee";
+    // `fee()`'s `*` becoming `/`: caught only by the broken test, and missed by the one that only
+    // checks the fee isn't negative.
+    let fee_mutant = "m2d2460c0";
+
+    let (code, agent) = mutastic_in(&dir, &["run", "--format=agent", "--report=none"]);
+    assert_eq!(code, 2, "{agent}");
+    assert!(
+        agent.starts_with(
+            "mutastic: FAIL (a test that caught mutants fails on its own, with no mutant in) · score 40.0% (threshold 80; 57.1% where tests reach) · 6 missed, 6 not covered, 8 caught of 20 mutants\n"
+        ),
+        "{agent}"
+    );
+    assert!(
+        agent.contains(&format!(
+            "flaky: {broken} passes among the others but fails on its own, with no mutant in (run again after the mutants, it failed): it counts on something another test or the run sets up or leaves behind. It's left out, so its catches don't count: the mutants it reached ran again without it, and the run can't pass until it passes on its own. Make it set up what it needs and clean up what it leaves. Never remove, disable or loosen it to get a run through\n"
+        )),
+        "{agent}"
+    );
+    assert!(
+        agent.contains(&format!(
+            "   covered by: ledger::a_fee_is_never_negative; all still pass with the change ({broken} failed against it, but fails on its own with no mutant in too: that catch doesn't count)\n"
+        )),
+        "{agent}"
+    );
+    assert!(
+        agent.contains("no test reaches these lines, or only a flaky one does"),
+        "{agent}"
+    );
+
+    // What the cards claim, checked against the run itself: the test did catch the mutant first,
+    // the mutant then ran again without it, and the other covering test missed it.
+    let (code, jsonl) = mutastic_in(&dir, &["run", "--format=jsonl", "--report=none"]);
+    assert_eq!(code, 2, "{jsonl}");
+    let found = events(&jsonl);
+    let validator = schema();
+    for event in &found {
+        assert!(validator.is_valid(event), "{event}");
+    }
+    let event = |reason: &str| {
+        found
+            .iter()
+            .find(|e| e["reason"] == reason && e["id"] == fee_mutant)
+            .unwrap_or_else(|| panic!("no {reason} for {fee_mutant}: {jsonl}"))
+    };
+    let finished = event("mutant-finished");
+    assert_eq!(finished["status"], "Killed", "{finished}");
+    assert_eq!(finished["caughtBy"], broken, "{finished}");
+    let revised = event("mutant-revised");
+    assert_eq!(revised["status"], "Survived", "{revised}");
+    assert_eq!(
+        revised["coveredBy"],
+        serde_json::json!(["ledger::a_fee_is_never_negative"])
+    );
+    assert_eq!(revised["falseCatchBy"], broken, "{revised}");
+    assert!(revised.get("caughtBy").is_none(), "{revised}");
+    // Every mutant the broken test reached was sent again, and no last result rests on it.
+    let revisions = found.iter().filter(|e| e["reason"] == "mutant-revised");
+    assert_eq!(revisions.clone().count(), 15, "{jsonl}");
+    for event in revisions {
+        assert_ne!(event["caughtBy"], broken, "{event}");
+        assert!(!event["coveredBy"].to_string().contains(broken), "{event}");
+    }
+    let last = found.last().unwrap();
+    assert_eq!(last["reason"], "run-finished");
+    assert_eq!(last["killed"], 8, "{last}");
+    assert_eq!(last["passed"], false, "{last}");
+    assert_eq!(last["flaky"], serde_json::json!([broken]));
+    assert_eq!(
+        last["flakyEvidence"],
+        serde_json::json!([{
+            "test": broken,
+            "failure": [],
+            "reaches": [],
+            "reachesInTest": [],
+            "failsAlone": true,
+            "outside": false,
+        }])
+    );
+
+    let (code, full) = mutastic_in(&dir, &["run", "--format=full", "--report=none"]);
+    assert_eq!(code, 2, "{full}");
+    assert!(
+        full.contains(&format!(
+            " ! flaky: {broken} passes among the others but fails on its own, with no mutant in (run again after the mutants, it failed); its catches don't count, the mutants it reached ran again without it, and the run can't pass until it passes on its own\n"
+        )),
+        "{full}"
+    );
+    assert!(
+        full.contains("[FAIL] A test that caught mutants fails on its own, with no mutant in, so its catches don't count: see the flaky tests above."),
+        "{full}"
+    );
+
+    // `verify` checks its catches too: a mutant only a broken test caught isn't proved caught.
+    let (code, verify) = mutastic_in(&dir, &["verify", fee_mutant]);
+    assert_eq!(code, 2, "{verify}");
+    assert!(
+        verify.starts_with(&format!("mutastic: {fee_mutant} is still missed\n")),
+        "{verify}"
+    );
+    assert!(
+        verify.contains(&format!(
+            "flaky: {broken} passes among the others but fails on its own"
+        )),
+        "{verify}"
+    );
+
+    // The gate checks its catches too: a change whose mutants only a broken test catches isn't
+    // done.
+    let git = |args: &[&str]| {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(&dir)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "git {args:?}");
+    };
+    std::fs::remove_dir_all(dir.join(".git")).ok();
+    git(&["init", "-q"]);
+    std::fs::write(dir.join(".gitignore"), "target\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "start"]);
+    let (code, out) = mutastic_in(&dir, &["gate", "open"]);
+    assert_eq!(code, 0, "{out}");
+    let lib = dir.join("src/lib.rs");
+    let text = std::fs::read_to_string(&lib).unwrap();
+    std::fs::write(
+        &lib,
+        text.replace("amount * percent / 100", "percent * amount / 100"),
+    )
+    .unwrap();
+    let (code, check) = mutastic_in(&dir, &["gate", "check"]);
+    assert_eq!(code, 1, "{check}");
+    assert!(
+        check.starts_with("mutastic gate: a test that caught mutants on the lines the task changed fails on its own, with no mutant in, so its catches don't count and the task isn't done.\n\n"),
+        "{check}"
+    );
+    assert!(
+        check.contains(&format!("flaky: {broken} passes among the others")),
+        "{check}"
+    );
+}
+
 /// Each full run is compared with the last under the same operators, as in the Java edition: its
 /// score, whether the code and mutastic are the same, and which mutants changed result. A run of
 /// one mutant, or of a change, says nothing about the whole package, so it neither compares nor is
