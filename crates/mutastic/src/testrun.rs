@@ -144,6 +144,10 @@ pub fn probes(binaries: &[Binary], cwd: &Path) -> std::collections::BTreeMap<Str
     found
 }
 
+/// The seed proptest draws its cases from in mutastic's runs, where the person hasn't set
+/// `PROPTEST_RNG_SEED`: any fixed value, kept so a project's results stay as they were.
+pub const PROPTEST_SEED: &str = "0";
+
 /// Runs the named tests of one binary, with `env` set, killing it after `timeout`.
 pub fn run(
     binary: &Binary,
@@ -163,9 +167,17 @@ pub fn run(
         .env_remove("MUTASTIC_ACTIVE")
         .env_remove("MUTASTIC_COVERAGE")
         .env("RUST_BACKTRACE", "0")
+        // A failing proptest saves its case, and every later run replays it first: a run's own
+        // failures would decide its next runs, the flaky check's and the guard's among them.
+        .env("PROPTEST_DISABLE_FAILURE_PERSISTENCE", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    // The same cases in every run, unless the person picked a seed: drawn afresh, a property's
+    // cases would make a mutant caught in one run and missed in the next.
+    if std::env::var_os("PROPTEST_RNG_SEED").is_none() {
+        command.env("PROPTEST_RNG_SEED", PROPTEST_SEED);
+    }
     for (key, value) in env {
         command.env(key, value);
     }
