@@ -11,10 +11,31 @@ wrote, as `run-finished`'s `reports` does.
 | Kind | File | What it is |
 |---|---|---|
 | `json` | `mutation.json` | The [mutation-testing report schema](https://github.com/stryker-mutator/mutation-testing-elements/tree/master/packages/report-schema), version 2: each source file with its text and its mutants, their status, the tests that cover them, and why each has its status. Other tools that read that schema read it. |
-| `html` | `mutation.html` | The same report in the schema's own viewer. Everything is in the one file, so it opens from disk with no network. |
+| `html` | `mutation.html` | mutastic's own report page, the same as the Java edition's: every file and mutant, what to write for each miss, and the tests. Everything is in the one file, so it opens from disk, or from a CI artifact, with no network. |
 | `sarif` | `mutation.sarif` | SARIF 2.1.0, which code scanning reads: GitHub's alerts on a pull request's lines, Azure DevOps, and SARIF viewers in an editor. |
 
 `json` and `html` are written unless you choose otherwise.
+
+### What `mutation.html` shows
+
+The page reads the `mutation.json` beside it, and what mutastic adds to it, so the next test to
+write is a click away, not a terminal scroll back:
+
+- **Files:** each folder and file with its score, and each file's source, coloured, with every
+  mutant on its line and filters by status and operator.
+- **Tests to write:** each missed mutant, and each change no test reaches, with its fix. A mutant's
+  own page has the change, why it got through, the inputs the tests used, the test to add, and the
+  `mutastic verify` that proves it. `j` and `k` step through them.
+- **Mutants:** every mutant in the run, by status and operator.
+- **Tests:** what each test caught and what it ran but let through, with its source.
+
+**Copy** beside each list puts its tests to write on the clipboard a line each, `- lib.rs:26 -
+test discount() with total = 100 and assert the result`, for an issue or a pull request. Opened from
+inside the project the report names, each test links to your editor. Drop another `mutation.json`
+on the page to read it instead.
+
+The page is built in mutastic's `report-ui/` and vendored here at a pinned commit
+(`crates/mutastic/src/report/page/`), so both editions write the same one.
 
 `language` is `rust` in each file's entry, and the tests are grouped by the module that holds them
 (`tests`, `pricing`), where the Java edition groups them by class.
