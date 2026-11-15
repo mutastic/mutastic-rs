@@ -850,6 +850,18 @@ fn method(found: &Crate, mutant: &Mutant) -> String {
     )
 }
 
+/// `Pricing::discount()`, or `discount()` for a free function: a function by its path in its
+/// module, `impl` or `trait` included.
+fn qualified(found: &Crate, mutant: &Mutant) -> String {
+    let function = &found.functions[mutant.function];
+    let path = function
+        .path
+        .strip_prefix(&function.module)
+        .and_then(|path| path.strip_prefix("::"))
+        .unwrap_or(&function.path);
+    format!("{path}()")
+}
+
 /// A running mutant, for a worker's line: `src/lib.rs:26 discount() >= becomes >`, its change in
 /// the words a miss line uses.
 pub fn running(found: &Crate, mutant: &Mutant, style: Style) -> String {
@@ -2007,8 +2019,15 @@ fn score_row(report: &Report, style: Style) -> String {
 }
 
 /// `  ▲ 2.0 vs last run (same code)`, when there was a last run to compare with, as the Java
-/// edition writes it.
+/// edition writes it; or that it wasn't compared, as the last run used other operators.
 fn delta(report: &Report, style: Style) -> String {
+    if let Some(not_compared) = report
+        .comparison
+        .as_ref()
+        .and_then(|found| found.not_compared())
+    {
+        return style.dim(&format!("  · {not_compared}"));
+    }
     let (Some(now), Some(found)) = (report.score(), &report.comparison) else {
         return String::new();
     };
@@ -2201,7 +2220,13 @@ fn agent(report: &Report, style: Style) -> String {
             flaky_advice(flaky)
         );
     }
-    if let Some(found) = &report.comparison {
+    if let Some(not_compared) = report
+        .comparison
+        .as_ref()
+        .and_then(|found| found.not_compared())
+    {
+        let _ = writeln!(out, "vs last run: {not_compared}");
+    } else if let Some(found) = &report.comparison {
         let _ = writeln!(
             out,
             "vs last run: {} → {} ({})",
@@ -2583,7 +2608,12 @@ fn jsonl(report: &Report) -> String {
             evidence
         })
         .collect::<Vec<_>>());
-    if let Some(found) = &report.comparison {
+    // Under other operators, nothing was compared: the event has no comparison, as with no last run.
+    if let Some(found) = report
+        .comparison
+        .as_ref()
+        .filter(|found| found.other_operators.is_none())
+    {
         finished["previousScore"] = found
             .previous_score
             .map_or(Value::Null, |s| json!(round1(s)));
@@ -2773,18 +2803,8 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
     if let Some(test) = &result.false_catch_by {
         event["falseCatchBy"] = json!(test);
     }
-    if !result.inputs.is_empty() {
-        event["inputs"] = json!(result
-            .inputs
-            .iter()
-            .map(|(name, values)| (
-                name.clone(),
-                json!(values
-                    .iter()
-                    .map(|v| crate::shares::whole(*v))
-                    .collect::<Vec<_>>())
-            ))
-            .collect::<serde_json::Map<_, _>>());
+    if let Some(inputs) = inputs(result) {
+        event["inputs"] = inputs;
     }
     event["testsRun"] = json!(result.tests_run);
     event["durationMs"] = json!(result.took.as_millis() as u64);
@@ -2793,17 +2813,10 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
         event["reproduce"] = json!(view.command("run", &mutant.id));
         event["ignore"] = json!(view.command("ignore", &mutant.id));
         event["propose"] = json!(view.command("propose", &mutant.id));
-        if let Some(test) = view.suggested_test(result, false) {
-            event["suggestedTest"] = json!({
-                "testClass": test.module,
-                "name": test.name,
-                "code": test.lines.join("\n"),
-                "call": test.call,
-                "today": test.today,
-                "withMutant": test.mutated,
-            });
-            if let Some(found) = &result.suggestion {
-                event["suggestion"] = suggestion(view, mutant, found, &test.call);
+        if let Some((test, found)) = suggested(view, result) {
+            event["suggestedTest"] = test;
+            if let Some(found) = found {
+                event["suggestion"] = found;
             }
         }
         let entry = Entry {
@@ -2814,6 +2827,43 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
         event["rendered"] = json!(agent_entry(view, &entry, Vocabulary::Plain));
     }
     event
+}
+
+/// The whole numbers each parameter was called with, as the events and `mutation.json` give them:
+/// `{"total": [50, 250]}`; `None` when none were seen.
+fn inputs(result: &MutantResult) -> Option<Value> {
+    (!result.inputs.is_empty()).then(|| {
+        json!(result
+            .inputs
+            .iter()
+            .map(|(name, values)| (
+                name.clone(),
+                json!(values
+                    .iter()
+                    .map(|v| crate::shares::whole(*v))
+                    .collect::<Vec<_>>())
+            ))
+            .collect::<serde_json::Map<_, _>>())
+    })
+}
+
+/// A missed mutant's `suggestedTest`, as its event and `mutation.json` give it, with the call it
+/// was found by ([`suggestion`]) when that's known.
+fn suggested(view: &View, result: &MutantResult) -> Option<(Value, Option<Value>)> {
+    let test = view.suggested_test(result, false)?;
+    let shown = json!({
+        "testClass": test.module,
+        "name": test.name,
+        "code": test.lines.join("\n"),
+        "call": test.call,
+        "today": test.today,
+        "withMutant": test.mutated,
+    });
+    let found = result
+        .suggestion
+        .as_ref()
+        .map(|found| suggestion(view, view.mutant(result), found, &test.call));
+    Some((shown, found))
 }
 
 /// The call a suggested test was found by, whole, as the Java edition writes it: what a share's

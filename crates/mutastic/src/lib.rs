@@ -68,6 +68,7 @@ pub mod similar;
 pub mod since;
 pub mod sites;
 pub mod suggest;
+pub mod test_files;
 pub mod testrun;
 pub mod untrusted;
 pub mod words;

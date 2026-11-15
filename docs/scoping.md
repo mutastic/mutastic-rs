@@ -42,6 +42,12 @@ mutastic run fixtures/pricing --since=HEAD
 `--force-coverage` builds the crate and runs the tests anyway, to check that they pass or to time
 them. See [When there's nothing to run](concepts/how-a-run-works.md#when-theres-nothing-to-run).
 
+## A coding agent's task
+
+The gate scopes itself. `gate check` runs mutastic on the lines changed since the task started, as
+`--since=<that commit>` would, so there's nothing to pass it. See
+[What the gate holds it to](test-first-agent.md#what-the-gate-holds-it-to).
+
 ## One member of a workspace
 
 mutastic runs one package at a time. Pointed at a workspace's root, it stops and gives the command

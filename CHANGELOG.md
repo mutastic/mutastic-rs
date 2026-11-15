@@ -52,6 +52,21 @@ newest come first.
   on Linux and Windows by reports; the page's own address has nothing to lose. Only a run that
   wrote the HTML report links its ids: not with `--report=none`, nor a share's. The Java edition
   does the same.
+- **A run under other operators than the last says it isn't compared.** A score is a share of
+  what its operators make, so a run is compared only with the last under the same set; with none,
+  the score line said nothing. It now says `not compared with the last run, which used other
+  operators (defaults)`, in the summary and the agent format; the `run-finished` event has no
+  comparison, as before.
+- **`mutation.json` says what the cards say.** A `mutastic` key at its top level gives the run's
+  edition, the commands its output gives for a mutant (with `<id>`), where its docs are, its
+  score, threshold, whether it passed, its toolchain and when it started; one on each mutant gives
+  its function (`Pricing::discount()`), and for a miss the card's evidence and fix, the inputs seen
+  and the test to add, with the value it passes each parameter. Both editions write the same,
+  described by the schema `report/v1`, so one HTML report can read either. `testFiles` keys the
+  tests by the file each is written in (`tests/pricing.rs`), with its text and where each test is
+  declared, as the Java edition does, where it keyed them by module. A miss's `statusReason`
+  keeps the headline's backticks. Tools that read the report schema read it as before. See
+  [What mutastic adds](docs/reference/reports.md#what-mutastic-adds).
 - **With more than one test to write, the agent format says how to take them.** After `rules:`
   and `decline:`, a `tasks:` line asks the agent to make a task list, one item per mutant grouped
   by file, then write each test, run its `mutastic verify` and mark it done before the next. The
@@ -115,6 +130,18 @@ newest come first.
   links to the file itself. The `tests.log` a failure names is linked the same way, and file
   links percent-encode what a URI can't hold, such as a space. `run-finished`'s `reports` are
   unchanged: relative to the directory given. The Java edition does the same.
+- **`baseline --prune` doesn't drop what another set of operators would make.** A mutant only the
+  baseline's operators make wasn't found by a run under others, and looked gone, so pruning after
+  `operators:` changed dropped it. `.mutastic/baseline.yaml` now keeps the operators it was taken
+  under, `operators: defaults`, and `--prune` under others says so and drops nothing; `run` no
+  longer counts the baseline's mutants caught under others. A baseline written before keeps
+  working as it did.
+- **A baseline git doesn't see no longer holds the gate for good.** The check for baseline entries
+  a task added itself compared the baseline with the start commit's, so in a project whose git
+  ignores `.mutastic/`, where that commit has none, every entry of a local baseline counted as the
+  task's and the gate never passed. `gate open` now keeps the baseline's ids, as it keeps the
+  ignores, and a check compares with those (decision 16 of the editions' contract). A task opened
+  by an older mutastic still compares with the start commit.
 - **Each mutant's event goes out as it finishes.** In `--format=jsonl`, every `mutant-finished`
   came at the end of the run, after the `checking` phase, so a tool watching the stream saw
   nothing of the results until the run was over. Each now goes out as its mutant finishes, before

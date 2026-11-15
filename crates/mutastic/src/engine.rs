@@ -125,6 +125,8 @@ pub struct Report {
     pub profile: serde_json::Value,
     /// When the run started, `15:04:05` on the local clock, when the clock could be read.
     pub started_at: Option<String>,
+    /// When the run started, for `mutation.json`.
+    pub started: std::time::SystemTime,
     /// The report files written, as `run-finished` lists them: `target/mutastic/mutation.json`,
     /// from the directory mutastic was pointed at.
     pub reports: Vec<String>,
@@ -359,6 +361,7 @@ pub fn run(
 ) -> Result<Report, Failure> {
     let started = Instant::now();
     let started_at = clock();
+    let started_wall = std::time::SystemTime::now();
     let (found, stale_ignores) = find_for_run(project, options)?;
     let selected: BTreeSet<usize> = found
         .mutants
@@ -409,6 +412,7 @@ pub fn run(
         let unbuilt = Unbuilt {
             started,
             started_at,
+            started_wall,
             stale_ignores,
             scope,
         };
@@ -579,6 +583,7 @@ pub fn run(
         unsafe_mode: options.unsafe_mode,
         profile: built.profile,
         started_at,
+        started: started_wall,
         reports: Vec::new(),
         written: Vec::new(),
         pages: None,
@@ -600,6 +605,7 @@ pub fn run(
 struct Unbuilt {
     started: Instant,
     started_at: Option<String>,
+    started_wall: std::time::SystemTime,
     stale_ignores: Vec<String>,
     scope: Option<Scope>,
 }
@@ -654,6 +660,7 @@ fn nothing_to_run(
         // Nothing was built, so Cargo reported nothing: only what mutastic's own profile forces.
         profile: serde_json::json!({ "overflow_checks": true, "debug_assertions": true }),
         started_at: unbuilt.started_at,
+        started: unbuilt.started_wall,
         reports: Vec::new(),
         written: Vec::new(),
         pages: None,
