@@ -289,7 +289,11 @@ and the events always use the standard names.
 `TERM=dumb`, and anywhere `FORCE_COLOR` asks; `always` and `never` say so. `--hyperlinks` makes file
 locations links a terminal can open, to the file itself: `auto` does on a terminal that isn't
 `TERM=dumb`. The line number stays in the text, as whether a terminal honours one in a link
-varies.
+varies. The summary's report files are shown from where you ran mutastic, and link to the files
+themselves. When the run wrote `mutation.html`, each mutant's id links to a page beside it,
+`mutation-mutants/<id>.html`, that opens the report on that mutant: a link straight to
+`mutation.html#/m/<id>` loses its `#…` on macOS, whose opener drops it from a `file:` URL, and on
+Linux and Windows by reports.
 
 ## Streams
 

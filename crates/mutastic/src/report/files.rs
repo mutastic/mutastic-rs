@@ -3,7 +3,7 @@
 //! page, the one the Java edition embeds, so it needs no network; and `mutation.sarif`, SARIF 2.1.0 for code
 //! scanning, when asked for (`sarif.rs`).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
@@ -78,6 +78,72 @@ pub fn write(
         written.push(whole(&file));
     }
     Ok(written)
+}
+
+/// The folder of mutant pages beside an HTML report: `mutation-mutants/` beside `mutation.html`.
+pub fn pages_folder(html: &Path) -> PathBuf {
+    let stem = html
+        .file_stem()
+        .map_or_else(|| "mutation".into(), |stem| stem.to_string_lossy());
+    html.with_file_name(format!("{stem}-mutants"))
+}
+
+/// Writes, beside the HTML report at `html`, a page for each mutant the run didn't catch,
+/// `mutation-mutants/m855c8e3c.html`, that opens the report on it, and gives their folder. The
+/// output's ids link to these: a link to `mutation.html#/m/<id>` itself loses its `#…` on the way
+/// to the browser on macOS (and on Linux and Windows by reports), as the system's opener takes a
+/// `file:` URL for a file and drops the rest. A page's own address has nothing to lose, and the
+/// browser keeps the `#…` it then goes to. Pages a run before left are taken away first.
+pub fn write_pages(report: &Report, html: &Path) -> Result<PathBuf, String> {
+    let folder = pages_folder(html);
+    let failed = |error: std::io::Error| format!("couldn't write {}: {error}", folder.display());
+    std::fs::create_dir_all(&folder).map_err(failed)?;
+    for entry in std::fs::read_dir(&folder).map_err(failed)? {
+        let path = entry.map_err(failed)?.path();
+        if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(is_page)
+        {
+            std::fs::remove_file(&path).map_err(failed)?;
+        }
+    }
+    let name = html
+        .file_name()
+        .map_or_else(String::new, |name| super::encoded(&name.to_string_lossy()));
+    for id in paged(report) {
+        std::fs::write(folder.join(format!("{id}.html")), page(&name, id)).map_err(failed)?;
+    }
+    Ok(folder)
+}
+
+/// The ids of the mutants the run didn't catch, each of which gets a page.
+pub fn paged(report: &Report) -> BTreeSet<&str> {
+    report
+        .results
+        .iter()
+        .filter(|result| result.status != crate::engine::Status::Killed)
+        .map(|result| report.found.mutants[result.mutant].id.as_str())
+        .collect()
+}
+
+/// `m855c8e3c.html`: a mutant's page, which a run may take away.
+fn is_page(name: &str) -> bool {
+    name.strip_suffix(".html")
+        .and_then(|id| id.strip_prefix('m'))
+        .is_some_and(|hex| hex.len() == 8 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
+/// A page that opens the report `html`, beside its folder, on mutant `id`, as the Java edition
+/// writes it: at once with a script, by refresh without one, and by its link if neither runs.
+fn page(html: &str, id: &str) -> String {
+    let target = format!("../{html}#/m/{id}");
+    format!(
+        "<!doctype html>\n<meta charset=\"utf-8\">\n<title>{id} · mutastic report</title>\n\
+         <meta http-equiv=\"refresh\" content=\"0; url={target}\">\n\
+         <script>location.replace('{target}')</script>\n\
+         <a href=\"{target}\">{id} in the report</a>\n"
+    )
 }
 
 /// `file` whole: against the directory mutastic runs in when it's relative.

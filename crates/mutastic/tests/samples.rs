@@ -670,6 +670,55 @@ fn the_reports_are_typed_from_where_mutastic_runs() {
     );
 }
 
+/// With links on and the HTML report written, each id the output shows opens the report on its
+/// mutant, through a page beside the report: a link to `mutation.html#/m/<id>` itself loses its
+/// `#…` on the way to a browser on macOS. With no HTML report, no id is linked. The Java edition's
+/// `ReportPathsTest` is the same.
+#[test]
+fn an_id_opens_the_report_on_its_mutant() {
+    const ID: &str = "mb2f8ae57";
+    let copy = copy_of("pricing", "id-links");
+
+    let (code, said) = mutastic_in(&copy, &["run", "--format=full", "--hyperlinks=always"]);
+    assert_eq!(code, 0, "{said}");
+    let end = said
+        .find(&format!("\x1b\\{ID}\x1b]8;;\x1b\\ "))
+        .unwrap_or_else(|| panic!("{said:?}"));
+    let start = said[..end].rfind("\x1b]8;;").unwrap() + "\x1b]8;;".len();
+    // `file:///C:/…` on Windows: the path starts after the third slash there.
+    let file = said[start..end]
+        .strip_prefix("file://")
+        .map(|path| if cfg!(windows) { &path[1..] } else { path })
+        .unwrap();
+    assert!(
+        file.ends_with(&format!("/target/mutastic/mutation-mutants/{ID}.html")),
+        "{file}"
+    );
+    assert_eq!(
+        std::fs::canonicalize(file).unwrap(),
+        std::fs::canonicalize(copy.join(format!("target/mutastic/mutation-mutants/{ID}.html")))
+            .unwrap()
+    );
+    let page = std::fs::read_to_string(file).unwrap();
+    assert!(
+        page.contains(&format!("location.replace('../mutation.html#/m/{ID}')")),
+        "{page}"
+    );
+
+    let (code, said) = mutastic_in(
+        &copy,
+        &[
+            "run",
+            "--format=full",
+            "--hyperlinks=always",
+            "--report=none",
+        ],
+    );
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains(ID), "{said}");
+    assert!(!said.contains("mutation-mutants"), "{said:?}");
+}
+
 /// A full run writes `mutation.json`, in the mutation-testing report schema as the Java edition
 /// writes it, and `mutation.html`, that report in mutastic's own page, and says where in its summary and
 /// its events.

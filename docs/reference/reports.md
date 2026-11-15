@@ -132,7 +132,9 @@ declares it: a test a macro writes is listed under its module's file without one
 ## Where they go
 
 In `target/mutastic` beside the build, wherever your target directory is. A file given a path of
-its own goes there instead, relative to the package's directory.
+its own goes there instead, relative to the package's directory. Beside `mutation.html`,
+`mutation-mutants/` holds a small page for each mutant the run didn't catch, which opens the report
+on it: the ids in the terminal link there.
 
 ## Choosing which
 
