@@ -1,6 +1,6 @@
 # The dependencies, checked with cargo-deny against deny.toml: known vulnerabilities, licences and
-# sources. On every push and pull request, and weekly, since a new advisory needs no change here.
-# Actions are pinned to a commit: a tag can be moved.
+# sources. On every push, pull request and merge queue entry, and weekly, since a new advisory
+# needs no change here. Actions are pinned to a commit: a tag can be moved.
 name: Audit
 
 on:

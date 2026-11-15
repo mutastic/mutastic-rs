@@ -48,6 +48,7 @@ pub mod environment;
 pub mod failure;
 pub mod flaky;
 pub mod gate;
+pub mod gate_count;
 pub mod guard;
 pub mod help;
 pub mod id;

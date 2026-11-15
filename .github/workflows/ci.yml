@@ -1,6 +1,6 @@
-# The build on every push and pull request: format, clippy with every warning an error, and the
-# tests, which run mutastic on the fixtures, on Linux, macOS and Windows; and a build on the oldest
-# toolchain `rust-version` names. Actions are pinned to a commit: a tag can be moved.
+# The build on every push, pull request and merge queue entry: format, clippy with every warning an
+# error, and the tests, which run mutastic on the fixtures, on Linux, macOS and Windows; and a build
+# on the oldest toolchain `rust-version` names. Actions are pinned to a commit: a tag can be moved.
 name: CI
 
 on:
