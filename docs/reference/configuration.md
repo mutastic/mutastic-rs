@@ -32,6 +32,7 @@ operators:
 | `rules:` | Code to skip, each `- skip: <pattern>` with a `reason:` under it. Its mutants are skipped as ``user: <reason> (rule `skip: <pattern>`)``, out of the score |
 | `plugins:` | Rules files of call operators, by their path from the directory of the file that names them |
 | `operators:` | Which operators run, as `--operators` chooses, which replaces this for one run: a set (`defaults`, `stronger`, `extended`, `all`), a namespace (`stream`) or an operator's id, or one of those after `-` to leave it out |
+| `gate:` | What the gate holds an agent's task to: `operators:` under it, a list as `operators:` takes, chooses the gate's operators in its place, and `gate open --operators` replaces it. See [Which operators](../test-first-agent.md#which-operators) |
 | `filters:` | A compiled plugin's filters: the Rust edition has no compiled plugins yet, so naming one is an error |
 
 A pattern is a path: `**` matches any depth, `*` one name, and a function is its path in the crate,
