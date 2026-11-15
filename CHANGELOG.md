@@ -100,6 +100,28 @@ newest come first.
 
 ### Fixes
 
+- **Each mutant's event goes out as it finishes.** In `--format=jsonl`, every `mutant-finished`
+  came at the end of the run, after the `checking` phase, so a tool watching the stream saw
+  nothing of the results until the run was over. Each now goes out as its mutant finishes, before
+  the `mutants` phase ends, as in the Java edition (decision 7 of the editions' contract), in the
+  order the mutants finish. A missed mutant's test to suggest is looked for as it's found missed,
+  so its event still carries it, and `checking` is now the check of each catch on the code as it
+  is, which every run makes: its phase events are always there, and `checked` is said only when a
+  mutant was missed. A mutant run again without a test that fails on its own still gets its
+  `mutant-revised` after the phases. The results, the score and the report files don't change.
+  See [Events](docs/reference/events.md).
+- **Each error's code is set where it's raised.** `run-failed`'s `code` was worked out afterwards
+  from the error's words, and two errors got `other` that way: `--report=xyz` and `gate` with no
+  action, which are now `option-value` and `unknown-command`. A mistyped gate action, `gate opn`,
+  is said as that before mutastic looks for a project, so outside one it no longer answers "there's
+  no project here". A file mutastic can't write is `other`, not `config`, and a git failure under
+  `--since` is `git`.
+- **A bad `--format` value ends the stream the environment asks for.** With
+  `MUTASTIC_FORMAT=jsonl`, `--format=xyz` was refused on stderr with no `run-failed` event.
+- **A panic ends as a failure.** A bug in mutastic exited 101 with Rust's own message and no
+  event. It now says `internal error:`, where, and where to report it, writes a `run-failed` event
+  with code `internal` in the agent and jsonl formats, and exits 2, as every failure does until
+  2.0.
 - **A property test's command sets its seed.** When a property test fails before any mutant, the
   command mutastic offers to run it alone sets `PROPTEST_RNG_SEED` to the seed mutastic drew its
   cases from, `PROPTEST_RNG_SEED=0 cargo test …`, and a line says so: without it, the test may pass

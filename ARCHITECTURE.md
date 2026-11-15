@@ -41,10 +41,11 @@ for the conventions the code is held to, [AGENTS.md](AGENTS.md).
    runs each test that caught a mutant again, on its own with no mutant in: one that fails there
    is left out as flaky, the run can't pass, and each mutant it reached runs again without it.
 6. **Suggested tests.** For each missed mutant whose function a test can call with whole numbers
-   alone (`sites/callable.rs`), `suggest` runs the probe `schema` built beside that function: a
-   test of mutastic's own, left out of the test list, that calls it on candidate inputs, as the
-   code is and with the mutant in. The first input where they differ, and both values, go on the
-   card. A probe that doesn't compile is dropped, not blamed on a mutant.
+   alone (`sites/callable.rs`), `suggest` runs the probe `schema` built beside that function, on
+   the worker that found it missed: a test of mutastic's own, left out of the test list, that calls
+   it on candidate inputs, as the code is and with the mutant in. The first input where they
+   differ, and both values, go on the card, before the mutant's `mutant-finished` goes out. A probe
+   that doesn't compile is dropped, not blamed on a mutant.
 7. **The report.** `report` prints the result in one of four formats: `full` cards for people,
    `concise` lines, `agent` text for coding agents, and `jsonl`, the `mutastic.events/v1` stream.
    `words` writes what a card says about a mutant: the gap, the change and the fix, in the Java
