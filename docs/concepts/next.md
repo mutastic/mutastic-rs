@@ -92,7 +92,9 @@ that isn't in the baseline is new:
 - **`next`** offers new misses first, and the baseline's after them.
 - **`run`** says how many of the baseline's mutants are caught now, and `mutastic baseline --prune`
   drops them, so the file shrinks as tests are written. It's never rewritten to take in new
-  misses: that would hide them.
+  misses: that would hide them. The baseline keeps the operators it was taken under (`operators:`
+  in the file), and neither counts or prunes under other operators, where a mutant only the
+  baseline's operators make would look caught or gone: `--prune` says so and drops nothing.
 - **`run --fail-on-new`** passes while every mutant no test catches is in the baseline and fails
   on one that isn't, whatever the score: CI for a package whose score can't reach the threshold
   yet. [Brownfield: fail only on new misses](how-a-run-works.md#brownfield-fail-only-on-new-misses)
@@ -110,6 +112,7 @@ whoever reads a diff of it:
 # The mutants this project missed when its baseline was taken, written by `mutastic baseline`.
 # Commit it. A miss that isn't here is new: the gate holds only new misses. As tests
 # catch these, `mutastic baseline --prune` drops them; it never takes in new misses.
+operators: defaults
 baseline:
   - id: mb2f8ae57
     at: 'Pricing::discount, line 26'

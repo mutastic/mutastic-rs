@@ -5,6 +5,7 @@
 //! misses, or it would hide them. The same file, in the same shape, as the Java edition's:
 //!
 //! ```yaml
+//! operators: defaults
 //! baseline:
 //!   - id: mb2f8ae57
 //!     at: 'pricing::Pricing::discount, line 26'
@@ -14,6 +15,10 @@
 //! Ids alone decide: a mutant's id is a hash of what it is, without its line, so it stays the same
 //! while code around it moves. `at` and `change` are for whoever reads a diff of it. One entry an
 //! id, in order of function and then id, so a line moving doesn't reorder it.
+//!
+//! `operators:` is the set the run that took it chose, as `--operators` or `mutastic.yaml` chose
+//! it: a mutant only another set makes isn't in a baseline taken without it, so `--prune` under
+//! another set would take it for gone. A baseline from before it was written has none.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -27,7 +32,6 @@ const HEADER: &[&str] = &[
     "# The mutants this project missed when its baseline was taken, written by `mutastic baseline`.",
     "# Commit it. A miss that isn't here is new: the gate holds only new misses. As tests",
     "# catch these, `mutastic baseline --prune` drops them; it never takes in new misses.",
-    "baseline:",
 ];
 
 /// One mutant, with where it is and what it changes, for the reader.
@@ -67,6 +71,16 @@ pub fn ids_at(dir: &Path, commit: &str) -> BTreeSet<String> {
     crate::since::git(dir, &["show", &format!("{commit}:./{FILE}")])
         .map(|text| ids_in(&text))
         .unwrap_or_default()
+}
+
+/// The operators the baseline was taken under, `defaults` or `stronger,-stream`: none for a
+/// baseline from before they were written, or none at all.
+pub fn operators(dir: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(dir.join(FILE)).ok()?;
+    text.lines()
+        .find_map(|line| line.strip_prefix("operators: "))
+        .map(|operators| operators.trim().to_string())
+        .filter(|operators| !operators.is_empty())
 }
 
 pub fn exists(dir: &Path) -> bool {
@@ -109,9 +123,11 @@ pub fn entries(report: &Report) -> Vec<Entry> {
     entries.into_iter().map(|(_, entry)| entry).collect()
 }
 
-/// Writes the entries, replacing the file.
-pub fn write(dir: &Path, entries: &[Entry]) -> Result<(), String> {
+/// Writes the entries, taken under `operators`, replacing the file.
+pub fn write(dir: &Path, operators: &str, entries: &[Entry]) -> Result<(), String> {
     let mut lines: Vec<String> = HEADER.iter().map(|line| line.to_string()).collect();
+    lines.push(format!("operators: {operators}"));
+    lines.push("baseline:".to_string());
     for entry in entries {
         lines.push(format!("  - id: {}", entry.id));
         lines.push(format!("    at: {}", quoted(&entry.at)));
@@ -251,6 +267,7 @@ mod tests {
         };
         write(
             &dir,
+            "stronger",
             &[
                 entry("mb2f8ae57", "pricing::Pricing::discount, line 26"),
                 entry("m7d92063c", "pricing::Pricing::shipping, line 34"),
@@ -263,6 +280,7 @@ mod tests {
             "# The mutants this project missed when its baseline was taken, written by `mutastic baseline`.\n\
              # Commit it. A miss that isn't here is new: the gate holds only new misses. As tests\n\
              # catch these, `mutastic baseline --prune` drops them; it never takes in new misses.\n\
+             operators: stronger\n\
              baseline:\n  \
              - id: mb2f8ae57\n    at: 'pricing::Pricing::discount, line 26'\n    change: '`>=` becomes `>`'\n  \
              - id: m7d92063c\n    at: 'pricing::Pricing::shipping, line 34'\n    change: '`>=` becomes `>`'\n"
@@ -271,11 +289,12 @@ mod tests {
             ids(&dir),
             BTreeSet::from(["mb2f8ae57".to_string(), "m7d92063c".to_string()])
         );
+        assert_eq!(operators(&dir).as_deref(), Some("stronger"));
         let dropped = prune(&dir, &BTreeSet::from(["mb2f8ae57".to_string()])).unwrap();
         assert_eq!(dropped, 1);
         let pruned = std::fs::read_to_string(dir.join(FILE)).unwrap();
         assert!(
-            pruned.ends_with("baseline:\n  - id: m7d92063c\n    at: 'pricing::Pricing::shipping, line 34'\n    change: '`>=` becomes `>`'\n"),
+            pruned.ends_with("operators: stronger\nbaseline:\n  - id: m7d92063c\n    at: 'pricing::Pricing::shipping, line 34'\n    change: '`>=` becomes `>`'\n"),
             "{pruned}"
         );
         std::fs::remove_dir_all(&dir).ok();
