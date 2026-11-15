@@ -61,6 +61,8 @@ page stands alone and links to the others by relative path.
 
 ## Guides
 
+- [Changed lines, members and shares](scoping.md): run only what a change touched, one member of a
+  workspace, the mutants a card named, or one run across CI jobs.
 - [Working test-first](test-first.md): one red, green, refactor cycle on a fixture, with mutastic
   on the cycle's lines, the card's tests proved with `verify`, and a commit.
 - [Working test-first: the refactor](test-first-refactor.md): two more cycles on the same rule, then the
