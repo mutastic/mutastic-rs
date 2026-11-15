@@ -228,6 +228,11 @@ fn steady(text: &str) -> String {
         // The fence around the project's text in an agent's: each run draws its own token.
         (r"mutastic-data [0-9a-f]{8}>>", "mutastic-data 3f9a0c1e>>"),
         (r#""workers(?<s>Started)?": ?\d+"#, r#""workers$s":…"#),
+        // The live block's: the spinner's frame, and a worker's timer, which follow the clock, and
+        // the bar, whose width gives way to the clock and what's left.
+        (r"[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]", "⠋"),
+        (r"\[\d\d:\d\d:\d\d\]", "[…]"),
+        (r"━+(?<e>(?:\x1b\[[0-9;]*m)*)─*", "━$e─"),
     ];
     rules
         .iter()
@@ -591,30 +596,40 @@ fn unsafety(work: &Path, shown: &mut BTreeMap<String, String>) {
         .find(|e| e["reason"] == "run-started")
         .unwrap();
     shown.insert("concepts/run-started".into(), pretty(started));
-    let find = |method: &str, replacement: &str| -> Value {
-        events
+    // Each mutant's event goes out as it finishes, so the one shown is named in full, by its
+    // operator too: `positive` made `false` is three mutants, and the first to finish would differ
+    // from run to run.
+    let find = |method: &str, operator: &str, replacement: &str| -> Value {
+        let found: Vec<&Value> = events
             .iter()
-            .find(|e| {
-                e["location"]["method"] == method && e["mutation"]["replacement"] == replacement
+            .filter(|e| {
+                e["location"]["method"] == method
+                    && e["operator"] == operator
+                    && e["mutation"]["replacement"] == replacement
             })
-            .unwrap()
-            .clone()
+            .collect();
+        assert_eq!(
+            found.len(),
+            1,
+            "{method}, {operator}, {replacement}: {found:?}"
+        );
+        found[0].clone()
     };
     shown.insert(
         "concepts/runtime-error-event".into(),
-        pretty(&find("checked", "true")),
+        pretty(&find("checked", "mutastic/remove-conditional", "true")),
     );
     shown.insert(
         "concepts/precondition-event".into(),
-        pretty(&find("positive", "false")),
+        pretty(&find("positive", "mutastic/return-value", "false")),
     );
-    let total = find("total", "-");
+    let total = find("total", "mutastic/math", "-");
     let verify = ran(
         work,
         &["verify", total["id"].as_str().unwrap(), "fixtures/unsafety"],
     );
     shown.insert("concepts/verify-panic".into(), verify.stdout);
-    let guarded = find("guarded", "true");
+    let guarded = find("guarded", "mutastic/remove-conditional", "true");
     shown.insert("concepts/crash-event".into(), pretty(&guarded));
     let verify = ran(
         work,
@@ -1403,13 +1418,19 @@ const UNIX_BUILDS: &[&str] = &[
     "troubleshooting/platforms",
 ];
 
+/// Runs whose steps are timed by the courier fixture's sleeps: their margins are seconds, which a
+/// Unix runner keeps, and a Windows one, slower to start each test process, may not; there they're
+/// run but the pages' copies are kept.
+const TIMED: &[&str] = &["concepts/run-live", "concepts/run-log"];
+
 /// What each section of the docs shows of mutastic's output is what it prints now. Each section is
 /// a test of its own, since what one section runs reaches code another doesn't.
 fn check(shown: &BTreeMap<String, String>) {
     let output = docs().join("output");
     let mut stale = Vec::new();
     for (name, text) in shown {
-        if cfg!(windows) && UNIX_BUILDS.contains(&name.as_str()) {
+        if cfg!(windows) && (UNIX_BUILDS.contains(&name.as_str()) || TIMED.contains(&name.as_str()))
+        {
             continue;
         }
         let file = output.join(format!("{name}.ansi"));
@@ -1701,6 +1722,79 @@ fn the_docs_show_what_a_refactor_prints() {
 #[test]
 fn the_docs_show_what_an_agent_sees_test_first() {
     section("test-first-agent", &["pricing"], test_first_agent);
+}
+
+/// `mutastic run` on the courier fixture, with one worker so each mutant takes its turn, and
+/// progress as `progress` asks: stderr, as it was written.
+fn courier_progress(work: &Path, progress: &str, heartbeat: Option<&str>) -> String {
+    forget_last_runs(&work.join("fixtures/courier"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_mutastic"));
+    command
+        .args(["run", "fixtures/courier", "--workers=1"])
+        .arg(format!("--progress={progress}"))
+        .current_dir(work)
+        .env("MUTASTIC_FORMAT", "concise")
+        .env_remove("MUTASTIC_AGENT")
+        .env_remove("MUTASTIC_HEARTBEAT")
+        .env_remove("NO_COLOR")
+        .env("FORCE_COLOR", "1");
+    if let Some(seconds) = heartbeat {
+        command.env("MUTASTIC_HEARTBEAT", seconds);
+    }
+    let output = command.output().unwrap();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    stderr
+}
+
+/// The terminal as it stood at the last frame the live block drew with a worker marked `SLOW`:
+/// every permanent line so far, then that frame's block. Each write is a frame, between the
+/// synchronized output's marks: what clears the last block, any permanent lines, then the block,
+/// drawn with wrapping off.
+fn screen_at_slow(stderr: &str) -> String {
+    let clearing =
+        regex::Regex::new(r"\r\x1b\[2K|\x1b\[1A\x1b\[2K|\x1b\]9;4;[^\x1b]*\x1b\\").unwrap();
+    let mut lines = String::new();
+    let mut screen = None;
+    for frame in stderr.split("\x1b[?2026h") {
+        let frame = frame.replace("\x1b[?2026l", "");
+        let (said, block) = match frame.split_once("\x1b[?7l") {
+            Some((said, rest)) => (said, rest.split("\x1b[?7h").next()),
+            None => (frame.as_str(), None),
+        };
+        lines.push_str(&clearing.replace_all(said, ""));
+        if let Some(block) = block.filter(|block| block.contains("SLOW")) {
+            screen = Some(format!("{lines}{block}\n"));
+        }
+    }
+    screen.expect("a frame with a worker marked SLOW")
+}
+
+/// What a long run says while it works, on the courier fixture: at a terminal, the live block as a
+/// mutant runs past what its test took; in a log, from the first file's line on, the heartbeat
+/// that fills the silence while that mutant runs. Each mutant runs the test's second and a half, so
+/// the heartbeat, every six and a half seconds, comes inside the slow mutant's seven and a half.
+fn progress(work: &Path, shown: &mut BTreeMap<String, String>) {
+    let live = courier_progress(work, "bar", None);
+    shown.insert("concepts/run-live".into(), screen_at_slow(&live));
+    let log = courier_progress(work, "counter", Some("6.5"));
+    let first_file = log
+        .lines()
+        .position(|line| plain(line).starts_with(" ❯"))
+        .expect("a file's line");
+    let from: String = log.split_inclusive('\n').skip(first_file).collect();
+    assert!(
+        plain(&from)
+            .lines()
+            .any(|line| line.starts_with("mutants   [")),
+        "a heartbeat while the slow mutant runs: {from}"
+    );
+    shown.insert("concepts/run-log".into(), from);
+}
+
+#[test]
+fn the_docs_show_what_a_long_run_prints() {
+    section("progress", &["courier"], progress);
 }
 
 #[test]

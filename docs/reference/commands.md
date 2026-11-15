@@ -34,7 +34,7 @@ mutastic run --from-shards=shares --threshold=70
 
 **Options:** [`--threshold=N`](#--threshold), [`--fail-on-new`](#--fail-on-new), [`--since[=REF]`](#--since), [`--only=ID`](#--only), [`--workers=N`](#--workers), [`--no-suggestions`](#--no-suggestions), [`--force-coverage`](#--force-coverage), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--report=KIND[:PATH]`](#--report), [`--shard=N/M`](#--shard), [`--from-shards=DIR`](#--from-shards), [`--format=FORMAT`](#--format), [`--vocabulary=WORDS`](#--vocabulary), [`--color=WHEN`](#--color), [`--hyperlinks=WHEN`](#--hyperlinks), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
 
-**Exit status:** 0 when the score reaches the threshold, 1 when it doesn't; with --fail-on-new, 0 when every mutant no test catches is in the baseline, 1 when one isn't.
+**Exit status:** 0 when the score reaches the threshold, 1 when it doesn't; with --fail-on-new, 0 when every mutant no test catches is in the baseline, 1 when one isn't; with --only, 0 when each mutant named is caught or skipped, as verify judges it, and 1 while one is still missed or not covered.
 
 ## verify
 

@@ -1,8 +1,8 @@
 //! `mutastic gate`: a coding agent's task, held to what mutastic says of the lines it changed, as
 //! the Java edition holds it, so the agents' plugins work with either edition unchanged.
 //!
-//! `gate open` keeps where the task starts: the commit, the ignores, and how many tests run and how
-//! many are ignored (`#[ignore]`). `gate check` asks whether it's done: the mutants on the lines
+//! `gate open` keeps where the task starts: the commit, the ignores, the baseline's mutants, and how
+//! many tests run and how many are ignored (`#[ignore]`). `gate check` asks whether it's done: the mutants on the lines
 //! changed since are each caught or proposed for a person to ignore, no ignore was added, no test
 //! was taken away or ignored, and no test that failed at an earlier check is gone. If not, it says
 //! what's left, as the agent format does, so an agent can carry on; after `--tries` of those, it
@@ -35,6 +35,9 @@ pub struct State {
     pub session: String,
     pub base: String,
     pub ignored: BTreeSet<String>,
+    /// The baseline's mutants when it opened, kept since git may not see `.mutastic/`: `None` in a
+    /// file an older gate wrote, which has only the start commit's.
+    pub baselined: Option<BTreeSet<String>>,
     pub shape: Shape,
     pub blocks: usize,
     /// The working tree when the gate last sent the agent back: empty when it hasn't since it last
@@ -66,6 +69,7 @@ impl State {
                 "session" => state.session = value,
                 "base" => state.base = value,
                 "ignored" => state.ignored = ids(&value),
+                "baselined" => state.baselined = Some(ids(&value)),
                 "stopped" => state.stopped = Some(ids(&value)),
                 "tests" => state.shape.tests = value.parse().unwrap_or(0),
                 "disabled" => state.shape.disabled = value.parse().unwrap_or(0),
@@ -104,6 +108,12 @@ impl State {
             format!("counting={}", self.counting),
             format!("uncounted={}", self.uncounted),
         ];
+        if let Some(baselined) = &self.baselined {
+            lines.push(format!(
+                "baselined={}",
+                baselined.iter().cloned().collect::<Vec<_>>().join(",")
+            ));
+        }
         if let Some(stopped) = &self.stopped {
             lines.push(format!(
                 "stopped={}",
@@ -701,6 +711,7 @@ mod tests {
             session: "abc".into(),
             base: "0123abcd".into(),
             ignored: ["m1".to_string(), "m2".to_string()].into(),
+            baselined: Some(["m3".to_string()].into()),
             shape: Shape {
                 tests: 5,
                 disabled: 1,
