@@ -1079,9 +1079,11 @@ fn fail_on_new_judges_a_run_by_its_baseline() {
     assert_eq!(
         std::fs::read_to_string(&file).unwrap(),
         format!(
-            "{BASELINE_HEADER}  - id: mb2f8ae57\n    at: 'Pricing::discount, line 26'\n    \
-             change: '`>=` becomes `>`'\n"
-        )
+            "{}  - id: mb2f8ae57\n    at: 'Pricing::discount, line 26'\n    \
+             change: '`>=` becomes `>`'\n",
+            BASELINE_HEADER.replace("\nbaseline:\n", "\noperators: defaults\nbaseline:\n")
+        ),
+        "the operators it was taken under, then its misses"
     );
     let (code, out) = mutastic_in(&dir, &["baseline"]);
     assert_eq!(code, 1, "{out}");
@@ -1182,6 +1184,17 @@ fn next_puts_new_misses_first_and_prune_drops_the_caught() {
     );
     let (code, out) = mutastic_in(&dir, &["baseline"]);
     assert_eq!(code, 0, "{out}");
+    // Under other operators, a mutant only the baseline's make would look gone: it isn't pruned.
+    let (code, out) = mutastic_in(&dir, &["baseline", "--prune", "--operators=stronger"]);
+    assert_eq!(code, 2, "{out}");
+    assert!(
+        out.starts_with(
+            "mutastic: the baseline was taken under operators: defaults, and this run chooses \
+             stronger, so a mutant only the baseline's operators make would look gone: prune it \
+             under defaults, or take it again"
+        ),
+        "{out}"
+    );
 
     let lib = dir.join("src/lib.rs");
     let text = std::fs::read_to_string(&lib).unwrap();
@@ -1251,7 +1264,10 @@ fn next_puts_new_misses_first_and_prune_drops_the_caught() {
         ),
         "{out}"
     );
-    assert_eq!(std::fs::read_to_string(&file).unwrap(), BASELINE_HEADER);
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        BASELINE_HEADER.replace("\nbaseline:\n", "\noperators: defaults\nbaseline:\n")
+    );
 }
 
 /// The gate holds only new misses: one the baseline had before the task is the project's
@@ -2576,6 +2592,17 @@ fn a_full_run_compares_with_the_last_and_is_kept_for_the_next() {
     assert!(
         agent.contains("vs last run: 90.9% → 90.9% (same code)\n"),
         "{agent}"
+    );
+    // Under another set, with no earlier run under it, it says why it isn't compared.
+    let (_, stronger) = mutastic_in(
+        &copy,
+        &["run", dir, "--format=agent", "--operators=stronger"],
+    );
+    assert!(
+        stronger.contains(
+            "vs last run: not compared with the last run, which used other operators (defaults)\n"
+        ),
+        "{stronger}"
     );
 }
 
