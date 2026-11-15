@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://docs.mutastic.io/schemas/report/v1.json",
+  "title": "mutastic's additions to mutation.json, v1",
+  "description": "mutation.json follows the mutation-testing report schema (version 2), which other tools read. What mutastic knows beyond it, what its cards and HTML report show, is under one `mutastic` key: at the top level for the run, and on each mutant for that mutant. Both editions write the same. Every field is optional: a field is left out when there's nothing to say. Fields may be added within v1: read what you know. See https://docs.mutastic.io/reference/schemas/.",
+  "type": "object",
+  "properties": {
+    "mutastic": { "$ref": "#/$defs/run" },
+    "files": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "mutants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": { "mutastic": { "$ref": "#/$defs/mutant" } }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "run": {
+      "type": "object",
+      "description": "The run.",
+      "properties": {
+        "edition": { "enum": ["java", "rust"], "description": "The edition that ran." },
+        "commands": {
+          "type": "object",
+          "description": "The commands for one mutant, as the run's own output writes them for this project and as mutastic was started (the command line, a Maven goal, a Gradle task, cargo), with `<id>` where the mutant's id goes. Without `passes`, which the cards add after `verify`.",
+          "properties": {
+            "verify": { "type": "string", "description": "Proves a test now catches it: `mutastic verify <id> samples/pricing`." },
+            "run": { "type": "string", "description": "Runs it again on its own: `mutastic run --only=<id> samples/pricing`." },
+            "ignore": { "type": "string", "description": "Records it as not worth a test, with a reason: `mutastic ignore <id> --reason=\"<why>\" samples/pricing`." },
+            "propose": { "type": "string", "description": "What a coding agent offers instead of ignoring: a proposal for a person to accept." }
+          }
+        },
+        "docsBase": { "type": "string", "format": "uri", "description": "The docs of the mutastic that ran, ending in `/`: `https://docs.mutastic.io/`." },
+        "operatorDocs": {
+          "type": "object",
+          "description": "For each operator in the report (by its `mutatorName`) that the docs describe, where, relative to `docsBase`.",
+          "additionalProperties": { "type": "string" }
+        },
+        "score": { "type": ["number", "null"], "description": "The mutation score, as the run reported it, to one decimal place; null when nothing was scored." },
+        "threshold": { "type": "number", "description": "The score the run had to reach." },
+        "passed": { "type": "boolean", "description": "Whether the run passed, as its exit code says: on the threshold, or with `--fail-on-new` on new misses." },
+        "toolchain": {
+          "type": "object",
+          "description": "What built and ran the tests: `jdk` 17, `rustc` 1.94.0.",
+          "properties": { "name": { "type": "string" }, "version": { "type": "string" } }
+        },
+        "startedAt": { "type": "string", "format": "date-time", "description": "When the run started, in UTC." }
+      }
+    },
+    "mutant": {
+      "type": "object",
+      "description": "What the mutant's card says beyond the report schema's fields.",
+      "properties": {
+        "method": { "type": "string", "description": "Where the change is, as the source names it: `Pricing.discount()`, `Pricing::discount()`." },
+        "evidence": { "type": "array", "items": { "type": "string" }, "description": "For a missed mutant, what the tests did, a sentence each, backticks marking code: the card's evidence lines." },
+        "fix": { "type": "string", "description": "For a missed mutant, the test to write, in a sentence: the card's fix line." },
+        "inputs": {
+          "type": "object",
+          "description": "The values each parameter of the method had while the tests ran it, by parameter name.",
+          "additionalProperties": { "type": "array", "items": { "type": "integer" } }
+        },
+        "suggestedTest": {
+          "type": "object",
+          "description": "A test that catches the mutant, found by running the method: the card's test to add.",
+          "properties": {
+            "testClass": { "type": "string", "description": "Where it goes: the test class, or Rust's test module." },
+            "name": { "type": "string" },
+            "code": { "type": "string" },
+            "call": { "type": "string", "description": "The call it makes." },
+            "today": { "type": "string", "description": "What the call gives today." },
+            "withMutant": { "type": "string", "description": "What it gives with the mutant." },
+            "arguments": { "type": "object", "description": "The value it passes each parameter, by name." }
+          }
+        },
+        "nearUnsafe": { "type": "string", "description": "The Rust edition only: why the mutant is near unsafe code, as the events say it (`inside unsafe code`, …). A crash there isn't counted as caught." },
+        "failureOrigin": { "enum": ["assertion", "test", "code", "unknown"], "description": "For a caught mutant, where the failure came from: `assertion` (a check failed), `test` (the test's own code threw), `code` (the code under test threw) or `unknown`." }
+      }
+    }
+  }
+}
