@@ -13,8 +13,8 @@ use crate::report::{self, Format, Style};
 use crate::shares::EVENTS;
 use crate::sites::UnsafeMode;
 use crate::{
-    baseline, commands, gate, gate_count, ignores, java, sites, testrun, untrusted, workspace,
-    wrapper,
+    baseline, commands, gate, gate_budget, gate_count, ignores, java, sites, testrun, untrusted,
+    workspace, wrapper,
 };
 
 pub fn main(args: Vec<OsString>) -> ExitCode {
@@ -1707,6 +1707,8 @@ fn shell(word: &str) -> String {
 
 /// `gate open`, `gate check` or `gate close`, as the Java edition's: see [`gate`].
 fn gate_command(parsed: &Parsed) -> Result<ExitCode, Failure> {
+    // A hooked check's budget counts from here.
+    let started = std::time::Instant::now();
     let action = gate_action(parsed)?.to_string();
     if parsed.help {
         stdout_line!("{}", gate_help(&action)?);
@@ -1748,7 +1750,7 @@ fn gate_command(parsed: &Parsed) -> Result<ExitCode, Failure> {
             Ok(ExitCode::SUCCESS)
         }
         // `check`, the one action left: `gate_action` takes no other.
-        _ => gate_check(parsed, &project, here, &work),
+        _ => gate_check(parsed, &project, here, &work, started),
     }
 }
 
@@ -1850,6 +1852,7 @@ fn gate_check(
     project: &workspace::Project,
     here: &std::path::Path,
     work: &std::path::Path,
+    started: std::time::Instant,
 ) -> Result<ExitCode, Failure> {
     let hooked = !parsed.hook.is_empty();
     let Some(open) = gate::State::read(work) else {
@@ -1859,8 +1862,18 @@ fn gate_check(
         // Nothing gated: a hooked agent may stop.
         return Ok(ExitCode::from(if hooked { 0 } else { 2 }));
     };
-    let open = counted(open, here, work)?;
-    let verdict = uncounted_note(&open, gate_verdict(parsed, project, here, &open)?);
+    let time = CheckTime {
+        hooked,
+        budget: gate_budget::Budget::of(|name| std::env::var(name).ok(), work)?,
+        own_since: started,
+    };
+    let (open, waited) = counted(open, here, work, &time)?;
+    // The check's own time, from here on: its wait for the count left out.
+    let time = CheckTime {
+        own_since: started + waited,
+        ..time
+    };
+    let verdict = uncounted_note(&open, gate_verdict(parsed, project, here, &open, &time)?);
     let mut state = open.clone();
     state.red.extend(verdict.red.clone());
     // As a hook, a check that lets the agent stop notes what's ignored: what's ignored after it, and
@@ -1910,18 +1923,47 @@ fn gate_check(
     Ok(gate_answer(hooked, &answer))
 }
 
-/// The gate with the count of the tests the task started with read, once a check needs it: a
-/// task that changed nothing needs no count. A count that failed, or isn't done within
-/// [`gate_count::WAIT`], leaves the source's test attributes standing in, and says why.
+/// What a check may spend, and since when its own time counts: see [`gate_budget`].
+struct CheckTime {
+    hooked: bool,
+    budget: gate_budget::Budget,
+    own_since: std::time::Instant,
+}
+
+impl CheckTime {
+    /// As a hook, the hand-over of a check whose last run took longer than the hook allows: stopped
+    /// by the hook, it would say nothing, and gate nothing.
+    fn overrun(&self) -> Option<gate::Verdict> {
+        (self.hooked && self.budget.overruns())
+            .then(|| gate::Verdict::hand_over(self.budget.overrun()))
+    }
+}
+
+/// The gate with the count of the tests the task started with read, once a check needs it, and
+/// how long it waited: a task that changed nothing needs no count. A count that failed, or isn't
+/// done within the wait, leaves the source's test attributes standing in, and says why. As a hook,
+/// the wait is what the budget leaves for it, with a run as long as the last still to come.
 fn counted(
     mut open: gate::State,
     here: &std::path::Path,
     work: &std::path::Path,
-) -> Result<gate::State, Failure> {
+    time: &CheckTime,
+) -> Result<(gate::State, std::time::Duration), Failure> {
+    let no_wait = std::time::Duration::ZERO;
     if open.counting.is_empty() || open.shape.listed || gate::untouched(here, &open.base) {
-        return Ok(open);
+        return Ok((open, no_wait));
     }
-    match gate_count::wait(work, &open.counting, gate_count::WAIT) {
+    if time.overrun().is_some() {
+        // It hands over before it runs: the count is kept for the person's check.
+        return Ok((open, no_wait));
+    }
+    let wait = if time.hooked {
+        time.budget.count_wait_before_run(time.own_since.elapsed())
+    } else {
+        time.budget.count_wait
+    };
+    let waiting = std::time::Instant::now();
+    match gate_count::wait(work, &open.counting, wait) {
         Ok(names) => open.shape = gate::Shape::listed(&names),
         Err(why) => {
             gate_count::stop(work);
@@ -1930,13 +1972,13 @@ fn counted(
     }
     open.counting.clear();
     open.write(work).map_err(|error| Code::Other.with(error))?;
-    Ok(open)
+    Ok((open, waiting.elapsed()))
 }
 
 /// A pass, saying so when the tests the task started with couldn't be counted as libtest lists
 /// them, as the Java edition says it of its count.
 fn uncounted_note(state: &gate::State, verdict: gate::Verdict) -> gate::Verdict {
-    if !verdict.passes || state.uncounted.is_empty() {
+    if !verdict.passes || verdict.handed_over || state.uncounted.is_empty() {
         return verdict;
     }
     gate::Verdict {
@@ -1991,6 +2033,7 @@ fn gate_verdict(
     project: &workspace::Project,
     here: &std::path::Path,
     state: &gate::State,
+    time: &CheckTime,
 ) -> Result<gate::Verdict, Failure> {
     let untouched = gate::untouched(here, &state.base);
     // The tests there now, by the names a run gives them, where a check below needs them.
@@ -2072,9 +2115,12 @@ fn gate_verdict(
         std::fs::canonicalize(project.workspace.join(&file.path))
             .is_ok_and(|path| changed.lines.contains_key(&path))
     });
+    if let Some(overrun) = time.overrun() {
+        return Ok(overrun);
+    }
     if !ours {
         // A change to a test, a build file or a test's data may still break a test, so they run.
-        return match gate_run(parsed, project, changed) {
+        return match gate_run(parsed, project, changed, time) {
             Ok(_) => Ok(gate::Verdict::pass(
                 "mutastic gate: passed: the tests pass, and the task changed no lines mutastic mutates"
                     .into(),
@@ -2082,7 +2128,7 @@ fn gate_verdict(
             Err(error) => red_verdict(here, state, &error),
         };
     }
-    let mut report = match gate_run(parsed, project, changed) {
+    let mut report = match gate_run(parsed, project, changed, time) {
         Ok(report) => report,
         Err(error) => return red_verdict(here, state, &error),
     };
@@ -2179,12 +2225,16 @@ fn gate_run(
     parsed: &Parsed,
     project: &workspace::Project,
     changed: crate::since::ChangedLines,
+    time: &CheckTime,
 ) -> Result<engine::Report, Failure> {
     let mut options = options(parsed, Vec::new());
     options.since = Some(changed);
     options.force_coverage = true;
     let progress = Progress::start(Shown::None, Style::default(), (false, parsed.workers), None);
-    engine::run(project, &options, &|step| progress.step(step))
+    let report = engine::run(project, &options, &|step| progress.step(step));
+    // Red or not, it ran: how long it took is the next check's estimate of its own.
+    gate_budget::ran(&project.mutastic_dir(), time.own_since.elapsed());
+    report
 }
 
 /// Tests that fail before any mutant, each time they run. One that was there when the task

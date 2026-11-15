@@ -6,8 +6,8 @@
 //! detached, with [`MARKER`] set. That process checks the tree out into a directory of its own,
 //! builds its tests in a copy beside the gate's state, lists them as a run does (each `#[case]`,
 //! test-case row and matrix cell a test of its own, and the ignored apart), and writes [`RESULT`],
-//! tagged with the token `gate open` gave it. `gate check` waits for it, within [`WAIT`], and falls
-//! back on the source's test attributes, saying so, when it failed or isn't done. `gate close`, and
+//! tagged with the token `gate open` gave it. `gate check` waits for it, within what
+//! [`crate::gate_budget`] allows, and falls back on the source's test attributes, saying so, when it failed or isn't done. `gate close`, and
 //! a new `gate open`, stop it and remove what it made.
 
 use std::path::{Path, PathBuf};
@@ -25,10 +25,6 @@ const RESULT: &str = "gate-count.properties";
 
 /// The running count's process and token, in the gate's directory.
 const PID: &str = "gate-count.pid";
-
-/// How long a check waits for the count: within a Stop hook's ten minutes, with the check's own
-/// run still to come, as the Java edition waits.
-pub const WAIT: Duration = Duration::from_secs(240);
 
 /// Whether this process is the count.
 pub fn active() -> bool {

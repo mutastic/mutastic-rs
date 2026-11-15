@@ -211,6 +211,14 @@ passes at once.
 When something's missed, the gate sends the agent back with the cards, as the run above shows
 them. When it can't get there, the gate lets it stop and tells you what's left.
 
+The plugins run the check from a Stop hook that's stopped after ten minutes, so as a hook it keeps
+within `MUTASTIC_GATE_BUDGET` seconds (600 unless set). It waits for the list of the tests the
+task started with only as long as that leaves, with a run as long as the last check's still to
+come, and counts from the source when the list isn't done. When the last check's own run took
+longer than the whole budget, it lets the agent stop before it runs and says so: "this project's
+gate check takes longer than the hook allows", so run `mutastic gate check` yourself. Set
+`MUTASTIC_GATE_BUDGET` to what your agent's hook allows, if that isn't ten minutes.
+
 ### What the gate can't check
 
 The gate checks results, not order. It can't tell whether a test came first: an agent that
