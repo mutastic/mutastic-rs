@@ -42,6 +42,11 @@ impl RunRecords {
             .find(|previous| record.compares_with(previous))
     }
 
+    /// The latest run, under whatever operators, if there's one.
+    pub fn latest(&self) -> Option<RunRecord> {
+        RunRecord::read(&self.latest)
+    }
+
     /// Makes `record` the latest, keeping the one it replaces if that was under other operators.
     pub fn keep(&self, record: &RunRecord) -> std::io::Result<()> {
         if let Some(previous) = RunRecord::read(&self.latest) {

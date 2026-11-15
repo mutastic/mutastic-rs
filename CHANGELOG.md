@@ -45,6 +45,11 @@ newest come first.
 
 ### Additions
 
+- **A run under other operators than the last says it isn't compared.** A score is a share of
+  what its operators make, so a run is compared only with the last under the same set; with none,
+  the score line said nothing. It now says `not compared with the last run, which used other
+  operators (defaults)`, in the summary and the agent format; the `run-finished` event has no
+  comparison, as before.
 - **With more than one test to write, the agent format says how to take them.** After `rules:`
   and `decline:`, a `tasks:` line asks the agent to make a task list, one item per mutant grouped
   by file, then write each test, run its `mutastic verify` and mark it done before the next. The
@@ -100,6 +105,12 @@ newest come first.
 
 ### Fixes
 
+- **`baseline --prune` doesn't drop what another set of operators would make.** A mutant only the
+  baseline's operators make wasn't found by a run under others, and looked gone, so pruning after
+  `operators:` changed dropped it. `.mutastic/baseline.yaml` now keeps the operators it was taken
+  under, `operators: defaults`, and `--prune` under others says so and drops nothing; `run` no
+  longer counts the baseline's mutants caught under others. A baseline written before keeps
+  working as it did.
 - **Each mutant's event goes out as it finishes.** In `--format=jsonl`, every `mutant-finished`
   came at the end of the run, after the `checking` phase, so a tool watching the stream saw
   nothing of the results until the run was over. Each now goes out as its mutant finishes, before
