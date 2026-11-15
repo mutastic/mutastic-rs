@@ -100,6 +100,12 @@ newest come first.
 
 ### Fixes
 
+- **A baseline git doesn't see no longer holds the gate for good.** The check for baseline entries
+  a task added itself compared the baseline with the start commit's, so in a project whose git
+  ignores `.mutastic/`, where that commit has none, every entry of a local baseline counted as the
+  task's and the gate never passed. `gate open` now keeps the baseline's ids, as it keeps the
+  ignores, and a check compares with those (decision 16 of the editions' contract). A task opened
+  by an older mutastic still compares with the start commit.
 - **Each mutant's event goes out as it finishes.** In `--format=jsonl`, every `mutant-finished`
   came at the end of the run, after the `checking` phase, so a tool watching the stream saw
   nothing of the results until the run was over. Each now goes out as its mutant finishes, before
