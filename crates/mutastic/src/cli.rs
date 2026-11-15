@@ -184,6 +184,7 @@ fn versions() -> String {
     format!("mutastic {own}\nRust edition {own}, built in\n{java}")
 }
 
+#[derive(Clone)]
 struct Parsed {
     positional: Vec<String>,
     only: Vec<String>,
@@ -215,6 +216,13 @@ struct Parsed {
     /// The operators the run chose, as it chose them, `stronger`: `--operators`, else
     /// `mutastic.yaml`'s, else the defaults. A baseline keeps them.
     operators_chosen: String,
+    /// The operators a run would choose without `--operators`: `mutastic.yaml`'s, else the
+    /// defaults. The gate's open tells the agent to run with `--operators` when its set isn't these.
+    run_operators: Vec<&'static str>,
+    /// `mutastic.yaml`'s `gate:` `operators:`, as written, each with where: the gate's set unless
+    /// `--operators` chose.
+    gate_configured: Vec<String>,
+    gate_configured_from: Vec<String>,
     /// `mutastic.yaml`'s rules, once read.
     rules: Vec<crate::config::Rule>,
     /// `gate`'s: `--help` for a subcommand, `--hook=claude`, and `--tries`.
@@ -273,6 +281,9 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, Failure> {
         since: None,
         operators_given: None,
         operators_chosen: "defaults".to_string(),
+        run_operators: sites::DEFAULTS.to_vec(),
+        gate_configured: Vec::new(),
+        gate_configured_from: Vec::new(),
         rules: Vec::new(),
         help: false,
         hook: String::new(),
@@ -667,6 +678,12 @@ fn configure(command: &str, parsed: &mut Parsed) -> Result<(), Failure> {
     }
     crate::callrules::load(rules);
     parsed.rules = config.rules;
+    if !config.operators.is_empty() {
+        parsed.run_operators =
+            crate::config::resolve_from(&config.operators, &config.operators_from)?;
+    }
+    parsed.gate_configured = config.gate_operators;
+    parsed.gate_configured_from = config.gate_operators_from;
     match &parsed.operators_given {
         Some(given) => {
             parsed.operators = operators(given)?;
@@ -1676,7 +1693,7 @@ fn gate_command(parsed: &Parsed) -> Result<ExitCode, Failure> {
     let work = project.mutastic_dir();
     let here = std::path::Path::new(dir);
     match action.as_str() {
-        "open" => gate_open(hooked, &project, here, &session),
+        "open" => gate_open(parsed, &project, here, &session),
         "close" => {
             gate_count::stop(&work);
             let closed = gate::State::close(&work);
@@ -1725,15 +1742,69 @@ fn no_gate_action(action: &str) -> String {
     )
 }
 
+/// The operators a gated task runs, chosen when it opens, as chosen and resolved: `--operators`,
+/// else `mutastic.yaml`'s `gate:` `operators:`, else its `operators:`, else the defaults. Checked
+/// here, so a set the project doesn't have is said at the open, where it was chosen.
+fn gate_operators(parsed: &Parsed) -> Result<(String, Vec<&'static str>), Failure> {
+    if parsed.operators_given.is_none() && !parsed.gate_configured.is_empty() {
+        let resolved =
+            crate::config::resolve_from(&parsed.gate_configured, &parsed.gate_configured_from)?;
+        return Ok((
+            chosen(parsed.gate_configured.iter().map(String::as_str)),
+            resolved,
+        ));
+    }
+    Ok((parsed.operators_chosen.clone(), parsed.operators.clone()))
+}
+
+/// Whether two sets of operators are the same, whatever their order.
+fn same_set(first: &[&str], second: &[&str]) -> bool {
+    let mut first = first.to_vec();
+    let mut second = second.to_vec();
+    first.sort_unstable();
+    first.dedup();
+    second.sort_unstable();
+    second.dedup();
+    first == second
+}
+
+/// The check, running the operators its open chose, so a check can't run fewer than the task
+/// opened with. Given `--operators` that come to another set, it's refused rather than run. A task
+/// an older gate opened kept none: its checks choose as an open would.
+fn under_the_opens_operators(parsed: &Parsed, open: &gate::State) -> Result<Parsed, Failure> {
+    let (chosen_at_open, resolved) = if open.operators.is_empty() {
+        gate_operators(parsed)?
+    } else {
+        let entries: Vec<String> = open.operators.split(',').map(str::to_string).collect();
+        let resolved = crate::config::resolve(&entries, "the gate's operators")?;
+        (open.operators.clone(), resolved)
+    };
+    if let Some(given) = &parsed.operators_given {
+        if !same_set(&parsed.operators, &resolved) {
+            return Err(Code::OptionValue.with(format!(
+                "the gate opened with operators: {chosen_at_open}, and a check runs what the open \
+                 chose: `mutastic gate close`, then `mutastic gate open --operators={}`, to choose \
+                 again",
+                chosen(given.split(','))
+            )));
+        }
+    }
+    let mut under = parsed.clone();
+    under.operators = resolved;
+    under.operators_chosen = chosen_at_open;
+    Ok(under)
+}
+
 /// Keeps where the task starts; with a hook, once for each session, and at each later prompt takes
 /// in the ignores the person made between turns. A hook's output is the agent's to read: it's told
 /// the task is gated, and how to check its work as it goes.
 fn gate_open(
-    hooked: bool,
+    parsed: &Parsed,
     project: &workspace::Project,
     here: &std::path::Path,
     session: &str,
 ) -> Result<ExitCode, Failure> {
+    let hooked = !parsed.hook.is_empty();
     let work = &project.mutastic_dir();
     let open =
         gate::State::read(work).filter(|state| !session.is_empty() && state.session == session);
@@ -1750,6 +1821,7 @@ fn gate_open(
         return Err(Code::Git.with("the gate needs a git repository with a commit"));
     };
     let base = base.trim().to_string();
+    let (operators, resolved) = gate_operators(parsed)?;
     // The tests as libtest lists them, each case its own, are counted in the background, so the
     // agent needn't wait for a build: a check reads the count, and until then the source's test
     // attributes stand in.
@@ -1766,11 +1838,17 @@ fn gate_open(
             String::new()
         },
         counting,
+        operators: operators.clone(),
         ..gate::State::default()
     };
     state.write(work).map_err(|error| Code::Other.with(error))?;
+    let run_flag = if same_set(&resolved, &parsed.run_operators) {
+        String::new()
+    } else {
+        format!(" --operators={operators}")
+    };
     stdout_line!(
-        "mutastic gate: this task is gated from {}: before you finish, check the lines it changes with `mutastic run --since={base} --format=agent`; {}. {}",
+        "mutastic gate: this task is gated from {} (operators: {operators}): before you finish, check the lines it changes with `mutastic run --since={base}{run_flag} --format=agent`; {}. {}",
         &base[..base.len().min(7)],
         if hooked {
             "the gate checks them when you finish, so you needn't run `mutastic gate check` yourself"
@@ -1804,6 +1882,7 @@ fn gate_check(
         // Nothing gated: a hooked agent may stop.
         return Ok(ExitCode::from(if hooked { 0 } else { 2 }));
     };
+    let parsed = &under_the_opens_operators(parsed, &open)?;
     let open = counted(open, here, work)?;
     let verdict = uncounted_note(&open, gate_verdict(parsed, project, here, &open)?);
     let mut state = open.clone();
@@ -2085,13 +2164,16 @@ fn gate_verdict(
         };
         if scored == 0 {
             return Ok(gate::Verdict::pass(
-                "mutastic gate: passed: the tests pass, and the lines the task changed hold no mutant to run"
-                    .into(),
+                format!(
+                    "mutastic gate: passed: the tests pass, and the lines the task changed hold no mutant to run (operators: {})",
+                    parsed.operators_chosen
+                ),
             ));
         }
         let scored = crate::progress::count(scored, "mutant");
         return Ok(gate::Verdict::pass(format!(
-            "mutastic gate: passed: the tests catch {caught} of the {scored} on the lines the task changed{waiting}{backlog}"
+            "mutastic gate: passed: the tests catch {caught} of the {scored} on the lines the task changed (operators: {}){waiting}{backlog}",
+            parsed.operators_chosen
         )));
     }
     let waiting: Vec<String> = missed
@@ -2113,7 +2195,12 @@ fn gate_verdict(
         .join("\n");
     Ok(gate::Verdict::block(format!(
         "{}\n\n{cards}",
-        gate::held_by(&open_missed, &open_uncovered, &waiting)
+        gate::held_by(
+            &open_missed,
+            &open_uncovered,
+            &waiting,
+            &parsed.operators_chosen
+        )
     )))
 }
 

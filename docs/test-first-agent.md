@@ -211,6 +211,29 @@ passes at once.
 When something's missed, the gate sends the agent back with the cards, as the run above shows
 them. When it can't get there, the gate lets it stop and tells you what's left.
 
+### Which operators
+
+The gate runs the operators a run would: `operators:` in `mutastic.yaml`, or the defaults. To hold
+the agent to more than your everyday runs, gate it on the stronger set. Give the gate its own set
+in `mutastic.yaml`, and the plugin's hooks pick it up with nothing else to change:
+
+```yaml
+gate:
+  operators:
+    - stronger
+```
+
+`gate open --operators=stronger` does the same for one task, in place of both. The set is chosen
+when the gate opens and kept with the task: every check runs it, a check given another set is
+refused rather than run on fewer operators than the task opened with, and a change to
+`mutastic.yaml` waits for the next task (`gate close`, then `gate open`; with a hook, the next
+session). The open names the set, and the `mutastic run` it gives the agent carries `--operators`
+when the set isn't what a run would choose; each verdict on the mutants names it too:
+`(operators: stronger)`.
+
+A task can pass on the defaults and be held on stronger: in `fixtures/checkout`, a test that buys
+one item catches `quantity * price` becoming `quantity / price`, but not becoming `price`.
+
 ### What the gate can't check
 
 The gate checks results, not order. It can't tell whether a test came first: an agent that

@@ -395,7 +395,7 @@ pub const OPTIONS: &[CliOption] = &[
         choices: &[],
         help: "Which operators run: a set (defaults, stronger or extended), or operator ids split \
                by commas, in place of mutastic.yaml's operators; defaults unless set",
-        commands: &["run", "mutants", "next", "baseline"],
+        commands: &["run", "mutants", "next", "baseline", "gate open", "gate check"],
         environment: "",
         example: "--operators=stronger",
     },

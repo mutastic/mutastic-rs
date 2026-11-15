@@ -1665,7 +1665,7 @@ fn the_gate_runs_the_tests_with_no_mutant_on_the_changed_lines() {
     assert_eq!(code, 0, "{out}");
     assert_eq!(
         out,
-        "mutastic gate: passed: the tests pass, and the lines the task changed hold no mutant to run\n"
+        "mutastic gate: passed: the tests pass, and the lines the task changed hold no mutant to run (operators: defaults)\n"
     );
 
     // A test's data, no line mutastic mutates, breaking a test: held.
@@ -3965,7 +3965,10 @@ fn the_gate_holds_a_task_to_the_operators_it_opened_with() {
         ),
         "{out}"
     );
-    for args in [&["gate", "check", "--operators=stronger"][..], &["gate", "check"]] {
+    for args in [
+        &["gate", "check", "--operators=stronger"][..],
+        &["gate", "check"],
+    ] {
         let (code, out) = mutastic_in(&dir, args);
         assert_eq!(code, 1, "{args:?}: {out}");
         assert!(
