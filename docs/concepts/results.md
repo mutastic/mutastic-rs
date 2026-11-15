@@ -27,6 +27,24 @@ a `#[should_panic]` test that no longer panics. mutastic says which test, and ho
 raised the panic itself. A test that fails only because the arithmetic overflowed is still a catch,
 but worth knowing about: see [Profiles](profiles.md#why-overflow-checks-are-forced).
 
+## Tables of cases and property tests
+
+A test often runs one check over a table of cases. What mutastic makes of it depends on how the
+table is written:
+
+- **Each rstest `#[case]` and test-case row is a test of its own,** as libtest lists it:
+  `rstest_tests::discounts::case_2_at_the_edge`. A card says which case caught a mutant, or reached
+  it and let it through, and the gate counts each case, so taking a row away is taking a test away.
+  The number in a name is the row's place, so name your cases, `#[case::at_the_edge(100, 10)]`, and
+  a row put in above doesn't rename the others.
+- **A loop over rows in one `#[test]` is one test,** however many rows it has, and a card can't say
+  which row failed. Put the row in the assertion's message,
+  `assert_eq!(subtract(a, b), difference, "subtract({a}, {b})")`, so the test's own output does.
+- **A proptest property draws the same cases every run,** as mutastic seeds it, so it catches a
+  mutant in every run or in none. A card's `inputs seen` shows its smallest and largest few values.
+
+See [Tables of cases and property tests](../troubleshooting.md#tables-of-cases-and-property-tests).
+
 ## Caught only because the test process crashed
 
 Sometimes no test fails: the test process dies instead, by `std::process::abort()`, a panic that

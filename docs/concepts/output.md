@@ -296,6 +296,54 @@ varies.
 The result goes to stdout and progress to stderr, so `mutastic run fixtures/pricing > result.txt`
 keeps only the result.
 
+## While it runs
+
+A long run that prints nothing looks the same as one that's stuck. So mutastic says what it's
+doing, on stderr, for the whole run.
+
+At a terminal, a live block sits under the lines the run has printed, and is redrawn ten times a
+second. Its first line has the phase, a bar, what's caught and missed so far, the phase's clock and,
+once it can tell, about how long is left. Under it is a line for each worker, with what it's running
+and for how long. A mutant that runs well past what its tests took is marked `SLOW`, so a hang is
+plain to see. `t` prints what each worker is running, and so does `kill -USR1` on Unix.
+
+The courier fixture's test takes a second and a half, and one of its mutants makes the courier wait
+six seconds at a door. Here's the terminal while that mutant runs, with one worker:
+
+<!-- output: concepts/run-live -->
+```text
+mutastic 1.1.0 · reading the Cargo package…
+building  13 mutants in one build · 1 worker
+built     13 mutants in 1.2s · 2 rounds (check and build), none withdrawn
+coverage  1 test on rustc 1.94.0 in 1.5s · 13 mutants
+ ❯  courier  src/lib.rs (8 mutants | 1 missed) 12.1s
+   × postage() :11 > becomes >=
+⠦ mutants   ━━━━━━━━━━━━━━━━────  81% · 10/13 · ✓ 8 caught · ✗ 1 missed · ○ 1 · ⏱ 0 · 21s · ~5s left
+   1 [00:00:07] SLOW  src/handover.rs:5 hand_over() signature is always true
+```
+
+In CI, a pipe or a coding agent's harness, a block redrawn in place would only be noise. There,
+mutastic prints a plain line with the same fields whenever a while passes with nothing else said:
+30 seconds, or what `MUTASTIC_HEARTBEAT` sets. A harness that stops a quiet process won't stop a
+slow run. The same run in a log, with `MUTASTIC_HEARTBEAT=6.5`, from its first file on:
+
+<!-- output: concepts/run-log -->
+```text
+ ❯  courier  src/lib.rs (8 mutants | 1 missed) 12.1s
+   × postage() :11 > becomes >=
+mutants   [10/13] 81% · ✓ 8 caught · ✗ 1 missed · ○ 1 not covered · ⏱ 0 timed out · 18s · ~5s left
+ ❯  courier  src/handover.rs (5 mutants | 1 missed | 2 not covered) 10.5s
+   × hand_over() :5 signature is always false
+   ○ hand_over() :7 no test reaches this line
+   ○ hand_over() :6 no test reaches this line
+ran       13 mutants in 22.7s · ✓ 9 caught · ✗ 2 missed · ○ 2 not covered · ⏱ 0 timed out
+checked   2 missed mutants in 1.5s · no test found to suggest
+```
+
+`--progress` chooses: `bar` for the live block, `counter` for the lines, or `none`. `auto`, the
+default, draws the block where stderr is a terminal that isn't `TERM=dumb`, and no CI or coding
+agent is detected.
+
 ## One mutant, explained
 
 `mutastic explain ID [DIR]` runs that one mutant and shows its card when it's missed, or what
