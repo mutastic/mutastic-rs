@@ -93,7 +93,7 @@ pub fn digits(mut n: u64) -> u64 {
   Start at  11:03:14
   Duration  10.1s (setup 19ms, build 20ms, coverage 2ms, mutants 10.0s, checking 8ms)
      Tests  1 on rustc 1.99.1 · 5 workers
-   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
+   Reports  fixtures/loops/target/mutastic/mutation.json · fixtures/loops/target/mutastic/mutation.html
      Score  76.0%   FAIL  Below the threshold of 80: 6 missed, 0 not covered.
 ```
 
@@ -245,7 +245,7 @@ pub fn is_absolute(path: &str) -> bool {
   Start at  11:04:59
   Duration  62ms (setup 20ms, build 18ms, coverage 2ms, mutants 6ms)
      Tests  2 on rustc 1.99.1 · 4 workers
-   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
+   Reports  fixtures/platforms/target/mutastic/mutation.json · fixtures/platforms/target/mutastic/mutation.html
      Score  100.0%   PASS  Every mutant was caught.
 ```
 

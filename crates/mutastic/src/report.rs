@@ -157,6 +157,26 @@ impl Vocabulary {
     }
 }
 
+/// `file`'s `file://` URI, as the Java edition writes it: whole, with what a URI can't hold
+/// percent-encoded, so a space or a `#` in a directory's name doesn't end the link early.
+pub fn file_uri(file: &std::path::Path) -> String {
+    let path = crate::workspace::slashed(file).replace('\\', "/");
+    let path = if path.starts_with('/') {
+        path
+    } else {
+        format!("/{path}")
+    };
+    let mut uri = String::from("file://");
+    for byte in path.bytes() {
+        if byte.is_ascii_alphanumeric() || b"/-._~!$&'()*+,;=:@".contains(&byte) {
+            uri.push(char::from(byte));
+        } else {
+            uri.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    uri
+}
+
 /// Label backgrounds.
 const RED: &str = "41";
 const GREEN: &str = "42";
@@ -166,13 +186,7 @@ impl Style {
     /// `text` linking to `file`, when links are on, as the Java edition writes them: the line
     /// number stays in the text, as whether terminals honour one in a `file:` URI varies.
     fn link(self, file: &std::path::Path, text: &str) -> String {
-        let path = crate::workspace::slashed(file).replace('\\', "/");
-        let path = if path.starts_with('/') {
-            path
-        } else {
-            format!("/{path}")
-        };
-        self.link_url(&format!("file://{path}"), text)
+        self.link_url(&file_uri(file), text)
     }
 
     /// `text` linking to `url`, when links are on.
@@ -1705,8 +1719,15 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
             format!("none ran: {NOTHING_TO_RUN}")
         },
     ));
-    if !report.reports.is_empty() {
-        rows.push(("Reports", report.reports.join(&style.dim(" · "))));
+    if !report.written.is_empty() {
+        // From where mutastic runs, linked to the file itself: a terminal guessing a link from
+        // the text alone opened `/target/mutastic/mutation.html`.
+        let files: Vec<String> = report
+            .written
+            .iter()
+            .map(|file| style.link(file, &files::from_here(file)))
+            .collect();
+        rows.push(("Reports", files.join(&style.dim(" · "))));
     }
     // A run of mutants asked for by id has a fate for each, not a score.
     if !report.only {
@@ -1924,8 +1945,15 @@ fn score_row(report: &Report, style: Style) -> String {
 }
 
 /// `  ▲ 2.0 vs last run (same code)`, when there was a last run to compare with, as the Java
-/// edition writes it.
+/// edition writes it; or that it wasn't compared, as the last run used other operators.
 fn delta(report: &Report, style: Style) -> String {
+    if let Some(not_compared) = report
+        .comparison
+        .as_ref()
+        .and_then(|found| found.not_compared())
+    {
+        return style.dim(&format!("  · {not_compared}"));
+    }
     let (Some(now), Some(found)) = (report.score(), &report.comparison) else {
         return String::new();
     };
@@ -2118,7 +2146,13 @@ fn agent(report: &Report, style: Style) -> String {
             flaky_advice(flaky)
         );
     }
-    if let Some(found) = &report.comparison {
+    if let Some(not_compared) = report
+        .comparison
+        .as_ref()
+        .and_then(|found| found.not_compared())
+    {
+        let _ = writeln!(out, "vs last run: {not_compared}");
+    } else if let Some(found) = &report.comparison {
         let _ = writeln!(
             out,
             "vs last run: {} → {} ({})",
@@ -2500,7 +2534,12 @@ fn jsonl(report: &Report) -> String {
             evidence
         })
         .collect::<Vec<_>>());
-    if let Some(found) = &report.comparison {
+    // Under other operators, nothing was compared: the event has no comparison, as with no last run.
+    if let Some(found) = report
+        .comparison
+        .as_ref()
+        .filter(|found| found.other_operators.is_none())
+    {
         finished["previousScore"] = found
             .previous_score
             .map_or(Value::Null, |s| json!(round1(s)));

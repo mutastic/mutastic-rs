@@ -45,6 +45,11 @@ newest come first.
 
 ### Additions
 
+- **A run under other operators than the last says it isn't compared.** A score is a share of
+  what its operators make, so a run is compared only with the last under the same set; with none,
+  the score line said nothing. It now says `not compared with the last run, which used other
+  operators (defaults)`, in the summary and the agent format; the `run-finished` event has no
+  comparison, as before.
 - **`mutation.json` says what the cards say.** A `mutastic` key at its top level gives the run's
   edition, the commands its output gives for a mutant (with `<id>`), where its docs are, its
   score, threshold, whether it passed, its toolchain and when it started; one on each mutant gives
@@ -120,6 +125,20 @@ newest come first.
 
 ### Fixes
 
+- **The summary's report files open from where you ran mutastic.** Run from a parent directory
+  on a crate, the `Reports` row said `target/mutastic/mutation.html`, which is there only from
+  the crate, and isn't a link: a terminal that guessed one from the text opened
+  `/target/mutastic/mutation.html`. Each file is now shown from the directory you ran in
+  (`pricing/target/mutastic/mutation.html`), whole when it's outside it, and with links on it
+  links to the file itself. The `tests.log` a failure names is linked the same way, and file
+  links percent-encode what a URI can't hold, such as a space. `run-finished`'s `reports` are
+  unchanged: relative to the directory given. The Java edition does the same.
+- **`baseline --prune` doesn't drop what another set of operators would make.** A mutant only the
+  baseline's operators make wasn't found by a run under others, and looked gone, so pruning after
+  `operators:` changed dropped it. `.mutastic/baseline.yaml` now keeps the operators it was taken
+  under, `operators: defaults`, and `--prune` under others says so and drops nothing; `run` no
+  longer counts the baseline's mutants caught under others. A baseline written before keeps
+  working as it did.
 - **A baseline git doesn't see no longer holds the gate for good.** The check for baseline entries
   a task added itself compared the baseline with the start commit's, so in a project whose git
   ignores `.mutastic/`, where that commit has none, every entry of a local baseline counted as the

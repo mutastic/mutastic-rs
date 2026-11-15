@@ -95,8 +95,12 @@ fn joined(args: Vec<String>) -> Vec<String> {
 /// mutastic couldn't run: why, on stderr; and in the agent and jsonl formats, the same as the
 /// stream's last event, `run-failed`, on stdout, which is all a tool reading the stream reads.
 fn failed(args: &[String], failure: &Failure) -> ExitCode {
-    // A build's or a test's output comes with it: escaped, a line at a time.
-    stderr_line!("mutastic: {}", untrusted::escape_lines(&failure.message));
+    // A build's or a test's output comes with it: escaped, a line at a time. Its logs are named
+    // as typed from here, and linked, after the escaping, which would undo the links.
+    stderr_line!(
+        "mutastic: {}",
+        report::files::logs(&untrusted::escape_lines(&failure.message), linked(args))
+    );
     if streams_events(args) {
         stdout_line!(
             "{}",
@@ -104,6 +108,25 @@ fn failed(args: &[String], failure: &Failure) -> ExitCode {
         );
     }
     ExitCode::from(FAILED)
+}
+
+/// Plain text, with file links when `--hyperlinks` (the last one given) or the terminal says so, as
+/// the Java edition decides it: read from the line alone, as a failure can come from parsing it.
+fn linked(args: &[String]) -> Style {
+    let dumb = std::env::var("TERM").is_ok_and(|term| term == "dumb");
+    let links = match args
+        .iter()
+        .rev()
+        .find_map(|arg| arg.strip_prefix("--hyperlinks="))
+    {
+        Some("always") => true,
+        Some("never") => false,
+        _ => std::io::stdout().is_terminal() && !dumb,
+    };
+    Style {
+        links,
+        ..Style::default()
+    }
 }
 
 /// Whether the command line, or the environment, asks for the agent or jsonl format, which end in
@@ -212,6 +235,9 @@ struct Parsed {
     since: Option<String>,
     /// `--operators`, as given, which replaces `mutastic.yaml`'s `operators:`.
     operators_given: Option<String>,
+    /// The operators the run chose, as it chose them, `stronger`: `--operators`, else
+    /// `mutastic.yaml`'s, else the defaults. A baseline keeps them.
+    operators_chosen: String,
     /// `mutastic.yaml`'s rules, once read.
     rules: Vec<crate::config::Rule>,
     /// `gate`'s: `--help` for a subcommand, `--hook=claude`, and `--tries`.
@@ -269,6 +295,7 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, Failure> {
         prune: false,
         since: None,
         operators_given: None,
+        operators_chosen: "defaults".to_string(),
         rules: Vec::new(),
         help: false,
         hook: String::new(),
@@ -664,14 +691,27 @@ fn configure(command: &str, parsed: &mut Parsed) -> Result<(), Failure> {
     crate::callrules::load(rules);
     parsed.rules = config.rules;
     match &parsed.operators_given {
-        Some(given) => parsed.operators = operators(given)?,
+        Some(given) => {
+            parsed.operators = operators(given)?;
+            parsed.operators_chosen = chosen(given.split(','));
+        }
         None if !config.operators.is_empty() => {
             parsed.operators =
                 crate::config::resolve_from(&config.operators, &config.operators_from)?;
+            parsed.operators_chosen = chosen(config.operators.iter().map(String::as_str));
         }
         None => {}
     }
     Ok(())
+}
+
+/// Operators as chosen, `stronger,-stream`: each word trimmed, split by commas.
+fn chosen<'w>(words: impl Iterator<Item = &'w str>) -> String {
+    words
+        .map(str::trim)
+        .filter(|word| !word.is_empty())
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 /// Where `command`'s directory goes among the words that aren't options: after `verify`'s ids,
@@ -1029,8 +1069,9 @@ fn finish(
                 .map(|(kind, path)| (*kind, path.map(str::to_string)))
                 .collect()
         });
-        report.reports = report::files::write(&report, &reports, &folder)
+        report.written = report::files::write(&report, &reports, &folder)
             .map_err(|error| Code::Other.with(error))?;
+        report.reports = listed(&report);
     }
     // A share's events, kept for `--from-shards`: as `--format=jsonl` writes them, whatever the
     // format shown.
@@ -1040,6 +1081,7 @@ fn finish(
         // Written empty first, so its path is shown as the reports' are.
         crate::shares::keep(&events, "")?;
         report.reports.push(report::files::shown(given, &events));
+        report.written.push(report::files::whole(&events));
         // Whole, `run-started` included, even when it went out live.
         // A share is judged with the whole run, not on its own.
         let streamed = std::mem::replace(&mut report.streamed, false);
@@ -1060,7 +1102,7 @@ fn finish(
         )
     );
     if format != Format::Jsonl && parsed.only.is_empty() && report.scope.is_none() {
-        baseline_note(&report);
+        baseline_note(&report, &parsed.operators_chosen);
     }
     if !report.failing_alone().is_empty() {
         // A test fails on the code with no mutant in, as one that fails before any mutant does.
@@ -1073,9 +1115,27 @@ fn finish(
     })
 }
 
-/// After a full run, how many of the baseline's mutants it found caught: they can be pruned.
-fn baseline_note(report: &engine::Report) {
-    let older = baseline::ids(std::path::Path::new(&report.project.given));
+/// A baseline is pruned only under the operators it was taken under: a mutant only those make
+/// would look gone under others, and be dropped.
+fn under_the_baselines_operators(here: &std::path::Path, operators: &str) -> Result<(), Failure> {
+    match baseline::operators(here) {
+        Some(taken) if taken != operators => Err(Code::Config.with(format!(
+            "the baseline was taken under operators: {taken}, and this run chooses {operators}, so \
+             a mutant only the baseline's operators make would look gone: prune it under {taken}, \
+             or take it again"
+        ))),
+        _ => Ok(()),
+    }
+}
+
+/// After a full run, how many of the baseline's mutants it found caught: they can be pruned. Not
+/// under other operators than the baseline's, where a mutant only those make would look caught.
+fn baseline_note(report: &engine::Report, operators: &str) {
+    let here = std::path::Path::new(&report.project.given);
+    if baseline::operators(here).is_some_and(|taken| taken != operators) {
+        return;
+    }
+    let older = baseline::ids(here);
     let caught = baseline::caught_now(report, &older).len();
     if !older.is_empty() && caught > 0 {
         stdout_line!(
@@ -1103,6 +1163,9 @@ fn baseline_command(parsed: &Parsed) -> Result<ExitCode, Failure> {
         }
         return Ok(ExitCode::FAILURE);
     }
+    if parsed.prune {
+        under_the_baselines_operators(here, &parsed.operators_chosen)?;
+    }
     let progress = start(parsed, false);
     let project = workspace::read(dir)?;
     progress.package(&project.package);
@@ -1119,7 +1182,8 @@ fn baseline_command(parsed: &Parsed) -> Result<ExitCode, Failure> {
         );
     } else {
         let entries = baseline::entries(&report);
-        baseline::write(here, &entries).map_err(|error| Code::Other.with(error))?;
+        baseline::write(here, &parsed.operators_chosen, &entries)
+            .map_err(|error| Code::Other.with(error))?;
         stdout_line!(
             "mutastic: {} no test catches {} in {}: commit it. A miss that isn't in it is new: the \
              gate holds only new misses, and next offers them first",
@@ -1230,10 +1294,22 @@ fn next_pass(
             .iter()
             .map(|(kind, path)| (*kind, path.map(str::to_string)))
             .collect();
-        report.reports = report::files::write(&report, &reports, &folder)
+        report.written = report::files::write(&report, &reports, &folder)
             .map_err(|error| Code::Other.with(error))?;
+        report.reports = listed(&report);
     }
     Ok(report)
+}
+
+/// The files `report` wrote, as `run-finished` lists them: from the directory mutastic was pointed
+/// at when they're inside it, whole otherwise.
+fn listed(report: &engine::Report) -> Vec<String> {
+    let given = std::path::Path::new(&report.project.given);
+    report
+        .written
+        .iter()
+        .map(|file| report::files::shown(given, file))
+        .collect()
 }
 
 /// Keeps `report` as the last run in `folder`, with its comparison with the one before: only an
@@ -1246,9 +1322,11 @@ fn recorded(
     let code = crate::shares::code(&report.project)?;
     let record = crate::record::RunRecord::of(report, &code, &crate::record::tool());
     let records = crate::records::RunRecords::new(folder);
+    // When the last run used other operators, it's said so instead.
     let comparison = records
         .comparable_to(&record)
-        .map(|previous| record.against(&previous));
+        .map(|previous| record.against(&previous))
+        .or_else(|| under_other_operators(&records, &record));
     records.keep(&record).map_err(|error| {
         Code::Other.with(format!(
             "couldn't keep the run's record in {}: {error}",
@@ -1256,6 +1334,32 @@ fn recorded(
         ))
     })?;
     Ok(comparison)
+}
+
+/// The last run of this package, when it used other operators than `record`'s: by the set's name,
+/// `defaults`, when it was one.
+fn under_other_operators(
+    records: &crate::records::RunRecords,
+    record: &crate::record::RunRecord,
+) -> Option<crate::record::Comparison> {
+    let last = records.latest()?;
+    (record.same_project_as(&last)
+        && !last.operators.is_empty()
+        && last.operators != record.operators)
+        .then(|| crate::record::Comparison::under_other_operators(&set_named(&last.operators)))
+}
+
+/// The named set whose operators are `ids`, `defaults`, or how many there are.
+fn set_named(ids: &str) -> String {
+    for set in ["defaults", "stronger", "extended", "all"] {
+        if let Ok(mut operators) = operators(set) {
+            operators.sort_unstable();
+            if operators.join(",") == ids {
+                return set.to_string();
+            }
+        }
+    }
+    format!("{} operators", ids.split(',').count())
 }
 
 fn verify(parsed: &Parsed) -> Result<ExitCode, Failure> {

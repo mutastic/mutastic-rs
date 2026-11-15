@@ -150,7 +150,8 @@ changed. `cargo clean` removes them with the rest of `target/`.
 Each full run keeps what it found in `target/mutastic/last-run.tsv`: every mutant's result and the
 test that caught it, the score, and hashes of the code and of the mutastic that ran. The next run
 under the same operators compares with it. A score is a share of what its operators make, so runs
-under other operators aren't compared; the last run under each set you use stays in
+under other operators aren't compared, and the score line says so (`not compared with the last
+run, which used other operators (defaults)`); the last run under each set you use stays in
 `target/mutastic/last-runs/` until you come back to it, and the sets you've used least recently go
 first. The score line says what changed in between: `same code`, `code changed` or `mutastic
 changed`, beside the change in score (`= vs last run`, `▲ 2.0 vs last run`).

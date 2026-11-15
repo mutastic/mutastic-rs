@@ -55,6 +55,9 @@ pub struct Comparison {
     pub same_tool: bool,
     /// Mutants caught in one run and not the other, by id.
     pub flips: Vec<Flip>,
+    /// The operators the last run used, `defaults`, when they weren't this run's: then nothing is
+    /// compared, as a score is a share of what its operators make, and it's said so.
+    pub other_operators: Option<String>,
 }
 
 /// A mutant caught in one run and not the other.
@@ -68,6 +71,24 @@ pub struct Flip {
 }
 
 impl Comparison {
+    /// No comparison: the last run used other operators, `last`.
+    pub fn under_other_operators(last: &str) -> Comparison {
+        Comparison {
+            previous_score: None,
+            same_code: false,
+            same_tool: false,
+            flips: Vec::new(),
+            other_operators: Some(last.to_string()),
+        }
+    }
+
+    /// `not compared with the last run, which used other operators (defaults)`, when it wasn't.
+    pub fn not_compared(&self) -> Option<String> {
+        self.other_operators.as_ref().map(|last| {
+            format!("not compared with the last run, which used other operators ({last})")
+        })
+    }
+
     /// `same code`, `code changed` or `mutastic changed`: what explains a difference.
     pub fn sameness(&self) -> &'static str {
         if !self.same_code {
@@ -171,6 +192,7 @@ impl RunRecord {
             same_code: previous.code == self.code,
             same_tool: previous.tool == self.tool,
             flips,
+            other_operators: None,
         }
     }
 
