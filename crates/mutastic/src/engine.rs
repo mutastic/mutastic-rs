@@ -133,6 +133,9 @@ pub struct Report {
     /// The same files, each whole: the summary shows them from where mutastic runs, and links
     /// them.
     pub written: Vec<std::path::PathBuf>,
+    /// Beside the HTML report this run wrote, the folder of a page for each mutant it didn't catch,
+    /// which opens the report on that mutant: what the human output's ids link to.
+    pub pages: Option<std::path::PathBuf>,
     /// The ignores whose line has changed since: they no longer hold, and their mutants ran.
     pub stale_ignores: Vec<String>,
     /// The change the run was scoped to, with `--since`.
@@ -583,6 +586,7 @@ pub fn run(
         started: started_wall,
         reports: Vec::new(),
         written: Vec::new(),
+        pages: None,
         stale_ignores,
         scope,
         flaky,
@@ -659,6 +663,7 @@ fn nothing_to_run(
         started: unbuilt.started_wall,
         reports: Vec::new(),
         written: Vec::new(),
+        pages: None,
         stale_ignores: unbuilt.stale_ignores,
         scope: unbuilt.scope,
         flaky: Vec::new(),

@@ -45,6 +45,13 @@ newest come first.
 
 ### Additions
 
+- **A mutant's id opens the HTML report on it.** With links on, each id the terminal shows, on a
+  card, in the misses list or in a command, links to a page beside the report,
+  `mutation-mutants/<id>.html`, which opens `mutation.html` on that mutant. A link straight to
+  `mutation.html#/m/<id>` loses its `#…` on macOS, whose opener drops it from a `file:` URL, and
+  on Linux and Windows by reports; the page's own address has nothing to lose. Only a run that
+  wrote the HTML report links its ids: not with `--report=none`, nor a share's. The Java edition
+  does the same.
 - **A run under other operators than the last says it isn't compared.** A score is a share of
   what its operators make, so a run is compared only with the last under the same set; with none,
   the score line said nothing. It now says `not compared with the last run, which used other

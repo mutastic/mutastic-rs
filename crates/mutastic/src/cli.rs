@@ -1072,6 +1072,20 @@ fn finish(
         report.written = report::files::write(&report, &reports, &folder)
             .map_err(|error| Code::Other.with(error))?;
         report.reports = listed(&report);
+        // The ids the output shows open the HTML report on their mutant, but not from a share's own
+        // folder: its report is only part of the run.
+        let html = reports
+            .iter()
+            .zip(&report.written)
+            .filter(|((kind, _), _)| *kind == Kind::Html)
+            .map(|(_, file)| file.clone())
+            .next_back();
+        if let (Some(html), None) = (html, &report.share) {
+            report.pages = Some(
+                report::files::write_pages(&report, &html)
+                    .map_err(|error| Code::Other.with(error))?,
+            );
+        }
     }
     // A share's events, kept for `--from-shards`: as `--format=jsonl` writes them, whatever the
     // format shown.
