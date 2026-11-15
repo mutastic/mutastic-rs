@@ -228,6 +228,61 @@ fn removing_a_case_row_is_fewer_tests() {
     );
 }
 
+/// A case turned off is a test turned off: libtest lists an `#[ignore]`d test with `--ignored`, so
+/// the gate counts it as ignored, not as there. One rstest case or test-case row, a whole
+/// function's cases, or a plain test, each holds the gate.
+#[test]
+fn ignoring_a_case_is_fewer_tests() {
+    let dir = copy("gate-ignored");
+    let _git = committed(&dir);
+    let (code, out) = mutastic(&dir, &["gate", "open"]);
+    assert_eq!(code, 0, "{out}");
+    let (lib, rows) = (dir.join("src/lib.rs"), dir.join("tests/rows.rs"));
+    let ignored = [
+        (
+            &lib,
+            "    #[case(1, 1, 1)]\n",
+            "    #[case(1, 1, 1)]\n    #[ignore]\n",
+            "12, 1",
+        ),
+        (
+            &lib,
+            "    #[case(2, 1, 2)]\n",
+            "    #[case(2, 1, 2)]\n    #[ignore]\n",
+            "11, 2",
+        ),
+        (
+            &rows,
+            "#[test_case(2, 1, 2 ; \"two by one\")]",
+            "#[test_case(2, 1, 2 => ignore ; \"two by one\")]",
+            "12, 1",
+        ),
+        (
+            &rows,
+            "#[test_case(2, 1, 2 ; \"two by one\")]\n",
+            "#[test_case(2, 1, 2 ; \"two by one\")]\n#[ignore]\n",
+            "11, 2",
+        ),
+        (
+            &lib,
+            "    #[test]\n    fn subtracting_nothing",
+            "    #[test]\n    #[ignore]\n    fn subtracting_nothing",
+            "12, 1",
+        ),
+    ];
+    for (file, from, to, now) in ignored {
+        let kept = std::fs::read_to_string(file).unwrap();
+        edit(file, from, to);
+        let (code, out) = mutastic(&dir, &["gate", "check"]);
+        assert_eq!(code, 1, "{to}: {out}");
+        let fewer = format!(
+            "mutastic gate: fewer tests run than when the task started (13, 0 ignored; now {now} ignored)"
+        );
+        assert!(out.contains(&fewer), "{to}: {out}");
+        std::fs::write(file, kept).unwrap();
+    }
+}
+
 /// What a jsonl run says of each mutant that can change from one run to the next: its status,
 /// what caught it, the inputs seen and the test suggested.
 fn outcomes(stdout: &str) -> Vec<String> {
@@ -299,6 +354,19 @@ fn proptest_runs_are_deterministic() {
         .collect();
     assert_eq!(runs[0], runs[1]);
     assert_eq!(runs[1], runs[2]);
+    // Red with the seed mutastic sets: the command it offers sets the seed too, and says why.
+    let (code, said) = &runs[0];
+    assert_eq!(*code, 2, "seed 0 draws a case it fails: {said:?}");
+    assert!(
+        said.iter().any(|line| line
+            == "  PROPTEST_RNG_SEED=0 cargo test -p cases --lib -- --exact rare::discounts_stay_small"),
+        "{said:?}"
+    );
+    assert!(
+        said.iter()
+            .any(|line| line.starts_with("proptest drew its cases from the seed mutastic sets")),
+        "{said:?}"
+    );
     assert_eq!(
         std::fs::read_to_string(dir.join("proptest-regressions/lib.txt")).unwrap(),
         kept,
@@ -329,11 +397,13 @@ fn a_property_failing_at_random_catches_nothing() {
     for _ in 0..3 {
         let (code, stdout) = mutastic(&dir, &["run", ".", "--format=jsonl"]);
         assert!(code == 1 || code == 2, "{stdout}");
-        let tripled: Vec<String> = finished(&stdout)
+        let mut tripled: Vec<String> = finished(&stdout)
             .iter()
             .filter(|m| m["coveredBy"] == serde_json::json!(["tripling::triples_stay_small"]))
             .map(|m| format!("{} {} {}", m["id"], m["status"], m["caughtBy"]))
             .collect();
+        // In id order: each goes out as its mutant finishes, which varies from run to run.
+        tripled.sort();
         assert!(
             !tripled.is_empty(),
             "the seed draws a case it passes: {stdout}"
@@ -346,6 +416,47 @@ fn a_property_failing_at_random_catches_nothing() {
     assert_eq!(seen[0], seen[1]);
     assert_eq!(seen[1], seen[2]);
 }
+/// A property test passes `add` dozens of values: the card shows the smallest and largest few and
+/// how many, not a line of them, and the test it suggests is named for small numbers, not for one
+/// the generator drew.
+#[test]
+fn inputs_seen_is_bounded() {
+    let dir = copy("inputs");
+    let (code, out) = mutastic(&dir, &["run", ".", "--format=agent"]);
+    assert_eq!(code, 1, "{out}");
+    let seen = out
+        .lines()
+        .find(|line| line.contains("evidence: inputs seen: a = -"))
+        .unwrap();
+    let shown = seen.matches(", ").count() + 1;
+    assert!(shown <= 13, "{seen}");
+    assert!(
+        seen.contains(", …, ") && seen.contains(" values); b = 0"),
+        "{seen}"
+    );
+    assert!(out.contains("fn add_with_a_0_and_b_1() {"), "{out}");
+}
+/// `explain` on a caught return says what caught it, never a missed card's note that no test
+/// fails when it returns that value.
+#[test]
+fn a_caught_return_has_no_missed_note() {
+    let dir = copy("explain");
+    let (_, listed) = mutastic(&dir, &["mutants", "."]);
+    let id = listed
+        .lines()
+        .find(|line| line.contains("returns 0 instead in discount"))
+        .and_then(|line| line.split_whitespace().next())
+        .unwrap()
+        .to_string();
+    let (code, out) = mutastic(&dir, &["explain", &id, "."]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains("[✓ CAUGHT] caught by rstest_tests::discounts::case_2_at_the_edge"),
+        "{out}"
+    );
+    assert!(!out.contains("none fails"), "{out}");
+    assert!(out.contains("= note: inputs seen: total = 100\n"), "{out}");
+}
 
 /// Where several cases catch a mutant, as cases written alike do, the one named is the same in
 /// every run: the first as the tests are listed, the library's before the other targets', not the
@@ -357,10 +468,13 @@ fn caught_by_is_stable_across_runs() {
         .map(|_| {
             let (code, stdout) = mutastic(&dir, &["run", ".", "--format=jsonl"]);
             assert_eq!(code, 1, "{stdout}");
-            finished(&stdout)
+            // In id order: each goes out as its mutant finishes, which varies from run to run.
+            let mut said: Vec<String> = finished(&stdout)
                 .iter()
                 .map(|m| format!("{} {} {}", m["id"], m["status"], m["caughtBy"]))
-                .collect()
+                .collect();
+            said.sort();
+            said
         })
         .collect();
     assert_eq!(runs[0], runs[1]);
@@ -384,4 +498,113 @@ fn caught_by_is_stable_across_runs() {
         minus["caughtBy"], "prop_tests::adding_zero_keeps_it",
         "{minus}"
     );
+}
+
+/// The gate's state, as `gate open` or a check left it.
+fn gate_state(dir: &Path) -> String {
+    std::fs::read_to_string(dir.join("target/mutastic/gate.properties")).unwrap()
+}
+
+/// `gate open` returns at once: the tests the task starts with are listed in the background, and
+/// until a check reads that count, the source's test attributes stand in. A check that needs the
+/// count reads it, and from then on counts every case.
+#[test]
+fn the_gate_counts_the_cases_in_the_background() {
+    let dir = copy("gate-background");
+    let _git = committed(&dir);
+    // The copy a run builds in, gone: open mustn't make it.
+    std::fs::remove_dir_all(dir.join("target/mutastic/copy")).ok();
+    let (code, out) = mutastic(&dir, &["gate", "open"]);
+    assert_eq!(code, 0, "{out}");
+    let opened = gate_state(&dir);
+    assert!(opened.contains("\ncounted=source\n"), "{opened}");
+    assert!(
+        !opened.contains("\ncounting=\n"),
+        "a count started: {opened}"
+    );
+    assert!(
+        dir.join("target/mutastic/gate-count.pid").exists(),
+        "{opened}"
+    );
+    assert!(
+        !dir.join("target/mutastic/copy").exists(),
+        "open built nothing of its own"
+    );
+    edit(
+        &dir.join("src/lib.rs"),
+        "    #[case::just_under(99, 0)]\n",
+        "",
+    );
+    let (code, out) = mutastic(&dir, &["gate", "check"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("(13, 0 ignored; now 12, 0 ignored)"),
+        "the cases, counted: {out}"
+    );
+    let checked = gate_state(&dir);
+    assert!(
+        checked.contains("\ncounted=list\n") && checked.contains("\ncounting=\n"),
+        "{checked}"
+    );
+}
+
+/// A count that fails, here because the task starts from a package that doesn't build, leaves the
+/// source's test attributes standing in, and a pass says so.
+#[test]
+fn a_count_that_fails_is_said_on_a_pass() {
+    let dir = copy("gate-uncounted");
+    let lib = dir.join("src/lib.rs");
+    let kept = std::fs::read_to_string(&lib).unwrap();
+    append(
+        &lib,
+        "\npub fn broken() -> i64 {\n    \"not a number\"\n}\n",
+    );
+    let _git = committed(&dir);
+    let (code, out) = mutastic(&dir, &["gate", "open"]);
+    assert_eq!(code, 0, "{out}");
+    std::fs::write(&lib, kept).unwrap();
+    let (code, out) = mutastic(&dir, &["gate", "check"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains(". The tests the task started with couldn't be counted (")
+            && out.ends_with("), so the gate compared the test attributes in the source only\n"),
+        "{out}"
+    );
+}
+
+/// `gate close` stops a count still running, with its builds, and removes what it made.
+#[test]
+fn closing_the_gate_stops_the_count() {
+    let dir = copy("gate-close");
+    let _git = committed(&dir);
+    let (code, out) = mutastic(&dir, &["gate", "open"]);
+    assert_eq!(code, 0, "{out}");
+    let pid_file = dir.join("target/mutastic/gate-count.pid");
+    let noted = std::fs::read_to_string(&pid_file).unwrap();
+    let mut words = noted.split_whitespace();
+    let (pid, token) = (words.next().unwrap(), words.next().unwrap());
+    let (code, out) = mutastic(&dir, &["gate", "close"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(!pid_file.exists());
+    assert!(!dir.join("target/mutastic/gate-count.properties").exists());
+    assert!(!std::env::temp_dir()
+        .join(format!("mutastic-gate-count-{token}"))
+        .exists());
+    if cfg!(unix) {
+        // Its process group is gone: no count, and no build it started; once the killed
+        // processes are reaped, which takes the system a moment.
+        let alive = || {
+            Command::new("kill")
+                .args(["-0", "--", &format!("-{pid}")])
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        };
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while alive() && std::time::Instant::now() < until {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        assert!(!alive(), "the count's group {pid} still runs");
+    }
 }

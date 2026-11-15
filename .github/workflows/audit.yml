@@ -1,12 +1,15 @@
 # The dependencies, checked with cargo-deny against deny.toml: known vulnerabilities, licences and
-# sources. On every push and pull request, and weekly, since a new advisory needs no change here.
-# Actions are pinned to a commit: a tag can be moved.
+# sources. On every push, pull request and merge queue entry, and weekly, since a new advisory
+# needs no change here. Actions are pinned to a commit: a tag can be moved.
 name: Audit
 
 on:
   push:
     branches: [main]
   pull_request:
+  # The merge queue: each pull request merged with main and those ahead of it, before it lands.
+  merge_group:
+    types: [checks_requested]
   schedule:
     - cron: "17 6 * * 1"
 

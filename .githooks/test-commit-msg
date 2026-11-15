@@ -158,17 +158,34 @@ commit_on 2026-02-04 "Keep the exit status, in the older style"
 checks "new commit in the older style" 1 "Keep the exit status, in the older style" "$base"
 
 # merge-pr, against a fake gh that answers for pull request #59 and writes down the merge it is
-# asked for.
+# asked for. FAKE_QUEUE says whether main has a merge queue, FAKE_SQUASH what the squash commit's
+# body is (BLANK or PR_BODY), FAKE_QUEUED whether #59 is in it already, and FAKE_LANDED how the
+# wait ends: MERGED, or OPEN for a pull request the queue dropped. FAKE_ENQUEUE=refused has GitHub
+# refuse to queue it, as for checks still running.
 bin=$(mktemp -d)
 trap 'rm -f "$message" "$message.err"; rm -rf "$repo" "$bin"' EXIT
 cat > "$bin/gh" <<'GH'
 #!/bin/sh
 case "$1 $2" in
   "repo view") echo mutastic/example ;;
-  "pr view") case "$*" in *headRefOid*) echo 1a2b3c ;; *) echo "$FAKE_TITLE" ;; esac ;;
+  "api graphql")
+    case "$*" in
+      *squashMergeCommitMessage*)
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$FAKE_SQUASH" "$FAKE_QUEUE" "$FAKE_QUEUED" PR_59 1a2b3c \
+          "$FAKE_TITLE" ;;
+      *enqueuePullRequest*)
+        echo "enqueuePullRequest $4 $6" >> "$FAKE_MERGE"
+        [ "$FAKE_ENQUEUE" != refused ] || exit 1
+        ;;
+      *enablePullRequestAutoMerge*) echo "enablePullRequestAutoMerge $4 $6" >> "$FAKE_MERGE" ;;
+      *) printf '%s\t%s\tfalse\tfalse\t-\t-\n' "$FAKE_LANDED" 4d5e6f ;;
+    esac
+    ;;
+  "api repos/mutastic/example/commits/4d5e6f") echo "the commit on main" ;;
+  "pr view") echo "the description" ;;
   "pr checks") echo "messages: status $FAKE_STATUS"; exit "$FAKE_STATUS" ;;
-  "pr merge")
-    printf '%s\n' "$*" > "$FAKE_MERGE"
+  "pr edit" | "pr merge")
+    printf '%s\n' "$*" >> "$FAKE_MERGE"
     while [ "$#" -gt 0 ]; do
       [ "$1" = --body-file ] && cat "$2" >> "$FAKE_MERGE"
       shift
@@ -181,23 +198,32 @@ chmod +x "$bin/gh"
 printf '%s\n' "Main's check counts the squash merge's message." "" "$long_trailer" > "$bin/body"
 printf '%s\n' "$(printf '%073d' 0)" > "$bin/long-body"
 printf '%s\n' "#58 left this out." > "$bin/hash-body"
-export FAKE_MERGE="$bin/merge"
+export FAKE_MERGE="$bin/merge" MERGE_PR_POLL=0
 # merged <name> <status> <expected output or merge> <title> <checks' status> [merge-pr arguments]
+# A merge asked for fails a case expected to fail, unless it's the queue that drops it.
 merged() {
   cases=$((cases + 1))
   name=$1 expected_status=$2 expected=$3 pr_title=$4 checks=$5
   shift 5
   rm -f "$FAKE_MERGE"
   status=0
-  FAKE_TITLE=$pr_title FAKE_STATUS=$checks PATH="$bin:$PATH" sh ./merge-pr "$@" > "$message" 2>&1 ||
-    status=$?
+  FAKE_TITLE=$pr_title FAKE_STATUS=$checks FAKE_QUEUE=${queue:-false} FAKE_SQUASH=${squash:-BLANK} \
+    FAKE_QUEUED=${queued:-false} FAKE_LANDED=${landed:-MERGED} FAKE_ENQUEUE=${enqueue:-} PATH="$bin:$PATH" \
+    sh ./merge-pr "$@" > "$message" 2>&1 || status=$?
   if [ -f "$FAKE_MERGE" ]; then
-    [ "$expected_status" -eq 0 ] || echo "merged anyway" >> "$message"
+    [ "$expected_status" -eq 0 ] || [ "${landed:-}" = OPEN ] || echo "merged anyway" >> "$message"
     cat "$FAKE_MERGE" >> "$message"
   fi
   if [ "$status" -ne "$expected_status" ] || ! grep -qF -- "$expected" "$message" ||
     grep -q "merged anyway" "$message"; then
     echo "FAIL $name: expected status $expected_status and \"$expected\", got $status: $(cat "$message")"
+    failures=$((failures + 1))
+  fi
+}
+# unmerged <name> <unexpected output>: the case just run printed no such thing.
+unmerged() {
+  if grep -qF -- "$2" "$message"; then
+    echo "FAIL $1: didn't expect \"$2\": $(cat "$message")"
     failures=$((failures + 1))
   fi
 }
@@ -213,6 +239,38 @@ merged "title too long" 1 "can be at most 44 characters, and is 45" \
 merged "body too wide" 1 "line 3 is 73 characters" "$title" 0 59 "$bin/long-body"
 merged "body with #" 1 "lines starting with #" "$title" 0 59 "$bin/hash-body"
 merged "no number" 2 "usage: merge-pr" "$title" 0
+
+# With a merge queue: the pull request joins it, and the queue writes the commit.
+queue=true
+merged "queue" 0 "enqueuePullRequest id=PR_59 head=1a2b3c" "$title" 0 59
+unmerged "queue, not gh pr merge" "pr merge"
+unmerged "queue, no auto-merge" "AutoMerge"
+enqueue=refused
+merged "queue refused, auto-merge" 0 "enablePullRequestAutoMerge id=PR_59 head=1a2b3c" "$title" 8 59
+enqueue=
+merged "queue, message still checked" 1 "line 3 is 73 characters" "$title" 0 59 "$bin/long-body"
+merged "queue, checks still checked" 1 "not every check on #59 has passed" "$title" 1 59
+merged "queue, checks running" 0 "enqueuePullRequest id=PR_59 head=1a2b3c" "$title" 8 59
+merged "queue, blank body leaves the description" 0 "lands once it passes" "$title" 0 59 "$bin/body"
+unmerged "queue, description kept" "pr edit"
+squash=PR_BODY
+merged "queue, body to the description" 0 "--body-file" "$title" 0 59 "$bin/body"
+merged "queue, the description is the body" 0 "Main's check counts the squash merge's message." \
+  "$title" 0 59 "$bin/body"
+merged "queue, an empty body empties the description" 0 "pr edit 59" "$title" 0 59
+squash=
+merged "queue, --wait" 0 "landed on main as 4d5e6f" "$title" 0 --wait 59
+merged "queue, --wait prints the commit" 0 "the commit on main" "$title" 0 --wait 59
+landed=OPEN
+merged "queue, dropped" 1 "left the merge queue without merging" "$title" 0 --wait 59
+landed=
+queued=true
+merged "queue, already queued" 0 "already queued" "$title" 0 59
+unmerged "queue, already queued, not again" "enqueuePullRequest"
+merged "queue, already queued, --wait" 0 "landed on main as 4d5e6f" "$title" 0 --wait 59
+queued=
+merged "queue, --admin past it" 0 "--squash --delete-branch --admin" "$title" 1 --admin 59
+queue=
 
 echo "test-commit-msg: $cases cases, $failures failed"
 [ "$failures" -eq 0 ]

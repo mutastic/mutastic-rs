@@ -71,7 +71,6 @@ impl<'a> Queue<'a> {
             .filter(|entry| is_legacy(view, entry, baseline))
             .count();
         let waiting = view
-            .report
             .results
             .iter()
             .filter(|result| result.status == Status::Survived)
@@ -192,10 +191,7 @@ pub fn next(report: Option<&Report>, asked: &Asked) -> (String, bool) {
         return (nothing_left(asked, 0), false);
     };
     // Events keep the project's text as it is; what's read is shown escaped.
-    let view = View {
-        report,
-        shown: asked.format != Format::Jsonl,
-    };
+    let view = View::of(report, asked.format != Format::Jsonl);
     let queue = Queue::of(&view, asked.proposed, asked.baseline);
     if queue.entries.is_empty() {
         return (nothing_left(asked, queue.waiting), false);

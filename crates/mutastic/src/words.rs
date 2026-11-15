@@ -280,6 +280,14 @@ fn range_end(
     }
 }
 
+/// The start of the note a missed return's card gives: a caught one's mustn't.
+const RETURN_MISSED: &str = "tests reach this return, but none fails when it returns ";
+
+/// Whether a note says the mutant was missed, which only a missed mutant's card can say.
+pub fn says_missed(note: &str) -> bool {
+    note.starts_with(RETURN_MISSED)
+}
+
 fn returns(method: &str, value: &str, seen: &BTreeMap<String, Vec<i128>>) -> Advice {
     let today = match value {
         "true" => Some("false".to_string()),
@@ -287,9 +295,7 @@ fn returns(method: &str, value: &str, seen: &BTreeMap<String, Vec<i128>>) -> Adv
         _ if value.starts_with('1') => Some(format!("0{}", &value[1..])),
         _ => None,
     };
-    let mut notes = vec![format!(
-        "tests reach this return, but none fails when it returns `{value}`"
-    )];
+    let mut notes = vec![format!("{RETURN_MISSED}`{value}`")];
     notes.extend(inputs_seen(seen));
     let help = match (&today, value) {
         (Some(was), _) => format!("add a test where {method} returns `{was}` here, and assert it"),
@@ -325,12 +331,30 @@ fn inputs_seen(seen: &BTreeMap<String, Vec<i128>>) -> Vec<String> {
     vec![format!("inputs seen: {}", each.join("; "))]
 }
 
+/// How many of a name's inputs a card shows: a property test passes hundreds, and a line of them
+/// says no more than its ends and how many there were.
+pub const INPUTS_SHOWN: usize = 10;
+
+/// The values, in order, or past [`INPUTS_SHOWN`] the smallest and largest few and how many:
+/// `-989, -974, -960, -959, -948, …, 884, 909, 948, 950 (64 values)`.
 fn join(values: &[i128]) -> String {
-    values
-        .iter()
-        .map(i128::to_string)
-        .collect::<Vec<_>>()
-        .join(", ")
+    let said = |values: &[i128]| {
+        values
+            .iter()
+            .map(i128::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    if values.len() <= INPUTS_SHOWN {
+        return said(values);
+    }
+    let end = INPUTS_SHOWN / 2;
+    format!(
+        "{}, …, {} ({} values)",
+        said(&values[..end]),
+        said(&values[values.len() - end..]),
+        values.len()
+    )
 }
 
 /// A comparison of a name with a number: `total >= 100`, or `100 <= total`.

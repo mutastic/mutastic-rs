@@ -179,6 +179,13 @@ Everything is under your target directory, in `target/mutastic`:
 | `target/mutastic/last-run.tsv` | The last full run, for the next to compare with |
 | `target/mutastic/last-runs/` | The last full run under each other set of operators |
 | `target/mutastic/next.tsv` | What the last `mutastic next` left uncaught, and what it ran under |
+| `target/mutastic/gate.properties` | An open gate: where the task started; `gate close` deletes it |
+
+The run record (`last-run.tsv` and `last-runs/`), `next.tsv` and `gate.properties` are mutastic's
+own. Their names stay, and `gate close` deletes the gate's file, but what's in them is private to
+each edition: the Rust and Java editions write them differently, and either may change them in any
+release. Read a run's results from `mutation.json` or the [events](events.md) instead. See
+[Compatibility](compatibility.md#files-mutastic-keeps-for-itself).
 
 `cargo clean` removes it with the rest. A `CARGO_TARGET_DIR` or `build.target-dir` you've set moves
 it with your target directory.

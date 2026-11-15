@@ -20,6 +20,8 @@ page stands alone and links to the others by relative path.
 
 ## Concepts
 
+- [Coverage and mutants](coverage-and-mutants.md): why tests can reach every line and branch and
+  still check nothing, and what mutants find that coverage can't, measured on one crate.
 - [How a run works](concepts/how-a-run-works.md): one build for every mutant, switches, what
   happens to a mutant that doesn't compile, one run split across CI jobs, and CI that fails only
   on new misses.
@@ -68,7 +70,8 @@ page stands alone and links to the others by relative path.
 
 ## Help
 
-- [Troubleshooting](troubleshooting.md): unviable mutants, slow runs, workspaces, and test code.
+- [Troubleshooting](troubleshooting.md): unviable mutants, slow runs, workspaces, test code, and
+  tables of cases and property tests.
 - [Differences from the Java edition](differences-from-java.md): only where you'd do something
   different.
 

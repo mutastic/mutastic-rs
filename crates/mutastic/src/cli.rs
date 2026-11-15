@@ -6,82 +6,23 @@ use std::process::ExitCode;
 
 use crate::edition::{self, Edition, Route};
 use crate::engine::{self, Options, Status};
+use crate::failure::{Code, Failure};
 use crate::progress::{Progress, Shown};
 use crate::report::files::Kind;
 use crate::report::{self, Format, Style};
 use crate::shares::EVENTS;
 use crate::sites::UnsafeMode;
 use crate::{
-    baseline, commands, gate, ignores, java, sites, testrun, untrusted, workspace, wrapper,
+    baseline, commands, gate, gate_count, ignores, java, sites, testrun, untrusted, workspace,
+    wrapper,
 };
-
-const USAGE: &str = "\
-mutastic: find the tests that run your code but don't check it
-
-Usage:
-  mutastic run [dir] [options]       Mutate the package in dir (default .) and run its tests
-  mutastic verify <id>… [dir]        Pass when a test catches each mutant named, the ids split
-                                     by commas or spaces
-  mutastic explain <id> [dir]        Everything known of one mutant, with its tests run
-  mutastic ignore <id> [dir] --reason=<why>
-                                     Record a decision not to test one mutant, in
-                                     .mutastic/ignores.yaml; --as=<kind> says what sort; --propose
-                                     proposes it for a person to accept (--accept <id>);
-                                     --remove <id> takes one back; --prune those whose line changed
-  mutastic gate open|check|close [dir]
-                                     Gate a coding agent's task on its changed lines' mutants:
-                                     open keeps where it starts, check says whether it's done
-                                     (--hook=claude answers as Claude Code's hooks, --tries=<n>),
-                                     close forgets it; gate <action> --help says more
-  mutastic mutants [dir]             List the mutants, without running anything
-  mutastic baseline [dir]            Record every mutant missed now in .mutastic/baseline.yaml, so
-                                     later misses are told from them; --prune drops those the
-                                     tests catch now
-  mutastic next [dir]                The missed mutant most worth a test first, why, and the test
-                                     to write; while the code under test is the same, it runs only
-                                     what the last next left uncaught
-  mutastic <command> --help          One command's words, options and exit status
-
-Options:
-  --only=<id>[,<id>…]   Run only these mutants
-  --format=<format>     full (default at a terminal), brief, concise, grouped, agent or jsonl
-  --threshold=<score>   The score a run must reach to pass (default 80)
-  --fail-on-new         Pass when every mutant no test catches is in .mutastic/baseline.yaml,
-                        and fail on one that isn't, whatever the score
-  --operators=<set>     defaults, stronger or extended, or operator ids separated by commas
-  --workers=<n>         Tests run side by side (default half the cores, at most 4)
-  --unsafe=<mode>       skip (default): leave unsafe code and functions holding an unsafe block
-                        alone; enclosing: mutate those functions too; all: unsafe code as well
-  --since[=<ref>]       Run only the mutants on lines changed since the merge-base of HEAD and
-                        <ref> (default: the default branch), uncommitted and new files included
-  --report=<kind>[:<path>]  Write a report file: json (mutation.json) or html (mutation.html), in
-                        target/mutastic unless a path is given; repeat it for more, or none.
-                        A full run writes both by default
-  --shard=<n>/<m>       Run only the nth of m shares of the mutants, to split one run across
-                        machines; it keeps its results in target/mutastic/shares/<n>-of-<m>
-  --from-shards=<dir>   Run no mutants: put together the results every share of a split run
-                        kept, found anywhere in dir, as the whole run
-  --no-suggestions      Don't look for a test that catches each missed mutant, which runs the
-                        missed mutant's function outside the tests
-  --force-coverage      Build and run every test even when no mutant is there to run, to check
-                        or time the suite
-  --top=<n>             How many of next's queue to show, at most one a function and two a
-                        file (default 1, at most 25)
-  --progress=<mode>     auto (default): a line redrawn in place at a terminal, none for agent
-                        and jsonl; bar, counter (a line every so often) or none
-  --vocabulary=<words>  plain (default) says caught and missed; classic says killed and survived
-  --color=<when>        auto (default): colour on a terminal that wants it; always or never
-  --hyperlinks=<when>   auto (default): file locations as links on a terminal; always or never
-  --edition=<edition>   rust or java: which edition runs. Unless given, the build file in dir, or
-                        the nearest above it, decides: Cargo.toml for rust; pom.xml, build.gradle
-                        or settings.gradle for java, which is fetched the first time it's needed
-
-Exit status: 0 when the run passes, verify's mutants are caught, or next has nothing queued; 1
-when it doesn't; 2 when mutastic couldn't run.";
 
 pub fn main(args: Vec<OsString>) -> ExitCode {
     if wrapper::active(&args) {
         return wrapper::run(&args);
+    }
+    if gate_count::active() {
+        return gate_count::run(&args);
     }
     let mut args: Vec<String> = args
         .iter()
@@ -93,17 +34,36 @@ pub fn main(args: Vec<OsString>) -> ExitCode {
         args.remove(0);
     }
     let args = joined(args);
+    hook_panics(&args);
     let args = match edition::chosen(&args)
         .and_then(|(chosen, args)| front_door(chosen, &args).map(|forwarded| (forwarded, args)))
     {
         Ok((Some(code), _)) => return code,
         Ok((None, args)) => args,
-        Err(message) => return failed(&args, &message),
+        Err(failure) => return failed(&args, &failure),
     };
     match dispatch(&args) {
         Ok(code) => code,
-        Err(message) => failed(&args, &message),
+        Err(failure) => failed(&args, &failure),
     }
+}
+
+/// The status mutastic exits with when it couldn't run: 2 for every failure until 2.0, when it
+/// moves to the Java edition's 2, 3 and 4 (decision 2).
+const FAILED: u8 = 2;
+
+/// A panic is a bug in mutastic: it ends as any failure does, said on stderr and, in the agent and
+/// jsonl formats, as a `run-failed` event with code `internal` (decision 2), not as Rust's own
+/// message and exit 101, which a tool reading the stream can't tell from a crash. A panic in a
+/// worker ends the run there, rather than leave the others to finish without it.
+fn hook_panics(args: &[String]) {
+    let args = args.to_vec();
+    std::panic::set_hook(Box::new(move |panic| {
+        // failed() says the failure and gives back FAILED, the status exit() ends with here: a
+        // hook returns nothing.
+        let _ = failed(&args, &crate::failure::internal(panic));
+        std::process::exit(i32::from(FAILED));
+    }));
 }
 
 /// The line with each value given after a space joined to its option, `--format agent` as
@@ -134,26 +94,28 @@ fn joined(args: Vec<String>) -> Vec<String> {
 
 /// mutastic couldn't run: why, on stderr; and in the agent and jsonl formats, the same as the
 /// stream's last event, `run-failed`, on stdout, which is all a tool reading the stream reads.
-fn failed(args: &[String], message: &str) -> ExitCode {
-    const EXIT: u8 = 2;
+fn failed(args: &[String], failure: &Failure) -> ExitCode {
     // A build's or a test's output comes with it: escaped, a line at a time.
-    stderr_line!("mutastic: {}", untrusted::escape_lines(message));
+    stderr_line!("mutastic: {}", untrusted::escape_lines(&failure.message));
     if streams_events(args) {
         stdout_line!(
             "{}",
-            crate::failure::event(message, &directory_typed(args), EXIT)
+            crate::failure::event(failure, &directory_typed(args), FAILED)
         );
     }
-    ExitCode::from(EXIT)
+    ExitCode::from(FAILED)
 }
 
 /// Whether the command line, or the environment, asks for the agent or jsonl format, which end in
 /// an event when mutastic can't run.
 fn streams_events(args: &[String]) -> bool {
+    // A --format value mutastic doesn't take is the failure itself: the stream it ends is the one
+    // the environment asks for.
     let given = args
         .iter()
         .rev()
         .find_map(|arg| arg.strip_prefix("--format="))
+        .filter(|format| Format::parse(format).is_some())
         .map(str::to_string)
         .or_else(|| std::env::var("MUTASTIC_FORMAT").ok());
     match given.as_deref() {
@@ -179,7 +141,7 @@ fn directory_typed(args: &[String]) -> String {
 
 /// Hands the command to the Java edition when the project it points at is a Maven or Gradle
 /// project, or `--edition=java` says, and returns its exit status. `None` when this edition runs it.
-fn front_door(chosen: Option<Edition>, args: &[String]) -> Result<Option<ExitCode>, String> {
+fn front_door(chosen: Option<Edition>, args: &[String]) -> Result<Option<ExitCode>, Failure> {
     let Some(command) = args.first() else {
         return Ok(None);
     };
@@ -283,7 +245,7 @@ fn declared(command: &str, args: &[String]) -> Option<&'static commands::Command
 
 /// `command`'s options and words. An option is taken only as [`commands`] declares it, on the
 /// commands it names there, so what the docs say a command takes is what it takes.
-fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
+fn parse(command: &str, args: &[String]) -> Result<Parsed, Failure> {
     let declared = declared(command, args);
     let mut parsed = Parsed {
         positional: Vec::new(),
@@ -330,7 +292,7 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
                 continue;
             }
             if arg.len() > 1 && arg.starts_with('-') {
-                return Err(short_option(command, arg));
+                return Err(Code::UnknownOption.with(short_option(command, arg)));
             }
             parsed.positional.push(arg.clone());
             continue;
@@ -343,12 +305,13 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
         let internal = name == "help" || (name == "fraction" && command == "build");
         if !internal {
             let Some(declared_option) = commands::option(name) else {
-                return Err(crate::mistyped::option(declared, &line, at, name, value));
+                return Err(Code::UnknownOption
+                    .with(crate::mistyped::option(declared, &line, at, name, value)));
             };
             commands::accepts(declared, name, value)?;
             if value.is_none() {
                 if let Some(error) = crate::mistyped::value(declared_option, &line, at) {
-                    return Err(error);
+                    return Err(Code::OptionValue.with(error));
                 }
             }
             if let Some(value) = value {
@@ -356,138 +319,160 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, String> {
                 let chosen = if name == "report" { kind } else { value };
                 if !declared_option.choices.is_empty() && !declared_option.choices.contains(&chosen)
                 {
-                    return Err(crate::mistyped::choice(declared_option, &line, at, chosen));
+                    return Err(Code::OptionValue.with(crate::mistyped::choice(
+                        declared_option,
+                        &line,
+                        at,
+                        chosen,
+                    )));
                 }
             }
         }
         let value = value.unwrap_or("");
         match name {
-            "only" => {
-                if value.trim().is_empty() {
-                    return Err("--only needs a mutant's id: --only=ID, as a card shows it".into());
-                }
-                if value.split(',').any(|id| id.trim().is_empty()) {
-                    return Err(format!(
-                        "--only={value} has an empty id between its commas: --only=ID,ID"
-                    ));
-                }
-                parsed.only.extend(ids(value))
-            }
-            "format" => {
-                parsed.format = Some(Format::parse(value).ok_or_else(|| {
-                    format!(
-                    "--format: {value} isn't one of full, brief, concise, grouped, agent or jsonl"
-                )
-                })?)
-            }
-            "threshold" => parsed.threshold = f64::from(whole("--threshold", value, 0, 100)?),
-            "workers" => {
-                parsed.workers = value
-                    .parse()
-                    .ok()
-                    .filter(|&n: &usize| n > 0)
-                    .ok_or_else(|| format!("--workers: {value} isn't a positive number"))?
-            }
-            "operators" => {
-                // A name only a rules file has is checked once the rules files are read.
-                if let Ok(chosen) = operators(value) {
-                    parsed.operators = chosen;
-                }
-                parsed.operators_given = Some(value.to_string());
-            }
-            "unsafe" => {
-                parsed.unsafe_mode = UnsafeMode::parse(value).ok_or_else(|| {
-                    format!("--unsafe: {value} isn't one of skip, enclosing or all")
-                })?
-            }
-            "reason" => parsed.reason = Some(value.to_string()),
-            "as" => {
-                if !ignores::KINDS.contains(&value) {
-                    return Err(format!(
-                        "--as: {value} isn't one of {}",
-                        ignores::KINDS.join(", ")
-                    ));
-                }
-                parsed.kind = value.to_string()
-            }
-            "propose" => parsed.propose = true,
-            "accept" => parsed.accept = true,
-            "remove" => parsed.remove = true,
-            "prune" => parsed.prune = true,
-            "fail-on-new" => parsed.fail_on_new = true,
-            "since" => parsed.since = Some(value.to_string()),
-            "help" => parsed.help = true,
-            "no-suggestions" => parsed.no_suggestions = true,
-            "force-coverage" => parsed.force_coverage = true,
-            "shard" => parsed.shard = Some(crate::shares::Shard::parse(value)?),
             "from-shards" if value.is_empty() => {
-                return Err("--from-shards needs the shares' directory: --from-shards=DIR".into())
+                return Err(Code::Shards
+                    .with("--from-shards needs the shares' directory: --from-shards=DIR"))
             }
-            "from-shards" => parsed.from_shards = Some(value.to_string()),
-            "hook" => {
-                if value != "claude" {
-                    return Err(format!("--hook: {value} isn't claude"));
-                }
-                parsed.hook = value.to_string();
-            }
-            "top" => {
-                parsed.top = value
-                    .parse()
-                    .ok()
-                    .filter(|n: &usize| (1..=report::next::MOST).contains(n))
-                    .ok_or_else(|| {
-                        format!(
-                            "--top: {value} isn't a number from 1 to {}",
-                            report::next::MOST
-                        )
-                    })?
-            }
-            "tries" => {
-                parsed.tries = value
-                    .parse()
-                    .ok()
-                    .filter(|n: &usize| (1..=100).contains(n))
-                    .ok_or_else(|| format!("--tries: {value} isn't a number from 1 to 100"))?
-            }
-            "report" => {
-                let reports = parsed.reports.get_or_insert_with(Vec::new);
-                let (kind, path) = match value.split_once(':') {
-                    Some((kind, path)) => (kind, Some(path.to_string())),
-                    None => (value, None),
-                };
-                if kind != "none" {
-                    let kind = Kind::parse(kind).ok_or_else(|| {
-                        format!("--report: unknown report {kind} (one of json, html, sarif, none)")
-                    })?;
-                    reports.push((kind, path));
+            "shard" => parsed.shard = Some(crate::shares::Shard::parse(value)?),
+            _ => {
+                let known =
+                    set(&mut parsed, name, value).map_err(|error| Code::OptionValue.with(error))?;
+                if !known {
+                    return Err(Code::UnknownOption
+                        .with(crate::mistyped::option(declared, &line, at, name, None)));
                 }
             }
-            "vocabulary" => {
-                parsed.vocabulary = Some(report::Vocabulary::parse(value).ok_or_else(|| {
-                    format!("--vocabulary: {value} isn't one of plain or classic")
-                })?)
-            }
-            "color" => parsed.color = choice("--color", value)?,
-            "hyperlinks" => parsed.hyperlinks = choice("--hyperlinks", value)?,
-            "progress" => {
-                parsed.progress = Shown::parse(value).ok_or_else(|| {
-                    format!("--progress: {value} isn't one of auto, bar, counter or none")
-                })?
-            }
-            // Which edition runs is decided before this one reads its options.
-            "edition" => {
-                Edition::parse(value)
-                    .ok_or_else(|| format!("--edition: {value} isn't one of java or rust"))?;
-            }
-            "fraction" => {
-                parsed.fraction = value
-                    .parse()
-                    .map_err(|_| format!("--fraction: {value} isn't a number"))?
-            }
-            _ => return Err(crate::mistyped::option(declared, &line, at, name, None)),
         }
     }
     Ok(parsed)
+}
+
+/// Sets option `name` to `value` (empty for a flag), checked as that option takes it; false for
+/// a name no option has. Every error is a value the option doesn't take.
+fn set(parsed: &mut Parsed, name: &str, value: &str) -> Result<bool, String> {
+    match name {
+        "only" => {
+            if value.trim().is_empty() {
+                return Err("--only needs a mutant's id: --only=ID, as a card shows it".into());
+            }
+            if value.split(',').any(|id| id.trim().is_empty()) {
+                return Err(format!(
+                    "--only={value} has an empty id between its commas: --only=ID,ID"
+                ));
+            }
+            parsed.only.extend(ids(value))
+        }
+        "format" => {
+            parsed.format = Some(Format::parse(value).ok_or_else(|| {
+                format!(
+                    "--format: {value} isn't one of full, brief, concise, grouped, agent or jsonl"
+                )
+            })?)
+        }
+        "threshold" => parsed.threshold = f64::from(whole("--threshold", value, 0, 100)?),
+        "workers" => {
+            parsed.workers = value
+                .parse()
+                .ok()
+                .filter(|&n: &usize| n > 0)
+                .ok_or_else(|| format!("--workers: {value} isn't a positive number"))?
+        }
+        "operators" => {
+            // A name only a rules file has is checked once the rules files are read.
+            if let Ok(chosen) = operators(value) {
+                parsed.operators = chosen;
+            }
+            parsed.operators_given = Some(value.to_string());
+        }
+        "unsafe" => {
+            parsed.unsafe_mode = UnsafeMode::parse(value)
+                .ok_or_else(|| format!("--unsafe: {value} isn't one of skip, enclosing or all"))?
+        }
+        "reason" => parsed.reason = Some(value.to_string()),
+        "as" => {
+            if !ignores::KINDS.contains(&value) {
+                return Err(format!(
+                    "--as: {value} isn't one of {}",
+                    ignores::KINDS.join(", ")
+                ));
+            }
+            parsed.kind = value.to_string()
+        }
+        "propose" => parsed.propose = true,
+        "accept" => parsed.accept = true,
+        "remove" => parsed.remove = true,
+        "prune" => parsed.prune = true,
+        "fail-on-new" => parsed.fail_on_new = true,
+        "since" => parsed.since = Some(value.to_string()),
+        "help" => parsed.help = true,
+        "no-suggestions" => parsed.no_suggestions = true,
+        "force-coverage" => parsed.force_coverage = true,
+        "from-shards" => parsed.from_shards = Some(value.to_string()),
+        "hook" => {
+            if value != "claude" {
+                return Err(format!("--hook: {value} isn't claude"));
+            }
+            parsed.hook = value.to_string();
+        }
+        "top" => {
+            parsed.top = value
+                .parse()
+                .ok()
+                .filter(|n: &usize| (1..=report::next::MOST).contains(n))
+                .ok_or_else(|| {
+                    format!(
+                        "--top: {value} isn't a number from 1 to {}",
+                        report::next::MOST
+                    )
+                })?
+        }
+        "tries" => {
+            parsed.tries = value
+                .parse()
+                .ok()
+                .filter(|n: &usize| (1..=100).contains(n))
+                .ok_or_else(|| format!("--tries: {value} isn't a number from 1 to 100"))?
+        }
+        "report" => {
+            let reports = parsed.reports.get_or_insert_with(Vec::new);
+            let (kind, path) = match value.split_once(':') {
+                Some((kind, path)) => (kind, Some(path.to_string())),
+                None => (value, None),
+            };
+            if kind != "none" {
+                let kind = Kind::parse(kind).ok_or_else(|| {
+                    format!("--report: unknown report {kind} (one of json, html, sarif, none)")
+                })?;
+                reports.push((kind, path));
+            }
+        }
+        "vocabulary" => {
+            parsed.vocabulary =
+                Some(report::Vocabulary::parse(value).ok_or_else(|| {
+                    format!("--vocabulary: {value} isn't one of plain or classic")
+                })?)
+        }
+        "color" => parsed.color = choice("--color", value)?,
+        "hyperlinks" => parsed.hyperlinks = choice("--hyperlinks", value)?,
+        "progress" => {
+            parsed.progress = Shown::parse(value).ok_or_else(|| {
+                format!("--progress: {value} isn't one of auto, bar, counter or none")
+            })?
+        }
+        // Which edition runs is decided before this one reads its options.
+        "edition" => {
+            Edition::parse(value)
+                .ok_or_else(|| format!("--edition: {value} isn't one of java or rust"))?;
+        }
+        "fraction" => {
+            parsed.fraction = value
+                .parse()
+                .map_err(|_| format!("--fraction: {value} isn't a number"))?
+        }
+        _ => return Ok(false),
+    }
+    Ok(true)
 }
 
 /// `value` as a whole number from `min` to `max`, in the Java edition's words: a score is a whole
@@ -512,9 +497,13 @@ fn short_option(command: &str, word: &str) -> String {
 /// Whether `args` (without the program's name) is a command mutastic takes, with options it knows,
 /// without running it: for checking the commands the docs show.
 pub fn check(args: &[String]) -> Result<(), String> {
+    checked(args).map_err(|failure| failure.message)
+}
+
+fn checked(args: &[String]) -> Result<(), Failure> {
     let args = joined(args.to_vec());
     let Some(command) = args.first() else {
-        return Err("no command".into());
+        return Err(Code::UnknownCommand.with("no command"));
     };
     match command.as_str() {
         "run" | "verify" | "explain" | "ignore" | "gate" | "mutants" | "next" | "baseline"
@@ -526,59 +515,61 @@ pub fn check(args: &[String]) -> Result<(), String> {
                 None => Ok(()),
             }
         }
-        _ => Err(crate::mistyped::command(&args)),
+        _ => Err(Code::UnknownCommand.with(crate::mistyped::command(&args))),
     }
 }
 
 /// Whether the words that aren't options are ones `command` takes: a mutant's id where it needs
 /// one, then a directory, and nothing after. A word it doesn't take would otherwise be dropped
 /// without a word, and the run would be one nobody asked for.
-fn arguments(command: &str, parsed: &Parsed) -> Result<(), String> {
+fn arguments(command: &str, parsed: &Parsed) -> Result<(), Failure> {
     let synopsis = |name: &str| commands::command(name).map_or("", |command| command.synopsis);
     let (usage, takes_id, most) = match command {
         "run" | "mutants" | "next" | "baseline" => (synopsis(command), false, 1),
-        "build" => ("mutastic build [dir] --fraction=<share>", false, 1),
+        "build" => ("mutastic build [DIR] --fraction=SHARE", false, 1),
         "verify" => (
             synopsis(command),
             true,
             1 + verify_ids(&parsed.positional).1,
         ),
         "explain" => (synopsis(command), true, 2),
-        "ignore" if parsed.prune => ("mutastic ignore --prune [dir]", false, 1),
+        "ignore" if parsed.prune => ("mutastic ignore --prune [DIR]", false, 1),
         "ignore" => (synopsis(command), true, 2),
-        "gate" => ("mutastic gate open|check|close [dir]", false, 2),
+        "gate" => ("mutastic gate open|check|close [DIR]", false, 2),
         _ => return Ok(()),
     };
+    if command == "gate" && !parsed.help {
+        gate_action(parsed)?;
+    }
     if command == "run" {
         sharing(parsed)?;
         if parsed.fail_on_new && !parsed.only.is_empty() {
-            return Err(
-                "--fail-on-new judges a run of the package on its new misses: not with \
-                        --only, whose mutants each pass when they're caught"
-                    .into(),
-            );
+            return Err(Code::OptionNotTaken.with(
+                "--fail-on-new judges a run of the package on its new misses: not with --only, \
+                 whose mutants each pass when they're caught",
+            ));
         }
     }
     if takes_id {
         if let Some(given) = parsed.positional.first() {
             let mut named = ids(given).peekable();
             if named.peek().is_none() || !named.all(|id| is_mutant_id(&id)) {
-                return Err(needs_id(command, given, usage));
+                return Err(Code::NeedsId.with(needs_id(command, given, usage)));
             }
         }
     }
     match parsed.positional.get(most..) {
-        Some(extra) if !extra.is_empty() => Err(format!(
+        Some(extra) if !extra.is_empty() => Err(Code::ExtraWords.with(format!(
             "{command} doesn't take {}: {usage}",
             extra.join(" ")
-        )),
+        ))),
         _ => Ok(()),
     }
 }
 
 /// A run is a share or made of them, not both; made of them, it runs no mutants itself, so the
 /// options for what runs are the shares'.
-fn sharing(parsed: &Parsed) -> Result<(), String> {
+fn sharing(parsed: &Parsed) -> Result<(), Failure> {
     if parsed.from_shards.is_none() {
         return Ok(());
     }
@@ -589,10 +580,10 @@ fn sharing(parsed: &Parsed) -> Result<(), String> {
         ("--force-coverage", parsed.force_coverage),
     ];
     match given.iter().find(|(_, given)| *given) {
-        Some((option, _)) => Err(format!(
+        Some((option, _)) => Err(Code::Shards.with(format!(
             "--from-shards puts the shares' results together as the whole run, and runs no mutant \
              itself: not with {option}, which the shares run with"
-        )),
+        ))),
         None => Ok(()),
     }
 }
@@ -652,14 +643,14 @@ fn ids(value: &str) -> impl Iterator<Item = String> + '_ {
         .map(str::to_string)
 }
 
-fn operators(value: &str) -> Result<Vec<&'static str>, String> {
+fn operators(value: &str) -> Result<Vec<&'static str>, Failure> {
     let entries: Vec<String> = value.split(',').map(|e| e.trim().to_string()).collect();
     crate::config::resolve(&entries, "--operators")
 }
 
 /// Reads the package's nearest `mutastic.yaml`, if there is one: its rules, its rules files'
 /// operators, and the operators it chooses, unless `--operators` chose.
-fn configure(command: &str, parsed: &mut Parsed) -> Result<(), String> {
+fn configure(command: &str, parsed: &mut Parsed) -> Result<(), Failure> {
     let at = dir_slot(command, parsed).unwrap_or(1);
     let given = parsed.positional.get(at).map_or(".", String::as_str);
     let config = match configured_dir(given) {
@@ -702,7 +693,7 @@ fn dir_slot(command: &str, parsed: &Parsed) -> Option<usize> {
 /// its place where that's another: below a package, it's the package's; a package's name typed
 /// where there's no such directory is that package's, said in a note. The ignores, the baseline,
 /// `mutastic.yaml` and `--since` are then all read from the package's directory.
-fn locate(command: &str, args: &[String], parsed: &mut Parsed) -> Result<(), String> {
+fn locate(command: &str, args: &[String], parsed: &mut Parsed) -> Result<(), Failure> {
     let Some(slot) = dir_slot(command, parsed) else {
         return Ok(());
     };
@@ -744,9 +735,10 @@ fn configured_dir(given: &str) -> Option<std::path::PathBuf> {
     Some(std::path::Path::new(given).join(from_run))
 }
 
-fn dispatch(args: &[String]) -> Result<ExitCode, String> {
+fn dispatch(args: &[String]) -> Result<ExitCode, Failure> {
+    // With nothing to do, the help goes where errors go: stdout holds only results.
     let Some(command) = args.first() else {
-        stdout_line!("{USAGE}");
+        stderr_line!("{}", crate::help::general());
         return Ok(ExitCode::from(2));
     };
     if let Some(help) = help(args)? {
@@ -756,7 +748,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, String> {
     if !crate::mistyped::COMMANDS.contains(&command.as_str())
         && !matches!(command.as_str(), "build" | "--version" | "-V")
     {
-        return Err(crate::mistyped::command(args));
+        return Err(Code::UnknownCommand.with(crate::mistyped::command(args)));
     }
     let mut parsed = parse(command, &args[1..])?;
     arguments(command, &parsed)?;
@@ -796,19 +788,19 @@ fn dispatch(args: &[String]) -> Result<ExitCode, String> {
             stdout_line!("{}", versions());
             Ok(ExitCode::SUCCESS)
         }
-        _ => Err(crate::mistyped::command(args)),
+        _ => Err(Code::UnknownCommand.with(crate::mistyped::command(args))),
     }
 }
 
 /// What `--help` asks for, when it's asked: mutastic's usage, or one command's, for `help run`,
 /// `run --help` or `run -h`, before anything runs. `gate --help` without its action is each
 /// action's.
-fn help(args: &[String]) -> Result<Option<String>, String> {
+fn help(args: &[String]) -> Result<Option<String>, Failure> {
     let asks = |word: &String| word == "--help" || word == "-h";
     let (command, rest) = match args.first().map(String::as_str) {
         Some("help" | "--help" | "-h") => match args.get(1) {
             Some(command) => (command, &args[2..]),
-            None => return Ok(Some(USAGE.to_string())),
+            None => return Ok(Some(crate::help::general())),
         },
         Some(_) if args[1..].iter().any(asks) => (&args[0], &args[1..]),
         _ => return Ok(None),
@@ -820,16 +812,16 @@ fn help(args: &[String]) -> Result<Option<String>, String> {
             None => ["open", "check", "close"]
                 .iter()
                 .filter_map(|action| commands::command(&format!("gate {action}")))
-                .map(commands::help)
+                .map(crate::help::of)
                 .collect::<Vec<_>>()
                 .join("\n\n"),
         };
         return Ok(Some(text));
     }
     match commands::command(command) {
-        Some(declared) => Ok(Some(commands::help(declared))),
+        Some(declared) => Ok(Some(crate::help::of(declared))),
         None if args[0] == *command => Ok(None),
-        None => Err(crate::mistyped::command_at(args, 1)),
+        None => Err(Code::UnknownCommand.with(crate::mistyped::command_at(args, 1))),
     }
 }
 
@@ -915,7 +907,7 @@ fn options(parsed: &Parsed, only: Vec<String>) -> Options {
     }
 }
 
-fn run(parsed: &Parsed) -> Result<ExitCode, String> {
+fn run(parsed: &Parsed) -> Result<ExitCode, Failure> {
     no_baseline_to_fail_on(parsed)?;
     if let Some(shares) = &parsed.from_shards {
         return from_shards(parsed, shares);
@@ -964,18 +956,18 @@ fn run(parsed: &Parsed) -> Result<ExitCode, String> {
 
 /// `--fail-on-new` with no baseline to tell new misses from: every miss would be new, or none, and
 /// either would be a guess. Said before the package is read.
-fn no_baseline_to_fail_on(parsed: &Parsed) -> Result<(), String> {
+fn no_baseline_to_fail_on(parsed: &Parsed) -> Result<(), Failure> {
     let dir = parsed.positional.first().map_or(".", String::as_str);
     if !parsed.fail_on_new || baseline::exists(std::path::Path::new(dir)) {
         return Ok(());
     }
     let shown = std::fs::canonicalize(dir)
         .map_or_else(|_| dir.to_string(), |path| path.display().to_string());
-    Err(format!(
+    Err(Code::NoBaseline.with(format!(
         "--fail-on-new needs a baseline to tell new misses from, and {shown} has no {}: \
          `mutastic baseline` writes one, to commit",
         baseline::FILE
-    ))
+    )))
 }
 
 /// With `--fail-on-new`, how the run is judged: on the misses the package's baseline doesn't hold.
@@ -991,7 +983,7 @@ fn judged_on_new(parsed: &Parsed) -> Option<baseline::FailOnNew> {
 /// `run --from-shards`: no mutant runs; the shares' results, put together, are the whole run's,
 /// with its summary, cards, reports and threshold. Shares that can't be put together are refused
 /// before the package is read.
-fn from_shards(parsed: &Parsed, shares: &str) -> Result<ExitCode, String> {
+fn from_shards(parsed: &Parsed, shares: &str) -> Result<ExitCode, Failure> {
     let shares =
         crate::shares::Shares::read(std::path::Path::new(shares), env!("CARGO_PKG_VERSION"))?;
     let dir = parsed.positional.first().map_or(".", String::as_str);
@@ -1014,7 +1006,7 @@ fn finish(
     mut report: engine::Report,
     format: Format,
     folder: Option<&std::path::Path>,
-) -> Result<ExitCode, String> {
+) -> Result<ExitCode, Failure> {
     let folder = folder.map_or_else(
         || report.project.mutastic_dir(),
         std::path::Path::to_path_buf,
@@ -1037,7 +1029,8 @@ fn finish(
                 .map(|(kind, path)| (*kind, path.map(str::to_string)))
                 .collect()
         });
-        report.reports = report::files::write(&report, &reports, &folder)?;
+        report.reports = report::files::write(&report, &reports, &folder)
+            .map_err(|error| Code::Other.with(error))?;
     }
     // A share's events, kept for `--from-shards`: as `--format=jsonl` writes them, whatever the
     // format shown.
@@ -1094,7 +1087,7 @@ fn baseline_note(report: &engine::Report) {
 /// `baseline`: every mutant no test catches, written for the package to commit; or with `--prune`,
 /// the baseline's mutants the tests catch now dropped. Never rewritten whole once there, as taking
 /// in new misses would hide them.
-fn baseline_command(parsed: &Parsed) -> Result<ExitCode, String> {
+fn baseline_command(parsed: &Parsed) -> Result<ExitCode, Failure> {
     let dir = parsed.positional.first().map_or(".", String::as_str);
     let here = std::path::Path::new(dir);
     if parsed.prune != baseline::exists(here) {
@@ -1119,14 +1112,14 @@ fn baseline_command(parsed: &Parsed) -> Result<ExitCode, String> {
     progress.finished();
     if parsed.prune {
         let caught = baseline::caught_now(&report, &baseline::ids(here));
-        let dropped = baseline::prune(here, &caught)?;
+        let dropped = baseline::prune(here, &caught).map_err(|error| Code::Other.with(error))?;
         stdout_line!(
             "mutastic: {dropped} of the baseline's mutants are caught now, and are dropped from {}",
             baseline::FILE
         );
     } else {
         let entries = baseline::entries(&report);
-        baseline::write(here, &entries)?;
+        baseline::write(here, &entries).map_err(|error| Code::Other.with(error))?;
         stdout_line!(
             "mutastic: {} no test catches {} in {}: commit it. A miss that isn't in it is new: the \
              gate holds only new misses, and next offers them first",
@@ -1145,7 +1138,7 @@ fn baseline_command(parsed: &Parsed) -> Result<ExitCode, String> {
 /// it runs every mutant, and keeps that run as `run` does, for `explain` and the next run to read.
 /// A mutant proposed for ignoring waits on a person, not a test: it's counted, not queued. Exits 1
 /// while something is queued, so a loop can run it until it's done.
-fn next(parsed: &Parsed) -> Result<ExitCode, String> {
+fn next(parsed: &Parsed) -> Result<ExitCode, Failure> {
     let dir = parsed.positional.first().map_or(".", String::as_str);
     let format = format(parsed);
     let progress = start(parsed, false);
@@ -1182,7 +1175,9 @@ fn next(parsed: &Parsed) -> Result<ExitCode, String> {
             |left| left.uncaught,
         );
         let uncaught = crate::nextrun::left_uncaught(&asked, results);
-        crate::nextrun::NextRun { key, uncaught }.write(&folder)?;
+        crate::nextrun::NextRun { key, uncaught }
+            .write(&folder)
+            .map_err(|error| Code::Other.with(error))?;
     }
     let proposed: std::collections::BTreeSet<String> =
         ignores::proposed(std::path::Path::new(dir))?
@@ -1216,7 +1211,7 @@ fn next_pass(
     project: &workspace::Project,
     only: Vec<String>,
     progress: &Progress,
-) -> Result<engine::Report, String> {
+) -> Result<engine::Report, Failure> {
     let whole = only.is_empty();
     let mut options = options(parsed, only);
     options.suggestions = !parsed.no_suggestions;
@@ -1235,7 +1230,8 @@ fn next_pass(
             .iter()
             .map(|(kind, path)| (*kind, path.map(str::to_string)))
             .collect();
-        report.reports = report::files::write(&report, &reports, &folder)?;
+        report.reports = report::files::write(&report, &reports, &folder)
+            .map_err(|error| Code::Other.with(error))?;
     }
     Ok(report)
 }
@@ -1246,7 +1242,7 @@ fn next_pass(
 fn recorded(
     report: &engine::Report,
     folder: &std::path::Path,
-) -> Result<Option<crate::record::Comparison>, String> {
+) -> Result<Option<crate::record::Comparison>, Failure> {
     let code = crate::shares::code(&report.project)?;
     let record = crate::record::RunRecord::of(report, &code, &crate::record::tool());
     let records = crate::records::RunRecords::new(folder);
@@ -1254,18 +1250,18 @@ fn recorded(
         .comparable_to(&record)
         .map(|previous| record.against(&previous));
     records.keep(&record).map_err(|error| {
-        format!(
+        Code::Other.with(format!(
             "couldn't keep the run's record in {}: {error}",
             folder.display()
-        )
+        ))
     })?;
     Ok(comparison)
 }
 
-fn verify(parsed: &Parsed) -> Result<ExitCode, String> {
+fn verify(parsed: &Parsed) -> Result<ExitCode, Failure> {
     let (only, taken) = verify_ids(&parsed.positional);
     if only.is_empty() {
-        return Err("verify needs a mutant's id: mutastic verify <id> [dir]".into());
+        return Err(Code::NeedsId.with("verify needs a mutant's id: mutastic verify ID... [DIR]"));
     }
     let dir = parsed.positional.get(taken).map_or(".", String::as_str);
     let progress = start(parsed, false);
@@ -1309,18 +1305,18 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, String> {
 /// "is caught by tests::big_orders", and how, when it wasn't by a test's own check.
 /// `explain <id>`: runs the mutant, then shows its card, or what became of it, and what's known of
 /// it, with how the last full run went. It explains; it doesn't judge, so it exits 0.
-fn explain(parsed: &Parsed) -> Result<ExitCode, String> {
+fn explain(parsed: &Parsed) -> Result<ExitCode, Failure> {
     let Some(id) = parsed.positional.first() else {
-        return Err("explain needs a mutant's id: mutastic explain <id> [dir]".into());
+        return Err(Code::NeedsId.with("explain needs a mutant's id: mutastic explain ID [DIR]"));
     };
     if let Some(other) = parsed
         .format
         .filter(|format| !matches!(format, Format::Full | Format::Jsonl))
     {
-        return Err(format!(
+        return Err(Code::OptionValue.with(format!(
             "explain takes --format=full or --format=jsonl, not --format={}",
             other.name()
-        ));
+        )));
     }
     let dir = parsed.positional.get(1).map_or(".", String::as_str);
     let progress = start(parsed, false);
@@ -1348,13 +1344,15 @@ fn explain(parsed: &Parsed) -> Result<ExitCode, String> {
 /// on and the reason; proposes one, in `.mutastic/proposals.yaml`, for a person to accept; accepts
 /// a proposal; removes one; or removes those that no longer hold. Runs no tests, and says how to
 /// undo what it did, in the Java edition's words.
-fn ignore(parsed: &Parsed) -> Result<ExitCode, String> {
+fn ignore(parsed: &Parsed) -> Result<ExitCode, Failure> {
     let Some(id) = parsed.positional.first().filter(|_| !parsed.prune).cloned() else {
         if parsed.prune {
             let dir = parsed.positional.first().map_or(".", String::as_str);
             return prune(dir);
         }
-        return Err("ignore needs a mutant's id: mutastic ignore <id> [dir] --reason=WHY".into());
+        return Err(
+            Code::NeedsId.with("ignore needs a mutant's id: mutastic ignore ID [DIR] --reason=WHY")
+        );
     };
     let dir = parsed
         .positional
@@ -1381,9 +1379,9 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, String> {
         .clone()
         .filter(|reason| !reason.trim().is_empty())
     else {
-        return Err(format!(
+        return Err(Code::NeedsId.with(format!(
             "ignore needs a reason, for whoever reviews it: mutastic ignore {id} --reason=\"<why>\" {dir}"
-        ));
+        )));
     };
     if parsed.propose {
         argued(&reason, &parsed.kind)?;
@@ -1446,24 +1444,23 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, String> {
 
 /// A proposal's reason, which a person checks in place of a test: filled in, and for a mutant said
 /// to be equivalent or unreachable, saying why its case can't happen, as the Java edition asks.
-fn argued(reason: &str, kind: &str) -> Result<(), String> {
+fn argued(reason: &str, kind: &str) -> Result<(), Failure> {
     if reason.contains("<case>") || reason.contains("<why>") {
-        return Err(
+        return Err(Code::OptionValue.with(
             "the reason still has the template's <case> or <why>: fill them in, as \
              --reason=\"Differs only when count is negative. That can't happen because count is a \
-             length.\""
-                .into(),
-        );
+             length.\"",
+        ));
     }
     let because = reason
         .split(|c: char| !c.is_alphanumeric())
         .any(|word| word.eq_ignore_ascii_case("because"));
     if ["equivalent", "unreachable"].contains(&kind) && !because {
-        return Err(format!(
+        return Err(Code::OptionValue.with(format!(
             "a proposal that a mutant is {kind} needs a reason a person can check: the one case \
              where it differs, and why that can't happen, with a because: --reason=\"{}\"",
             crate::report::REASON
-        ));
+        )));
     }
     Ok(())
 }
@@ -1473,7 +1470,7 @@ fn accept(
     id: &str,
     here: &std::path::Path,
     command: &dyn Fn(&[&str]) -> String,
-) -> Result<ExitCode, String> {
+) -> Result<ExitCode, Failure> {
     let proposals = ignores::proposed(here)?;
     let Some(proposal) = proposals.iter().find(|entry| entry.id == id).cloned() else {
         stderr_line!(
@@ -1504,7 +1501,7 @@ fn remove(
     id: &str,
     here: &std::path::Path,
     command: &dyn Fn(&[&str]) -> String,
-) -> Result<ExitCode, String> {
+) -> Result<ExitCode, Failure> {
     let entries = ignores::read(here)?;
     let again = |entry: &ignores::Entry, propose: bool| {
         let reason = format!("--reason={}", entry.reason);
@@ -1548,7 +1545,7 @@ fn remove(
 }
 
 /// `ignore --prune`: takes away every ignore whose line has changed since it was made.
-fn prune(dir: &str) -> Result<ExitCode, String> {
+fn prune(dir: &str) -> Result<ExitCode, Failure> {
     let here = std::path::Path::new(dir);
     let project = workspace::read(dir)?;
     let found = engine::find_all(&project);
@@ -1591,10 +1588,8 @@ fn shell(word: &str) -> String {
 }
 
 /// `gate open`, `gate check` or `gate close`, as the Java edition's: see [`gate`].
-fn gate_command(parsed: &Parsed) -> Result<ExitCode, String> {
-    let Some(action) = parsed.positional.first().cloned() else {
-        return Err("gate needs open, check or close: mutastic gate open [dir]".into());
-    };
+fn gate_command(parsed: &Parsed) -> Result<ExitCode, Failure> {
+    let action = gate_action(parsed)?.to_string();
     if parsed.help {
         stdout_line!("{}", gate_help(&action)?);
         return Ok(ExitCode::SUCCESS);
@@ -1620,6 +1615,7 @@ fn gate_command(parsed: &Parsed) -> Result<ExitCode, String> {
     match action.as_str() {
         "open" => gate_open(hooked, &project, here, &session),
         "close" => {
+            gate_count::stop(&work);
             let closed = gate::State::close(&work);
             if !hooked {
                 stdout_line!(
@@ -1633,15 +1629,28 @@ fn gate_command(parsed: &Parsed) -> Result<ExitCode, String> {
             }
             Ok(ExitCode::SUCCESS)
         }
-        "check" => gate_check(parsed, &project, here, &work),
-        other => Err(no_gate_action(other)),
+        // `check`, the one action left: `gate_action` takes no other.
+        _ => gate_check(parsed, &project, here, &work),
     }
 }
 
-fn gate_help(action: &str) -> Result<String, String> {
+fn gate_help(action: &str) -> Result<String, Failure> {
     commands::command(&format!("gate {action}"))
-        .map(commands::help)
-        .ok_or_else(|| no_gate_action(action))
+        .map(crate::help::of)
+        .ok_or_else(|| Code::UnknownCommand.with(no_gate_action(action)))
+}
+
+/// `gate`'s action: open, check or close. Checked before the project is looked for, so a mistyped
+/// one is said as that wherever it's run.
+fn gate_action(parsed: &Parsed) -> Result<&str, Failure> {
+    match parsed.positional.first().map(String::as_str) {
+        None => {
+            Err(Code::UnknownCommand
+                .with("gate needs open, check or close: mutastic gate open [DIR]"))
+        }
+        Some(action @ ("open" | "check" | "close")) => Ok(action),
+        Some(other) => Err(Code::UnknownCommand.with(no_gate_action(other))),
+    }
 }
 
 /// `gate`'s action isn't one it has.
@@ -1661,35 +1670,41 @@ fn gate_open(
     project: &workspace::Project,
     here: &std::path::Path,
     session: &str,
-) -> Result<ExitCode, String> {
+) -> Result<ExitCode, Failure> {
     let work = &project.mutastic_dir();
     let open =
         gate::State::read(work).filter(|state| !session.is_empty() && state.session == session);
     if let Some(open) = open.filter(|_| hooked) {
         // A later prompt: what the person ignored between turns is the task's to start from.
         if open.stopped.is_some() {
-            open.prompted(&ignored_ids(here)?).write(work)?;
+            open.prompted(&ignored_ids(here)?)
+                .write(work)
+                .map_err(|error| Code::Other.with(error))?;
         }
         return Ok(ExitCode::SUCCESS);
     }
     let Some(base) = crate::since::git(here, &["rev-parse", "HEAD"]) else {
-        return Err("the gate needs a git repository with a commit".into());
+        return Err(Code::Git.with("the gate needs a git repository with a commit"));
     };
     let base = base.trim().to_string();
-    // The tests as libtest lists them, each case its own; from the source where the package
-    // doesn't build yet, and fixing that is the task.
-    let shape = gate::listed(project).map_or_else(
-        |_| gate::Shape::of(here),
-        |names| gate::Shape::listed(&names),
-    );
+    // The tests as libtest lists them, each case its own, are counted in the background, so the
+    // agent needn't wait for a build: a check reads the count, and until then the source's test
+    // attributes stand in.
+    let counting = gate_count::start(here, work, &gate::tree(here));
     let state = gate::State {
         session: session.to_string(),
         base: base.clone(),
         ignored: ignored_ids(here)?,
-        shape,
+        shape: gate::Shape::of(here),
+        uncounted: if counting.is_empty() {
+            "the count couldn't start".into()
+        } else {
+            String::new()
+        },
+        counting,
         ..gate::State::default()
     };
-    state.write(work)?;
+    state.write(work).map_err(|error| Code::Other.with(error))?;
     stdout_line!(
         "mutastic gate: this task is gated from {}: before you finish, check the lines it changes with `mutastic run --since={base} --format=agent`; {}. {}",
         &base[..base.len().min(7)],
@@ -1703,7 +1718,7 @@ fn gate_open(
     Ok(ExitCode::SUCCESS)
 }
 
-fn ignored_ids(here: &std::path::Path) -> Result<std::collections::BTreeSet<String>, String> {
+fn ignored_ids(here: &std::path::Path) -> Result<std::collections::BTreeSet<String>, Failure> {
     Ok(ignores::read(here)?
         .into_iter()
         .map(|entry| entry.id)
@@ -1716,7 +1731,7 @@ fn gate_check(
     project: &workspace::Project,
     here: &std::path::Path,
     work: &std::path::Path,
-) -> Result<ExitCode, String> {
+) -> Result<ExitCode, Failure> {
     let hooked = !parsed.hook.is_empty();
     let Some(open) = gate::State::read(work) else {
         if !hooked {
@@ -1725,7 +1740,8 @@ fn gate_check(
         // Nothing gated: a hooked agent may stop.
         return Ok(ExitCode::from(if hooked { 0 } else { 2 }));
     };
-    let verdict = gate_verdict(parsed, project, here, &open)?;
+    let open = counted(open, here, work)?;
+    let verdict = uncounted_note(&open, gate_verdict(parsed, project, here, &open)?);
     let mut state = open.clone();
     state.red.extend(verdict.red.clone());
     // As a hook, a check that lets the agent stop notes what's ignored: what's ignored after it, and
@@ -1739,7 +1755,7 @@ fn gate_check(
         state.blocks = 0;
         state.tree.clear();
         state.stopped = stopped;
-        state.write(work)?;
+        state.write(work).map_err(|error| Code::Other.with(error))?;
         return Ok(gate_answer(hooked, &for_the_person(here, &state, verdict)));
     }
     // Sent back, unless, as a hook, it changed nothing since it last was, or it has had its tries:
@@ -1764,15 +1780,54 @@ fn gate_check(
     let Some(text) = handed_over else {
         // Sent back, the agent has the turn: what it ignores now is its own.
         state.stopped = None;
-        state.write(work)?;
+        state.write(work).map_err(|error| Code::Other.with(error))?;
         return Ok(gate_answer(hooked, &verdict));
     };
     state.blocks = 0;
     state.tree.clear();
     state.stopped = stopped;
-    state.write(work)?;
+    state.write(work).map_err(|error| Code::Other.with(error))?;
     let answer = for_the_person(here, &open, gate::Verdict::pass(text));
     Ok(gate_answer(hooked, &answer))
+}
+
+/// The gate with the count of the tests the task started with read, once a check needs it: a
+/// task that changed nothing needs no count. A count that failed, or isn't done within
+/// [`gate_count::WAIT`], leaves the source's test attributes standing in, and says why.
+fn counted(
+    mut open: gate::State,
+    here: &std::path::Path,
+    work: &std::path::Path,
+) -> Result<gate::State, Failure> {
+    if open.counting.is_empty() || open.shape.listed || gate::untouched(here, &open.base) {
+        return Ok(open);
+    }
+    match gate_count::wait(work, &open.counting, gate_count::WAIT) {
+        Ok(names) => open.shape = gate::Shape::listed(&names),
+        Err(why) => {
+            gate_count::stop(work);
+            open.uncounted = why;
+        }
+    }
+    open.counting.clear();
+    open.write(work).map_err(|error| Code::Other.with(error))?;
+    Ok(open)
+}
+
+/// A pass, saying so when the tests the task started with couldn't be counted as libtest lists
+/// them, as the Java edition says it of its count.
+fn uncounted_note(state: &gate::State, verdict: gate::Verdict) -> gate::Verdict {
+    if !verdict.passes || state.uncounted.is_empty() {
+        return verdict;
+    }
+    gate::Verdict {
+        text: format!(
+            "{}. The tests the task started with couldn't be counted ({}), so the gate compared the test attributes in the source only",
+            verdict.text,
+            untrusted::value(&state.uncounted)
+        ),
+        ..verdict
+    }
 }
 
 /// A pass or a hand-over, with the tests there when the task started that it changed what they
@@ -1817,7 +1872,7 @@ fn gate_verdict(
     project: &workspace::Project,
     here: &std::path::Path,
     state: &gate::State,
-) -> Result<gate::Verdict, String> {
+) -> Result<gate::Verdict, Failure> {
     let untouched = gate::untouched(here, &state.base);
     // The tests there now, by the names a run gives them, where a check below needs them.
     let names = if !state.red.is_empty() || (state.shape.listed && !untouched) {
@@ -2002,7 +2057,7 @@ fn gate_run(
     parsed: &Parsed,
     project: &workspace::Project,
     changed: crate::since::ChangedLines,
-) -> Result<engine::Report, String> {
+) -> Result<engine::Report, Failure> {
     let mut options = options(parsed, Vec::new());
     options.since = Some(changed);
     options.force_coverage = true;
@@ -2017,10 +2072,10 @@ fn gate_run(
 fn red_verdict(
     here: &std::path::Path,
     state: &gate::State,
-    error: &str,
-) -> Result<gate::Verdict, String> {
-    let Some((failing, error)) = crate::flaky::failing_tests(error) else {
-        return Err(error.to_string());
+    failure: &Failure,
+) -> Result<gate::Verdict, Failure> {
+    let Some((failing, error)) = crate::flaky::failing_tests(&failure.message) else {
+        return Err(failure.clone());
     };
     // `the tests fail without any mutant: a (it timed out), b; their output is in <log>`: the
     // tests' names are the project's, so they're named in a fence, after what to do.
@@ -2099,7 +2154,7 @@ fn caught(result: &engine::MutantResult) -> String {
     }
 }
 
-fn mutants(parsed: &Parsed) -> Result<ExitCode, String> {
+fn mutants(parsed: &Parsed) -> Result<ExitCode, Failure> {
     let dir = parsed.positional.first().map_or(".", String::as_str);
     let project = workspace::read(dir)?;
     let found = engine::find_with(&project, &parsed.operators, parsed.unsafe_mode);
@@ -2137,7 +2192,7 @@ fn mutants(parsed: &Parsed) -> Result<ExitCode, String> {
 
 /// `mutastic build [dir] --fraction=0.25`: writes the schema with that share of the mutants (every
 /// site's mutants together, spread evenly), builds it with rollback, and prints a JSON summary.
-fn build(parsed: &Parsed) -> Result<ExitCode, String> {
+fn build(parsed: &Parsed) -> Result<ExitCode, Failure> {
     let dir = parsed.positional.first().map_or(".", String::as_str);
     let project = workspace::read(dir)?;
     let found = engine::find_with(&project, &parsed.operators, parsed.unsafe_mode);
@@ -2256,7 +2311,7 @@ mod tests {
         assert_eq!(argued(argued_reason, "equivalent"), Ok(()));
         assert_eq!(argued("logs only", "telemetry"), Ok(()));
         assert_eq!(argued("logs only", ""), Ok(()));
-        let refused = argued("never", "unreachable").unwrap_err();
+        let refused = argued("never", "unreachable").unwrap_err().message;
         assert!(
             refused.starts_with("a proposal that a mutant is unreachable needs a reason"),
             "{refused}"
@@ -2264,6 +2319,7 @@ mod tests {
         assert!(refused.ends_with(&format!("--reason=\"{}\"", report::REASON)));
         assert!(argued(report::REASON, "telemetry")
             .unwrap_err()
+            .message
             .starts_with("the reason still has the template's <case> or <why>"));
     }
 
@@ -2360,10 +2416,11 @@ mod tests {
         }
     }
 
-    /// The help lists every option declared, and only those.
+    /// The help lists every option declared, and only those, and its examples parse.
     #[test]
     fn the_usage_lists_the_options_declared() {
-        let listed: std::collections::BTreeSet<&str> = USAGE
+        let general = crate::help::general();
+        let listed: std::collections::BTreeSet<&str> = general
             .split(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
             .filter_map(|word| word.strip_prefix("--"))
             .filter(|name| *name != "help")
@@ -2371,6 +2428,9 @@ mod tests {
         let declared: std::collections::BTreeSet<&str> =
             commands::OPTIONS.iter().map(|option| option.name).collect();
         assert_eq!(listed, declared);
+        for example in crate::help::EXAMPLES {
+            assert_eq!(check(&words(example)), Ok(()), "{example}");
+        }
     }
 
     /// Every line a mistyped command is answered with parses, as typed: what it offers works.
@@ -2447,7 +2507,7 @@ mod tests {
     /// `run --help`, `run -h` and `help run` print run's help; nothing runs.
     #[test]
     fn help_after_a_command_is_that_commands() {
-        let run = commands::help(commands::command("run").unwrap());
+        let run = crate::help::of(commands::command("run").unwrap());
         for typed in [
             "run --help",
             "run -h",
@@ -2456,8 +2516,8 @@ mod tests {
         ] {
             assert_eq!(help(&words(typed)), Ok(Some(run.clone())), "{typed}");
         }
-        assert_eq!(help(&words("--help")), Ok(Some(USAGE.to_string())));
-        let open = commands::help(commands::command("gate open").unwrap());
+        assert_eq!(help(&words("--help")), Ok(Some(crate::help::general())));
+        let open = crate::help::of(commands::command("gate open").unwrap());
         assert_eq!(help(&words("gate open --help")), Ok(Some(open.clone())));
         assert!(help(&words("gate --help"))
             .unwrap()
@@ -2465,7 +2525,7 @@ mod tests {
             .starts_with(&open));
         assert_eq!(help(&words("run .")), Ok(None));
         assert_eq!(
-            help(&words("help rnu")).unwrap_err(),
+            help(&words("help rnu")).unwrap_err().message,
             "mutastic has no command rnu. There's one called run.\n  mutastic help run"
         );
     }

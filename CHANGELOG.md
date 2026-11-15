@@ -5,6 +5,18 @@ newest come first.
 
 ## Unreleased
 
+### HTML report
+
+- **`mutation.html` is mutastic's own report page,** the same as the Java edition's. It replaces
+  the generic viewer it embedded, and shows what the cards say: for each miss the change, why the
+  tests let it through, the inputs they used, the test to add and the `mutastic verify` that proves
+  it; tests to write, missed and not covered, with `j`/`k` through them; every mutant by status and
+  operator; each test with its source and what it let through; code coloured for Rust. **Copy**
+  puts a list's tests to write on the clipboard, a line each, for an issue or a pull request. It's
+  still one file that opens from disk with no network. The old view isn't an option:
+  `mutation.json` hasn't changed shape, so Stryker's report tools, which read it, still show it
+  the old way. See [Report files](docs/reference/reports.md).
+
 ### Security
 
 - **Text from the project reaches an agent fenced off as data.** The agent format, `next`'s agent
@@ -43,6 +55,10 @@ newest come first.
   declared, as the Java edition does, where it keyed them by module. A miss's `statusReason`
   keeps the headline's backticks. Tools that read the report schema read it as before. See
   [What mutastic adds](docs/reference/reports.md#what-mutastic-adds).
+- **With more than one test to write, the agent format says how to take them.** After `rules:`
+  and `decline:`, a `tasks:` line asks the agent to make a task list, one item per mutant grouped
+  by file, then write each test, run its `mutastic verify` and mark it done before the next. The
+  Java edition and the HTML report's Copy as prompt say the same.
 - **A run with no mutant to run builds nothing and runs no test.** `mutastic run --since=HEAD` on
   a clean tree took a build and a pass of every test, a minute and more on a big crate, to say
   there was nothing to measure. When no mutant is there to run (no changed lines, changed lines
@@ -71,6 +87,17 @@ newest come first.
 
 ### Changes
 
+- **Help is written from the commands' declarations, in the Java edition's layout.** `mutastic
+  --help` was written by hand, and had fallen behind: it left out `--report=sarif`, the ignore and
+  gate options, the environment and every exit code but a line's worth. Now both it and `mutastic
+  <command> --help` are made from `src/commands.rs`, as the docs are: a `Usage:` line, what the
+  command does, an `Exits` paragraph, examples, every option it takes, `--edition` included, with
+  its values and variables, the exit codes, and its page on the docs site, every line within 100
+  columns. An example too long for that is broken with ` \`, so it still pastes as one command.
+  `mutastic` with nothing after it prints the help on stderr, not stdout, and exits 2 as before.
+- **Synopses are written in capitals,** `mutastic verify ID... [DIR]` for `mutastic verify
+  <id>[,<id>…] [<id>…] [dir]`, as the Java edition writes them and as option values already were
+  (`--threshold=N`). They show in help, in `commands.json` and in the errors that give a usage.
 - **A bad value in an environment variable is refused,** with code `environment`, as the Java
   edition refuses it: `MUTASTIC_FORMAT`, `MUTASTIC_VOCABULARY` or `MUTASTIC_PROGRESS` set to a
   value its option doesn't take, or `MUTASTIC_HEARTBEAT` to anything but a number of seconds above
@@ -82,6 +109,54 @@ newest come first.
   0 to 100, not 150`.
 
 ### Fixes
+
+- **Each mutant's event goes out as it finishes.** In `--format=jsonl`, every `mutant-finished`
+  came at the end of the run, after the `checking` phase, so a tool watching the stream saw
+  nothing of the results until the run was over. Each now goes out as its mutant finishes, before
+  the `mutants` phase ends, as in the Java edition (decision 7 of the editions' contract), in the
+  order the mutants finish. A missed mutant's test to suggest is looked for as it's found missed,
+  so its event still carries it, and `checking` is now the check of each catch on the code as it
+  is, which every run makes: its phase events are always there, and `checked` is said only when a
+  mutant was missed. A mutant run again without a test that fails on its own still gets its
+  `mutant-revised` after the phases. The results, the score and the report files don't change.
+  See [Events](docs/reference/events.md).
+- **Each error's code is set where it's raised.** `run-failed`'s `code` was worked out afterwards
+  from the error's words, and two errors got `other` that way: `--report=xyz` and `gate` with no
+  action, which are now `option-value` and `unknown-command`. A mistyped gate action, `gate opn`,
+  is said as that before mutastic looks for a project, so outside one it no longer answers "there's
+  no project here". A file mutastic can't write is `other`, not `config`, and a git failure under
+  `--since` is `git`.
+- **A bad `--format` value ends the stream the environment asks for.** With
+  `MUTASTIC_FORMAT=jsonl`, `--format=xyz` was refused on stderr with no `run-failed` event.
+- **A panic ends as a failure.** A bug in mutastic exited 101 with Rust's own message and no
+  event. It now says `internal error:`, where, and where to report it, writes a `run-failed` event
+  with code `internal` in the agent and jsonl formats, and exits 2, as every failure does until
+  2.0.
+- **A property test's command sets its seed.** When a property test fails before any mutant, the
+  command mutastic offers to run it alone sets `PROPTEST_RNG_SEED` to the seed mutastic drew its
+  cases from, `PROPTEST_RNG_SEED=0 cargo test …`, and a line says so: without it, the test may pass
+  when run again.
+
+- **Each error's code is set where it's raised.** `run-failed`'s `code` was worked out afterwards
+  from the error's words, and two errors got `other` that way: `--report=xyz` and `gate` with no
+  action, which are now `option-value` and `unknown-command`. A mistyped gate action, `gate opn`,
+  is said as that before mutastic looks for a project, so outside one it no longer answers "there's
+  no project here". A file mutastic can't write is `other`, not `config`, and a git failure under
+  `--since` is `git`.
+- **A bad `--format` value ends the stream the environment asks for.** With
+  `MUTASTIC_FORMAT=jsonl`, `--format=xyz` was refused on stderr with no `run-failed` event.
+- **A panic ends as a failure.** A bug in mutastic exited 101 with Rust's own message and no
+  event. It now says `internal error:`, where, and where to report it, writes a `run-failed` event
+  with code `internal` in the agent and jsonl formats, and exits 2, as every failure does until
+  2.0.
+- **A property test's inputs don't flood a card.** Past 10 values, "inputs seen" shows the five
+  smallest and five largest and how many: `a = -931, -923, -791, -777, -723, …, 884, 909, 948,
+  950 (62 values)`. Where a property test passed a name that many values, the suggested test tries
+  small numbers before them, so it reads `add_with_a_0_and_b_1`, not a value a generator drew.
+
+- **`explain` on a caught return doesn't say no test fails.** The card for a caught or uncovered
+  return-value mutant gave the missed card's note, "tests reach this return, but none fails when
+  it returns `0`", under the test that caught it.
 
 - **The test named as catching a mutant is the same in every run.** A mutant's covering tests run
   together, on several threads, and the first to fail was named: where several cases catch it, as
@@ -101,8 +176,9 @@ newest come first.
   remembered without its source, and once it passed the gate said it was gone, at every check,
   until `gate close`. The gate now looks tests up by the names the test binaries list, and counts
   them from the same list, so taking a `#[case]` row away holds the gate as taking a test-case row
-  away did. `gate open` builds the tests once to list them; a package that doesn't build when the
-  task starts is counted from its source, as before.
+  away did. `gate open` returns at once and lists the tests in the background; a check waits for
+  that list, up to four minutes, and where it failed (a package that doesn't build when the task
+  starts) or isn't done, counts from the source, as before, and a pass says so.
 
 - **A test that caught mutants and fails on its own fails the run.** Once the mutants have run,
   each test that caught one runs again, on its own with no mutant in. One that fails there (it
