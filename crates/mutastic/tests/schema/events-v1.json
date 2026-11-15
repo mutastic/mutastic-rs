@@ -659,7 +659,7 @@
         "reports": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "The report files the run wrote, relative to where it ran: `build/mutastic/mutation.json`."
+          "description": "The report files the run wrote, relative to the project directory it was given, `build/mutastic/mutation.json`, or whole when outside it. The human summary shows them from where mutastic ran instead."
         },
         "aridAudit": {
           "type": "object",

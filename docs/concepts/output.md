@@ -61,7 +61,7 @@ summary. On the pricing fixture:
   Start at  11:03:14
   Duration  355ms (setup 20ms, build 303ms, coverage 2ms, mutants 8ms, checking 6ms)
      Tests  3 on rustc 1.99.1 · 4 workers
-   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
+   Reports  fixtures/pricing/target/mutastic/mutation.json · fixtures/pricing/target/mutastic/mutation.html
      Score  90.9%   PASS  1 missed, above the threshold of 80.
 ```
 
@@ -102,7 +102,7 @@ card. For a person who wants the gaps and not the rest.
   Start at  11:03:14
   Duration  329ms (setup 19ms, build 277ms, coverage 2ms, mutants 8ms, checking 6ms)
      Tests  3 on rustc 1.99.1 · 4 workers
-   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
+   Reports  fixtures/pricing/target/mutastic/mutation.json · fixtures/pricing/target/mutastic/mutation.html
      Score  90.9%   PASS  1 missed, above the threshold of 80.
 ```
 
@@ -126,7 +126,7 @@ One line for each line with a missed mutant, with its ids, then the summary. For
   Start at  11:03:14
   Duration  74ms (setup 22ms, build 21ms, coverage 2ms, mutants 8ms, checking 6ms)
      Tests  3 on rustc 1.99.1 · 4 workers
-   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
+   Reports  fixtures/pricing/target/mutastic/mutation.json · fixtures/pricing/target/mutastic/mutation.html
      Score  90.9%   PASS  1 missed, above the threshold of 80.
 ```
 
@@ -154,7 +154,7 @@ where they gather.
   Start at  11:03:15
   Duration  79ms (setup 23ms, build 20ms, coverage 2ms, mutants 9ms, checking 7ms)
      Tests  3 on rustc 1.99.1 · 4 workers
-   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
+   Reports  fixtures/pricing/target/mutastic/mutation.json · fixtures/pricing/target/mutastic/mutation.html
      Score  90.9%   PASS  1 missed, above the threshold of 80.
 ```
 
@@ -289,7 +289,11 @@ and the events always use the standard names.
 `TERM=dumb`, and anywhere `FORCE_COLOR` asks; `always` and `never` say so. `--hyperlinks` makes file
 locations links a terminal can open, to the file itself: `auto` does on a terminal that isn't
 `TERM=dumb`. The line number stays in the text, as whether a terminal honours one in a link
-varies.
+varies. The summary's report files are shown from where you ran mutastic, and link to the files
+themselves. When the run wrote `mutation.html`, each mutant's id links to a page beside it,
+`mutation-mutants/<id>.html`, that opens the report on that mutant: a link straight to
+`mutation.html#/m/<id>` loses its `#…` on macOS, whose opener drops it from a `file:` URL, and on
+Linux and Windows by reports.
 
 ## Streams
 

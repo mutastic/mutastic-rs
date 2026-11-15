@@ -13,8 +13,8 @@ use crate::report::{self, Format, Style};
 use crate::shares::EVENTS;
 use crate::sites::UnsafeMode;
 use crate::{
-    baseline, commands, gate, gate_count, ignores, java, sites, testrun, untrusted, workspace,
-    wrapper,
+    baseline, commands, gate, gate_budget, gate_count, ignores, java, sites, testrun, untrusted,
+    workspace, wrapper,
 };
 
 pub fn main(args: Vec<OsString>) -> ExitCode {
@@ -95,8 +95,12 @@ fn joined(args: Vec<String>) -> Vec<String> {
 /// mutastic couldn't run: why, on stderr; and in the agent and jsonl formats, the same as the
 /// stream's last event, `run-failed`, on stdout, which is all a tool reading the stream reads.
 fn failed(args: &[String], failure: &Failure) -> ExitCode {
-    // A build's or a test's output comes with it: escaped, a line at a time.
-    stderr_line!("mutastic: {}", untrusted::escape_lines(&failure.message));
+    // A build's or a test's output comes with it: escaped, a line at a time. Its logs are named
+    // as typed from here, and linked, after the escaping, which would undo the links.
+    stderr_line!(
+        "mutastic: {}",
+        report::files::logs(&untrusted::escape_lines(&failure.message), linked(args))
+    );
     if streams_events(args) {
         stdout_line!(
             "{}",
@@ -104,6 +108,25 @@ fn failed(args: &[String], failure: &Failure) -> ExitCode {
         );
     }
     ExitCode::from(FAILED)
+}
+
+/// Plain text, with file links when `--hyperlinks` (the last one given) or the terminal says so, as
+/// the Java edition decides it: read from the line alone, as a failure can come from parsing it.
+fn linked(args: &[String]) -> Style {
+    let dumb = std::env::var("TERM").is_ok_and(|term| term == "dumb");
+    let links = match args
+        .iter()
+        .rev()
+        .find_map(|arg| arg.strip_prefix("--hyperlinks="))
+    {
+        Some("always") => true,
+        Some("never") => false,
+        _ => std::io::stdout().is_terminal() && !dumb,
+    };
+    Style {
+        links,
+        ..Style::default()
+    }
 }
 
 /// Whether the command line, or the environment, asks for the agent or jsonl format, which end in
@@ -1063,8 +1086,23 @@ fn finish(
                 .map(|(kind, path)| (*kind, path.map(str::to_string)))
                 .collect()
         });
-        report.reports = report::files::write(&report, &reports, &folder)
+        report.written = report::files::write(&report, &reports, &folder)
             .map_err(|error| Code::Other.with(error))?;
+        report.reports = listed(&report);
+        // The ids the output shows open the HTML report on their mutant, but not from a share's own
+        // folder: its report is only part of the run.
+        let html = reports
+            .iter()
+            .zip(&report.written)
+            .filter(|((kind, _), _)| *kind == Kind::Html)
+            .map(|(_, file)| file.clone())
+            .next_back();
+        if let (Some(html), None) = (html, &report.share) {
+            report.pages = Some(
+                report::files::write_pages(&report, &html)
+                    .map_err(|error| Code::Other.with(error))?,
+            );
+        }
     }
     // A share's events, kept for `--from-shards`: as `--format=jsonl` writes them, whatever the
     // format shown.
@@ -1074,6 +1112,7 @@ fn finish(
         // Written empty first, so its path is shown as the reports' are.
         crate::shares::keep(&events, "")?;
         report.reports.push(report::files::shown(given, &events));
+        report.written.push(report::files::whole(&events));
         // Whole, `run-started` included, even when it went out live.
         // A share is judged with the whole run, not on its own.
         let streamed = std::mem::replace(&mut report.streamed, false);
@@ -1286,10 +1325,22 @@ fn next_pass(
             .iter()
             .map(|(kind, path)| (*kind, path.map(str::to_string)))
             .collect();
-        report.reports = report::files::write(&report, &reports, &folder)
+        report.written = report::files::write(&report, &reports, &folder)
             .map_err(|error| Code::Other.with(error))?;
+        report.reports = listed(&report);
     }
     Ok(report)
+}
+
+/// The files `report` wrote, as `run-finished` lists them: from the directory mutastic was pointed
+/// at when they're inside it, whole otherwise.
+fn listed(report: &engine::Report) -> Vec<String> {
+    let given = std::path::Path::new(&report.project.given);
+    report
+        .written
+        .iter()
+        .map(|file| report::files::shown(given, file))
+        .collect()
 }
 
 /// Keeps `report` as the last run in `folder`, with its comparison with the one before: only an
@@ -1673,6 +1724,8 @@ fn shell(word: &str) -> String {
 
 /// `gate open`, `gate check` or `gate close`, as the Java edition's: see [`gate`].
 fn gate_command(parsed: &Parsed) -> Result<ExitCode, Failure> {
+    // A hooked check's budget counts from here.
+    let started = std::time::Instant::now();
     let action = gate_action(parsed)?.to_string();
     if parsed.help {
         stdout_line!("{}", gate_help(&action)?);
@@ -1714,7 +1767,7 @@ fn gate_command(parsed: &Parsed) -> Result<ExitCode, Failure> {
             Ok(ExitCode::SUCCESS)
         }
         // `check`, the one action left: `gate_action` takes no other.
-        _ => gate_check(parsed, &project, here, &work),
+        _ => gate_check(parsed, &project, here, &work, started),
     }
 }
 
@@ -1877,6 +1930,7 @@ fn gate_check(
     project: &workspace::Project,
     here: &std::path::Path,
     work: &std::path::Path,
+    started: std::time::Instant,
 ) -> Result<ExitCode, Failure> {
     let hooked = !parsed.hook.is_empty();
     let Some(open) = gate::State::read(work) else {
@@ -1887,8 +1941,18 @@ fn gate_check(
         return Ok(ExitCode::from(if hooked { 0 } else { 2 }));
     };
     let parsed = &under_the_opens_operators(parsed, &open)?;
-    let open = counted(open, here, work)?;
-    let verdict = uncounted_note(&open, gate_verdict(parsed, project, here, &open)?);
+    let time = CheckTime {
+        hooked,
+        budget: gate_budget::Budget::of(|name| std::env::var(name).ok(), work)?,
+        own_since: started,
+    };
+    let (open, waited) = counted(open, here, work, &time)?;
+    // The check's own time, from here on: its wait for the count left out.
+    let time = CheckTime {
+        own_since: started + waited,
+        ..time
+    };
+    let verdict = uncounted_note(&open, gate_verdict(parsed, project, here, &open, &time)?);
     let mut state = open.clone();
     state.red.extend(verdict.red.clone());
     // As a hook, a check that lets the agent stop notes what's ignored: what's ignored after it, and
@@ -1938,18 +2002,47 @@ fn gate_check(
     Ok(gate_answer(hooked, &answer))
 }
 
-/// The gate with the count of the tests the task started with read, once a check needs it: a
-/// task that changed nothing needs no count. A count that failed, or isn't done within
-/// [`gate_count::WAIT`], leaves the source's test attributes standing in, and says why.
+/// What a check may spend, and since when its own time counts: see [`gate_budget`].
+struct CheckTime {
+    hooked: bool,
+    budget: gate_budget::Budget,
+    own_since: std::time::Instant,
+}
+
+impl CheckTime {
+    /// As a hook, the hand-over of a check whose last run took longer than the hook allows: stopped
+    /// by the hook, it would say nothing, and gate nothing.
+    fn overrun(&self) -> Option<gate::Verdict> {
+        (self.hooked && self.budget.overruns())
+            .then(|| gate::Verdict::hand_over(self.budget.overrun()))
+    }
+}
+
+/// The gate with the count of the tests the task started with read, once a check needs it, and
+/// how long it waited: a task that changed nothing needs no count. A count that failed, or isn't
+/// done within the wait, leaves the source's test attributes standing in, and says why. As a hook,
+/// the wait is what the budget leaves for it, with a run as long as the last still to come.
 fn counted(
     mut open: gate::State,
     here: &std::path::Path,
     work: &std::path::Path,
-) -> Result<gate::State, Failure> {
+    time: &CheckTime,
+) -> Result<(gate::State, std::time::Duration), Failure> {
+    let no_wait = std::time::Duration::ZERO;
     if open.counting.is_empty() || open.shape.listed || gate::untouched(here, &open.base) {
-        return Ok(open);
+        return Ok((open, no_wait));
     }
-    match gate_count::wait(work, &open.counting, gate_count::WAIT) {
+    if time.overrun().is_some() {
+        // It hands over before it runs: the count is kept for the person's check.
+        return Ok((open, no_wait));
+    }
+    let wait = if time.hooked {
+        time.budget.count_wait_before_run(time.own_since.elapsed())
+    } else {
+        time.budget.count_wait
+    };
+    let waiting = std::time::Instant::now();
+    match gate_count::wait(work, &open.counting, wait) {
         Ok(names) => open.shape = gate::Shape::listed(&names),
         Err(why) => {
             gate_count::stop(work);
@@ -1958,13 +2051,13 @@ fn counted(
     }
     open.counting.clear();
     open.write(work).map_err(|error| Code::Other.with(error))?;
-    Ok(open)
+    Ok((open, waiting.elapsed()))
 }
 
 /// A pass, saying so when the tests the task started with couldn't be counted as libtest lists
 /// them, as the Java edition says it of its count.
 fn uncounted_note(state: &gate::State, verdict: gate::Verdict) -> gate::Verdict {
-    if !verdict.passes || state.uncounted.is_empty() {
+    if !verdict.passes || verdict.handed_over || state.uncounted.is_empty() {
         return verdict;
     }
     gate::Verdict {
@@ -2019,6 +2112,7 @@ fn gate_verdict(
     project: &workspace::Project,
     here: &std::path::Path,
     state: &gate::State,
+    time: &CheckTime,
 ) -> Result<gate::Verdict, Failure> {
     let untouched = gate::untouched(here, &state.base);
     // The tests there now, by the names a run gives them, where a check below needs them.
@@ -2100,9 +2194,12 @@ fn gate_verdict(
         std::fs::canonicalize(project.workspace.join(&file.path))
             .is_ok_and(|path| changed.lines.contains_key(&path))
     });
+    if let Some(overrun) = time.overrun() {
+        return Ok(overrun);
+    }
     if !ours {
         // A change to a test, a build file or a test's data may still break a test, so they run.
-        return match gate_run(parsed, project, changed) {
+        return match gate_run(parsed, project, changed, time) {
             Ok(_) => Ok(gate::Verdict::pass(
                 "mutastic gate: passed: the tests pass, and the task changed no lines mutastic mutates"
                     .into(),
@@ -2110,7 +2207,7 @@ fn gate_verdict(
             Err(error) => red_verdict(here, state, &error),
         };
     }
-    let mut report = match gate_run(parsed, project, changed) {
+    let mut report = match gate_run(parsed, project, changed, time) {
         Ok(report) => report,
         Err(error) => return red_verdict(here, state, &error),
     };
@@ -2215,12 +2312,16 @@ fn gate_run(
     parsed: &Parsed,
     project: &workspace::Project,
     changed: crate::since::ChangedLines,
+    time: &CheckTime,
 ) -> Result<engine::Report, Failure> {
     let mut options = options(parsed, Vec::new());
     options.since = Some(changed);
     options.force_coverage = true;
     let progress = Progress::start(Shown::None, Style::default(), (false, parsed.workers), None);
-    engine::run(project, &options, &|step| progress.step(step))
+    let report = engine::run(project, &options, &|step| progress.step(step));
+    // Red or not, it ran: how long it took is the next check's estimate of its own.
+    gate_budget::ran(&project.mutastic_dir(), time.own_since.elapsed());
+    report
 }
 
 /// Tests that fail before any mutant, each time they run. One that was there when the task

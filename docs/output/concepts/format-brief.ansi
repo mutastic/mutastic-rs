@@ -22,8 +22,8 @@
  [2m Worst at[0m  Pricing::discount() 1 ✗
  [2m    Build[0m  one build of every mutant, 2 rounds (check and build)
  [2mTest runs[0m  13[2m (33 without coverage selection)[0m
- [2m Start at[0m  11:03:14
- [2m Duration[0m  329ms [2m(setup 19ms, build 277ms, coverage 2ms, mutants 8ms, checking 6ms)[0m
- [2m    Tests[0m  3 on rustc 1.99.1 · 4 workers
- [2m  Reports[0m  target/mutastic/mutation.json[2m · [0mtarget/mutastic/mutation.html
+ [2m Start at[0m  01:27:51
+ [2m Duration[0m  2.4s [2m(setup 1.3s, build 1.0s, coverage 7ms, mutants 53ms, checking 20ms)[0m
+ [2m    Tests[0m  3 on rustc 1.94.0 · 4 workers
+ [2m  Reports[0m  fixtures/pricing/target/mutastic/mutation.json[2m · [0mfixtures/pricing/target/mutastic/mutation.html
  [2m    Score[0m  [32m[1m90.9%[0m[0m  [42;30;1m PASS [0m [32m1 missed, above the threshold of 80.[0m

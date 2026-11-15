@@ -600,6 +600,125 @@ fn the_live_line_is_redrawn_in_place() {
     assert!(plain.is_empty(), "{plain:?}");
 }
 
+/// The summary's report files, as a person in a terminal reads and clicks them, from where they ran
+/// mutastic. Run from a parent on a directory, the row once said `target/mutastic/…`, which is
+/// there only from the project, and a terminal guessing a link from it opened `/target/…`. The
+/// Java edition's `ReportPathsTest` is the same.
+#[test]
+fn the_reports_are_typed_from_where_mutastic_runs() {
+    let copy = copy_of("pricing", "report-paths");
+    let parent = copy.parent().unwrap();
+    let name = copy.file_name().unwrap().to_str().unwrap();
+    let reports = |said: &str| -> Vec<String> {
+        let row = said
+            .lines()
+            .map(str::trim)
+            .find_map(|line| line.strip_prefix("Reports  "))
+            .unwrap_or_else(|| panic!("{said}"));
+        row.split(" · ").map(str::to_string).collect()
+    };
+
+    // From a parent, with the directory named: from there.
+    let (code, said) = mutastic_in(parent, &["run", name, "--format=full"]);
+    assert_eq!(code, 0, "{said}");
+    let shown = reports(&said);
+    assert_eq!(
+        shown,
+        [
+            format!("{name}/target/mutastic/mutation.json"),
+            format!("{name}/target/mutastic/mutation.html"),
+        ],
+        "{said}"
+    );
+    for file in &shown {
+        assert!(parent.join(file).is_file(), "{file}");
+    }
+
+    // With links on, each links to the file itself, whole.
+    let (code, said) = mutastic_in(
+        parent,
+        &["run", name, "--format=full", "--hyperlinks=always"],
+    );
+    assert_eq!(code, 0, "{said}");
+    let text = format!("{name}/target/mutastic/mutation.html");
+    let end = said
+        .find(&format!("\x1b\\{text}\x1b]8;;\x1b\\"))
+        .unwrap_or_else(|| panic!("{said:?}"));
+    let start = said[..end].rfind("\x1b]8;;").unwrap() + "\x1b]8;;".len();
+    let link = &said[start..end];
+    // `file:///C:/…` on Windows: the path starts after the third slash there.
+    let file = link
+        .strip_prefix("file://")
+        .map(|path| if cfg!(windows) { &path[1..] } else { path })
+        .unwrap_or_else(|| panic!("{link}"));
+    assert!(Path::new(file).is_absolute(), "{link}");
+    assert_eq!(
+        std::fs::canonicalize(file).unwrap(),
+        std::fs::canonicalize(copy.join("target/mutastic/mutation.html")).unwrap()
+    );
+
+    // From inside the project: as short as ever.
+    let (code, said) = mutastic_in(&copy, &["run", "--format=full"]);
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(
+        reports(&said),
+        [
+            "target/mutastic/mutation.json",
+            "target/mutastic/mutation.html"
+        ],
+        "{said}"
+    );
+}
+
+/// With links on and the HTML report written, each id the output shows opens the report on its
+/// mutant, through a page beside the report: a link to `mutation.html#/m/<id>` itself loses its
+/// `#…` on the way to a browser on macOS. With no HTML report, no id is linked. The Java edition's
+/// `ReportPathsTest` is the same.
+#[test]
+fn an_id_opens_the_report_on_its_mutant() {
+    const ID: &str = "mb2f8ae57";
+    let copy = copy_of("pricing", "id-links");
+
+    let (code, said) = mutastic_in(&copy, &["run", "--format=full", "--hyperlinks=always"]);
+    assert_eq!(code, 0, "{said}");
+    let end = said
+        .find(&format!("\x1b\\{ID}\x1b]8;;\x1b\\ "))
+        .unwrap_or_else(|| panic!("{said:?}"));
+    let start = said[..end].rfind("\x1b]8;;").unwrap() + "\x1b]8;;".len();
+    // `file:///C:/…` on Windows: the path starts after the third slash there.
+    let file = said[start..end]
+        .strip_prefix("file://")
+        .map(|path| if cfg!(windows) { &path[1..] } else { path })
+        .unwrap();
+    assert!(
+        file.ends_with(&format!("/target/mutastic/mutation-mutants/{ID}.html")),
+        "{file}"
+    );
+    assert_eq!(
+        std::fs::canonicalize(file).unwrap(),
+        std::fs::canonicalize(copy.join(format!("target/mutastic/mutation-mutants/{ID}.html")))
+            .unwrap()
+    );
+    let page = std::fs::read_to_string(file).unwrap();
+    assert!(
+        page.contains(&format!("location.replace('../mutation.html#/m/{ID}')")),
+        "{page}"
+    );
+
+    let (code, said) = mutastic_in(
+        &copy,
+        &[
+            "run",
+            "--format=full",
+            "--hyperlinks=always",
+            "--report=none",
+        ],
+    );
+    assert_eq!(code, 0, "{said}");
+    assert!(said.contains(ID), "{said}");
+    assert!(!said.contains("mutation-mutants"), "{said:?}");
+}
+
 /// A full run writes `mutation.json`, in the mutation-testing report schema as the Java edition
 /// writes it, and `mutation.html`, that report in mutastic's own page, and says where in its summary and
 /// its events.
@@ -1548,10 +1667,20 @@ fn a_packages_own_mutastic_yaml_applies_from_the_workspaces_top() {
 }
 
 fn mutastic_with_input(dir: &Path, args: &[&str], input: &str) -> (i32, String) {
+    mutastic_with_input_and_env(dir, args, input, &[])
+}
+
+fn mutastic_with_input_and_env(
+    dir: &Path,
+    args: &[&str],
+    input: &str,
+    env: &[(&str, &str)],
+) -> (i32, String) {
     use std::io::Write as _;
     let mut child = Command::new(env!("CARGO_BIN_EXE_mutastic"))
         .args(args)
         .current_dir(dir)
+        .envs(env.iter().copied())
         .env_remove("MUTASTIC_FORMAT")
         .env_remove("MUTASTIC_AGENT")
         .env("NO_COLOR", "1")
@@ -1811,6 +1940,97 @@ fn the_gate_runs_the_tests_with_no_mutant_on_the_changed_lines() {
     assert_eq!(
         out,
         "mutastic gate: passed: the task changed no lines mutastic mutates\n"
+    );
+}
+
+/// As a hook, a check keeps within what the hook allows (`MUTASTIC_GATE_BUDGET`, a second here):
+/// a count of the tests the task started with that isn't done isn't waited for, and the pass says
+/// so; and once a check's run took longer than the budget, the next hands over before it runs. A
+/// person's own check is held to no budget.
+#[test]
+fn as_a_hook_the_gate_keeps_within_its_budget() {
+    let dir = copy_of("pricing", "gate-budget");
+    let git = |args: &[&str]| {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(&dir)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "git {args:?}");
+    };
+    std::fs::write(dir.join(".gitignore"), "target\n").unwrap();
+    git(&["init", "-q"]);
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "start"]);
+    let session = r#"{"session_id":"s1"}"#;
+    let (code, _) = mutastic_with_input(&dir, &["gate", "open", ".", "--hook=claude"], session);
+    assert_eq!(code, 0);
+    // A count that never finishes: the one started is stopped, and its result never comes.
+    let work = mutastic::workspace::read(&dir.display().to_string())
+        .unwrap()
+        .mutastic_dir();
+    mutastic::gate_count::stop(&work);
+    // No run before this test's: a kept build keeps the gate's directory.
+    let _ = std::fs::remove_file(work.join("gate-check.properties"));
+    let test = dir.join("tests/pricing.rs");
+    let text = std::fs::read_to_string(&test).unwrap();
+    std::fs::write(&test, text + "// a test file's change, run\n").unwrap();
+    let env = [
+        ("MUTASTIC_GATE_BUDGET", "1"),
+        ("MUTASTIC_GATE_COUNT_WAIT", "600"),
+    ];
+    let check = ["gate", "check", ".", "--hook=claude"];
+
+    let started = Instant::now();
+    let (_, left) = mutastic_with_input_and_env(&dir, &check, session, &env);
+    let took = started.elapsed();
+    let budget = |work: &Path| mutastic::gate_budget::Budget::of(|_| None, work).unwrap();
+    assert!(budget(&work).last_run.is_some(), "the check's run is kept");
+    // A run longer than the budget: a warm build of the fixture takes less than a second.
+    mutastic::gate_budget::ran(&work, Duration::from_secs(5));
+    let (_, handed_over) = mutastic_with_input_and_env(&dir, &check, session, &env);
+    let own = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+        .args(["gate", "check"])
+        .current_dir(&dir)
+        .envs(env)
+        .env("NO_COLOR", "1")
+        .output()
+        .unwrap();
+
+    let left: Value = serde_json::from_str(left.trim()).unwrap();
+    let left = left["systemMessage"].as_str().unwrap();
+    assert!(
+        left.starts_with("mutastic gate: passed: the tests pass")
+            && left.contains("couldn't be counted (the count didn't finish in 0s)"),
+        "{left}"
+    );
+    assert!(
+        took < Duration::from_secs(300),
+        "not the count's 600s: {took:?}"
+    );
+    let handed_over: Value = serde_json::from_str(handed_over.trim()).unwrap();
+    let handed_over = handed_over["systemMessage"].as_str().unwrap();
+    assert!(
+        handed_over.starts_with(
+            "mutastic gate: this project's gate check takes longer than the hook allows ("
+        ) && handed_over.ends_with(
+            "(5s last time; MUTASTIC_GATE_BUDGET allows 1s), so it's over to you: run `mutastic gate check` yourself"
+        ),
+        "{handed_over}"
+    );
+    let own_out = String::from_utf8_lossy(&own.stdout);
+    assert_eq!(own.status.code(), Some(0), "{own_out}");
+    assert!(
+        own_out.starts_with("mutastic gate: passed: the tests pass"),
+        "{own_out}"
+    );
+    assert!(
+        budget(&work).last_run < Some(Duration::from_secs(5)),
+        "the person's run is kept"
     );
 }
 

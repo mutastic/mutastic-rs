@@ -501,6 +501,8 @@ impl Shares {
             started_at: engine::clock(),
             started: std::time::SystemTime::now(),
             reports: Vec::new(),
+            written: Vec::new(),
+            pages: None,
             stale_ignores,
             scope: None,
             flaky: self.flaky(),

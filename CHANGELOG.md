@@ -53,6 +53,13 @@ newest come first.
   rather than run on fewer operators than the task opened with. The open names the set, and the
   `mutastic run` it gives the agent carries `--operators` when it isn't what a run would choose;
   each verdict on the mutants says `(operators: stronger)`. See [the gate](docs/test-first-agent.md#which-operators).
+- **A mutant's id opens the HTML report on it.** With links on, each id the terminal shows, on a
+  card, in the misses list or in a command, links to a page beside the report,
+  `mutation-mutants/<id>.html`, which opens `mutation.html` on that mutant. A link straight to
+  `mutation.html#/m/<id>` loses its `#…` on macOS, whose opener drops it from a `file:` URL, and
+  on Linux and Windows by reports; the page's own address has nothing to lose. Only a run that
+  wrote the HTML report links its ids: not with `--report=none`, nor a share's. The Java edition
+  does the same.
 - **A run under other operators than the last says it isn't compared.** A score is a share of
   what its operators make, so a run is compared only with the last under the same set; with none,
   the score line said nothing. It now says `not compared with the last run, which used other
@@ -100,6 +107,16 @@ newest come first.
 
 ### Changes
 
+- **A hooked gate check keeps within the hook's time.** The plugins run `gate check` from a Stop
+  hook that's stopped after ten minutes, and a hook stopped gates nothing; on a slow crate the
+  wait for the tests the task started with, up to four minutes, and the check's own run could pass
+  that. As a hook, a check now waits for that list only as long as its budget leaves once a run as
+  long as the last check's is set aside (`MUTASTIC_GATE_BUDGET`, in seconds, 600 unless set), and
+  never longer than `MUTASTIC_GATE_COUNT_WAIT` seconds (240 unless set); when the list isn't done
+  by then, it counts from the source, and a pass says so, as before. When the last check's own run
+  took longer than the whole budget, the next hands over before it runs and says so: run
+  `mutastic gate check` yourself. A check run by a person has no budget. The words and both
+  variables are the Java edition's (decision 17 of the editions' contract).
 - **Help is written from the commands' declarations, in the Java edition's layout.** `mutastic
   --help` was written by hand, and had fallen behind: it left out `--report=sarif`, the ignore and
   gate options, the environment and every exit code but a line's worth. Now both it and `mutastic
@@ -123,6 +140,14 @@ newest come first.
 
 ### Fixes
 
+- **The summary's report files open from where you ran mutastic.** Run from a parent directory
+  on a crate, the `Reports` row said `target/mutastic/mutation.html`, which is there only from
+  the crate, and isn't a link: a terminal that guessed one from the text opened
+  `/target/mutastic/mutation.html`. Each file is now shown from the directory you ran in
+  (`pricing/target/mutastic/mutation.html`), whole when it's outside it, and with links on it
+  links to the file itself. The `tests.log` a failure names is linked the same way, and file
+  links percent-encode what a URI can't hold, such as a space. `run-finished`'s `reports` are
+  unchanged: relative to the directory given. The Java edition does the same.
 - **`baseline --prune` doesn't drop what another set of operators would make.** A mutant only the
   baseline's operators make wasn't found by a run under others, and looked gone, so pruning after
   `operators:` changed dropped it. `.mutastic/baseline.yaml` now keeps the operators it was taken
