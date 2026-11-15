@@ -1,6 +1,14 @@
 # The build on every push, pull request and merge queue entry: format, clippy with every warning an
 # error, and the tests, which run mutastic on the fixtures, on Linux, macOS and Windows; and a build
 # on the oldest toolchain `rust-version` names. Actions are pinned to a commit: a tag can be moved.
+#
+# On a pull request that changes nothing the build or the tests read (the issue and pull request
+# templates, the citation, workflows other than this one, the hooks), the jobs that build and test
+# are skipped, as `changes` decides: a skipped job counts as passed for branch protection, and the
+# test matrix, whose checks are named for their platform, runs on Linux with nothing to do instead,
+# since a matrix skipped whole reports one check under the job's bare name. The docs tests read
+# every Markdown page, the README and docs/ included, so a change to one runs everything. The
+# merge queue and main always run everything: main is always fully tested.
 name: CI
 
 on:
@@ -17,33 +25,86 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
 
+# A pull request's new push cancels the run for its last one, which no one will read. Every other
+# run has a group of its own, so a run of the merge queue or main is never cancelled, nor kept
+# waiting behind another.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # Whether to build and test: on a pull request, unless every file it changes is one neither
+  # reads; otherwise always. The list comes from the API, so nothing is checked out, and if it
+  # can't be had in full, everything runs.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      code: ${{ steps.files.outputs.code }}
+    steps:
+      - id: files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          COUNT: ${{ github.event.pull_request.changed_files }}
+          # What neither reads: the citation, the templates and picture under .github, the
+          # workflows other than this one, and the hooks.
+          UNREAD: '^(CITATION\.cff|\.github/(ISSUE_TEMPLATE/.*|PULL_REQUEST_TEMPLATE\.md|pip\.webp|workflows/(audit|commits|release)\.yml)|\.githooks/.*)$'
+        run: |
+          code=true
+          if [ "$EVENT" = pull_request ] &&
+            gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$NUMBER/files" --jq '.[].filename' > files.txt &&
+            [ "$(wc -l < files.txt)" -eq "$COUNT" ]; then
+            if ! grep -qvE "$UNREAD" files.txt; then
+              code=false
+            fi
+            echo "The pull request changes:"
+            sed 's/^/  /' files.txt
+          fi
+          echo "Build and test: $code"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
   test:
-    runs-on: ${{ matrix.os }}
+    needs: changes
+    runs-on: ${{ needs.changes.outputs.code == 'true' && matrix.os || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
     steps:
+      - if: needs.changes.outputs.code != 'true'
+        run: echo "Nothing the build or the tests read changed, so there is nothing to test."
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.changes.outputs.code == 'true'
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 16 Oct 2026
+        if: needs.changes.outputs.code == 'true'
         with:
           components: clippy, rustfmt, llvm-tools-preview
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        if: needs.changes.outputs.code == 'true'
       # The coverage page's docs test measures the checkout fixture's coverage with cargo llvm-cov,
       # and MUTASTIC_DOCS_COVERAGE makes that test fail without it rather than skip it.
       - uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
+        if: needs.changes.outputs.code == 'true'
         with:
           tool: cargo-llvm-cov
       - run: cargo fmt --all --check
+        if: needs.changes.outputs.code == 'true'
       - run: cargo clippy --all-targets --locked -- -D warnings
+        if: needs.changes.outputs.code == 'true'
       - run: cargo test --locked
+        if: needs.changes.outputs.code == 'true'
         env:
           MUTASTIC_DOCS_COVERAGE: "1"
 
   # Windows, on its own so the other platforms don't wait for it: clippy, as `#[cfg(windows)]` code
   # is linted nowhere else, and the tests; format runs above.
   windows:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -57,6 +118,8 @@ jobs:
 
   # The oldest toolchain that builds mutastic, as `rust-version` in Cargo.toml says.
   msrv:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

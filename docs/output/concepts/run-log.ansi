@@ -1,0 +1,9 @@
+ [1;31m❯[0m [46;30;1m courier [0m src/lib.rs [2m([0m[2m8 mutants[0m[2m | [0m[1;31m1 missed[0m[2m)[0m [2m12.1s[0m
+   [1;31m×[0m postage() [2m:11[0m [1m>[0m becomes [1m>=[0m
+mutants   [10/13] 81% · ✓ 8 caught · ✗ 1 missed · ○ 1 not covered · ⏱ 0 timed out · 18s · ~5s left
+ [1;31m❯[0m [46;30;1m courier [0m src/handover.rs [2m([0m[2m5 mutants[0m[2m | [0m[1;31m1 missed[0m[2m | [0m[33m2 not covered[0m[2m)[0m [2m10.5s[0m
+   [1;31m×[0m hand_over() [2m:5[0m [1msignature[0m is always false
+   [33m○[0m hand_over() [2m:7[0m [2mno test reaches this line[0m
+   [33m○[0m hand_over() [2m:6[0m [2mno test reaches this line[0m
+ran       13 mutants in 22.7s · [32m✓ 9 caught[0m · [1;31m✗ 2 missed[0m · ○ 2 not covered · [33m⏱ 0 timed out[0m
+checked   2 missed mutants in 1.5s · no test found to suggest
