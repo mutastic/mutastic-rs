@@ -45,6 +45,16 @@ newest come first.
 
 ### Additions
 
+- **`mutation.json` says what the cards say.** A `mutastic` key at its top level gives the run's
+  edition, the commands its output gives for a mutant (with `<id>`), where its docs are, its
+  score, threshold, whether it passed, its toolchain and when it started; one on each mutant gives
+  its function (`Pricing::discount()`), and for a miss the card's evidence and fix, the inputs seen
+  and the test to add, with the value it passes each parameter. Both editions write the same,
+  described by the schema `report/v1`, so one HTML report can read either. `testFiles` keys the
+  tests by the file each is written in (`tests/pricing.rs`), with its text and where each test is
+  declared, as the Java edition does, where it keyed them by module. A miss's `statusReason`
+  keeps the headline's backticks. Tools that read the report schema read it as before. See
+  [What mutastic adds](docs/reference/reports.md#what-mutastic-adds).
 - **With more than one test to write, the agent format says how to take them.** After `rules:`
   and `decline:`, a `tasks:` line asks the agent to make a task list, one item per mutant grouped
   by file, then write each test, run its `mutastic verify` and mark it done before the next. The

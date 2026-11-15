@@ -26,18 +26,84 @@
             }
           },
           "status": "Survived",
-          "statusReason": "no test checks discount() at total == 100",
+          "statusReason": "no test checks `discount()` at `total == 100`",
           "coveredBy": [
             "tests::small_orders_pay_full_price",
             "pricing::big_orders_get_ten_percent_off"
           ],
-          "testsCompleted": 2
+          "testsCompleted": 2,
+          "mutastic": {
+            "method": "Pricing::discount()",
+            "evidence": [
+              "every test calls `discount()` away from the boundary",
+              "inputs seen: 50, 250 (none is 100)"
+            ],
+            "fix": "test `discount()` with `total = 100` and assert the result",
+            "inputs": {
+              "total": [
+                50,
+                250
+              ]
+            },
+            "suggestedTest": {
+              "testClass": "tests",
+              "name": "discount_at_the_total_edge",
+              "code": "#[test]\nfn discount_at_the_total_edge() {\n    assert_eq!(Pricing::new().discount(100), 10); // today 10 · with this mutant 0\n}",
+              "call": "Pricing::new().discount(100)",
+              "today": "10",
+              "withMutant": "0",
+              "arguments": {
+                "total": 100
+              }
+            }
+          }
         }
       ]
+    }
+  },
+  "testFiles": {
+    "tests/pricing.rs": {
+      "tests": [
+        {
+          "id": "pricing::big_orders_get_ten_percent_off",
+          "name": "big_orders_get_ten_percent_off",
+          "location": {
+            "start": {
+              "line": 8,
+              "column": 4
+            }
+          }
+        }
+      ],
+      "source": "…"
     }
   },
   "framework": {
     "name": "mutastic",
     "version": "1.1.0"
+  },
+  "mutastic": {
+    "edition": "rust",
+    "commands": {
+      "verify": "mutastic verify <id> fixtures/pricing",
+      "run": "mutastic run --only=<id> fixtures/pricing",
+      "ignore": "mutastic ignore <id> --reason=\"<why>\" fixtures/pricing",
+      "propose": "mutastic ignore <id> --propose --as=<equivalent|unreachable|…> --reason=\"Differs only when <case>. That can't happen because <why>.\" fixtures/pricing"
+    },
+    "docsBase": "https://docs.mutastic.io/rust/",
+    "operatorDocs": {
+      "boundary": "operators/conditions/#boundary",
+      "math": "operators/arithmetic/#math",
+      "remove-conditional": "operators/conditions/#remove-conditional",
+      "return-value": "operators/returns/#return-value"
+    },
+    "score": 90.9,
+    "threshold": 80,
+    "passed": true,
+    "toolchain": {
+      "name": "rustc",
+      "version": "…"
+    },
+    "startedAt": "…"
   }
 }
