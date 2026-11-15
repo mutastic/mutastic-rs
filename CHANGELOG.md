@@ -5,6 +5,41 @@ newest come first.
 
 ## Unreleased
 
+## 1.2.0 (2026-11-15)
+
+### Scoring changes
+
+Expect your score to move, for these reasons, not because your tests changed:
+
+- **A catch the mutant didn't cause is checked, and doesn't count: scores fall where catches were
+  false.** Once the mutants have run, each test that caught one runs again, on its own with no
+  mutant in. One that fails there (it trips on a file it, another test or the run left behind)
+  didn't need the mutant to fail. It's named as flaky, as a test that "passes among the others but
+  fails on its own"; its catches don't count, and every mutant it reached runs again without it,
+  where the other covering tests decide, so a suite that keeps state no longer scores catches its
+  tests didn't make. Unlike other flaky tests it fails the run whatever the score, with exit status
+  2, and `verify` and `gate check` don't pass on it either. In `--format=jsonl`, a mutant run again
+  comes as a `mutant-revised` event after the `mutant-finished` ones, naming the test as
+  `falseCatchBy` where its catch didn't count, and the test's `flakyEvidence` entry has
+  `"failsAlone": true`, as in the Java edition. A healthy suite's results don't change, at the cost
+  of one run of each catching test. No id changes. See [A test that fails on its
+  own](docs/concepts/results.md#a-test-that-fails-on-its-own).
+- **A property test draws the same cases in every run.** mutastic sets `PROPTEST_RNG_SEED` for
+  the tests it runs, unless you've set it, and turns proptest's saved failures off. A property that
+  fails for some cases fails in every run or in none, so it can't stop one run, be called flaky in
+  the next and catch a mutant in a third; and a case one of mutastic's runs saved can't decide its
+  next runs. `proptest-regressions/` isn't copied, so the cases you've saved aren't replayed, and
+  nothing is written to your tree. Where only a property test reaches a mutant, its result can
+  change either way, as the cases drawn are now the seed's, and then stays the same from run to
+  run; one caught only by a case saved in `proptest-regressions/` may now be missed.
+- **A run of mutants asked for by id is judged on each one, not on a score,** as `verify` judges
+  it and as the Java edition does. `mutastic run --only` passes when each mutant is caught,
+  skipped or crashed; its summary has no `Score` row and no `Next:`, and ends on each fate, and
+  `run-finished`'s `passed` says the same. It printed `Score 0.0% [FAIL]`, and its pass followed
+  the score, so `--threshold=0` passed a mutant still missed.
+- **The defaults are as they were.** No operator joins or leaves the default set, `stronger` or
+  `extended`, and no filter skips more or less.
+
 ### HTML report
 
 - **`mutation.html` is mutastic's own report page,** the same as the Java edition's. It replaces
@@ -186,41 +221,18 @@ newest come first.
   command mutastic offers to run it alone sets `PROPTEST_RNG_SEED` to the seed mutastic drew its
   cases from, `PROPTEST_RNG_SEED=0 cargo test …`, and a line says so: without it, the test may pass
   when run again.
-
-- **Each error's code is set where it's raised.** `run-failed`'s `code` was worked out afterwards
-  from the error's words, and two errors got `other` that way: `--report=xyz` and `gate` with no
-  action, which are now `option-value` and `unknown-command`. A mistyped gate action, `gate opn`,
-  is said as that before mutastic looks for a project, so outside one it no longer answers "there's
-  no project here". A file mutastic can't write is `other`, not `config`, and a git failure under
-  `--since` is `git`.
-- **A bad `--format` value ends the stream the environment asks for.** With
-  `MUTASTIC_FORMAT=jsonl`, `--format=xyz` was refused on stderr with no `run-failed` event.
-- **A panic ends as a failure.** A bug in mutastic exited 101 with Rust's own message and no
-  event. It now says `internal error:`, where, and where to report it, writes a `run-failed` event
-  with code `internal` in the agent and jsonl formats, and exits 2, as every failure does until
-  2.0.
 - **A property test's inputs don't flood a card.** Past 10 values, "inputs seen" shows the five
   smallest and five largest and how many: `a = -931, -923, -791, -777, -723, …, 884, 909, 948,
   950 (62 values)`. Where a property test passed a name that many values, the suggested test tries
   small numbers before them, so it reads `add_with_a_0_and_b_1`, not a value a generator drew.
-
 - **`explain` on a caught return doesn't say no test fails.** The card for a caught or uncovered
   return-value mutant gave the missed card's note, "tests reach this return, but none fails when
   it returns `0`", under the test that caught it.
-
 - **The test named as catching a mutant is the same in every run.** A mutant's covering tests run
   together, on several threads, and the first to fail was named: where several cases catch it, as
   cases written alike do, the name changed from run to run, and with it `mutation.json` and the
   report's tests. The test named is now the first of those that failed as the tests are listed,
   the library's before the other targets'.
-
-- **A property test draws the same cases in every run.** mutastic sets `PROPTEST_RNG_SEED` for
-  the tests it runs, unless you've set it, and turns proptest's saved failures off. A property that
-  fails for some cases fails in every run or in none, so it can't stop one run, be called flaky in
-  the next and catch a mutant in a third; and a case one of mutastic's runs saved can't decide its
-  next runs. `proptest-regressions/` isn't copied, so the cases you've saved aren't replayed, and
-  nothing is written to your tree.
-
 - **The gate knows a case by the name it runs under.** rstest and test-case give each case a test
   of its own, `halves::case_1`, and no function has that name. A case that failed at a check was
   remembered without its source, and once it passed the gate said it was gone, at every check,
@@ -229,18 +241,6 @@ newest come first.
   away did. `gate open` returns at once and lists the tests in the background; a check waits for
   that list, up to four minutes, and where it failed (a package that doesn't build when the task
   starts) or isn't done, counts from the source, as before, and a pass says so.
-
-- **A test that caught mutants and fails on its own fails the run.** Once the mutants have run,
-  each test that caught one runs again, on its own with no mutant in. One that fails there (it
-  trips on a file it, another test or the run left behind) is named as flaky, as a test that
-  "passes among the others but fails on its own"; its catches don't count, and every mutant it
-  reached runs again without it, so scores can go down. Unlike other flaky tests it fails the run
-  whatever the score, with exit status 2, and `verify` and `gate check` don't pass on it either.
-  In `--format=jsonl`, a mutant run again comes as a `mutant-revised` event after the
-  `mutant-finished` ones, naming the test as `falseCatchBy` where its catch didn't count, and the
-  test's `flakyEvidence` entry has `"failsAlone": true`, as in the Java edition. A healthy suite's
-  results don't change, at the cost of one run of each catching test. No id changes. See
-  [A test that fails on its own](docs/concepts/results.md#a-test-that-fails-on-its-own).
 - **The gate holds a task that changes no line mutastic mutates to its other checks.** Such a task
   skipped the checks for ignores and baseline entries the task made itself, and for tests taken
   away or `#[ignore]`d, so an agent that only deleted a failing test, or ignored a mutant itself,
