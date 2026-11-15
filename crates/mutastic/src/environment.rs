@@ -17,7 +17,8 @@ const STAND_INS: &[(&str, &str)] = &[
 const HEARTBEAT: &str = "MUTASTIC_HEARTBEAT";
 
 /// Refuses a value `command` would read and doesn't take: a stand-in's, for an option the command
-/// takes and the line doesn't give (`given`), and `MUTASTIC_HEARTBEAT`'s, where progress is shown.
+/// takes and the line doesn't give (`given`), `MUTASTIC_HEARTBEAT`'s, where progress is shown, and
+/// the gate's budget and wait, for `gate check`.
 /// `variable` reads one; set to nothing, it's unset.
 pub fn check(
     command: &str,
@@ -35,6 +36,11 @@ pub fn check(
                 "{name}: {value} isn't one of {}",
                 crate::mistyped::listed(option.choices)
             )));
+        }
+    }
+    if command == "gate check" {
+        for name in [crate::gate_budget::BUDGET, crate::gate_budget::COUNT_WAIT] {
+            crate::gate_budget::seconds(name, set(name).as_deref())?;
         }
     }
     if taken("progress").is_some() {
@@ -60,6 +66,21 @@ mod tests {
                 .find(|(set, _)| *set == name)
                 .map(|(_, value)| value.to_string())
         }
+    }
+
+    /// The gate's budget and wait are checked before a check runs, and only for one.
+    #[test]
+    fn the_gate_s_budget_is_checked_for_gate_check() {
+        let none = |_: &str| false;
+        let budget = with(&[("MUTASTIC_GATE_BUDGET", "ten")]);
+        assert_eq!(
+            check("gate check", none, &budget),
+            Err(Code::Environment
+                .with("MUTASTIC_GATE_BUDGET: ten isn't a whole number of seconds above 0"))
+        );
+        assert_eq!(check("gate open", none, &budget), Ok(()));
+        let wait = with(&[("MUTASTIC_GATE_COUNT_WAIT", "0")]);
+        assert_eq!(check("gate check", none, wait), Ok(()));
     }
 
     #[test]

@@ -646,6 +646,19 @@ pub const ENVIRONMENT: &[Entry] = &[
                  and the event stream always use the standard names. Any other value is refused.",
     },
     Entry {
+        name: "MUTASTIC_GATE_BUDGET",
+        meaning: "Seconds a hooked gate check may take",
+        detail: "600 unless set: what the agents' plugins' Stop hook allows. The check waits for \
+                 the count of the task's start only as long as this leaves, and hands over before \
+                 it runs when its last run took longer.",
+    },
+    Entry {
+        name: "MUTASTIC_GATE_COUNT_WAIT",
+        meaning: "Seconds gate check waits for the count of the task's start",
+        detail: "240 unless set. A count not done by then is left, and a pass says the check \
+                 compared the test attributes in the source only.",
+    },
+    Entry {
         name: "NO_COLOR",
         meaning: "No colour",
         detail: "Set to anything, it turns colour off, as it does for many tools.",

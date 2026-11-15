@@ -435,6 +435,8 @@ mutastic verify mb2f8ae57 --edition=rust
 - `MUTASTIC_FORMAT`: The format when --format isn't given. For a machine or a CI job that always wants the same format, `concise` say. A format mutastic doesn't have is refused, as the option's is.
 - `MUTASTIC_AGENT=1`: The agent format, for coding agents. Coding agents set it, so mutastic answers in the format they read best, with progress as lines. `MUTASTIC_FORMAT` still wins.
 - `MUTASTIC_VOCABULARY`: plain or classic, when --vocabulary isn't given. `classic` says killed and survived instead of caught and missed. The JSON report and the event stream always use the standard names. Any other value is refused.
+- `MUTASTIC_GATE_BUDGET`: Seconds a hooked gate check may take. 600 unless set: what the agents' plugins' Stop hook allows. The check waits for the count of the task's start only as long as this leaves, and hands over before it runs when its last run took longer.
+- `MUTASTIC_GATE_COUNT_WAIT`: Seconds gate check waits for the count of the task's start. 240 unless set. A count not done by then is left, and a pass says the check compared the test attributes in the source only.
 - `NO_COLOR`: No colour. Set to anything, it turns colour off, as it does for many tools.
 - `FORCE_COLOR`: Colour even off a terminal. Set to anything, it turns colour on where mutastic can't tell a person is reading, such as a CI log that shows colour. It wins over `NO_COLOR`.
 - `TERM=dumb`: No colour, unless `FORCE_COLOR` is set, and progress as lines.

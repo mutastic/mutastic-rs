@@ -77,6 +77,16 @@ newest come first.
 
 ### Changes
 
+- **A hooked gate check keeps within the hook's time.** The plugins run `gate check` from a Stop
+  hook that's stopped after ten minutes, and a hook stopped gates nothing; on a slow crate the
+  wait for the tests the task started with, up to four minutes, and the check's own run could pass
+  that. As a hook, a check now waits for that list only as long as its budget leaves once a run as
+  long as the last check's is set aside (`MUTASTIC_GATE_BUDGET`, in seconds, 600 unless set), and
+  never longer than `MUTASTIC_GATE_COUNT_WAIT` seconds (240 unless set); when the list isn't done
+  by then, it counts from the source, and a pass says so, as before. When the last check's own run
+  took longer than the whole budget, the next hands over before it runs and says so: run
+  `mutastic gate check` yourself. A check run by a person has no budget. The words and both
+  variables are the Java edition's (decision 17 of the editions' contract).
 - **Help is written from the commands' declarations, in the Java edition's layout.** `mutastic
   --help` was written by hand, and had fallen behind: it left out `--report=sarif`, the ignore and
   gate options, the environment and every exit code but a line's worth. Now both it and `mutastic

@@ -122,8 +122,10 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
   turned off is `#[ignore]`, where Java counts `@Test` and `@Disabled` in the source. `gate open`
   lists them in the background, on the tree as it was then, as the Java edition counts a
   parameterized test's cases, and a check waits for the list. Where the list failed, as for a
-  package that doesn't build when the task starts, or isn't done in four minutes, it counts
-  `#[test]`-like functions in `src` and `tests` instead, and a pass says so.
+  package that doesn't build when the task starts, or isn't done in time, it counts
+  `#[test]`-like functions in `src` and `tests` instead, and a pass says so. A check waits for the
+  list before its own run, where Java waits for its count after: so a hooked check sets aside a
+  run as long as the last check's when it works out how long the budget leaves for the wait.
 - **Skipped as arid:** a statement that only writes output, `println!`, `eprintln!`, `dbg!` or a
   logger's macro, where the Java edition skips a call to a logger or `System.out`.
 - **Skipped as equivalent:** a `?` that only passes on a formatter's error, inside the `fmt` of

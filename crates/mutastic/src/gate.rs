@@ -512,6 +512,8 @@ pub struct Verdict {
     pub text: String,
     /// The tests that failed at this check, to remember.
     pub red: BTreeMap<String, String>,
+    /// Let stop before the check ran, with what's left the person's: nothing was compared.
+    pub handed_over: bool,
 }
 
 impl Verdict {
@@ -520,14 +522,22 @@ impl Verdict {
             passes: true,
             text,
             red: BTreeMap::new(),
+            handed_over: false,
         }
     }
 
     pub fn block(text: String) -> Verdict {
         Verdict {
             passes: false,
-            text,
-            red: BTreeMap::new(),
+            ..Verdict::pass(text)
+        }
+    }
+
+    /// The agent let stop before the check ran, and the person told why.
+    pub fn hand_over(text: String) -> Verdict {
+        Verdict {
+            handed_over: true,
+            ..Verdict::pass(text)
         }
     }
 }
