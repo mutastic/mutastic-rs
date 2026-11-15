@@ -583,30 +583,40 @@ fn unsafety(work: &Path, shown: &mut BTreeMap<String, String>) {
         .find(|e| e["reason"] == "run-started")
         .unwrap();
     shown.insert("concepts/run-started".into(), pretty(started));
-    let find = |method: &str, replacement: &str| -> Value {
-        events
+    // Each mutant's event goes out as it finishes, so the one shown is named in full, by its
+    // operator too: `positive` made `false` is three mutants, and the first to finish would differ
+    // from run to run.
+    let find = |method: &str, operator: &str, replacement: &str| -> Value {
+        let found: Vec<&Value> = events
             .iter()
-            .find(|e| {
-                e["location"]["method"] == method && e["mutation"]["replacement"] == replacement
+            .filter(|e| {
+                e["location"]["method"] == method
+                    && e["operator"] == operator
+                    && e["mutation"]["replacement"] == replacement
             })
-            .unwrap()
-            .clone()
+            .collect();
+        assert_eq!(
+            found.len(),
+            1,
+            "{method}, {operator}, {replacement}: {found:?}"
+        );
+        found[0].clone()
     };
     shown.insert(
         "concepts/runtime-error-event".into(),
-        pretty(&find("checked", "true")),
+        pretty(&find("checked", "mutastic/remove-conditional", "true")),
     );
     shown.insert(
         "concepts/precondition-event".into(),
-        pretty(&find("positive", "false")),
+        pretty(&find("positive", "mutastic/return-value", "false")),
     );
-    let total = find("total", "-");
+    let total = find("total", "mutastic/math", "-");
     let verify = ran(
         work,
         &["verify", total["id"].as_str().unwrap(), "fixtures/unsafety"],
     );
     shown.insert("concepts/verify-panic".into(), verify.stdout);
-    let guarded = find("guarded", "true");
+    let guarded = find("guarded", "mutastic/remove-conditional", "true");
     shown.insert("concepts/crash-event".into(), pretty(&guarded));
     let verify = ran(
         work,
