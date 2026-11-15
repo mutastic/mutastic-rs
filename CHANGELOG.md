@@ -45,6 +45,13 @@ newest come first.
 
 ### Additions
 
+- **A mutant's id opens the HTML report on it.** With links on, each id the terminal shows, on a
+  card, in the misses list or in a command, links to a page beside the report,
+  `mutation-mutants/<id>.html`, which opens `mutation.html` on that mutant. A link straight to
+  `mutation.html#/m/<id>` loses its `#…` on macOS, whose opener drops it from a `file:` URL, and
+  on Linux and Windows by reports; the page's own address has nothing to lose. Only a run that
+  wrote the HTML report links its ids: not with `--report=none`, nor a share's. The Java edition
+  does the same.
 - **With more than one test to write, the agent format says how to take them.** After `rules:`
   and `decline:`, a `tasks:` line asks the agent to make a task list, one item per mutant grouped
   by file, then write each test, run its `mutastic verify` and mark it done before the next. The
