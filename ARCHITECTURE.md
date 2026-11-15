@@ -129,4 +129,5 @@ try, and passes after), `false-catches` (a test that passes before any mutant an
 after them) and `workspace`. `samples.rs` and
 `truth.rs` run mutastic on them in place, so its copy goes in each fixture's own `target/`;
 `docs.rs` copies them to the system's temporary directory first, so the commands it captures read
-as a person types them at the repository's root.
+as a person types them at the repository's root. The tests keep their copies there warm for the
+next process: at most as many of each as there are cores, and one unused for a day is removed.

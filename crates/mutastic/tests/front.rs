@@ -61,6 +61,34 @@ fn text(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
 }
 
+/// Runs `command` to its end, or fails saying what couldn't start, and the system's reason: under
+/// load, a fork can be refused.
+fn output_of(command: &mut Command) -> Output {
+    command.output().unwrap_or_else(|error| {
+        panic!(
+            "couldn't run {}: {error}",
+            command.get_program().to_string_lossy()
+        )
+    })
+}
+
+/// How a run of the binary ended, a signal included, and all it printed, for a test that fails on
+/// it: what failed once under a loaded machine says why when it fails again.
+fn said(output: &Output) -> String {
+    use std::os::unix::process::ExitStatusExt as _;
+    let ended = match (output.status.code(), output.status.signal()) {
+        (Some(code), _) => format!("exit {code}"),
+        (None, Some(signal)) => format!("killed by signal {signal}"),
+        (None, None) => output.status.to_string(),
+    };
+    format!(
+        "{ended}, from {}\nstderr: {}\nstdout: {}",
+        env!("CARGO_BIN_EXE_mutastic"),
+        text(&output.stderr),
+        text(&output.stdout)
+    )
+}
+
 /// What the stand-in was given, or `None` when it never ran.
 fn recorded(record: &Path) -> Option<Vec<String>> {
     let text = std::fs::read_to_string(record).ok()?;
@@ -74,12 +102,12 @@ fn forwarded(root: &Path, dir: &Path, args: &[&str], exit: u8) -> (Output, Optio
     let record = root.join("record");
     std::fs::remove_file(&record).ok();
     let output = busy_again(|| {
-        mutastic(dir, args)
-            .env("MUTASTIC_JAVA_ENGINE", &engine)
-            .env("RECORD", &record)
-            .env("FAKE_EXIT", exit.to_string())
-            .output()
-            .unwrap()
+        output_of(
+            mutastic(dir, args)
+                .env("MUTASTIC_JAVA_ENGINE", &engine)
+                .env("RECORD", &record)
+                .env("FAKE_EXIT", exit.to_string()),
+        )
     });
     (output, recorded(&record))
 }
@@ -127,11 +155,12 @@ fn a_java_project_gets_the_java_edition_with_every_argument_and_exit_status() {
     ];
     for (dir, args, exit) in cases {
         let (output, given) = forwarded(&root, dir, args, *exit);
+        let case = format!("{args:?} in {}, the stand-in exiting {exit}", dir.display());
         assert_eq!(
             output.status.code(),
             Some(i32::from(*exit)),
-            "{args:?}: {}",
-            text(&output.stderr)
+            "{case}: {}",
+            said(&output)
         );
         assert_eq!(
             given.as_deref(),
@@ -140,12 +169,15 @@ fn a_java_project_gets_the_java_edition_with_every_argument_and_exit_status() {
                     .map(|a| a.to_string())
                     .collect::<Vec<_>>()
                     .as_slice()
-            )
+            ),
+            "{case}, what the stand-in at {} was given: {}",
+            root.join("engine/bin/mutastic").display(),
+            said(&output)
         );
     }
     // --edition is the front door's: the Java edition never sees it.
     let (output, given) = forwarded(&root, &maven, &["run", "--edition=java"], 0);
-    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.status.code(), Some(0), "{}", said(&output));
     assert_eq!(given.unwrap(), ["run"]);
 }
 
@@ -168,8 +200,8 @@ fn the_java_edition_is_told_whether_stderr_is_a_terminal() {
         if let Some(preset) = preset {
             command.env("MUTASTIC_STDERR_TTY", preset);
         }
-        let output = busy_again(|| command.output().unwrap());
-        assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
+        let output = busy_again(|| output_of(&mut command));
+        assert_eq!(output.status.code(), Some(0), "{}", said(&output));
         std::fs::read_to_string(root.join("record.tty")).unwrap()
     };
     assert_eq!(told(None), "0");
