@@ -1201,7 +1201,19 @@ fn next_puts_new_misses_first_and_prune_drops_the_caught() {
 /// backlog, even on a line the task changed; and the task can't add to the baseline itself.
 #[test]
 fn the_gate_holds_only_new_misses() {
-    let dir = copy_of("pricing", "gate-baseline");
+    holds_only_new_misses("gate-baseline", "target\n");
+}
+
+/// Where git ignores `.mutastic/`, the start commit has no baseline, so the gate keeps the one there
+/// when it opened: its older misses stay the project's, and only an entry the task added holds it.
+/// Once every older entry counted as the task's, and the gate never passed.
+#[test]
+fn a_baseline_git_doesnt_see_is_the_projects() {
+    holds_only_new_misses("gate-baseline-unseen", "target\n.mutastic/\n");
+}
+
+fn holds_only_new_misses(label: &str, gitignore: &str) {
+    let dir = copy_of("pricing", label);
     let git = |args: &[&str]| {
         let output = Command::new("git")
             .args(args)
@@ -1217,7 +1229,7 @@ fn the_gate_holds_only_new_misses() {
     let (code, out) = mutastic_in(&dir, &["baseline", "--progress=none"]);
     assert_eq!(code, 0, "{out}");
     git(&["init", "-q"]);
-    std::fs::write(dir.join(".gitignore"), "target\n").unwrap();
+    std::fs::write(dir.join(".gitignore"), gitignore).unwrap();
     git(&["add", "."]);
     git(&["commit", "-q", "-m", "start"]);
     let (code, out) = mutastic_in(&dir, &["gate", "open"]);
@@ -1251,10 +1263,11 @@ fn the_gate_holds_only_new_misses() {
     .unwrap();
     let (code, out) = mutastic_in(&dir, &["gate", "check"]);
     assert_eq!(code, 1, "{out}");
+    // That one entry alone: not the older ones too.
     assert!(
         out.contains(
             "mutastic gate: the task added m00000001 to .mutastic/baseline.yaml itself, and \
-             whether a miss is the project's backlog is a person's call"
+             whether a miss is the project's backlog is a person's call. Take it out"
         ),
         "{out}"
     );
