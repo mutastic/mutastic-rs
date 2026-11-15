@@ -153,7 +153,7 @@ mutastic run fixtures/checkout --format=concise
   Start at  12:04:30
   Duration  1.1s (setup 408ms, build 625ms, coverage 4ms, mutants 12ms, checking 23ms)
      Tests  2 on rustc 1.94.0 · 4 workers
-   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
+   Reports  fixtures/checkout/target/mutastic/mutation.json · fixtures/checkout/target/mutastic/mutation.html
      Score  40.0%  [FAIL] Below the threshold of 80: 6 missed, 0 not covered.
 ```
 
@@ -216,7 +216,7 @@ mutastic run fixtures/checkout
   Start at  12:04:32
   Duration  473ms (setup 228ms, build 174ms, coverage 4ms, mutants 18ms, checking 24ms)
      Tests  2 on rustc 1.94.0 · 4 workers
-   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
+   Reports  fixtures/checkout/target/mutastic/mutation.json · fixtures/checkout/target/mutastic/mutation.html
      Score  90.0%  [PASS] 1 missed, above the threshold of 80.
 ```
 
@@ -252,7 +252,7 @@ mutastic run fixtures/checkout
   Start at  12:04:33
   Duration  454ms (setup 237ms, build 168ms, coverage 4ms, mutants 12ms)
      Tests  4 on rustc 1.94.0 · 4 workers
-   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
+   Reports  fixtures/checkout/target/mutastic/mutation.json · fixtures/checkout/target/mutastic/mutation.html
      Score  100.0%  [PASS] Every mutant was caught.
 ```
 
@@ -428,7 +428,7 @@ mutastic run fixtures/checkout --operators=stronger
   Start at  12:04:34
   Duration  843ms (setup 396ms, build 368ms, coverage 4ms, mutants 42ms, checking 0ms)
      Tests  4 on rustc 1.94.0 · 4 workers
-   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
+   Reports  fixtures/checkout/target/mutastic/mutation.json · fixtures/checkout/target/mutastic/mutation.html
      Score  97.3%  [PASS] 1 missed, above the threshold of 80.
 ```
 

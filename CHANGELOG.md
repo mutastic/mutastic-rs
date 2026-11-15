@@ -115,6 +115,14 @@ newest come first.
 
 ### Fixes
 
+- **The summary's report files open from where you ran mutastic.** Run from a parent directory
+  on a crate, the `Reports` row said `target/mutastic/mutation.html`, which is there only from
+  the crate, and isn't a link: a terminal that guessed one from the text opened
+  `/target/mutastic/mutation.html`. Each file is now shown from the directory you ran in
+  (`pricing/target/mutastic/mutation.html`), whole when it's outside it, and with links on it
+  links to the file itself. The `tests.log` a failure names is linked the same way, and file
+  links percent-encode what a URI can't hold, such as a space. `run-finished`'s `reports` are
+  unchanged: relative to the directory given. The Java edition does the same.
 - **`baseline --prune` doesn't drop what another set of operators would make.** A mutant only the
   baseline's operators make wasn't found by a run under others, and looked gone, so pruning after
   `operators:` changed dropped it. `.mutastic/baseline.yaml` now keeps the operators it was taken

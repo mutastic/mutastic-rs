@@ -77,7 +77,7 @@ against the tests that reach it. One mutant gets past them:
   Start at  11:03:14
   Duration  355ms (setup 20ms, build 303ms, coverage 2ms, mutants 8ms, checking 6ms)
      Tests  3 on rustc 1.99.1 · 4 workers
-   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
+   Reports  fixtures/pricing/target/mutastic/mutation.json · fixtures/pricing/target/mutastic/mutation.html
      Score  90.9%   PASS  1 missed, above the threshold of 80.
 ```
 
@@ -152,7 +152,7 @@ mutastic run fixtures/pricing
   Start at  11:04:49
   Duration  368ms (setup 21ms, build 322ms, coverage 2ms, mutants 8ms)
      Tests  4 on rustc 1.99.1 · 4 workers
-   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
+   Reports  fixtures/pricing/target/mutastic/mutation.json · fixtures/pricing/target/mutastic/mutation.html
      Score  100.0%   PASS  Every mutant was caught.  ▲ 9.1 vs last run (code changed)
 ```
 
