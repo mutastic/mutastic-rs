@@ -685,7 +685,11 @@ fn an_id_opens_the_report_on_its_mutant() {
         .find(&format!("\x1b\\{ID}\x1b]8;;\x1b\\ "))
         .unwrap_or_else(|| panic!("{said:?}"));
     let start = said[..end].rfind("\x1b]8;;").unwrap() + "\x1b]8;;".len();
-    let file = said[start..end].strip_prefix("file://").unwrap();
+    // `file:///C:/…` on Windows: the path starts after the third slash there.
+    let file = said[start..end]
+        .strip_prefix("file://")
+        .map(|path| if cfg!(windows) { &path[1..] } else { path })
+        .unwrap();
     assert!(
         file.ends_with(&format!("/target/mutastic/mutation-mutants/{ID}.html")),
         "{file}"
