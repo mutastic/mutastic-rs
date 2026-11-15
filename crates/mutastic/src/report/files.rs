@@ -210,6 +210,11 @@ fn real(path: &Path) -> PathBuf {
 
 /// `target/mutastic/mutation.json`, from `given`, or the whole path when it's outside.
 pub fn shown(given: &Path, file: &Path) -> String {
+    // As given first: on Windows a path that isn't there yet can't be made real, and the real
+    // directory it's in is a `\\?\` path it would never match.
+    if let Ok(inside) = file.strip_prefix(given) {
+        return crate::workspace::slashed(inside);
+    }
     let real = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
     match real(file).strip_prefix(real(given)) {
         Ok(inside) => crate::workspace::slashed(inside),
@@ -387,7 +392,11 @@ mod tests {
     #[test]
     fn a_log_in_a_message_is_shown_from_here_and_linked_whole() {
         let here = std::env::current_dir().unwrap();
-        let log = here.join("pricing/target/mutastic/tests.log");
+        let log = here
+            .join("pricing")
+            .join("target")
+            .join("mutastic")
+            .join("tests.log");
         let said = format!(
             "t fails.\nIts output is in {}. To run it alone:",
             log.display()

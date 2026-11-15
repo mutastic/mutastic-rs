@@ -646,8 +646,10 @@ fn the_reports_are_typed_from_where_mutastic_runs() {
         .unwrap_or_else(|| panic!("{said:?}"));
     let start = said[..end].rfind("\x1b]8;;").unwrap() + "\x1b]8;;".len();
     let link = &said[start..end];
+    // `file:///C:/…` on Windows: the path starts after the third slash there.
     let file = link
         .strip_prefix("file://")
+        .map(|path| if cfg!(windows) { &path[1..] } else { path })
         .unwrap_or_else(|| panic!("{link}"));
     assert!(Path::new(file).is_absolute(), "{link}");
     assert_eq!(
