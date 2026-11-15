@@ -133,7 +133,9 @@ pub const COMMANDS: &[Command] = &[
                  of the mutants, for splitting a run across CI jobs, and --from-shards puts the \
                  shares back together as the whole run.",
         exits: "0 when the score reaches the threshold, 1 when it doesn't; with --fail-on-new, 0 \
-                when every mutant no test catches is in the baseline, 1 when one isn't.",
+                when every mutant no test catches is in the baseline, 1 when one isn't; with \
+                --only, 0 when each mutant named is caught or skipped, as verify judges it, and 1 \
+                while one is still missed or not covered.",
         takes_mutant_id: false,
         examples: &[
             "mutastic run",
