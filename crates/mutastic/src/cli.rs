@@ -1758,6 +1758,7 @@ fn gate_open(
         session: session.to_string(),
         base: base.clone(),
         ignored: ignored_ids(here)?,
+        baselined: Some(baseline::ids(here)),
         shape: gate::Shape::of(here),
         uncounted: if counting.is_empty() {
             "the count couldn't start".into()
@@ -1976,11 +1977,14 @@ fn gate_verdict(
             ids_shown(&added)
         )));
     }
+    // Compared with the baseline when the gate opened, not the start commit's: where git ignores
+    // `.mutastic/`, the commit has none, and every older entry would look like the task's.
+    let opened = state
+        .baselined
+        .clone()
+        .unwrap_or_else(|| baseline::ids_at(here, &state.base));
     let older = baseline::ids(here);
-    let baselined: Vec<String> = older
-        .difference(&baseline::ids_at(here, &state.base))
-        .cloned()
-        .collect();
+    let baselined: Vec<String> = older.difference(&opened).cloned().collect();
     if !baselined.is_empty() {
         let one = baselined.len() == 1;
         return Ok(gate::Verdict::block(format!(
