@@ -125,8 +125,12 @@ pub struct Report {
     pub profile: serde_json::Value,
     /// When the run started, `15:04:05` on the local clock, when the clock could be read.
     pub started_at: Option<String>,
-    /// The report files written, as the summary shows them: `target/mutastic/mutation.json`.
+    /// The report files written, as `run-finished` lists them: `target/mutastic/mutation.json`,
+    /// from the directory mutastic was pointed at.
     pub reports: Vec<String>,
+    /// The same files, each whole: the summary shows them from where mutastic runs, and links
+    /// them.
+    pub written: Vec<std::path::PathBuf>,
     /// The ignores whose line has changed since: they no longer hold, and their mutants ran.
     pub stale_ignores: Vec<String>,
     /// The change the run was scoped to, with `--since`.
@@ -573,6 +577,7 @@ pub fn run(
         profile: built.profile,
         started_at,
         reports: Vec::new(),
+        written: Vec::new(),
         stale_ignores,
         scope,
         flaky,
@@ -646,6 +651,7 @@ fn nothing_to_run(
         profile: serde_json::json!({ "overflow_checks": true, "debug_assertions": true }),
         started_at: unbuilt.started_at,
         reports: Vec::new(),
+        written: Vec::new(),
         stale_ignores: unbuilt.stale_ignores,
         scope: unbuilt.scope,
         flaky: Vec::new(),

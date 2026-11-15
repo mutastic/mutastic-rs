@@ -500,6 +500,7 @@ impl Shares {
             }),
             started_at: engine::clock(),
             reports: Vec::new(),
+            written: Vec::new(),
             stale_ignores,
             scope: None,
             flaky: self.flaky(),

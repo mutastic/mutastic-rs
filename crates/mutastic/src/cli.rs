@@ -95,8 +95,12 @@ fn joined(args: Vec<String>) -> Vec<String> {
 /// mutastic couldn't run: why, on stderr; and in the agent and jsonl formats, the same as the
 /// stream's last event, `run-failed`, on stdout, which is all a tool reading the stream reads.
 fn failed(args: &[String], failure: &Failure) -> ExitCode {
-    // A build's or a test's output comes with it: escaped, a line at a time.
-    stderr_line!("mutastic: {}", untrusted::escape_lines(&failure.message));
+    // A build's or a test's output comes with it: escaped, a line at a time. Its logs are named
+    // as typed from here, and linked, after the escaping, which would undo the links.
+    stderr_line!(
+        "mutastic: {}",
+        report::files::logs(&untrusted::escape_lines(&failure.message), linked(args))
+    );
     if streams_events(args) {
         stdout_line!(
             "{}",
@@ -104,6 +108,25 @@ fn failed(args: &[String], failure: &Failure) -> ExitCode {
         );
     }
     ExitCode::from(FAILED)
+}
+
+/// Plain text, with file links when `--hyperlinks` (the last one given) or the terminal says so, as
+/// the Java edition decides it: read from the line alone, as a failure can come from parsing it.
+fn linked(args: &[String]) -> Style {
+    let dumb = std::env::var("TERM").is_ok_and(|term| term == "dumb");
+    let links = match args
+        .iter()
+        .rev()
+        .find_map(|arg| arg.strip_prefix("--hyperlinks="))
+    {
+        Some("always") => true,
+        Some("never") => false,
+        _ => std::io::stdout().is_terminal() && !dumb,
+    };
+    Style {
+        links,
+        ..Style::default()
+    }
 }
 
 /// Whether the command line, or the environment, asks for the agent or jsonl format, which end in
@@ -1027,8 +1050,9 @@ fn finish(
                 .map(|(kind, path)| (*kind, path.map(str::to_string)))
                 .collect()
         });
-        report.reports = report::files::write(&report, &reports, &folder)
+        report.written = report::files::write(&report, &reports, &folder)
             .map_err(|error| Code::Other.with(error))?;
+        report.reports = listed(&report);
     }
     // A share's events, kept for `--from-shards`: as `--format=jsonl` writes them, whatever the
     // format shown.
@@ -1038,6 +1062,7 @@ fn finish(
         // Written empty first, so its path is shown as the reports' are.
         crate::shares::keep(&events, "")?;
         report.reports.push(report::files::shown(given, &events));
+        report.written.push(report::files::whole(&events));
         // Whole, `run-started` included, even when it went out live.
         let streamed = std::mem::replace(&mut report.streamed, false);
         crate::shares::keep(
@@ -1226,10 +1251,22 @@ fn next_pass(
             .iter()
             .map(|(kind, path)| (*kind, path.map(str::to_string)))
             .collect();
-        report.reports = report::files::write(&report, &reports, &folder)
+        report.written = report::files::write(&report, &reports, &folder)
             .map_err(|error| Code::Other.with(error))?;
+        report.reports = listed(&report);
     }
     Ok(report)
+}
+
+/// The files `report` wrote, as `run-finished` lists them: from the directory mutastic was pointed
+/// at when they're inside it, whole otherwise.
+fn listed(report: &engine::Report) -> Vec<String> {
+    let given = std::path::Path::new(&report.project.given);
+    report
+        .written
+        .iter()
+        .map(|file| report::files::shown(given, file))
+        .collect()
 }
 
 /// Keeps `report` as the last run in `folder`, with its comparison with the one before: only an

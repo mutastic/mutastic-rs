@@ -131,7 +131,7 @@ mutastic run fixtures/pricing --since=HEAD
   Start at  11:56:11
   Duration  428ms (setup 22ms, build 371ms, coverage 4ms, mutants 2ms, checking 6ms)
      Tests  4 on rustc 1.99.1 · 4 workers
-   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
+   Reports  fixtures/pricing/target/mutastic/mutation.json · fixtures/pricing/target/mutastic/mutation.html
      Score  40.0%   FAIL  Below the threshold of 80: 2 missed, 1 not covered.  · 50.0% where tests reach
 ```
 
@@ -199,7 +199,7 @@ mutastic run fixtures/pricing --since=HEAD
   Start at  11:56:12
   Duration  401ms (setup 32ms, build 345ms, coverage 4ms, mutants 4ms)
      Tests  6 on rustc 1.99.1 · 4 workers
-   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
+   Reports  fixtures/pricing/target/mutastic/mutation.json · fixtures/pricing/target/mutastic/mutation.html
      Score  100.0%   PASS  Every mutant was caught.
 ```
 

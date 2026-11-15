@@ -4,7 +4,7 @@
 //! scanning, when asked for (`sarif.rs`).
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
@@ -50,13 +50,12 @@ impl Kind {
 pub const DEFAULT: &[(Kind, Option<&str>)] = &[(Kind::Json, None), (Kind::Html, None)];
 
 /// Writes each report, to its path (against the directory mutastic was pointed at) or to `folder`,
-/// `target/mutastic` or a share's own, and gives the paths written, as the summary and
-/// `run-finished` show them: from that directory when they're inside it, whole otherwise.
+/// `target/mutastic` or a share's own, and gives the files written, each whole.
 pub fn write(
     report: &Report,
     reports: &[(Kind, Option<String>)],
     folder: &Path,
-) -> Result<Vec<String>, String> {
+) -> Result<Vec<PathBuf>, String> {
     let given = Path::new(&report.project.given);
     let mut written = Vec::new();
     for (kind, path) in reports {
@@ -75,9 +74,72 @@ pub fn write(
         }
         std::fs::write(&file, text)
             .map_err(|error| format!("couldn't write {}: {error}", file.display()))?;
-        written.push(shown(given, &file));
+        written.push(whole(&file));
     }
     Ok(written)
+}
+
+/// `file` whole: against the directory mutastic runs in when it's relative.
+pub fn whole(file: &Path) -> PathBuf {
+    if file.is_absolute() {
+        return file.to_path_buf();
+    }
+    std::env::current_dir().map_or_else(|_| file.to_path_buf(), |here| here.join(file))
+}
+
+/// `file` as the person would type it from where mutastic runs: relative when it's below there,
+/// as `fixtures/pricing/target/mutastic/mutation.html`, whole otherwise. A path from the project
+/// reads wrong from anywhere else, and a terminal guessing a link from one opened `/target/…`.
+pub fn from_here(file: &Path) -> String {
+    let file = whole(file);
+    match std::env::current_dir() {
+        Ok(here) if real(&file) != real(&here) => {
+            let shown = shown(&here, &file);
+            if Path::new(&shown).is_absolute() {
+                file.display().to_string()
+            } else {
+                shown
+            }
+        }
+        _ => file.display().to_string(),
+    }
+}
+
+/// A message's logs, `Its output is in /…/target/mutastic/tests.log.`, each as typed from where
+/// mutastic runs and, with links on, linked to the file itself. A relative one is linked only when
+/// it's there from here.
+pub fn logs(said: &str, style: super::Style) -> String {
+    const LEAD: &str = "output is in ";
+    let mut out = String::with_capacity(said.len());
+    let mut rest = said;
+    while let Some(at) = rest.find(LEAD) {
+        let (before, after) = rest.split_at(at + LEAD.len());
+        out.push_str(before);
+        let end = after.find(char::is_whitespace).unwrap_or(after.len());
+        let (word, tail) = after.split_at(end);
+        let (named, stop) = word
+            .strip_suffix('.')
+            .map_or((word, ""), |named| (named, "."));
+        out.push_str(&log(named, style).unwrap_or_else(|| named.to_string()));
+        out.push_str(stop);
+        rest = tail;
+    }
+    out.push_str(rest);
+    out
+}
+
+/// `named` shown from here and linked, when it names a file to link.
+fn log(named: &str, style: super::Style) -> Option<String> {
+    let path = Path::new(named);
+    if named.is_empty() || (!path.is_absolute() && !whole(path).is_file()) {
+        return None;
+    }
+    let file = whole(path);
+    Some(style.link(&file, &from_here(&file)))
+}
+
+fn real(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// `target/mutastic/mutation.json`, from `given`, or the whole path when it's outside.
@@ -251,5 +313,42 @@ mod tests {
             "src/report/page/report.html isn't the pinned page: scripts/pin-report-page.sh <commit>"
         );
         assert_eq!(PAGE.matches(SLOT).count(), 1);
+    }
+
+    /// A log a message names is shown from here and, with links on, linked whole; one named
+    /// relative that isn't there from here is left as said. The Java edition's `HereTest` is the
+    /// same.
+    #[test]
+    fn a_log_in_a_message_is_shown_from_here_and_linked_whole() {
+        let here = std::env::current_dir().unwrap();
+        let log = here.join("pricing/target/mutastic/tests.log");
+        let said = format!(
+            "t fails.\nIts output is in {}. To run it alone:",
+            log.display()
+        );
+        let links = super::super::Style {
+            links: true,
+            ..super::super::Style::default()
+        };
+
+        assert_eq!(
+            logs(&said, super::super::Style::default()),
+            "t fails.\nIts output is in pricing/target/mutastic/tests.log. To run it alone:"
+        );
+        assert!(logs(&said, links).contains(&format!(
+            "Its output is in \x1b]8;;{}\x1b\\pricing/target/mutastic/tests.log\x1b]8;;\x1b\\. To",
+            super::super::file_uri(&log)
+        )));
+        let relative = "Their output is in target/nowhere/tests.log.";
+        assert_eq!(logs(relative, links), relative);
+    }
+
+    /// A file's URI holds what a path can, percent-encoding the rest, as Java's `toUri` does.
+    #[test]
+    fn a_file_uri_encodes_what_a_uri_cant_hold() {
+        assert_eq!(
+            super::super::file_uri(Path::new("/work/my project/#1/mutation.html")),
+            "file:///work/my%20project/%231/mutation.html"
+        );
     }
 }

@@ -600,6 +600,74 @@ fn the_live_line_is_redrawn_in_place() {
     assert!(plain.is_empty(), "{plain:?}");
 }
 
+/// The summary's report files, as a person in a terminal reads and clicks them, from where they ran
+/// mutastic. Run from a parent on a directory, the row once said `target/mutastic/…`, which is
+/// there only from the project, and a terminal guessing a link from it opened `/target/…`. The
+/// Java edition's `ReportPathsTest` is the same.
+#[test]
+fn the_reports_are_typed_from_where_mutastic_runs() {
+    let copy = copy_of("pricing", "report-paths");
+    let parent = copy.parent().unwrap();
+    let name = copy.file_name().unwrap().to_str().unwrap();
+    let reports = |said: &str| -> Vec<String> {
+        let row = said
+            .lines()
+            .map(str::trim)
+            .find_map(|line| line.strip_prefix("Reports  "))
+            .unwrap_or_else(|| panic!("{said}"));
+        row.split(" · ").map(str::to_string).collect()
+    };
+
+    // From a parent, with the directory named: from there.
+    let (code, said) = mutastic_in(parent, &["run", name, "--format=full"]);
+    assert_eq!(code, 0, "{said}");
+    let shown = reports(&said);
+    assert_eq!(
+        shown,
+        [
+            format!("{name}/target/mutastic/mutation.json"),
+            format!("{name}/target/mutastic/mutation.html"),
+        ],
+        "{said}"
+    );
+    for file in &shown {
+        assert!(parent.join(file).is_file(), "{file}");
+    }
+
+    // With links on, each links to the file itself, whole.
+    let (code, said) = mutastic_in(
+        parent,
+        &["run", name, "--format=full", "--hyperlinks=always"],
+    );
+    assert_eq!(code, 0, "{said}");
+    let text = format!("{name}/target/mutastic/mutation.html");
+    let end = said
+        .find(&format!("\x1b\\{text}\x1b]8;;\x1b\\"))
+        .unwrap_or_else(|| panic!("{said:?}"));
+    let start = said[..end].rfind("\x1b]8;;").unwrap() + "\x1b]8;;".len();
+    let link = &said[start..end];
+    let file = link
+        .strip_prefix("file://")
+        .unwrap_or_else(|| panic!("{link}"));
+    assert!(Path::new(file).is_absolute(), "{link}");
+    assert_eq!(
+        std::fs::canonicalize(file).unwrap(),
+        std::fs::canonicalize(copy.join("target/mutastic/mutation.html")).unwrap()
+    );
+
+    // From inside the project: as short as ever.
+    let (code, said) = mutastic_in(&copy, &["run", "--format=full"]);
+    assert_eq!(code, 0, "{said}");
+    assert_eq!(
+        reports(&said),
+        [
+            "target/mutastic/mutation.json",
+            "target/mutastic/mutation.html"
+        ],
+        "{said}"
+    );
+}
+
 /// A full run writes `mutation.json`, in the mutation-testing report schema as the Java edition
 /// writes it, and `mutation.html`, that report in mutastic's own page, and says where in its summary and
 /// its events.

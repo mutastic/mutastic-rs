@@ -189,7 +189,7 @@ This is the unsafety fixture, which has one of each:
   Start at  11:03:14
   Duration  334ms (setup 20ms, build 279ms, coverage 3ms, mutants 10ms, checking 6ms)
      Tests  6 on rustc 1.99.1 · 4 workers
-   Reports  target/mutastic/mutation.json · target/mutastic/mutation.html
+   Reports  fixtures/unsafety/target/mutastic/mutation.json · fixtures/unsafety/target/mutastic/mutation.html
      Score  35.7%   FAIL  Below the threshold of 80: 7 missed, 2 not covered.  · 41.7% where tests reach
 ```
 
