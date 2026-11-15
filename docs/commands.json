@@ -241,6 +241,7 @@
         }
       ],
       "options": [
+        "--operators",
         "--hook",
         "--edition"
       ]
@@ -264,6 +265,7 @@
         }
       ],
       "options": [
+        "--operators",
         "--hook",
         "--tries",
         "--edition"
@@ -492,6 +494,8 @@
       "help": "Which operators run: a set (defaults, stronger or extended), or operator ids split by commas, in place of mutastic.yaml's operators; defaults unless set",
       "commands": [
         "baseline",
+        "gate check",
+        "gate open",
         "mutants",
         "next",
         "run"
@@ -501,6 +505,14 @@
         "baseline": {
           "commandLine": "mutastic baseline --operators=stronger",
           "cargo": "cargo mutastic baseline --operators=stronger"
+        },
+        "gate check": {
+          "commandLine": "mutastic gate check --operators=stronger",
+          "cargo": "cargo mutastic gate check --operators=stronger"
+        },
+        "gate open": {
+          "commandLine": "mutastic gate open --operators=stronger",
+          "cargo": "cargo mutastic gate open --operators=stronger"
         },
         "mutants": {
           "commandLine": "mutastic mutants --operators=stronger",

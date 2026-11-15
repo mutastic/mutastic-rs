@@ -54,6 +54,9 @@ pub struct State {
     /// Why that count gave no tests, once a check found it failed or not done: the checks since
     /// compare the source's test attributes, and a pass says so.
     pub uncounted: String,
+    /// The operators the open chose, as it chose them (`stronger`), which every check runs: empty
+    /// in a file an older gate wrote, whose checks choose as `gate open` would.
+    pub operators: String,
 }
 
 impl State {
@@ -78,6 +81,7 @@ impl State {
                 "tree" => state.tree = value,
                 "counting" => state.counting = value,
                 "uncounted" => state.uncounted = value,
+                "operators" => state.operators = value,
                 _ => {
                     if let Some(test) = key.strip_prefix(RED) {
                         state.red.insert(test.to_string(), value);
@@ -108,6 +112,9 @@ impl State {
             format!("counting={}", self.counting),
             format!("uncounted={}", self.uncounted),
         ];
+        if !self.operators.is_empty() {
+            lines.push(format!("operators={}", self.operators));
+        }
         if let Some(baselined) = &self.baselined {
             lines.push(format!(
                 "baselined={}",
@@ -573,8 +580,14 @@ pub fn false_caught(report: &crate::engine::Report) -> String {
 }
 
 /// What holds the gate, every mutant by id, as the Java edition says it: those missed, those no
-/// test reaches, and apart from them those proposed, which wait on a person, not the agent.
-pub fn held_by(missed: &[String], uncovered: &[String], waiting: &[String]) -> String {
+/// test reaches, and apart from them those proposed, which wait on a person, not the agent; and
+/// the operators that made them.
+pub fn held_by(
+    missed: &[String],
+    uncovered: &[String],
+    waiting: &[String],
+    operators: &str,
+) -> String {
     let count = missed.len() + uncovered.len();
     let mut parts = Vec::new();
     if !missed.is_empty() {
@@ -583,6 +596,7 @@ pub fn held_by(missed: &[String], uncovered: &[String], waiting: &[String]) -> S
     if !uncovered.is_empty() {
         parts.push(format!("no test reaches: {}", uncovered.join(", ")));
     }
+    parts.push(format!("operators: {operators}"));
     let proposed = if waiting.is_empty() {
         String::new()
     } else {
@@ -644,19 +658,20 @@ mod tests {
             &[],
             &ids(&["m04b90863", "m304d2733"]),
             &ids(&["m1a2b3c4d", "m5e6f7a8b"]),
+            "defaults",
         );
         assert!(
             said.starts_with(
                 "mutastic gate: 2 mutants on the lines the task changed hold it, so it isn't done \
-                 (no test reaches: m04b90863, m304d2733). Proposed, waiting on a person, and not \
+                 (no test reaches: m04b90863, m304d2733; operators: defaults). Proposed, waiting on a person, and not \
                  holding it: m1a2b3c4d, m5e6f7a8b."
             ),
             "{said}"
         );
         assert!(!said.contains("missed:"), "{said}");
-        let one = held_by(&ids(&["m1a2b3c4d"]), &[], &[]);
+        let one = held_by(&ids(&["m1a2b3c4d"]), &[], &[], "stronger");
         assert!(
-            one.starts_with("mutastic gate: 1 mutant on the lines the task changed holds it, so it isn't done (missed: m1a2b3c4d). For each card"),
+            one.starts_with("mutastic gate: 1 mutant on the lines the task changed holds it, so it isn't done (missed: m1a2b3c4d; operators: stronger). For each card"),
             "{one}"
         );
     }
@@ -733,6 +748,7 @@ mod tests {
             stopped: Some(["m1".to_string()].into()),
             counting: "c0ffee".into(),
             uncounted: "it doesn't build".into(),
+            operators: "stronger,-stream".into(),
         };
         state.write(&work).unwrap();
         assert_eq!(State::read(&work), Some(state));

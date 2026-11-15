@@ -12,12 +12,17 @@
 //! operators:
 //!   - stronger
 //!   - -stream/swap-match
+//! gate:
+//!   operators:
+//!     - stronger
 //! ```
 //!
 //! Patterns name Rust paths where the Java edition names classes: `**` matches any depth, `*` one
 //! name, and a function is its path, `shop::Money::add`, where Java writes `com.acme.Money#add`.
 //! A plugin is a rules file of call operators; the Rust edition has no compiled plugins yet, so
-//! `filters:`, which names a compiled plugin's filters, is an error.
+//! `filters:`, which names a compiled plugin's filters, is an error. `gate:`'s `operators:` chooses
+//! for `gate open` alone, in place of `operators:`, so an agent's task can be held to more than
+//! everyday runs.
 
 use std::path::{Path, PathBuf};
 
@@ -84,6 +89,11 @@ pub struct Configuration {
     pub operators: Vec<String>,
     /// Where each of `operators` is written, `mutastic.yaml line 4`, for an error about it.
     pub operators_from: Vec<String>,
+    /// The operators `gate:` chooses for a gated task: empty when it chooses none, and the gate
+    /// runs `operators`.
+    pub gate_operators: Vec<String>,
+    /// Where each of `gate_operators` is written.
+    pub gate_operators_from: Vec<String>,
 }
 
 impl Configuration {
@@ -143,8 +153,8 @@ impl Configuration {
     }
 
     /// This file's say over `parent`'s: its rules first, so a package's own reason is the one
-    /// shown, then the parent's; the plugins of both; and its operators, if it chooses any, in
-    /// place of the parent's, as `--operators` replaces them.
+    /// shown, then the parent's; the plugins of both; and its operators, and its gate's, if it
+    /// chooses any, in place of the parent's, as `--operators` replaces them.
     fn over(self, parent: Configuration) -> Configuration {
         let named = |plugins: Vec<PathBuf>, from: Vec<String>| -> Vec<Named> {
             plugins
@@ -171,6 +181,16 @@ impl Configuration {
                 parent.operators
             } else {
                 self.operators
+            },
+            gate_operators_from: if self.gate_operators.is_empty() {
+                parent.gate_operators_from
+            } else {
+                self.gate_operators_from
+            },
+            gate_operators: if self.gate_operators.is_empty() {
+                parent.gate_operators
+            } else {
+                self.gate_operators
             },
         }
     }
@@ -276,6 +296,8 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
     let mut config = Configuration::default();
     let mut extends: Option<Extends> = None;
     let mut section = "";
+    // Under `gate:`, whether its `operators:` has been read.
+    let mut gate_key = false;
     let mut pending: Option<(bool, String)> = None;
     let mut last = 0;
     for (index, raw) in text.lines().enumerate() {
@@ -309,6 +331,8 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
                 "plugins:" => "plugins",
                 "filters:" => "filters",
                 "operators:" => "operators",
+                "gate:" => "gate",
+                key if key.starts_with("gate:") => return Err(error(GATE_SHAPE)),
                 key => {
                     let typed = key.trim_end_matches(':');
                     let close = crate::similar::closest(typed, SECTIONS.iter().copied())
@@ -316,7 +340,7 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
                             format!(" There's one called {name}:.")
                         });
                     return Err(error(&format!(
-                        "expected extends:, rules:, plugins:, filters: or operators:, not \
+                        "expected extends:, rules:, plugins:, filters:, operators: or gate:, not \
                          {key}.{close}"
                     )));
                 }
@@ -346,6 +370,20 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
                 return Err(error(&needs_reason(*mutate, target)));
             }
             pending = Some((verb == "mutate", value(target)));
+            continue;
+        }
+        if section == "gate" {
+            if item == "operators:" && !gate_key {
+                gate_key = true;
+                continue;
+            }
+            let listed = listed(item)
+                .filter(|_| gate_key)
+                .ok_or_else(|| error(GATE_SHAPE))?;
+            config.gate_operators.push(listed);
+            config
+                .gate_operators_from
+                .push(format!("{shown} line {}", index + 1));
             continue;
         }
         let listed = listed(item).ok_or_else(|| error("expected a list item, `- …`"))?;
@@ -472,7 +510,18 @@ pub fn resolve_from(entries: &[String], from: &[String]) -> Result<Vec<&'static 
 }
 
 /// The sections a `mutastic.yaml` has, without their colons.
-const SECTIONS: &[&str] = &["extends", "rules", "plugins", "filters", "operators"];
+const SECTIONS: &[&str] = &[
+    "extends",
+    "rules",
+    "plugins",
+    "filters",
+    "operators",
+    "gate",
+];
+
+/// What `gate:` takes, as an error says it.
+const GATE_SHAPE: &str =
+    "gate: takes operators:, a list under it:\n  gate:\n    operators:\n      - stronger";
 
 /// `name` is no set, namespace or operator mutastic has: what `--operators` and `operators:` take,
 /// and a close name.
@@ -526,8 +575,8 @@ mod tests {
     #[test]
     fn what_it_doesnt_understand_is_an_error_that_names_the_line() {
         for (text, error) in [
-            ("rule:\n", "mutastic.yaml line 1: expected extends:, rules:, plugins:, filters: or operators:, not rule:. There's one called rules:."),
-            ("colour:\n", "mutastic.yaml line 1: expected extends:, rules:, plugins:, filters: or operators:, not colour:."),
+            ("rule:\n", "mutastic.yaml line 1: expected extends:, rules:, plugins:, filters:, operators: or gate:, not rule:. There's one called rules:."),
+            ("colour:\n", "mutastic.yaml line 1: expected extends:, rules:, plugins:, filters:, operators: or gate:, not colour:."),
             ("extends: a.yaml\nextends: b.yaml\n", "mutastic.yaml line 2: a file extends one other file, once"),
             ("extends: ''\n", "mutastic.yaml line 1: `extends:` needs a path, such as ../mutastic.yaml"),
             ("extends: a.yaml\n  - x\n", "mutastic.yaml line 2: a list item needs a section above it"),
@@ -704,6 +753,27 @@ mod tests {
             .starts_with(
             "--operators: strong isn't an operator mutastic has. There's one called stronger.\n"
         ));
+    }
+
+    #[test]
+    fn the_gate_chooses_its_own_operators() {
+        let config =
+            parse("operators:\n  - defaults\ngate:\n  operators:\n    - stronger\n    - -stream\n")
+                .unwrap();
+        assert_eq!(config.operators, ["defaults"]);
+        assert_eq!(config.gate_operators, ["stronger", "-stream"]);
+        assert_eq!(config.gate_operators_from[1], "mutastic.yaml line 6");
+        for refused in [
+            "gate: {operators: stronger}\n",
+            "gate:\n  - stronger\n",
+            "gate:\n  threshold:\n",
+        ] {
+            let error = parse(refused).unwrap_err();
+            assert!(
+                error.contains("gate: takes operators:, a list under it"),
+                "{refused}: {error}"
+            );
+        }
     }
 
     #[test]

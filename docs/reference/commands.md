@@ -127,7 +127,7 @@ mutastic gate open
 mutastic gate open --hook=claude
 ```
 
-**Options:** [`--hook=AGENT`](#--hook), [`--edition=EDITION`](#--edition).
+**Options:** [`--operators=OPERATORS`](#--operators), [`--hook=AGENT`](#--hook), [`--edition=EDITION`](#--edition).
 
 **Exit status:** 0 once it has kept where the task starts; 2 outside a git repository with a commit.
 
@@ -142,7 +142,7 @@ mutastic gate check
 mutastic gate check --hook=claude
 ```
 
-**Options:** [`--hook=AGENT`](#--hook), [`--tries=N`](#--tries), [`--edition=EDITION`](#--edition).
+**Options:** [`--operators=OPERATORS`](#--operators), [`--hook=AGENT`](#--hook), [`--tries=N`](#--tries), [`--edition=EDITION`](#--edition).
 
 **Exit status:** 0 when the task is done, 1 when it isn't, 2 when no task is open. With --hook, 0 either way: the answer is what it prints, a block or a message, as the agent's hooks read it, and with nothing open the agent may stop.
 
@@ -242,10 +242,12 @@ mutastic run --since --force-coverage
 
 ### `--operators`
 
-`--operators=OPERATORS`, for [`baseline`](#baseline), [`mutants`](#mutants), [`next`](#next), [`run`](#run). Which operators run: a set (defaults, stronger or extended), or operator ids split by commas, in place of mutastic.yaml's operators; defaults unless set.
+`--operators=OPERATORS`, for [`baseline`](#baseline), [`gate check`](#gate-check), [`gate open`](#gate-open), [`mutants`](#mutants), [`next`](#next), [`run`](#run). Which operators run: a set (defaults, stronger or extended), or operator ids split by commas, in place of mutastic.yaml's operators; defaults unless set.
 
 ```sh
 mutastic baseline --operators=stronger
+mutastic gate check --operators=stronger
+mutastic gate open --operators=stronger
 mutastic mutants --operators=stronger
 mutastic next --operators=stronger
 mutastic run --operators=stronger

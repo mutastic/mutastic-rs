@@ -45,6 +45,14 @@ newest come first.
 
 ### Additions
 
+- **The gate takes an operator set.** `gate open` and `gate check` take `--operators`, as `run`
+  does, and `mutastic.yaml` takes `gate:` with `operators:` under it, the gate's set in place of
+  `operators:`, so a project can hold its agent's tasks to the stronger set without changing its
+  everyday runs; the plugins' hooks need nothing new. The set is chosen when the gate opens and
+  kept with the task: every check runs it, and a check given another set is refused (exit 2)
+  rather than run on fewer operators than the task opened with. The open names the set, and the
+  `mutastic run` it gives the agent carries `--operators` when it isn't what a run would choose;
+  each verdict on the mutants says `(operators: stronger)`. See [the gate](docs/test-first-agent.md#which-operators).
 - **A mutant's id opens the HTML report on it.** With links on, each id the terminal shows, on a
   card, in the misses list or in a command, links to a page beside the report,
   `mutation-mutants/<id>.html`, which opens `mutation.html` on that mutant. A link straight to

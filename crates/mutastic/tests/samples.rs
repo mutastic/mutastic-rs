@@ -1921,7 +1921,7 @@ fn the_gate_runs_the_tests_with_no_mutant_on_the_changed_lines() {
     assert_eq!(code, 0, "{out}");
     assert_eq!(
         out,
-        "mutastic gate: passed: the tests pass, and the lines the task changed hold no mutant to run\n"
+        "mutastic gate: passed: the tests pass, and the lines the task changed hold no mutant to run (operators: defaults)\n"
     );
 
     // A test's data, no line mutastic mutates, breaking a test: held.
@@ -4212,4 +4212,115 @@ fn text_from_the_project_is_fenced_and_escaped_for_an_agent() {
         "{reason}"
     );
     assert_quoted_safely(reason);
+}
+
+/// The operators a gated task is held to, on `fixtures/checkout`: a task that charges for the
+/// quantity, with a test that buys one item, passes on the defaults, but stronger's keep-operand
+/// mutant, `quantity * price` becoming `price`, survives it. The set is chosen when the gate opens,
+/// by `--operators`, `mutastic.yaml`'s `gate:` or its `operators:`, and a check can't lower it.
+#[test]
+fn the_gate_holds_a_task_to_the_operators_it_opened_with() {
+    // `quantity * price` becomes `price`: what only the stronger set makes on the task's line.
+    const KEEP_OPERAND: &str = "md6d95190";
+    let dir = copy_of("checkout", "gate-operators");
+    let git = |args: &[&str]| {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(&dir)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "git {args:?}");
+    };
+    // Before the task, every item at one price, whatever the quantity.
+    let lib = dir.join("src/lib.rs");
+    let source = std::fs::read_to_string(&lib).unwrap();
+    std::fs::write(
+        &lib,
+        source.replace("let total = quantity * price;", "let total = price;"),
+    )
+    .unwrap();
+    git(&["init", "-q"]);
+    std::fs::write(dir.join(".gitignore"), "target\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "start"]);
+    // The task: `pay` charges for the quantity, with a test that buys one item, which catches what
+    // the defaults make of the line but not stronger's keep-operand mutant.
+    std::fs::write(&lib, &source).unwrap();
+    let tests = dir.join("tests/checkout.rs");
+    let kept = std::fs::read_to_string(&tests).unwrap();
+    std::fs::write(
+        &tests,
+        format!(
+            "{kept}\n#[test]\nfn one_item_at_250_costs_225() {{\n    \
+             assert_eq!(pay(1, 250, &mut Vec::new()), 225);\n}}\n"
+        ),
+    )
+    .unwrap();
+
+    let (code, out) = mutastic_in(&dir, &["gate", "open"]);
+    assert_eq!(code, 0, "{out}");
+    let (code, out) = mutastic_in(&dir, &["gate", "check"]);
+    assert_eq!(code, 0, "on the defaults: {out}");
+    assert!(
+        out.contains("mutastic gate: passed: the tests catch")
+            && out.contains("(operators: defaults)"),
+        "{out}"
+    );
+    mutastic_in(&dir, &["gate", "close"]);
+    std::fs::write(
+        dir.join("mutastic.yaml"),
+        "gate:\n  operators:\n    - stronger\n",
+    )
+    .unwrap();
+    let (code, out) = mutastic_in(&dir, &["gate", "open"]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains("(operators: stronger): before you finish")
+            && out.contains("--operators=stronger --format=agent"),
+        "{out}"
+    );
+    let (code, out) = mutastic_in(&dir, &["gate", "check"]);
+    assert_eq!(code, 1, "on stronger: {out}");
+    assert!(
+        out.contains(&format!(
+            "holds it, so it isn't done (missed: {KEEP_OPERAND}; operators: stronger)"
+        )),
+        "{out}"
+    );
+
+    // The open's set is kept with the task: a check given another is refused, and one that changes
+    // `mutastic.yaml` in between still runs what the open chose.
+    mutastic_in(&dir, &["gate", "close"]);
+    std::fs::remove_file(dir.join("mutastic.yaml")).unwrap();
+    let (code, out) = mutastic_in(&dir, &["gate", "open", "--operators=stronger"]);
+    assert_eq!(code, 0, "{out}");
+    std::fs::write(
+        dir.join("mutastic.yaml"),
+        "gate:\n  operators:\n    - defaults\n",
+    )
+    .unwrap();
+    let (code, out) = mutastic_in(&dir, &["gate", "check", "--operators=defaults"]);
+    assert_eq!(code, 2, "{out}");
+    assert!(
+        out.contains(
+            "the gate opened with operators: stronger, and a check runs what the open chose: \
+             `mutastic gate close`, then `mutastic gate open --operators=defaults`, to choose again"
+        ),
+        "{out}"
+    );
+    for args in [
+        &["gate", "check", "--operators=stronger"][..],
+        &["gate", "check"],
+    ] {
+        let (code, out) = mutastic_in(&dir, args);
+        assert_eq!(code, 1, "{args:?}: {out}");
+        assert!(
+            out.contains(&format!("missed: {KEEP_OPERAND}; operators: stronger")),
+            "{args:?}: {out}"
+        );
+    }
 }
