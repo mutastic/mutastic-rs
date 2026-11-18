@@ -70,6 +70,7 @@ pub const SWAP_INDEX_OF: &str = "library/swap-index-of";
 pub const REVERSE_ORDERING: &str = "library/reverse-ordering";
 pub const SWAP_ENDS: &str = "library/swap-ends";
 pub const PLAIN_DIVISION: &str = "library/plain-division";
+pub const BOOLEAN_CONSTANT: &str = "mutastic/boolean-constant";
 pub const REMOVE_SWITCH_ARM: &str = "mutastic/remove-switch-arm";
 pub const UNWRAP_TRY: &str = "mutastic/unwrap-try";
 pub const REPLACE_BODY: &str = "mutastic/replace-body";
@@ -142,6 +143,7 @@ pub const STRONGER: &[&str] = &[
     REVERSE_ORDERING,
     SWAP_ENDS,
     PLAIN_DIVISION,
+    BOOLEAN_CONSTANT,
     REMOVE_SWITCH_ARM,
     UNWRAP_TRY,
 ];
@@ -185,6 +187,7 @@ pub const EXTENDED: &[&str] = &[
     REVERSE_ORDERING,
     SWAP_ENDS,
     PLAIN_DIVISION,
+    BOOLEAN_CONSTANT,
     REMOVE_SWITCH_ARM,
     UNWRAP_TRY,
     REPLACE_BODY,

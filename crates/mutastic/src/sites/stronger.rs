@@ -343,8 +343,40 @@ impl Finder<'_> {
         match token.kind() {
             SyntaxKind::STRING => self.string_constant(literal, &token, context),
             SyntaxKind::INT_NUMBER => self.constant_value(literal, &token, context),
+            SyntaxKind::TRUE_KW | SyntaxKind::FALSE_KW => {
+                self.boolean_constant(literal, &token, context);
+            }
             _ => {}
         }
+    }
+
+    /// `true` to `false` and back, where the value is passed to a call, bound by a `let`, assigned,
+    /// or given to a struct's field. A returned one is return value's, and one in a condition
+    /// (`while true`, `a && true`) decides nothing a test could see apart from the condition's own
+    /// mutants.
+    fn boolean_constant(
+        &mut self,
+        literal: &ast::Literal,
+        token: &ra_ap_syntax::SyntaxToken,
+        context: Context<'_>,
+    ) {
+        let site = literal.syntax();
+        if self.returned.contains(&site.text_range()) || !given_as_a_value(site) {
+            return;
+        }
+        let after = if token.kind() == SyntaxKind::TRUE_KW {
+            "false"
+        } else {
+            "true"
+        };
+        self.replaced(
+            BOOLEAN_CONSTANT,
+            site,
+            site.text_range(),
+            token.text().to_string(),
+            after.to_string(),
+            context,
+        );
     }
 
     fn string_constant(
@@ -779,4 +811,22 @@ fn is_type_max(value: i128) -> bool {
 
 fn is_type_min(value: i128) -> bool {
     [7, 15, 31, 63].iter().any(|bits| value == -(1i128 << bits))
+}
+
+/// Whether a literal is a value something takes: a call's argument, a `let`'s value, the right of
+/// an `=`, or a struct field's value.
+fn given_as_a_value(literal: &SyntaxNode) -> bool {
+    let Some(parent) = literal.parent() else {
+        return false;
+    };
+    match parent.kind() {
+        SyntaxKind::ARG_LIST | SyntaxKind::LET_STMT | SyntaxKind::RECORD_EXPR_FIELD => true,
+        SyntaxKind::BIN_EXPR => ast::BinExpr::cast(parent).is_some_and(|assignment| {
+            matches!(
+                assignment.op_kind(),
+                Some(BinaryOp::Assignment { op: None })
+            ) && assignment.rhs().is_some_and(|rhs| rhs.syntax() == literal)
+        }),
+        _ => false,
+    }
 }

@@ -7,6 +7,10 @@ newest come first.
 
 ### Additions
 
+- **`mutastic/boolean-constant`, in `stronger`: a flag set the other way.** A `true` or `false`
+  passed to a function, bound by a `let`, assigned, or given to a struct's field becomes the other,
+  where only a returned one did. One in a condition isn't changed. The Java edition has it too. See
+  [Boolean constant](docs/operators/arguments.md#boolean-constant).
 - **`library/plain-division`, in `stronger`: division that rounds towards zero.** `a.div_euclid(b)`
   becomes `a / b` and `rem_euclid` becomes `%`, so a remainder that's wrong for negative numbers,
   `-1 % 3` being `-1` where `rem_euclid` gives `2`, shows unless a test has one. A value the source
