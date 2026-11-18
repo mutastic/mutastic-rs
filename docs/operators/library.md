@@ -10,12 +10,13 @@ text.
 | [`library/swap-math`](#swap-math) | `min` and `max`, `floor` and `ceil` | defaults |
 | [`library/swap-index-of`](#swap-index-of) | `find` and `rfind`, `position` and `rposition`, `split_once` and `rsplit_once` | stronger |
 | [`library/reverse-ordering`](#reverse-ordering) | `a.cmp(&b)` to `b.cmp(&a)`; `.reverse()` left out | stronger |
+| [`library/swap-ends`](#swap-ends) | `first` and `last`, `front` and `back`, and a `BTreeMap`'s and a `BTreeSet`'s ends | stronger |
 | [`mutastic/string-constant`](#string-constant) | a string to `""`, and `""` to `"mutastic"` | stronger |
 | [`mutastic/regex-constant`](#regex-constant) | a regular expression to one that differs and still compiles | extended |
 | [`bigdecimal/remove-step`](#remove-step) | `round_dp(2)` and the like, left out | extended |
 
-The first five cards come from `mutastic run fixtures/operators` with these operators, on
-`src/library.rs`.
+The cards come from `mutastic run fixtures/operators` with these operators, on `src/library.rs`,
+but for regex constant's and remove step's.
 
 ## Swap string
 
@@ -139,7 +140,7 @@ fn more_than_half_is_capped() {
 ```
 
 **Edition notes:** the Java edition has this operator too, `library/swap-math`, for `Math.min` and
-`Math.max`, `floor` and `ceil`.
+`Math.max`, `floor` and `ceil`, and a stream's and a collection's `min` and `max`.
 
 ## Swap index of
 
@@ -203,7 +204,7 @@ and `lastIndexOf`.
 
 ## Reverse ordering
 
-`library/reverse-ordering`, in the `stronger` set, and only in Rust. A comparison of two values
+`library/reverse-ordering`, in the `stronger` set. A comparison of two values
 turns round, `a.cmp(&b)` becoming `b.cmp(&a)` (and `partial_cmp` too), and a `.reverse()` on an
 ordering is left out. It goes unnoticed when no test checks the order something is sorted in.
 
@@ -258,7 +259,72 @@ fn names_come_out_in_order() {
 }
 ```
 
-**Edition notes:** Rust only.
+**Edition notes:** the Java edition has this operator too, `library/reverse-ordering`, which swaps
+`compareTo`'s operands, and leaves out a comparator's or a list's `reversed()` and
+`Collections.reverseOrder(c)`.
+
+## Swap ends
+
+`library/swap-ends`, in the `stronger` set. One end of a collection becomes the other: `first` and
+`last`, `front` and `back` (and their `_mut` forms), and a `BTreeMap`'s and a `BTreeSet`'s
+`first_key_value` and `last_key_value`, `first_entry` and `last_entry`, and `pop_first` and
+`pop_last`. It goes unnoticed when no test has a collection whose ends differ.
+
+**The bug it stands for:** the wrong end: the oldest entry where the newest was meant, the head of a
+queue for its tail. With one element both ends are the same, and one element is what tests often
+have.
+
+<!-- from: fixtures/operators/src/library.rs -->
+```rust
+/// The latest reading: the last one taken.
+pub fn latest(readings: &[i32]) -> Option<i32> {
+    readings.last().copied()
+}
+```
+
+<!-- from: fixtures/operators/src/library.rs -->
+```rust
+#[test]
+fn one_reading() {
+    assert_eq!(latest(&[20]), Some(20));
+}
+```
+
+With one reading, it's both the first and the last:
+
+<!-- output: operators/library/swap-ends -->
+```text
+  ✗ MISSED  tests pass even when last becomes first in latest()
+    ┌─ src/library.rs:27
+    │
+ 26 │ pub fn latest(readings: &[i32]) -> Option<i32> {
+ 27 │     readings.last().copied()
+    │              ^^^^ last changed to first
+ 28 │ }
+    │
+    = mutant  - readings.last().copied()
+              + readings.first().copied()
+    = note: covered by library::tests::one_reading (its 1 covering test still passes)
+    = help: use inputs where last and first give different results, and assert what latest() does
+
+    done when  mutastic verify m0052d2da fixtures/operators passes
+    reproduce  mutastic run --only=m0052d2da fixtures/operators
+```
+
+**The test that catches it:** one with a collection whose ends differ, asserting which end comes
+back.
+
+<!-- added to: fixtures/operators/src/library.rs -->
+```rust
+#[test]
+fn the_last_reading_is_the_latest() {
+    assert_eq!(latest(&[20, 23]), Some(23));
+}
+```
+
+**Edition notes:** an iterator's `last` is left alone, as an iterator has no `first`. The Java
+edition has this operator too, `library/swap-ends`, for `getFirst` and `getLast`, a `Deque`'s and a
+`SortedSet`'s first and last, and a `SortedMap`'s first and last key and entry.
 
 ## String constant
 

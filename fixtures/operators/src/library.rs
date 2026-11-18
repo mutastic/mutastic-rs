@@ -22,6 +22,11 @@ pub fn header(columns: &[&str]) -> String {
     columns.join(", ")
 }
 
+/// The latest reading: the last one taken.
+pub fn latest(readings: &[i32]) -> Option<i32> {
+    readings.last().copied()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -50,5 +55,10 @@ mod tests {
     #[test]
     fn one_column() {
         assert_eq!(header(&["name"]), "name");
+    }
+
+    #[test]
+    fn one_reading() {
+        assert_eq!(latest(&[20]), Some(20));
     }
 }

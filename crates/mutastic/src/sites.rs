@@ -68,6 +68,7 @@ pub const OMIT_CALL: &str = "mutastic/omit-call";
 pub const SWAP_ARGUMENTS: &str = "mutastic/swap-arguments";
 pub const SWAP_INDEX_OF: &str = "library/swap-index-of";
 pub const REVERSE_ORDERING: &str = "library/reverse-ordering";
+pub const SWAP_ENDS: &str = "library/swap-ends";
 pub const REMOVE_SWITCH_ARM: &str = "mutastic/remove-switch-arm";
 pub const UNWRAP_TRY: &str = "mutastic/unwrap-try";
 pub const REPLACE_BODY: &str = "mutastic/replace-body";
@@ -138,6 +139,7 @@ pub const STRONGER: &[&str] = &[
     SWAP_ARGUMENTS,
     SWAP_INDEX_OF,
     REVERSE_ORDERING,
+    SWAP_ENDS,
     REMOVE_SWITCH_ARM,
     UNWRAP_TRY,
 ];
@@ -179,6 +181,7 @@ pub const EXTENDED: &[&str] = &[
     SWAP_ARGUMENTS,
     SWAP_INDEX_OF,
     REVERSE_ORDERING,
+    SWAP_ENDS,
     REMOVE_SWITCH_ARM,
     UNWRAP_TRY,
     REPLACE_BODY,
