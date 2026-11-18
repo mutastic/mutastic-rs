@@ -57,8 +57,27 @@ exit status are the command's. Every command and option the Java edition has wor
 
 ## The Java edition
 
-The Java edition runs on JDK 25, found through `JAVA_HOME` or the `PATH`. mutastic checks for one
-before it downloads anything, and says what it found if it isn't 25 or later.
+The Java edition runs on JDK 25 or later. Your build needn't: an older Gradle can't run on JDK 25,
+and an older Mockito can't mock there. So mutastic finds a JDK for the Java edition alone, and your
+build and its tests run on the `JAVA_HOME` and `PATH` you gave them.
+
+mutastic takes `MUTASTIC_JAVA_HOME` when it's set. Otherwise it takes the newest JDK 25 or later of
+`JAVA_HOME` and those installed where SDKMAN, asdf, mise, Gradle (`~/.gradle/jdks`), IntelliJ
+(`~/.jdks`), Homebrew, macOS (`/usr/libexec/java_home`) and Linux (`/usr/lib/jvm`) keep JDKs; on
+Windows, where Gradle, IntelliJ, Scoop and the JDKs' installers keep them. A JDK reads class files
+only as new as itself, so the newest reads the most: code compiled for JDK 26 needs the Java edition
+on 26 or later. The `java` on the `PATH` is asked last. mutastic finds a JDK before it downloads
+anything, and when there's none it says where it looked:
+
+```sh
+export MUTASTIC_JAVA_HOME=/path/to/jdk-25
+```
+
+| What | Runs on |
+|---|---|
+| Your build: Gradle or Maven | `JAVA_HOME`, or the `java` on the `PATH`, as you gave them |
+| Your tests | The JDK your build's test task uses: its toolchain, else the build's own JDK |
+| The Java edition | `MUTASTIC_JAVA_HOME`, else the newest JDK 25 or later found |
 
 It keeps each release of the Java edition in `~/.mutastic/mutastic-<version>`, as the Java
 edition's own installer does, so a release installed that way is used as it is. A download is
@@ -79,6 +98,7 @@ uses the newest release it has kept, and fetches the latest when it has none.
 | `MUTASTIC_VERSION` | The Java edition's release to use, exactly, such as `1.2.0`, fetched if it isn't kept. Nothing is looked up |
 | `MUTASTIC_HOME` | Where releases are kept: `~/.mutastic` unless set |
 | `MUTASTIC_JAVA_ENGINE` | A Java edition's `bin/mutastic` to run instead, such as one built from its source. Nothing is fetched |
+| `MUTASTIC_JAVA_HOME` | The JDK the Java edition runs on, 25 or later, taken as it is. Unset, the newest JDK 25 or later found |
 | `MUTASTIC_JAVA_RELEASES` | Where releases are downloaded from, for a mirror: GitHub's releases of `mutastic/mutastic` unless set. A mirror serves `releases.atom` beside them, or at least `latest` |
 | `MUTASTIC_COLUMNS` | The terminal's width, which the JDK can't ask for: `mutastic` sets it for the Java edition on a terminal, unless it's set already |
 | `MUTASTIC_STDERR_TTY` | Whether stderr is a terminal, `1` or `0`, which the JDK can't tell: `mutastic` sets it for the Java edition, unless it's set already |
