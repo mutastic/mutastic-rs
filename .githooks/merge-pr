@@ -19,8 +19,11 @@
 # deletes the branch once it lands.
 #
 # Without a merge queue on main, it merges straight away, as it did before there was one.
-# --admin merges past the queue and the checks, for a check that can't pass, where the rules let
-# an admin; the message is still checked.
+# With a queue, it waits only on the checks the rules require, as the queue does: a check that
+# isn't required, such as a self-run share, doesn't stop it. --admin skips that wait for checks;
+# with a queue the pull request still goes through it, as the rules let no one merge past it.
+# Without one, --admin merges past the checks where the rules let an admin. The message is
+# checked either way.
 
 set -eu
 usage() {
@@ -128,7 +131,7 @@ IFS=$(printf '\t') read -r squash_message queue_enabled already id head title <<
 $info
 EOF
 queue=
-[ "$queue_enabled" = true ] && [ -z "$admin" ] && queue=1
+[ "$queue_enabled" = true ] && queue=1
 if [ -n "$queue" ] && [ "$already" = true ]; then
   if [ -z "$wait" ]; then
     echo "merge-pr: #$number is already queued; --wait waits for it to land"
@@ -161,7 +164,10 @@ sh "$hooks/commit-msg" "$message"
 
 if [ -z "$admin" ]; then
   status=0
-  checks=$(gh pr checks "$number" --repo "$repo" 2>&1) || status=$?
+  # The queue holds a pull request to the required checks only, so merge-pr does too.
+  required=
+  [ -n "$queue" ] && required=--required
+  checks=$(gh pr checks "$number" --repo "$repo" $required 2>&1) || status=$?
   # Checks still running are no reason to stop with a queue: the pull request joins it only once
   # they pass. They run again after merge-pr writes the description, so a second try finds them so.
   if [ "$status" -eq 8 ] && [ -n "$queue" ]; then

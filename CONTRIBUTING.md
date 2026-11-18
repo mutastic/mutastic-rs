@@ -177,8 +177,10 @@ edit it after. In the queue, the `squash-title` check reads that commit, body an
 returns once the pull request is queued; with `--wait` it stays until it lands and prints the commit
 on `main`, or says why it left the queue (run it with `--wait` again to wait for one already
 queued). GitHub deletes the branch once it lands; local branches and worktrees are left alone.
-`--admin` merges past the queue and the checks, where the rules let an admin, for a check that can't
-pass; the message is still checked.
+With a queue, it waits only on the checks the rules require, as the queue does, so a check that
+isn't required (a self-run share) doesn't stop it. `--admin` skips that wait; with a queue the pull
+request still goes through it, as the rules let no one merge past it, and without one it merges
+past the checks where the rules let an admin. The message is checked either way.
 
 ```sh
 sh .githooks/merge-pr 59                   # subject "<title> (#59)", no body; queued
