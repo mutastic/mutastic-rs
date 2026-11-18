@@ -43,6 +43,7 @@ families are the Java edition's, with the Java edition's names wherever the lang
 | [`mutastic/constant-value`](operators/arithmetic.md#constant-value) | a number to the ones next to it, `0`, `1` and `-1` | stronger | [Arithmetic](operators/arithmetic.md) | the same |
 | [`mutastic/bitwise`](operators/arithmetic.md#bitwise) | `&`, `\|` and `^`; `<<` and `>>` | stronger | [Arithmetic](operators/arithmetic.md) | the same |
 | [`library/unchecked-arithmetic`](operators/arithmetic.md#unchecked-arithmetic) | `checked_add` to a `wrapping_add` that can't fail | stronger | [Arithmetic](operators/arithmetic.md) | the same |
+| [`library/plain-division`](operators/arithmetic.md#plain-division) | `div_euclid` and `rem_euclid` to `/` and `%`, which round towards zero | stronger | [Arithmetic](operators/arithmetic.md) | the same |
 | [`mutastic/return-value`](operators/returns.md#return-value) | a returned value to another of its type: `0`, the other `bool`, `None`, an empty one | defaults | [Returns and errors](operators/returns.md) | the same |
 | [`mutastic/unwrap-try`](operators/returns.md#unwrap-try) | `f()?` to `f().unwrap()` | defaults | [Returns and errors](operators/returns.md) | — |
 | [`mutastic/replace-body`](operators/returns.md#replace-body) | a function's whole body to one value, or to nothing | extended | [Returns and errors](operators/returns.md) | the same |
@@ -86,7 +87,7 @@ type is rejected by the compiler and reported as unviable, never run.
 
 ## Parity with the Java edition
 
-The Java edition has 46 operator ids. **40 carry over** with the same meaning, all implemented;
+The Java edition has 47 operator ids. **41 carry over** with the same meaning, all implemented;
 **6 don't**, for want of the language feature they change. mutastic for Rust adds **4 ids of its
 own**, each in the family it fits, and implements one of the Java edition's plugin operators.
 

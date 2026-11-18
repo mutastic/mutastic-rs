@@ -78,6 +78,29 @@ pub(super) fn never_negative(node: &SyntaxNode, change: &Change) -> Option<Strin
     })
 }
 
+/// Why `a.div_euclid(b)` made `a / b`, or `rem_euclid` made `%`, is equivalent, when it is:
+/// `a` is unsigned, so `b` is too, and the two round the same for numbers that aren't negative.
+pub(super) fn divides_unsigned(node: &SyntaxNode, operator: &str) -> Option<String> {
+    if operator != PLAIN_DIVISION {
+        return None;
+    }
+    let call = ast::MethodCallExpr::cast(node.clone())?;
+    let name = call.name_ref()?.text().to_string();
+    let plain_operator = match name.as_str() {
+        "div_euclid" => "/",
+        "rem_euclid" => "%",
+        _ => return None,
+    };
+    let function = call.syntax().ancestors().find_map(ast::Fn::cast)?;
+    if !untouched_by_macros(function.syntax()) {
+        return None;
+    }
+    let why = unsigned(&function, &call.receiver()?)?;
+    Some(format!(
+        "equivalent: `{name}` and `{plain_operator}` differ only for a negative number. That can't happen because {why}."
+    ))
+}
+
 /// Why `value` can't be below 0, in words, when the source proves it.
 fn unsigned(function: &ast::Fn, value: &ast::Expr) -> Option<String> {
     match value {
@@ -306,6 +329,18 @@ mod tests {
             }
         }
         skipped
+    }
+
+    #[test]
+    fn plain_division_of_an_unsigned_value_is_skipped_and_of_a_signed_one_runs() {
+        let source = "pub fn bucket(n: u32) -> u32 { n.rem_euclid(3) }\n\
+             pub fn slide(steps: i32) -> i32 { steps.rem_euclid(3) }\n";
+        let skipped = skipped(source);
+        assert_eq!(
+            skipped.get("bucket").map(Vec::as_slice),
+            Some(["n % 3".to_string()].as_slice())
+        );
+        assert_eq!(skipped.get("slide"), None);
     }
 
     #[test]

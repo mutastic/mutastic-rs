@@ -452,6 +452,40 @@ impl Finder<'_> {
         }
         self.defaults(call, name, &args, context);
         self.overflow_methods(call, name, name_range, context);
+        self.plain_division(call, name, &args, name_range, context);
+    }
+
+    /// `a.div_euclid(b)` to `a / b`, and `rem_euclid` to `%`: division that rounds towards zero
+    /// rather than down, which differs only for a negative number.
+    fn plain_division(
+        &mut self,
+        call: &ast::MethodCallExpr,
+        name: &str,
+        args: &[ast::Expr],
+        name_range: TextRange,
+        context: Context<'_>,
+    ) {
+        let operator = match name {
+            "div_euclid" => "/",
+            "rem_euclid" => "%",
+            _ => return,
+        };
+        let (Some(receiver), [divisor]) = (call.receiver(), args) else {
+            return;
+        };
+        let after = format!(
+            "{} {operator} {}",
+            receiver_text(&receiver),
+            receiver_text(divisor)
+        );
+        self.replaced(
+            PLAIN_DIVISION,
+            call.syntax(),
+            name_range,
+            plain(call.syntax()),
+            after,
+            context,
+        );
     }
 
     fn defaults(

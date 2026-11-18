@@ -69,6 +69,7 @@ pub const SWAP_ARGUMENTS: &str = "mutastic/swap-arguments";
 pub const SWAP_INDEX_OF: &str = "library/swap-index-of";
 pub const REVERSE_ORDERING: &str = "library/reverse-ordering";
 pub const SWAP_ENDS: &str = "library/swap-ends";
+pub const PLAIN_DIVISION: &str = "library/plain-division";
 pub const REMOVE_SWITCH_ARM: &str = "mutastic/remove-switch-arm";
 pub const UNWRAP_TRY: &str = "mutastic/unwrap-try";
 pub const REPLACE_BODY: &str = "mutastic/replace-body";
@@ -140,6 +141,7 @@ pub const STRONGER: &[&str] = &[
     SWAP_INDEX_OF,
     REVERSE_ORDERING,
     SWAP_ENDS,
+    PLAIN_DIVISION,
     REMOVE_SWITCH_ARM,
     UNWRAP_TRY,
 ];
@@ -182,6 +184,7 @@ pub const EXTENDED: &[&str] = &[
     SWAP_INDEX_OF,
     REVERSE_ORDERING,
     SWAP_ENDS,
+    PLAIN_DIVISION,
     REMOVE_SWITCH_ARM,
     UNWRAP_TRY,
     REPLACE_BODY,
@@ -1514,6 +1517,7 @@ impl Finder<'_> {
         let ordinal = self.found.mutants.len() as u32 + 1;
         let skipped = nonzero::never_zero(node, &change)
             .or_else(|| unsigned::never_negative(node, &change))
+            .or_else(|| unsigned::divides_unsigned(node, operator))
             .or_else(|| guarded::never_equal(node, &change, self.module, &self.facts.structs))
             .or_else(|| edge::same_at_edge(node, &change, self.module, &self.facts.structs))
             .or_else(|| profile::decided_by_profile(node, &change));
