@@ -303,8 +303,9 @@ mutant](../troubleshooting.md#a-test-fails-before-any-mutant).
 
 ## `java-edition`
 
-The Java edition can't run: no JDK 25, a `MUTASTIC_JAVA_ENGINE` that isn't a file, no `HOME` to keep
-it in, or no release to fetch. See [One command, two editions](../editions.md).
+The Java edition can't run: no JDK 25 or later where mutastic looked, a `MUTASTIC_JAVA_HOME` that
+isn't one, a `MUTASTIC_JAVA_ENGINE` that isn't a file, no `HOME` to keep it in, or no release to
+fetch. See [One command, two editions](../editions.md#the-java-edition).
 
 ## `proc-macro`
 

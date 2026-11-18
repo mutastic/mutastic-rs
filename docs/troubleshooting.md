@@ -261,6 +261,20 @@ instead.
 To judge the tests of code for another platform, run mutastic on that platform. For a feature,
 make it a default one while you run, or run on a package that turns it on.
 
+## mutastic finds no JDK 25 for the Java edition
+
+In a Maven or Gradle project, the Java edition runs on JDK 25 or later, and your build needn't.
+mutastic looks in `MUTASTIC_JAVA_HOME`, `JAVA_HOME`, and where JDKs are installed, and says where
+it looked when none is 25 or later. Install a JDK 25, or point mutastic at one you have, and leave
+`JAVA_HOME` where your build wants it:
+
+```sh
+export MUTASTIC_JAVA_HOME=/path/to/jdk-25
+```
+
+A build whose Gradle can't run on its JDK, or tests whose Mockito can't mock on it, are the Java
+edition's to explain: see its [troubleshooting](https://docs.mutastic.io/guides/troubleshooting/).
+
 ## The package doesn't build
 
 mutastic builds a copy of the package with its mutants in. When that build fails and no mutant is to

@@ -80,7 +80,7 @@
   },
   "framework": {
     "name": "mutastic",
-    "version": "1.2.0"
+    "version": "1.2.1"
   },
   "mutastic": {
     "edition": "rust",
