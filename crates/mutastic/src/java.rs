@@ -16,6 +16,9 @@
 //! - `MUTASTIC_JAVA_ENGINE`: a Java edition's `bin/mutastic` to run instead, such as one built
 //!   from source. Nothing is fetched.
 //! - `MUTASTIC_JAVA_RELEASES`: where releases are downloaded from, for a mirror.
+//! - `MUTASTIC_JAVA_HOME`: the JDK the Java edition runs on. Otherwise the newest JDK 25 or later of
+//!   `JAVA_HOME` and those installed where JDKs are kept, else the `java` on the `PATH`: see [`jdk`].
+//!   The project's build keeps the `JAVA_HOME` and `PATH` it was given.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -286,9 +289,24 @@ pub fn present() -> Option<(String, PathBuf)> {
     command.is_file().then_some((version, command))
 }
 
-/// The Java edition's command: `MUTASTIC_JAVA_ENGINE`, a kept release, or one fetched now.
-pub fn engine() -> Result<PathBuf, crate::failure::Failure> {
-    found_engine().map_err(|error| crate::failure::Code::JavaEdition.with(error))
+/// The Java edition to run: its command, and the JDK it runs on, when mutastic found one.
+pub struct Engine {
+    pub command: PathBuf,
+    pub jdk: Option<PathBuf>,
+}
+
+/// The Java edition's command, `MUTASTIC_JAVA_ENGINE`, a kept release, or one fetched now; and its
+/// JDK. One named by `MUTASTIC_JAVA_ENGINE` may run on a JDK of its own, so it runs without one.
+pub fn engine() -> Result<Engine, crate::failure::Failure> {
+    let failed = |error| crate::failure::Code::JavaEdition.with(error);
+    let given = std::env::var_os("MUTASTIC_JAVA_ENGINE").is_some_and(|g| !g.is_empty());
+    let jdk = if given {
+        jdk().ok()
+    } else {
+        Some(jdk().map_err(failed)?)
+    };
+    let command = found_engine().map_err(failed)?;
+    Ok(Engine { command, jdk })
 }
 
 fn found_engine() -> Result<PathBuf, String> {
@@ -317,7 +335,6 @@ fn found_engine() -> Result<PathBuf, String> {
     if command.is_file() {
         return Ok(command);
     }
-    jdk()?;
     match fetch(&home, &version, &releases) {
         Ok(()) => Ok(command),
         Err(error) => {
@@ -344,9 +361,15 @@ fn meanwhile(own: &str, asked: bool, kept: &[String]) -> Option<String> {
 
 /// Runs the Java edition with `args`, as they were given: its output and exit status are the
 /// command's. On Unix it takes this process's place, so signals reach it as they would directly.
-pub fn forward(command: &Path, args: &[String]) -> ExitCode {
+/// It runs on `engine`'s JDK, through `MUTASTIC_JAVA_HOME`, and the project's build on the
+/// `JAVA_HOME` and `PATH` this was given, which it keeps.
+pub fn forward(engine: &Engine, args: &[String]) -> ExitCode {
+    let command = engine.command.as_path();
     let mut process = Command::new(command);
     process.args(args);
+    if let Some(jdk) = &engine.jdk {
+        process.env("MUTASTIC_JAVA_HOME", jdk);
+    }
     // The JDK can ask whether stdin and stdout are a terminal, not stderr, where progress goes: so
     // it's told, unless whoever ran this already said.
     if std::env::var_os("MUTASTIC_STDERR_TTY").is_none() {
@@ -386,38 +409,234 @@ pub fn forward(command: &Path, args: &[String]) -> ExitCode {
 
 /// The JDK's feature version, from what `java -XshowSettings:properties -version` prints.
 fn feature(printed: &str) -> Option<u32> {
+    setting(printed, "java.specification.version")?.parse().ok()
+}
+
+/// A setting `java -XshowSettings:properties -version` prints: `java.home = /jdk`.
+fn setting<'a>(printed: &'a str, name: &str) -> Option<&'a str> {
     printed.lines().find_map(|line| {
         line.trim()
-            .strip_prefix("java.specification.version = ")?
-            .trim()
-            .parse()
-            .ok()
+            .strip_prefix(name)?
+            .trim_start()
+            .strip_prefix('=')
+            .map(str::trim)
     })
 }
 
-/// Checks there's a JDK the Java edition runs on, through `JAVA_HOME` or the `PATH`, before
-/// anything is downloaded for it.
-fn jdk() -> Result<(), String> {
-    let java = match std::env::var_os("JAVA_HOME").filter(|home| !home.is_empty()) {
-        Some(home) => Path::new(&home).join("bin").join("java"),
-        None => PathBuf::from("java"),
-    };
-    let found = Command::new(&java)
+/// The feature version in a JDK's `release` file: 25 for `JAVA_VERSION="25.0.1"`, 8 for `"1.8.0"`.
+fn released(release: &str) -> Option<u32> {
+    let version = release.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix("JAVA_VERSION=\"")
+            .map(|rest| rest.trim_end_matches('"'))
+    })?;
+    let version = version.strip_prefix("1.").unwrap_or(version);
+    let digits: String = version.chars().take_while(char::is_ascii_digit).collect();
+    digits.parse().ok()
+}
+
+const JAVA: &str = if cfg!(windows) { "java.exe" } else { "java" };
+const JAVAC: &str = if cfg!(windows) { "javac.exe" } else { "javac" };
+
+/// What `java` says of itself: its feature version and its home.
+fn asked(java: &Path) -> Option<(u32, PathBuf)> {
+    let output = Command::new(java)
         .args(["-XshowSettings:properties", "-version"])
         .output()
-        .ok()
-        .and_then(|output| feature(&String::from_utf8_lossy(&output.stderr)));
-    match found {
-        Some(version) if version >= JDK => Ok(()),
-        Some(version) => Err(format!(
-            "this is a Java project, and mutastic's Java edition runs on JDK {JDK}, but the java \
-             found is JDK {version}: set JAVA_HOME to a JDK {JDK}, then run mutastic again"
-        )),
-        None => Err(format!(
-            "this is a Java project, and mutastic's Java edition runs on JDK {JDK}, but no java \
-             was found: install a JDK {JDK} and set JAVA_HOME to it, then run mutastic again"
-        )),
+        .ok()?;
+    let printed = String::from_utf8_lossy(&output.stderr);
+    Some((
+        feature(&printed)?,
+        PathBuf::from(setting(&printed, "java.home")?),
+    ))
+}
+
+/// The feature version of the JDK at `home`: from its `release` file, which every JDK since 9 has,
+/// else from what its `java` says. None when it has no `java`.
+fn version_of(home: &Path) -> Option<u32> {
+    let java = home.join("bin").join(JAVA);
+    if !java.is_file() {
+        return None;
     }
+    match std::fs::read_to_string(home.join("release")) {
+        Ok(release) => released(&release),
+        Err(_) => asked(&java).map(|(version, _)| version),
+    }
+}
+
+/// The newest JDK the Java edition runs on among `candidates`, each a JDK or a macOS bundle of one:
+/// a full JDK before a runtime of the same version, as a plugin's operators may compile code.
+fn newest_jdk(candidates: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
+    candidates
+        .into_iter()
+        .map(|candidate| {
+            let bundled = candidate.join("Contents").join("Home");
+            if bundled.is_dir() {
+                bundled
+            } else {
+                candidate
+            }
+        })
+        .filter_map(|home| {
+            let version = version_of(&home).filter(|version| *version >= JDK)?;
+            let full = home.join("bin").join(JAVAC).is_file();
+            Some(((version, full), home))
+        })
+        .fold(
+            None,
+            |best: Option<((u32, bool), PathBuf)>, (rank, home)| match &best {
+                Some((top, _)) if *top >= rank => best,
+                _ => Some((rank, home)),
+            },
+        )
+        .map(|(_, home)| home)
+}
+
+/// The directories in `dir`, by name.
+fn children(dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut found: Vec<PathBuf> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .collect();
+    found.sort();
+    found
+}
+
+fn env_dir(name: &str) -> Option<PathBuf> {
+    std::env::var_os(name)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+}
+
+/// Where JDKs are kept, each a directory of JDKs: SDKMAN's, asdf's, mise's, Gradle's, IntelliJ's,
+/// Homebrew's, macOS's and Linux's, or on Windows the vendors' installers' and Scoop's.
+fn installed(user: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let gradle = env_dir("GRADLE_USER_HOME").unwrap_or_else(|| user.join(".gradle"));
+    for jdks in children(&gradle.join("jdks")) {
+        found.extend(children(&jdks));
+        found.push(jdks);
+    }
+    found.extend(children(&user.join(".jdks")));
+    if cfg!(windows) {
+        for vendor in [
+            "Eclipse Adoptium",
+            "Java",
+            "Microsoft",
+            "Zulu",
+            "Amazon Corretto",
+            "BellSoft",
+            "Semeru",
+        ] {
+            if let Some(programs) = env_dir("ProgramFiles") {
+                found.extend(children(&programs.join(vendor)));
+            }
+        }
+        let scoop = env_dir("SCOOP").unwrap_or_else(|| user.join("scoop"));
+        found.extend(
+            children(&scoop.join("apps"))
+                .into_iter()
+                .map(|app| app.join("current")),
+        );
+        return found;
+    }
+    let sdkman = env_dir("SDKMAN_DIR").unwrap_or_else(|| user.join(".sdkman"));
+    found.extend(children(&sdkman.join("candidates").join("java")));
+    let asdf = env_dir("ASDF_DATA_DIR").unwrap_or_else(|| user.join(".asdf"));
+    found.extend(children(&asdf.join("installs").join("java")));
+    let data = env_dir("XDG_DATA_HOME").unwrap_or_else(|| user.join(".local").join("share"));
+    let mise = env_dir("MISE_DATA_DIR").unwrap_or_else(|| data.join("mise"));
+    found.extend(children(&mise.join("installs").join("java")));
+    for brew in ["/opt/homebrew/opt", "/usr/local/opt"] {
+        found.extend(
+            children(Path::new(brew))
+                .into_iter()
+                .filter(|formula| {
+                    formula
+                        .file_name()
+                        .is_some_and(|name| name.to_string_lossy().starts_with("openjdk"))
+                })
+                .map(|formula| formula.join("libexec").join("openjdk.jdk")),
+        );
+    }
+    for system in [
+        "/Library/Java/JavaVirtualMachines",
+        "/usr/lib/jvm",
+        "/usr/java",
+        "/opt/java",
+    ] {
+        found.extend(children(Path::new(system)));
+    }
+    found
+}
+
+/// macOS's own answer, `/usr/libexec/java_home -v 25+`.
+fn macos_jdk() -> Option<PathBuf> {
+    let tool = Path::new("/usr/libexec/java_home");
+    if !tool.is_file() {
+        return None;
+    }
+    let output = Command::new(tool)
+        .args(["-v", &format!("{JDK}+")])
+        .output()
+        .ok()?;
+    let home = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (output.status.success() && !home.is_empty()).then(|| PathBuf::from(home))
+}
+
+/// Where `jdk` looks, as its error says it.
+const LOOKED: &str = "It looked at MUTASTIC_JAVA_HOME, JAVA_HOME, the java on the PATH, and where \
+                      SDKMAN, asdf, mise, Gradle, IntelliJ, Homebrew, macOS and Linux keep JDKs";
+const LOOKED_WINDOWS: &str = "It looked at MUTASTIC_JAVA_HOME, JAVA_HOME, the java on the PATH, \
+                              and where Gradle, IntelliJ, Scoop and the JDKs' installers keep them";
+
+/// The JDK the Java edition runs on, as its own start script finds one: `MUTASTIC_JAVA_HOME`, taken
+/// as it is; else the newest JDK 25 or later of `JAVA_HOME` and those installed where JDKs are
+/// kept, as a JDK reads class files only as new as itself and the project's may be newer than 25;
+/// else the `java` on the `PATH`, asked last, as asking starts a JVM. The project's build keeps the
+/// `JAVA_HOME` it was given.
+fn jdk() -> Result<PathBuf, String> {
+    if let Some(named) = env_dir("MUTASTIC_JAVA_HOME") {
+        return match version_of(&named) {
+            Some(version) if version >= JDK => Ok(named),
+            _ => Err(format!(
+                "MUTASTIC_JAVA_HOME is {}, which isn't a JDK {JDK} or later: point it at one, or \
+                 unset it for mutastic to find one",
+                named.display()
+            )),
+        };
+    }
+    let mut candidates: Vec<PathBuf> = env_dir("JAVA_HOME").into_iter().collect();
+    candidates.extend(macos_jdk());
+    if let Some(user) = user_home() {
+        candidates.extend(installed(&user));
+    }
+    if let Some(found) = newest_jdk(candidates) {
+        return Ok(found);
+    }
+    if let Some((version, home)) = asked(Path::new(JAVA)) {
+        if version >= JDK {
+            return Ok(home);
+        }
+    }
+    let looked = if cfg!(windows) {
+        LOOKED_WINDOWS
+    } else {
+        LOOKED
+    };
+    let export = if cfg!(windows) {
+        "$env:MUTASTIC_JAVA_HOME = \"<a JDK 25 or later>\""
+    } else {
+        "export MUTASTIC_JAVA_HOME=<a JDK 25 or later>"
+    };
+    Err(format!(
+        "mutastic runs on JDK {JDK} or later, and found none. {looked}.\nInstall a JDK {JDK}, or \
+         point mutastic at one. Your build keeps its own JAVA_HOME:\n  {export}"
+    ))
 }
 
 /// The latest release's version, from where the releases' `latest` page redirects to.
@@ -665,8 +884,61 @@ mod tests {
         let printed =
             "Property settings:\n    java.home = /jdk\n    java.specification.version = 25\n";
         assert_eq!(feature(printed), Some(25));
+        assert_eq!(setting(printed, "java.home"), Some("/jdk"));
         assert_eq!(feature("    java.specification.version = 17\n"), Some(17));
         assert_eq!(feature("Unable to locate a Java Runtime."), None);
+    }
+
+    #[test]
+    fn or_from_its_release_file() {
+        assert_eq!(
+            released("IMPLEMENTOR=\"x\"\nJAVA_VERSION=\"25.0.1\"\n"),
+            Some(25)
+        );
+        assert_eq!(released("JAVA_VERSION=\"26\"\n"), Some(26));
+        assert_eq!(released("JAVA_VERSION=\"1.8.0_392\"\n"), Some(8));
+        assert_eq!(released("nothing"), None);
+    }
+
+    /// A JDK of `version` at `home`: its release file, a `java`, and a `javac` when `full`.
+    fn fake_jdk(home: &Path, version: u32, full: bool) -> PathBuf {
+        let bin = home.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::write(
+            home.join("release"),
+            format!("JAVA_VERSION=\"{version}.0.1\"\n"),
+        )
+        .unwrap();
+        std::fs::write(bin.join(JAVA), "").unwrap();
+        if full {
+            std::fs::write(bin.join(JAVAC), "").unwrap();
+        }
+        home.to_path_buf()
+    }
+
+    /// The project's class files may be newer than 25, and a JDK reads only as new as itself: the
+    /// newest found runs the Java edition, a full JDK before a runtime, and never one older than 25.
+    #[test]
+    fn the_newest_jdk_found_runs_the_java_edition() {
+        let root = std::env::temp_dir().join(format!("mutastic-jdks-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let project = fake_jdk(&root.join("jdk-21"), 21, true);
+        let lts = fake_jdk(&root.join("jdk-25"), 25, true);
+        let runtime = fake_jdk(&root.join("jre-27"), 27, false);
+        let newest = fake_jdk(&root.join("jdk-27/Contents/Home"), 27, true);
+        let candidates = [&project, &lts, &runtime, &root.join("jdk-27")];
+
+        assert_eq!(
+            newest_jdk(candidates.iter().map(|p| p.to_path_buf())),
+            Some(newest)
+        );
+        assert_eq!(
+            newest_jdk([project.clone(), lts.clone(), runtime.clone()]),
+            Some(runtime)
+        );
+        assert_eq!(newest_jdk([project, root.join("none")]), None);
+        assert_eq!(newest_jdk([lts.clone()]), Some(lts));
+        std::fs::remove_dir_all(root).ok();
     }
 
     #[test]

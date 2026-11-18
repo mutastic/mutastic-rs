@@ -455,7 +455,8 @@ mutastic verify mb2f8ae57 --edition=rust
 - `MUTASTIC_COLUMNS`: The terminal's width, for the Java edition. The JDK can't ask the terminal, so `mutastic` sets it when it runs the Java edition on a terminal, unless it's set already.
 - `MUTASTIC_JAVA_ENGINE`: A Java edition's `bin/mutastic` to run instead, such as one built from its source. Nothing is fetched.
 - `MUTASTIC_JAVA_RELEASES`: Where the Java edition's releases are downloaded from, for a mirror. GitHub's releases of `mutastic/mutastic` unless set.
-- `JAVA_HOME`: The JDK the Java edition runs on. `java` on the `PATH` unless set.
+- `MUTASTIC_JAVA_HOME`: The JDK mutastic runs on, 25 or later. Unless set, the newest JDK 25 or later of `JAVA_HOME` and those installed where SDKMAN, asdf, mise, Gradle, IntelliJ, Homebrew, macOS and Linux keep them. Your build and its tests keep the `JAVA_HOME` and `PATH` you gave them.
+- `JAVA_HOME`: In a Maven or Gradle project, the JDK the build runs on. `java` on the `PATH` unless set. mutastic leaves it as it is for the build and its tests, and runs on it too when it's the newest JDK 25 or later found.
 
 ## Exit codes
 

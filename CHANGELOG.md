@@ -20,6 +20,19 @@ newest come first.
   it too, for `getFirst` and `getLast` and a `Deque`'s and a sorted collection's ends. See [Swap
   ends](docs/operators/library.md#swap-ends).
 
+### Fixes
+
+- **A Maven or Gradle build keeps its own JDK.** The Java edition needs JDK 25, so `mutastic`
+  had you set `JAVA_HOME` to one, and the Java edition then ran your build and its tests on it
+  too: an older Gradle can't run on JDK 25, and an older Mockito can't mock there. `mutastic`
+  now finds a JDK for the Java edition alone, `MUTASTIC_JAVA_HOME` or else the newest JDK 25 or
+  later of `JAVA_HOME` and those installed (SDKMAN, asdf, mise, Gradle's, IntelliJ's,
+  Homebrew's, macOS's and Linux's; on Windows, Gradle's, IntelliJ's, Scoop's and the
+  installers'), and hands it over as `MUTASTIC_JAVA_HOME`, leaving `JAVA_HOME` and `PATH` to the
+  build. It looks before it runs a kept release too, not only before a download, and says where
+  it looked when there's none. It needs the Java edition of this patch or later to keep the two
+  apart. See [One command, two editions](docs/editions.md#the-java-edition).
+
 ## 1.2.0 (2026-11-15)
 
 ### Scoring changes
