@@ -133,7 +133,8 @@ the format is `--format`, then `MUTASTIC_FORMAT`, then `MUTASTIC_AGENT`, then wh
 terminal.
 
 In a Maven or Gradle project, `MUTASTIC_VERSION`, `MUTASTIC_HOME`, `MUTASTIC_JAVA_ENGINE` and
-`MUTASTIC_JAVA_RELEASES` say which Java edition runs, and where it's kept: see
+`MUTASTIC_JAVA_RELEASES` say which Java edition runs, and where it's kept, and `MUTASTIC_JAVA_HOME`
+the JDK it runs on: see
 [One command, two editions](../editions.md#the-java-edition).
 
 ## Ignoring one mutant

@@ -36,11 +36,12 @@ fn executable(path: &Path, text: &str) {
 }
 
 /// A stand-in for the Java edition: it writes its arguments, one a line, where `RECORD` says, and
-/// exits with `FAKE_EXIT`.
+/// the JDK it was given and the build's `JAVA_HOME` beside them, and exits with `FAKE_EXIT`.
 const ENGINE: &str = "#!/bin/sh\n\
     if [ \"$1\" = --version ]; then echo 'mutastic 9.9.9'; exit 0; fi\n\
     printf '%s\\n' \"$@\" > \"$RECORD\"\n\
     printf '%s' \"$MUTASTIC_STDERR_TTY\" > \"$RECORD.tty\"\n\
+    printf '%s\\n%s\\n' \"$MUTASTIC_JAVA_HOME\" \"$JAVA_HOME\" > \"$RECORD.jdk\"\n\
     exit \"${FAKE_EXIT:-0}\"\n";
 
 /// The binary, with none of the settings a person's environment might hold.
@@ -52,6 +53,7 @@ fn mutastic(dir: &Path, args: &[&str]) -> Command {
         .env_remove("MUTASTIC_JAVA_ENGINE")
         .env_remove("MUTASTIC_VERSION")
         .env_remove("MUTASTIC_JAVA_RELEASES")
+        .env_remove("MUTASTIC_JAVA_HOME")
         .env("MUTASTIC_HOME", dir.join("home"))
         .env("NO_COLOR", "1");
     command
@@ -357,6 +359,12 @@ fn the_java_edition_is_fetched_once_checked_and_kept() {
     let (output, given) = releases.run(&shop, &["verify", "m855c8e3c"], &java);
     assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
     assert_eq!(given.unwrap(), ["verify", "m855c8e3c"]);
+    // The Java edition runs on a JDK 25 or later found for it, the newest, which may be this
+    // machine's own; the build keeps the JAVA_HOME it was given.
+    let jdk = std::fs::read_to_string(shop.join("record.jdk")).unwrap();
+    let (engine_jdk, build_jdk) = jdk.split_once('\n').unwrap();
+    assert!(!engine_jdk.is_empty(), "{jdk}");
+    assert_eq!(build_jdk.trim_end(), releases.jdk.display().to_string());
     assert!(text(&output.stderr).contains(&format!("fetches its Java edition, {java}")));
     assert!(home.join(format!("mutastic-{java}/bin/mutastic")).is_file());
     let left: Vec<_> = std::fs::read_dir(&home)
@@ -400,12 +408,54 @@ fn a_download_that_fails_its_checksum_or_a_jdk_too_old_keeps_nothing() {
 
     // The JDK is checked before anything is downloaded: there's no 9.9.7 to download.
     let old = Releases::new(&root.join("old"), 17);
-    let (output, given) = old.run(&shop, &["run"], "9.9.7");
-    assert_eq!((output.status.code(), given), (Some(2), None));
+    let record = shop.join("record");
+    let output = mutastic(&shop, &["run"])
+        .env("MUTASTIC_VERSION", "9.9.7")
+        .env("MUTASTIC_JAVA_RELEASES", &old.url)
+        .env("MUTASTIC_JAVA_HOME", &old.jdk)
+        .env("RECORD", &record)
+        .output()
+        .unwrap();
+    assert_eq!((output.status.code(), recorded(&record)), (Some(2), None));
     assert!(
-        text(&output.stderr).contains("the java found is JDK 17: set JAVA_HOME to a JDK 25"),
+        text(&output.stderr).contains(&format!(
+            "MUTASTIC_JAVA_HOME is {}, which isn't a JDK 25 or later: point it at one, or unset it",
+            old.jdk.display()
+        )),
         "{}",
         text(&output.stderr)
+    );
+}
+
+/// `MUTASTIC_JAVA_HOME` is taken as it is, and the build keeps its own `JAVA_HOME`.
+#[test]
+fn mutastic_java_home_runs_the_java_edition_and_the_build_keeps_its_own() {
+    let root = scratch("named-jdk");
+    let shop = root.join("shop");
+    write(&shop.join("pom.xml"), "<project/>");
+    let releases = Releases::new(&root, 25);
+    let named = Releases::new(&root.join("named"), 26).jdk;
+    // Read from its release file, as a real JDK's is: no script to run while another test forks.
+    write(&named.join("release"), "JAVA_VERSION=\"26.0.1\"\n");
+    let java = format!(
+        "{}.{}.9",
+        env!("CARGO_PKG_VERSION_MAJOR"),
+        env!("CARGO_PKG_VERSION_MINOR")
+    );
+    releases.publish(&java, None);
+    let record = shop.join("record");
+    let output = mutastic(&shop, &["run"])
+        .env("MUTASTIC_VERSION", &java)
+        .env("MUTASTIC_JAVA_RELEASES", &releases.url)
+        .env("MUTASTIC_JAVA_HOME", &named)
+        .env("JAVA_HOME", root.join("jdk17"))
+        .env("RECORD", &record)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0), "{}", text(&output.stderr));
+    assert_eq!(
+        std::fs::read_to_string(shop.join("record.jdk")).unwrap(),
+        format!("{}\n{}\n", named.display(), root.join("jdk17").display())
     );
 }
 
