@@ -161,7 +161,8 @@ checks "new commit in the older style" 1 "Keep the exit status, in the older sty
 # asked for. FAKE_QUEUE says whether main has a merge queue, FAKE_SQUASH what the squash commit's
 # body is (BLANK or PR_BODY), FAKE_QUEUED whether #59 is in it already, and FAKE_LANDED how the
 # wait ends: MERGED, or OPEN for a pull request the queue dropped. FAKE_ENQUEUE=refused has GitHub
-# refuse to queue it, as for checks still running.
+# refuse to queue it, as for checks still running. FAKE_REQUIRED is the required checks' status,
+# when it differs from every check's.
 bin=$(mktemp -d)
 trap 'rm -f "$message" "$message.err"; rm -rf "$repo" "$bin"' EXIT
 cat > "$bin/gh" <<'GH'
@@ -183,7 +184,12 @@ case "$1 $2" in
     ;;
   "api repos/mutastic/example/commits/4d5e6f") echo "the commit on main" ;;
   "pr view") echo "the description" ;;
-  "pr checks") echo "messages: status $FAKE_STATUS"; exit "$FAKE_STATUS" ;;
+  "pr checks")
+    case "$*" in
+      *--required*) echo "messages: status ${FAKE_REQUIRED:-$FAKE_STATUS}"; exit "${FAKE_REQUIRED:-$FAKE_STATUS}" ;;
+      *) echo "messages: status $FAKE_STATUS"; exit "$FAKE_STATUS" ;;
+    esac
+    ;;
   "pr edit" | "pr merge")
     printf '%s\n' "$*" >> "$FAKE_MERGE"
     while [ "$#" -gt 0 ]; do
@@ -208,7 +214,7 @@ merged() {
   rm -f "$FAKE_MERGE"
   status=0
   FAKE_TITLE=$pr_title FAKE_STATUS=$checks FAKE_QUEUE=${queue:-false} FAKE_SQUASH=${squash:-BLANK} \
-    FAKE_QUEUED=${queued:-false} FAKE_LANDED=${landed:-MERGED} FAKE_ENQUEUE=${enqueue:-} PATH="$bin:$PATH" \
+    FAKE_REQUIRED=${required:-} FAKE_QUEUED=${queued:-false} FAKE_LANDED=${landed:-MERGED} FAKE_ENQUEUE=${enqueue:-} PATH="$bin:$PATH" \
     sh ./merge-pr "$@" > "$message" 2>&1 || status=$?
   if [ -f "$FAKE_MERGE" ]; then
     [ "$expected_status" -eq 0 ] || [ "${landed:-}" = OPEN ] || echo "merged anyway" >> "$message"
@@ -269,7 +275,11 @@ merged "queue, already queued" 0 "already queued" "$title" 0 59
 unmerged "queue, already queued, not again" "enqueuePullRequest"
 merged "queue, already queued, --wait" 0 "landed on main as 4d5e6f" "$title" 0 --wait 59
 queued=
-merged "queue, --admin past it" 0 "--squash --delete-branch --admin" "$title" 1 --admin 59
+required=0
+merged "queue, a check not required failed" 0 "enqueuePullRequest id=PR_59 head=1a2b3c" "$title" 1 59
+required=
+merged "queue, --admin still queues" 0 "enqueuePullRequest id=PR_59 head=1a2b3c" "$title" 1 --admin 59
+unmerged "queue, --admin not past it" "pr merge"
 queue=
 
 echo "test-commit-msg: $cases cases, $failures failed"
