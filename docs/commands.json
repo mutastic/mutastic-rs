@@ -1175,9 +1175,14 @@
       "detail": "GitHub's releases of `mutastic/mutastic` unless set."
     },
     {
+      "name": "MUTASTIC_JAVA_HOME",
+      "meaning": "The JDK mutastic runs on, 25 or later",
+      "detail": "Unless set, the newest JDK 25 or later of `JAVA_HOME` and those installed where SDKMAN, asdf, mise, Gradle, IntelliJ, Homebrew, macOS and Linux keep them. Your build and its tests keep the `JAVA_HOME` and `PATH` you gave them."
+    },
+    {
       "name": "JAVA_HOME",
-      "meaning": "The JDK the Java edition runs on",
-      "detail": "`java` on the `PATH` unless set."
+      "meaning": "In a Maven or Gradle project, the JDK the build runs on",
+      "detail": "`java` on the `PATH` unless set. mutastic leaves it as it is for the build and its tests, and runs on it too when it's the newest JDK 25 or later found."
     }
   ],
   "exitCodes": [
