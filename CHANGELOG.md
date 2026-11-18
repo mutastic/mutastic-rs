@@ -20,6 +20,8 @@ newest come first.
   it too, for `getFirst` and `getLast` and a `Deque`'s and a sorted collection's ends. See [Swap
   ends](docs/operators/library.md#swap-ends).
 
+## 1.2.1 (2026-11-18)
+
 ### Fixes
 
 - **A Maven or Gradle build keeps its own JDK.** The Java edition needs JDK 25, so `mutastic`
