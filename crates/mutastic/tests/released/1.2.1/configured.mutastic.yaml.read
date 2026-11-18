@@ -1,0 +1,4 @@
+rule: mutate=false target=configured::generated::** reason=written by a code generator
+plugin: rules/trims.yaml
+operators: defaults
+operators: -mutastic/return-value
