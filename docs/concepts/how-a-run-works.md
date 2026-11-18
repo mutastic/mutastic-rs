@@ -6,7 +6,7 @@ once, with every mutant in it, and picks which one is live when the tests run. W
 
 <!-- output: concepts/run-progress -->
 ```text
-mutastic 1.2.0 · reading the Cargo package…
+mutastic 1.2.1 · reading the Cargo package…
 building  11 mutants in one build · 4 workers
 built     11 mutants in 306ms · 2 rounds (check and build), none withdrawn
 coverage  3 tests on rustc 1.99.1 in 2ms · 11 mutants

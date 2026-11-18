@@ -60,7 +60,7 @@ mutants as they are now. An id one digit, or one swap, from a mutant's is offere
 
 <!-- output: concepts/unknown-id -->
 ```text
-mutastic 1.2.0 · reading the Cargo package…
+mutastic 1.2.1 · reading the Cargo package…
 mutastic: m00000000 isn't a mutant of pricing. To see its mutants:
   mutastic mutants fixtures/pricing
 ```
