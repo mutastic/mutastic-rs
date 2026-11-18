@@ -2,7 +2,7 @@
 //! can give the expression another type than syntax shows (`a + b` to `a` when `a` is a
 //! reference), so some are unviable, and the schema's rollback takes them out.
 
-use super::operators::{counterpart, receiver_text};
+use super::operators::{counterpart, receiver_text, visibly_iterator};
 use super::stronger::is_pure;
 use super::*;
 use ra_ap_syntax::ast::HasArgList;
@@ -32,6 +32,18 @@ const INDEX_OF: &[(&str, &str)] = &[
     ("position", "rposition"),
     ("split_once", "rsplit_once"),
     ("match_indices", "rmatch_indices"),
+];
+
+/// The methods that take one end of a collection, and the other end's: a slice's, a `VecDeque`'s,
+/// a `BTreeMap`'s and a `BTreeSet`'s.
+const ENDS: &[(&str, &str)] = &[
+    ("first", "last"),
+    ("first_mut", "last_mut"),
+    ("front", "back"),
+    ("front_mut", "back_mut"),
+    ("first_key_value", "last_key_value"),
+    ("first_entry", "last_entry"),
+    ("pop_first", "pop_last"),
 ];
 
 impl Finder<'_> {
@@ -173,8 +185,8 @@ impl Finder<'_> {
         }
     }
 
-    /// `s.trim()` to `s`; `a.find(b)` to `a.rfind(b)`; `a.cmp(&b)` to `b.cmp(&a)`; a builder's
-    /// step left out; the last two arguments of a method swapped.
+    /// `s.trim()` to `s`; `a.find(b)` to `a.rfind(b)`; `v.first()` to `v.last()`; `a.cmp(&b)` to
+    /// `b.cmp(&a)`; a builder's step left out; the last two arguments of a method swapped.
     pub(super) fn rollback_method_call(
         &mut self,
         call: &ast::MethodCallExpr,
@@ -201,6 +213,10 @@ impl Finder<'_> {
                 after,
                 context,
             );
+        }
+        // An iterator's `last` has no `first`, so it's left alone rather than left to the build.
+        if let Some(after) = counterpart(ENDS, name).filter(|_| !visibly_iterator(&receiver)) {
+            self.swap_name(SWAP_ENDS, call.syntax(), name_range, name, after, context);
         }
         if let ("cmp" | "partial_cmp", [other]) = (name, args.as_slice()) {
             let (theirs, borrowed) = match other {

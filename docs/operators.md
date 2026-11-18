@@ -60,7 +60,8 @@ families are the Java edition's, with the Java edition's names wherever the lang
 | [`library/swap-string`](operators/library.md#swap-string) | `starts_with` and `ends_with`, `to_uppercase` and `to_lowercase`, `trim_start` and `trim_end`, `strip_prefix` and `strip_suffix` | defaults | [Library methods](operators/library.md) | the same |
 | [`library/swap-math`](operators/library.md#swap-math) | `min` and `max`, `floor` and `ceil` | defaults | [Library methods](operators/library.md) | the same |
 | [`library/swap-index-of`](operators/library.md#swap-index-of) | `find` and `rfind`, `position` and `rposition`, `split_once` and `rsplit_once` | stronger | [Library methods](operators/library.md) | the same |
-| [`library/reverse-ordering`](operators/library.md#reverse-ordering) | `a.cmp(&b)` to `b.cmp(&a)`; `.reverse()` left out | stronger | [Library methods](operators/library.md) | — |
+| [`library/reverse-ordering`](operators/library.md#reverse-ordering) | `a.cmp(&b)` to `b.cmp(&a)`; `.reverse()` left out | stronger | [Library methods](operators/library.md) | the same |
+| [`library/swap-ends`](operators/library.md#swap-ends) | `first` and `last`, `front` and `back`, and a `BTreeMap`'s and a `BTreeSet`'s ends | stronger | [Library methods](operators/library.md) | the same |
 | [`mutastic/string-constant`](operators/library.md#string-constant) | a string to `""`, and `""` to `"mutastic"` | stronger | [Library methods](operators/library.md) | the same |
 | [`mutastic/regex-constant`](operators/library.md#regex-constant) | a regular expression to one that differs and still compiles | extended | [Library methods](operators/library.md) | the same |
 | [`bigdecimal/remove-step`](operators/library.md#remove-step) | `round_dp(2)` and the like, left out | extended | [Library methods](operators/library.md) | the same, in a plugin |
@@ -85,16 +86,16 @@ type is rejected by the compiler and reported as unviable, never run.
 
 ## Parity with the Java edition
 
-The Java edition has 44 operator ids. **38 carry over** with the same meaning, all implemented;
-**6 don't**, for want of the language feature they change. mutastic for Rust adds **5 ids of its
+The Java edition has 46 operator ids. **40 carry over** with the same meaning, all implemented;
+**6 don't**, for want of the language feature they change. mutastic for Rust adds **4 ids of its
 own**, each in the family it fits, and implements one of the Java edition's plugin operators.
 
 - **Not carried over (6):** `mutastic/flip-increment` (no `++`; `+=` and `-=` are math's),
   `library/omit-argument` (no overloading), the three `predicate/*` ids (no `Predicate`
   combinators in std; `&&` and `!` inside a closure are logical connector's and other
   comparison's), `mutastic/drop-catch-type` (no multi-catch).
-- **Rust only (5):** `mutastic/unwrap-try`, `mutastic/remove-struct-field`,
-  `mutastic/default-parameter`, `library/reverse-ordering`, `mutastic/swap-break`.
+- **Rust only (4):** `mutastic/unwrap-try`, `mutastic/remove-struct-field`,
+  `mutastic/default-parameter`, `mutastic/swap-break`.
 - **From the Java edition's plugins:** `bigdecimal/remove-step`, for `rust_decimal`. The others
   don't carry: `bigdecimal/swap-arithmetic` and `swap-scaling` come free through math and
   swap-math, as `Decimal` uses operators; `kotlin/empty-return`'s empty values are Rust's own, and

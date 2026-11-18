@@ -46,6 +46,7 @@ const ROLLBACK: &[&str] = &[
     sites::SWAP_ARGUMENTS,
     sites::SWAP_INDEX_OF,
     sites::REVERSE_ORDERING,
+    sites::SWAP_ENDS,
     sites::REMOVE_SWITCH_ARM,
     sites::UNWRAP_TRY,
     sites::DEFAULT_PARAMETER,
