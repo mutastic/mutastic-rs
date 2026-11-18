@@ -62,11 +62,45 @@ jobs:
           name: mutastic
           path: bin
       - run: chmod +x bin/mutastic
+      # Two shares have lost their runner part-way ("hosted runner lost communication"), different
+      # ones each run. A sample a minute of memory, disk and the biggest processes says what ran
+      # out: a line in the log, which streams out while the runner lives, and the whole sample in
+      # resources.log, uploaded when the share ends.
       - name: Run share ${{ matrix.share }} of ${{ env.SHARES }}
-        run: >
-          bin/mutastic run crates/mutastic
-          --shard=${{ matrix.share }}/${{ env.SHARES }}
-          --workers=2 --threshold=0 --format=concise --progress=counter
+        run: |
+          sample() {
+            # The step runs under bash -e: a du of a directory not made yet
+            # would end the loop before its first sample.
+            set +e
+            while :; do
+              {
+                date -u +%T
+                free -m
+                df -h / /tmp
+                du -sh /tmp/mutastic-rs-tests /tmp/mutastic-rs-docs target 2>/dev/null
+                ps -eo rss,pcpu,etime,args --sort=-rss | head -12 | cut -c1-200
+                echo
+              } >> resources.log
+              echo "sample $(date -u +%T): mem $(free -m | awk '/Mem:/ {print $3"/"$2" MB"}')," \
+                "swap $(free -m | awk '/Swap:/ {print $3"/"$2" MB"}')," \
+                "disk $(df -h / | awk 'NR==2 {print $3"/"$2}')," \
+                "tmp $(du -sh /tmp/mutastic-rs-tests 2>/dev/null | cut -f1)"
+              sleep 60
+            done
+          }
+          sample &
+          trap 'kill %1' EXIT
+          bin/mutastic run crates/mutastic --shard=${{ matrix.share }}/${{ env.SHARES }} \
+            --workers=2 --threshold=0 --format=concise --progress=counter
+      - name: Out of memory kills
+        if: always()
+        run: sudo dmesg -T | grep -iE "out of memory|oom-kill|killed process" || echo none
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: resources-${{ matrix.share }}
+          path: resources.log
+          retention-days: 7
       # The tests' fixture copies are kept in the temporary directory, warm for the next mutant.
       - name: Disk used
         if: always()
