@@ -874,13 +874,35 @@ pub fn edges(x: i32) -> String {
     )
 }
 
+/// One end of a collection for the other: a slice's, a `VecDeque`'s, a `BTreeMap`'s and a
+/// `BTreeSet`'s.
+pub fn ends(x: i32) -> String {
+    use std::collections::{BTreeMap, BTreeSet, VecDeque};
+    let v = vec![x, 2, 7];
+    let first = v.first().copied();
+    let mut w = vec![1, x, 3];
+    if let Some(end) = w.last_mut() {
+        *end += 10;
+    }
+    let deque: VecDeque<i32> = VecDeque::from(vec![4, x, 9]);
+    let front = deque.front().copied();
+    let set: BTreeSet<i32> = [x, 0, 5].into_iter().collect();
+    let least = set.first().copied();
+    let mut popped: BTreeSet<i32> = [x, 1, 8].into_iter().collect();
+    let top = popped.pop_last();
+    let map: BTreeMap<i32, i32> = [(x, 1), (3, 2)].into_iter().collect();
+    let key = map.first_key_value().map(|(k, _)| *k);
+    let last = (0..x.max(1)).last();
+    format!("{first:?} {w:?} {front:?} {least:?} {top:?} {key:?} {last:?}")
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn probe() {
         for x in -6..10 {
             println!(
-                "{x}: {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {}",
+                "{x}: {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {}",
                 super::all(x),
                 super::more(x),
                 super::stronger(x),
@@ -891,7 +913,8 @@ mod tests {
                 super::edges(x),
                 super::unsigned_zero(x),
                 super::debug_checked(x),
-                super::unsigned_more(x)
+                super::unsigned_more(x),
+                super::ends(x)
             );
         }
     }
