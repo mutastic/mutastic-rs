@@ -62,10 +62,12 @@ jobs:
           name: mutastic
           path: bin
       - run: chmod +x bin/mutastic
-      # Two shares have lost their runner part-way ("hosted runner lost communication"), different
-      # ones each run. A sample a minute of memory, disk and the biggest processes says what ran
-      # out: a line in the log, which streams out while the runner lives, and the whole sample in
-      # resources.log, uploaded when the share ends.
+      # A sample a minute of memory, disk and the biggest processes: a line in the log, which
+      # streams out while the runner lives, and the whole sample in resources.log, uploaded when
+      # the share ends. Shares lost their runner when memory ran out: the truth test built its
+      # claims as one crate, 14 GB of rustc, again for each mutant that changed a claim, and a
+      # test stopped for time left its build running beside the next. Now the claims are built
+      # a hundred to a crate, and a stopped test's processes are stopped with it.
       - name: Run share ${{ matrix.share }} of ${{ env.SHARES }}
         run: |
           sample() {

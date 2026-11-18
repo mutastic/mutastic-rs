@@ -58,6 +58,9 @@ const ROLLBACK: &[&str] = &[
     sites::SWAP_PRESENT,
 ];
 
+/// How many claims go in one crate: rustc's memory and time grow faster than the crate does.
+const CLAIMS_PER_CRATE: usize = 100;
+
 /// How long a probe may run: a probe takes milliseconds, and the few mutants that loop forever
 /// wait this out, 15 of them on each run, so it's most of what the test takes. A second is still
 /// a hundred times a probe's own time on a slow machine.
@@ -124,33 +127,60 @@ fn every_card_claim_behaves_as_its_mutant_does() {
         .collect();
     let schema = built.binaries.iter().find(|b| b.kind == "lib").unwrap();
 
-    // The claims, each in a module of its own, in one crate.
+    // The claims, each in a module of its own, a hundred to a crate. One crate of them all took
+    // rustc 14 GB to build on Linux, and a mutant that changes one claim built it all again; this
+    // way it builds the crate that claim is in, in a few seconds, and no crate takes 1 GB.
     let file = &found.files[0];
     // Lints are capped in mutastic's build, so a claim that divides by a constant zero compiles
     // there and panics when run; here too.
     let allow = "#[allow(warnings, unconditional_panic, arithmetic_overflow)]";
-    let mut claims = format!("{allow}\nmod v0 {{\n{}\n}}\n", file.text);
+    let mut modules = vec![(0, format!("{allow}\nmod v0 {{\n{}\n}}\n", file.text))];
     for mutant in &viable {
         let (range, with) = mutant.claim();
         let mut text = file.text.clone();
         text.replace_range(range, &with);
-        claims.push_str(&format!(
-            "{allow}\nmod v{} {{\n{text}\n}}\n",
-            mutant.ordinal
+        modules.push((
+            mutant.ordinal,
+            format!("{allow}\nmod v{} {{\n{text}\n}}\n", mutant.ordinal),
         ));
     }
     let dir = claims_dir();
+    let chunks: Vec<&[(u32, String)]> = modules.chunks(CLAIMS_PER_CRATE).collect();
+    let members: Vec<String> = (0..chunks.len()).map(|i| format!("\"c{i}\"")).collect();
+    // No debug info: the claims are run, never debugged, and it's a third of rustc's memory.
     workspace::write_if_changed(
         &dir.join("Cargo.toml"),
-        "[package]\nname = \"claims\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n[workspace]\n",
+        &format!(
+            "[workspace]\nresolver = \"2\"\nmembers = [{}]\n\n[profile.dev]\ndebug = false\n",
+            members.join(", ")
+        ),
     )
     .unwrap();
-    workspace::write_if_changed(&dir.join("src/lib.rs"), &claims).unwrap();
+    let mut crate_of = BTreeMap::new();
+    for (i, chunk) in chunks.iter().enumerate() {
+        let member = dir.join(format!("c{i}"));
+        workspace::write_if_changed(
+            &member.join("Cargo.toml"),
+            &format!("[package]\nname = \"claims{i}\"\nversion = \"0.0.0\"\nedition = \"2021\"\n"),
+        )
+        .unwrap();
+        let text: String = chunk.iter().map(|(_, module)| module.as_str()).collect();
+        workspace::write_if_changed(&member.join("src/lib.rs"), &text).unwrap();
+        for (ordinal, _) in *chunk {
+            crate_of.insert(*ordinal, format!("claims{i}"));
+        }
+    }
     let output = Command::new(workspace::cargo())
-        .args(["test", "--no-run", "--lib", "--message-format=json"])
+        .args([
+            "test",
+            "--no-run",
+            "--workspace",
+            "--lib",
+            "--message-format=json",
+        ])
         .current_dir(&dir)
         .env("CARGO_TARGET_DIR", dir.join("target"))
-        // Incremental builds of a crate this size keep gigabytes, more with each change.
+        // Incremental builds of crates this size keep gigabytes, more with each change.
         .env("CARGO_INCREMENTAL", "0")
         .output()
         .unwrap();
@@ -159,17 +189,23 @@ fn every_card_claim_behaves_as_its_mutant_does() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let claims_binary = Binary {
-        target: "claims".into(),
-        kind: "lib".into(),
-        path: PathBuf::from(
-            String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-                .find_map(|message| message["executable"].as_str().map(str::to_string))
-                .unwrap(),
-        ),
-    };
+    let claims_binaries: BTreeMap<String, Binary> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter_map(|message| {
+            let target = message["target"]["name"].as_str()?.to_string();
+            let path = PathBuf::from(message["executable"].as_str()?);
+            Some((
+                target.clone(),
+                Binary {
+                    target,
+                    kind: "lib".into(),
+                    path,
+                },
+            ))
+        })
+        .collect();
+    let claims_binary = |ordinal: u32| &claims_binaries[&crate_of[&ordinal]];
 
     let cwd = project.copy_dir().join(&project.package_dir);
     let ordinals: Vec<u32> = std::iter::once(0)
@@ -183,7 +219,7 @@ fn every_card_claim_behaves_as_its_mutant_does() {
             &[("MUTASTIC_ACTIVE", ordinal.to_string())],
         );
         let claim = probe(
-            &claims_binary,
+            claims_binary(ordinal),
             &dir,
             &format!("v{ordinal}::tests::probe"),
             &[],
@@ -201,7 +237,7 @@ fn every_card_claim_behaves_as_its_mutant_does() {
             let active = [("MUTASTIC_ACTIVE", ordinal.to_string())];
             let mutant = probe_within(schema, &cwd, "tests::probe", &active, AGAIN_LIMIT);
             let test = format!("v{ordinal}::tests::probe");
-            let claim = probe_within(&claims_binary, &dir, &test, &[], AGAIN_LIMIT);
+            let claim = probe_within(claims_binary(ordinal), &dir, &test, &[], AGAIN_LIMIT);
             (ordinal, mutant, claim)
         })
         .collect();
