@@ -39,6 +39,11 @@ Expect your score to move, for this reason, not because your tests changed:
 
 ### Fixes
 
+- **A count of one reads as one.** The gate's pass said the tests `catch 1 of the 1 mutant`; it
+  now says they `catch the only mutant`, `catch all 6 mutants` when they catch every one, and
+  `catch 4 of the 6 mutants` otherwise. `1 of the baseline's mutants is caught now`, from a run
+  and from `baseline --prune`, and `removed 1 ignore that no longer holds`, from `ignore
+  --prune`, take their verb from the count too, as the Java edition's do.
 - **A test stopped for time takes the processes it started with it.** A mutant that made a test
   run past its time stopped the test process, and left whatever it had started running: a build,
   a server, a `sleep`. They went on taking memory and cores from the next mutants' tests, and on
