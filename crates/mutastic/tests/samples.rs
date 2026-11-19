@@ -4376,13 +4376,18 @@ fn a_threads_name_and_stack_are_arid_and_its_work_still_runs() {
         "a stack of zero runs: {:?}",
         on(12)
     );
-    for line in [21, 23] {
-        assert!(
-            on(line).iter().all(|(_, status, _)| status == "Survived"),
-            "{:?}",
-            on(line)
-        );
-    }
+    assert!(
+        on(21).iter().all(|(_, status, _)| status == "Survived"),
+        "{:?}",
+        on(21)
+    );
+    // The flag is set on a thread nothing waits for: whether the coverage pass sees it is a race,
+    // so it's made and runs, or isn't reached, but it's never skipped.
+    assert!(
+        !on(23).is_empty() && on(23).iter().all(|(_, status, _)| status != "Ignored"),
+        "{:?}",
+        on(23)
+    );
 
     std::fs::write(
         dir.join("mutastic.yaml"),
