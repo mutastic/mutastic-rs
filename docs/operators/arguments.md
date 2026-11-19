@@ -11,6 +11,7 @@ notice a value arriving wrong.
 | [`mutastic/null-parameter`](#null-parameter) | an `Option` parameter, `None` from the start of the function | stronger |
 | [`mutastic/drop-vararg`](#drop-vararg) | the last value of an array or `vec!` passed to a call, left out | extended |
 | [`mutastic/default-parameter`](#default-parameter) | a parameter, its type's default from the start of the function | extended |
+| [`mutastic/boolean-constant`](#boolean-constant) | a `true` or `false` passed, bound, assigned or given to a field, to the other | stronger |
 
 Each card below comes from `mutastic run fixtures/operators` with these operators, on
 `src/arguments.rs`.
@@ -352,3 +353,65 @@ fn an_excited_greeting() {
 ```
 
 **Edition notes:** Rust only. The Java edition's nearest is [null parameter](#null-parameter).
+
+## Boolean constant
+
+`mutastic/boolean-constant`, in the `stronger` set. A `true` or `false` the code passes to a
+function, binds with `let`, assigns, or gives to a struct's field becomes the other. It goes
+unnoticed when no test depends on which it is.
+
+**The bug it stands for:** a flag set the wrong way: a call that should have asked for strict
+parsing, a field that starts `true` when it should start `false`. The compiler can't tell, and when
+the tests' values come out the same either way, nor can they.
+
+<!-- from: fixtures/operators/src/arguments.rs -->
+```rust
+/// The amount as a receipt shows it: always two decimal places.
+pub fn receipt(amount: f64) -> String {
+    shown(amount, true)
+}
+```
+
+<!-- from: fixtures/operators/src/arguments.rs -->
+```rust
+#[test]
+fn a_price_in_pence() {
+    assert_eq!(receipt(2.25), "2.25");
+}
+```
+
+The test's price has two decimal places already, so it reads the same either way:
+
+<!-- output: operators/arguments/boolean-constant -->
+```text
+  ✗ MISSED  tests pass even when true becomes false in receipt()
+    ┌─ src/arguments.rs:37
+    │
+ 36 │ pub fn receipt(amount: f64) -> String {
+ 37 │     shown(amount, true)
+    │                   ^^^^ changed to false
+ 38 │ }
+    │
+    = mutant  - shown(amount, true)
+              + shown(amount, false)
+    = note: covered by arguments::tests::a_price_in_pence (its 1 covering test still passes)
+    = help: use inputs where true and false differ, and assert what receipt() does
+
+    done when  mutastic verify m3fbe28af fixtures/operators passes
+    reproduce  mutastic run --only=m3fbe28af fixtures/operators
+```
+
+**The test that catches it:** one whose result depends on which way the flag is.
+
+<!-- added to: fixtures/operators/src/arguments.rs -->
+```rust
+#[test]
+fn a_whole_number_of_pounds_shows_its_pence() {
+    assert_eq!(receipt(2.5), "2.50");
+}
+```
+
+**Edition notes:** a returned `true` or `false` is return value's, and one in a condition, `while
+true` or `a && true`, isn't changed. The Java edition has this operator too,
+`mutastic/boolean-constant`, for an argument, a field or a local `boolean`, and skips a variable
+nothing reads.

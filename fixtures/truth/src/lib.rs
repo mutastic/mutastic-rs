@@ -907,13 +907,42 @@ pub fn euclid(x: i32) -> String {
     format!("{quotient} {remainder} {fraction} {bucket}")
 }
 
+pub struct Options {
+    strict: bool,
+}
+
+fn signed(x: i32, negative: bool) -> i32 {
+    if negative {
+        -x
+    } else {
+        x
+    }
+}
+
+/// A `true` or `false` passed, bound, assigned or given to a field; and one in a condition, and
+/// one returned, which aren't changed.
+pub fn flags(x: i32) -> String {
+    let options = Options { strict: false };
+    let mut seen = true;
+    if x > 2 {
+        seen = false;
+    }
+    let turned = signed(x, true);
+    let both = x > 0 && true;
+    format!("{} {seen} {turned} {both} {}", options.strict, always())
+}
+
+fn always() -> bool {
+    true
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn probe() {
         for x in -6..10 {
             println!(
-                "{x}: {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {}",
+                "{x}: {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {}",
                 super::all(x),
                 super::more(x),
                 super::stronger(x),
@@ -926,7 +955,8 @@ mod tests {
                 super::debug_checked(x),
                 super::unsigned_more(x),
                 super::ends(x),
-                super::euclid(x)
+                super::euclid(x),
+                super::flags(x)
             );
         }
     }
