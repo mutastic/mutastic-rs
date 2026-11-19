@@ -40,6 +40,15 @@ pub const ONLY_WRITES_OUTPUT: &str = "arid: only writes output";
 /// edition skips a removed `Objects.requireNonNull(x)`.
 pub const ONLY_CHECKS_A_VALUE: &str = "arid: only checks the value is there";
 
+/// The arid skip of a thread's name, as the Java edition words it.
+pub const NAMES: &str = "arid: only names a thread";
+
+/// The arid skip of a thread's stack size.
+pub const STACK: &str = "arid: only sizes a thread's stack";
+
+/// The arid skip of how long a pool's idle threads live.
+pub const KEEP_ALIVE: &str = "arid: only sets how long idle threads live";
+
 /// The rules this edition has.
 pub const RULES: &[Rule] = &[
     Rule {
@@ -55,6 +64,27 @@ pub const RULES: &[Rule] = &[
         description: "A call that only checks a value is there, its result unused, removed: `Objects.requireNonNull(x)` or `x.getClass()` in Java, `x.unwrap()` or `x.expect(…)` in Rust.",
         reasons: &[ONLY_CHECKS_A_VALUE],
         example: "order.unwrap();",
+    },
+    Rule {
+        id: "mutastic:thread-names",
+        scope: Scope::Site,
+        description: "A thread's name, or the names a pool gives its threads: they show in thread dumps and logs, not in what runs or when.",
+        reasons: &[NAMES],
+        example: "let builder = thread::Builder::new().name(\"squarer\".into());",
+    },
+    Rule {
+        id: "mutastic:stack-sizes",
+        scope: Scope::Site,
+        description: "The size of a new thread's stack, while it stays above zero.",
+        reasons: &[STACK],
+        example: "let builder = thread::Builder::new().stack_size(64 * 1024);",
+    },
+    Rule {
+        id: "mutastic:keep-alive",
+        scope: Scope::Site,
+        description: "How long a pool's idle threads live before they end, while it stays above zero.",
+        reasons: &[KEEP_ALIVE],
+        example: "let runtime = Builder::new_multi_thread().thread_keep_alive(Duration::from_secs(5 * 60));",
     },
 ];
 

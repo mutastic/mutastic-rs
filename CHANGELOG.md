@@ -10,6 +10,8 @@ newest come first.
 - **Bring back one arid rule: `arid:` on a `mutate:` rule.** `arid: [mutastic:output]` under a
   `mutate:` rule takes back only that rule's skips in the code it covers; without it, every arid
   skip, as before. An id mutastic doesn't have is refused, with the one meant when it's close.
+  The thread settings' skips have ids too: `mutastic:thread-names`, `mutastic:stack-sizes` and
+  `mutastic:keep-alive`.
 - **A skip says which arid rule made it, and how to undo it.** `explain` on a mutant an arid rule
   skipped has an `arid` row: the rule's id, what it skips, a link to its docs and the
   `mutastic.yaml` rule to copy that runs it. The HTML report says the same. Events carry the id as
