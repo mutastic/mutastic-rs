@@ -188,7 +188,7 @@ one too; only a task that changed nothing skips them:
 
 <!-- output: test-first-agent/check -->
 ```text
-mutastic gate: passed: the tests catch 5 of the 5 mutants on the lines the task changed
+mutastic gate: passed: the tests catch all 5 mutants on the lines the task changed (operators: defaults)
 ```
 
 ## What the gate holds it to

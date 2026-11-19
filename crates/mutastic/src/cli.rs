@@ -1154,6 +1154,31 @@ fn under_the_baselines_operators(here: &std::path::Path, operators: &str) -> Res
     }
 }
 
+/// `1 of the baseline's mutants is caught now`, `2 of the baseline's mutants are caught now`.
+fn caught_now(count: usize) -> String {
+    format!(
+        "{count} of the baseline's mutants {} caught now",
+        if count == 1 { "is" } else { "are" }
+    )
+}
+
+/// How many of the mutants the tests catch, as people say it: `catch the only mutant`, `catch all
+/// 6 mutants`, `catch 4 of the 6 mutants`.
+fn catches(caught: usize, scored: usize) -> String {
+    if scored == 1 {
+        return if caught == 1 {
+            "catch the only mutant".to_string()
+        } else {
+            "don't catch the only mutant".to_string()
+        };
+    }
+    if caught == scored {
+        format!("catch all {scored} mutants")
+    } else {
+        format!("catch {caught} of the {scored} mutants")
+    }
+}
+
 /// After a full run, how many of the baseline's mutants it found caught: they can be pruned. Not
 /// under other operators than the baseline's, where a mutant only those make would look caught.
 fn baseline_note(report: &engine::Report, operators: &str) {
@@ -1165,7 +1190,9 @@ fn baseline_note(report: &engine::Report, operators: &str) {
     let caught = baseline::caught_now(report, &older).len();
     if !older.is_empty() && caught > 0 {
         stdout_line!(
-            "note: {caught} of the baseline's mutants are caught now: `mutastic baseline --prune` drops them"
+            "note: {}: `mutastic baseline --prune` drops {}",
+            caught_now(caught),
+            if caught == 1 { "it" } else { "them" }
         );
     }
 }
@@ -1203,7 +1230,9 @@ fn baseline_command(parsed: &Parsed) -> Result<ExitCode, Failure> {
         let caught = baseline::caught_now(&report, &baseline::ids(here));
         let dropped = baseline::prune(here, &caught).map_err(|error| Code::Other.with(error))?;
         stdout_line!(
-            "mutastic: {dropped} of the baseline's mutants are caught now, and are dropped from {}",
+            "mutastic: {}, and {} dropped from {}",
+            caught_now(dropped),
+            if dropped == 1 { "is" } else { "are" },
             baseline::FILE
         );
     } else {
@@ -1714,9 +1743,10 @@ fn prune(dir: &str) -> Result<ExitCode, Failure> {
         .collect();
     ids.sort();
     stdout_line!(
-        "mutastic: removed {} ignore{} that no longer hold: {}\n  from {}\n  to undo: git checkout -- {}",
+        "mutastic: removed {} ignore{} that no longer {}: {}\n  from {}\n  to undo: git checkout -- {}",
         stale.len(),
         if stale.len() == 1 { "" } else { "s" },
+        if stale.len() == 1 { "holds" } else { "hold" },
         ids.join(", "),
         ignores::FILE,
         ignores::FILE
@@ -2285,9 +2315,9 @@ fn gate_verdict(
                 ),
             ));
         }
-        let scored = crate::progress::count(scored, "mutant");
         return Ok(gate::Verdict::pass(format!(
-            "mutastic gate: passed: the tests catch {caught} of the {scored} on the lines the task changed (operators: {}){waiting}{backlog}",
+            "mutastic gate: passed: the tests {} on the lines the task changed (operators: {}){waiting}{backlog}",
+            catches(caught, scored),
             parsed.operators_chosen
         )));
     }
@@ -2531,6 +2561,19 @@ fn build(parsed: &Parsed) -> Result<ExitCode, Failure> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A count of one reads as one, as people say it: the gate's pass and the baseline's catches.
+    #[test]
+    fn a_count_of_one_reads_as_one() {
+        assert_eq!(catches(1, 1), "catch the only mutant");
+        assert_eq!(catches(0, 1), "don't catch the only mutant");
+        assert_eq!(catches(6, 6), "catch all 6 mutants");
+        assert_eq!(catches(4, 6), "catch 4 of the 6 mutants");
+        assert_eq!(catches(0, 2), "catch 0 of the 2 mutants");
+        assert_eq!(caught_now(1), "1 of the baseline's mutants is caught now");
+        assert_eq!(caught_now(2), "2 of the baseline's mutants are caught now");
+        assert_eq!(caught_now(0), "0 of the baseline's mutants are caught now");
+    }
 
     /// A command line's words, `mutastic` left off, as a shell gives them: split at spaces, except
     /// inside double quotes, which are taken away.
