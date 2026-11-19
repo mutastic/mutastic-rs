@@ -4402,3 +4402,87 @@ fn the_gate_holds_a_task_to_the_operators_it_opened_with() {
         );
     }
 }
+
+/// A thread's name and a stack size that stays above zero are arid on a real build, as in the Java
+/// edition: skipped, and said why. The spawn, the flag it sets and a stack of zero run. A `mutate:`
+/// rule brings the arid ones back, and they build and run: no test of the fixture sees them.
+#[test]
+fn a_threads_name_and_stack_are_arid_and_its_work_still_runs() {
+    let dir = copy_of("threads", "threads");
+    let path = dir.display().to_string();
+    let run = |dir: &str| {
+        let (_, jsonl) = mutastic(&[
+            "run",
+            dir,
+            "--operators=all",
+            "--format=jsonl",
+            "--report=none",
+        ]);
+        events(&jsonl)
+            .into_iter()
+            .filter(|e| e["reason"] == "mutant-finished")
+            .map(|e| {
+                (
+                    e["location"]["line"].as_u64().unwrap(),
+                    e["status"].as_str().unwrap().to_string(),
+                    e["statusReason"].as_str().unwrap_or_default().to_string(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let found = run(&path);
+    let on = |line: u64| -> Vec<&(u64, String, String)> {
+        found.iter().filter(|(at, ..)| *at == line).collect()
+    };
+    let names = "arid: only names a thread";
+    let stack = "arid: only sizes a thread's stack";
+    for line in [11, 22] {
+        assert!(
+            on(line)
+                .iter()
+                .all(|(_, status, why)| status == "Ignored" && why == names),
+            "{:?}",
+            on(line)
+        );
+    }
+    assert_eq!(
+        on(12).iter().filter(|(.., why)| why == stack).count(),
+        8,
+        "{:?}",
+        on(12)
+    );
+    assert!(
+        on(12).iter().any(|(_, status, _)| status == "Survived"),
+        "a stack of zero runs: {:?}",
+        on(12)
+    );
+    assert!(
+        on(21).iter().all(|(_, status, _)| status == "Survived"),
+        "{:?}",
+        on(21)
+    );
+    // The flag is set on a thread nothing waits for: whether the coverage pass sees it is a race,
+    // so it's made and runs, or isn't reached, but it's never skipped.
+    assert!(
+        !on(23).is_empty() && on(23).iter().all(|(_, status, _)| status != "Ignored"),
+        "{:?}",
+        on(23)
+    );
+
+    std::fs::write(
+        dir.join("mutastic.yaml"),
+        "rules:\n  - mutate: threads::**\n    reason: names are a contract here\n",
+    )
+    .unwrap();
+    let kept = run(&path);
+    assert!(
+        kept.iter().all(|(.., why)| !why.starts_with("arid:")),
+        "{kept:?}"
+    );
+    assert!(
+        kept.iter()
+            .filter(|(line, ..)| [11, 22].contains(line))
+            .all(|(_, status, _)| status == "Survived"),
+        "{kept:?}"
+    );
+}
