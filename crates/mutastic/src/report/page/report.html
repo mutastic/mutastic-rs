@@ -542,12 +542,22 @@ function nodeAt(dir){
 }
 
 // ---------- commands ----------
+// How a command of mutastic's starts: `mutastic`, `cargo mutastic`, or the Gradle or Maven the run
+// used, as the Java edition writes it. That's the tool by its name (`mvn`, `gradle`, `gradlew`), or
+// a path to a wrapper or the tool: from here (`./gradlew`, `../../mvnw`) or absolute
+// (`/repo/gradlew`, `/opt/gradle/bin/gradle`), after `sh` when the wrapper isn't executable; on
+// Windows `.\gradlew.bat` or `C:\repo\mvnw.cmd`. A path is plain names between its separators, so
+// nothing in it is a shell's or cmd's to expand (no `$`, `%`, quote or space).
+var LAUNCHER = /^(?:mutastic|cargo mutastic|mvn|gradle|gradlew|(?:sh )?(?:\.\.?)?\/(?:[\w.@+=,~-]+\/)*(?:gradlew|mvnw)|\/(?:[\w.@+=,~-]+\/)*(?:gradle|mvn)|(?:\.\.?|[A-Za-z]:)\\(?:[\w.@+=,~-]+\\)*(?:gradlew\.bat|mvnw\.cmd)) /;
 // The commands for a mutant: the run's own (`mutastic.commands`, written for its project and as
 // mutastic was started), its id put where `<id>` is. Only an id that looks like mutastic's goes in,
-// and only into a template that's one command of mutastic's, the command line's or a build tool's.
+// and only into a template that's one command of mutastic's, the command line's or a build tool's:
+// it starts with a LAUNCHER, and nothing after that can start another command.
 function command(template, id){
-  var bare = template.replace(/<[^<>\n]*>/g, '').replace(/'(?:[^']|'\\'')*'/g, '');
-  if (template.indexOf('<id>') < 0 || /[\n\r;&|`$\\<>]/.test(bare) || !/^(mutastic|cargo mutastic|mvn|\.\/gradlew|gradlew|gradle) /.test(template)) return null;
+  var start = LAUNCHER.exec(template);
+  if (!start) return null;
+  var bare = template.slice(start[0].length).replace(/<[^<>\n]*>/g, '').replace(/'(?:[^']|'\\'')*'/g, '');
+  if (template.indexOf('<id>') < 0 || /[\n\r;&|`$\\<>]/.test(bare)) return null;
   return template.split('<id>').join(id);
 }
 // A word as a shell takes it: as it is when it's only safe characters, else in single quotes, a
