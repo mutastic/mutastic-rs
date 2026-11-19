@@ -56,7 +56,8 @@ that catches the third line's change verifies the third line's ids, and no other
 or adding one of them earlier in the function moves the count.
 
 When an id you kept stops working, `verify` says so, and ends in the command that lists the
-mutants as they are now. An id one digit, or one swap, from a mutant's is offered as that mutant's:
+mutants as they are now. An id one digit, or one swap, from a mutant's is offered as that mutant's,
+in your line with the id corrected:
 
 <!-- output: concepts/unknown-id -->
 ```text

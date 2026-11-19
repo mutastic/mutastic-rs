@@ -1,1 +1,2 @@
-mutastic: verify needs a mutant's id, m and eight hex digits as a card shows it, and fixtures/pricing is a directory: mutastic verify ID... [DIR], as in mutastic verify m1a2b3c4d fixtures/pricing
+mutastic: fixtures/pricing is a directory, not a mutant id. verify needs a mutant id first, an m and eight hex digits as a run prints them:
+  mutastic verify <id> fixtures/pricing

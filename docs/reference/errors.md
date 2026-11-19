@@ -100,8 +100,8 @@ mutastic runs the cargo CARGO names. Point it at one, or unset it to use the car
 
 ## `unknown-command`
 
-A command mutastic doesn't have. A close one is offered, never run, in your line with only that word
-changed; with none close, one line of usage.
+A command mutastic doesn't have, or `gate` without open, check or close. A close one is offered,
+never run, in your line with only that word changed; with none close, the command that lists them.
 
 ```sh
 mutastic rnu fixtures/pricing
@@ -116,7 +116,7 @@ mutastic: mutastic has no command rnu. There's one called run.
 ## `unknown-option`
 
 An option mutastic doesn't have, including a short one such as `-v`: its options are all long ones.
-A close one is offered in your line; with none close, the command's usage and its `--help`.
+A close one is offered in your line; with none close, the command that lists its options.
 
 ```sh
 mutastic run fixtures/pricing --formt=agent
@@ -131,8 +131,9 @@ mutastic: run has no option --formt. There's one called --format.
 ## `option-value`
 
 A value an option doesn't take, or none where it needs one. The valid ones are listed, and a close
-one offered. A value goes after an `=` or a space, `--format=agent` or `--format agent`; only
-`--since`'s, which is optional, needs the `=`.
+one offered. With none given, the line follows with one to fill in, `--format=<format>`. A value
+goes after an `=` or a space, `--format=agent` or `--format agent`; only `--since`'s, which is
+optional, needs the `=`.
 
 ```sh
 mutastic run fixtures/pricing --vocabulary=clasic
@@ -140,7 +141,7 @@ mutastic run fixtures/pricing --vocabulary=clasic
 
 <!-- output: errors/option-value -->
 ```text
-mutastic: --vocabulary: clasic isn't one of plain or classic. There's one called classic.
+mutastic: --vocabulary has no value clasic. There's one called classic.
   mutastic run fixtures/pricing --vocabulary=classic
 ```
 
@@ -173,7 +174,8 @@ mutastic: mutants doesn't take fixtures/workspace: mutastic mutants [DIR]
 ## `needs-id`
 
 A command that needs a mutant's id, `m` and eight hex digits as a card shows it, given something
-else; or `ignore` without its reason.
+else; or `ignore` without its reason. It ends in your line with the `<id>`, or the `<why>`, to fill
+in.
 
 ```sh
 mutastic verify fixtures/pricing
@@ -181,13 +183,15 @@ mutastic verify fixtures/pricing
 
 <!-- output: errors/needs-id -->
 ```text
-mutastic: verify needs a mutant's id, m and eight hex digits as a card shows it, and fixtures/pricing is a directory: mutastic verify ID... [DIR], as in mutastic verify m1a2b3c4d fixtures/pricing
+mutastic: fixtures/pricing is a directory, not a mutant id. verify needs a mutant id first, an m and eight hex digits as a run prints them:
+  mutastic verify <id> fixtures/pricing
 ```
 
 ## `unknown-id`
 
 An id that's a mutant's shape, but no mutant of the package: kept from before the code changed, or
-mistyped. An id one digit, or one swap, from a mutant's is offered as that mutant's.
+mistyped. An id one digit, or one swap, from a mutant's is offered as that mutant's, in your line;
+with none close, it ends in the command that lists the mutants.
 
 ```sh
 mutastic verify mb2f8ae58 fixtures/pricing
@@ -195,8 +199,8 @@ mutastic verify mb2f8ae58 fixtures/pricing
 
 <!-- output: errors/unknown-id -->
 ```text
-mutastic: mb2f8ae58 isn't a mutant of pricing. There's one called mb2f8ae57. To see its mutants:
-  mutastic mutants fixtures/pricing
+mutastic: mb2f8ae58 isn't a mutant of pricing. There's one called mb2f8ae57.
+  mutastic verify mb2f8ae57 fixtures/pricing
 ```
 
 ## `config`

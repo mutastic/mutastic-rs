@@ -1,2 +1,2 @@
-mutastic: --vocabulary: clasic isn't one of plain or classic. There's one called classic.
+mutastic: --vocabulary has no value clasic. There's one called classic.
   mutastic run fixtures/pricing --vocabulary=classic

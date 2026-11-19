@@ -1469,17 +1469,21 @@ fn listed(module: &str, tests: &mut [String]) {
     tests.sort_by(|a, b| (!a.starts_with(&own), a).cmp(&(!b.starts_with(&own), b)));
 }
 
-/// `id` names no mutant of the package: one a digit or a swap away, if there is one, and the
-/// command that lists them all, without running anything.
+/// `id` names no mutant of the package: one a digit or a swap away, if there is one, with the
+/// line corrected to it; else the command that lists them all, without running anything.
 pub fn not_a_mutant(id: &str, package: &str, dir: &str, found: &Crate) -> Failure {
     let ids = found.mutants.iter().map(|mutant| mutant.id.as_str());
-    let close = crate::similar::closest_within(id, ids, 1).map_or(String::new(), |close| {
-        format!(" There's one called {close}.")
-    });
-    Code::UnknownId.with(format!(
-        "{id} isn't a mutant of {package}.{close} To see its mutants:\n  mutastic mutants {}",
-        crate::report::shell_word(dir)
-    ))
+    match crate::similar::closest_within(id, ids, 1) {
+        Some(close) => Code::UnknownId
+            .with(format!(
+                "{id} isn't a mutant of {package}. There's one called {close}."
+            ))
+            .correcting(id, close),
+        None => Code::UnknownId.with(format!(
+            "{id} isn't a mutant of {package}. To see its mutants:\n  mutastic mutants {}",
+            crate::report::shell_word(dir)
+        )),
+    }
 }
 
 #[cfg(test)]
