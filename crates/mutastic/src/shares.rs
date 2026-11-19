@@ -492,6 +492,8 @@ impl Shares {
             checking: None,
             streamed: false,
             took,
+            // The shares' sleep is theirs: put together, the run only reads them.
+            slept: Duration::ZERO,
             unsafe_mode: options.unsafe_mode,
             profile: json!({
                 "opt_level": profile["optLevel"],
