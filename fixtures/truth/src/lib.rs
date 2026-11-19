@@ -896,13 +896,24 @@ pub fn ends(x: i32) -> String {
     format!("{first:?} {w:?} {front:?} {least:?} {top:?} {key:?} {last:?}")
 }
 
+/// Division that rounds down, made the plain operator: on whole numbers, floats, and an unsigned
+/// value, where the two agree.
+pub fn euclid(x: i32) -> String {
+    let quotient = (x - 2).div_euclid(3);
+    let remainder = x.rem_euclid(4);
+    let fraction = (f64::from(x) - 0.5).rem_euclid(2.0);
+    let size: u32 = x.unsigned_abs();
+    let bucket = size.rem_euclid(3);
+    format!("{quotient} {remainder} {fraction} {bucket}")
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn probe() {
         for x in -6..10 {
             println!(
-                "{x}: {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {}",
+                "{x}: {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {}",
                 super::all(x),
                 super::more(x),
                 super::stronger(x),
@@ -914,7 +925,8 @@ mod tests {
                 super::unsigned_zero(x),
                 super::debug_checked(x),
                 super::unsigned_more(x),
-                super::ends(x)
+                super::ends(x),
+                super::euclid(x)
             );
         }
     }

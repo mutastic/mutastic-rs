@@ -13,6 +13,7 @@ your tests use inputs where the answer would come out differently.
 | [`mutastic/constant-value`](#constant-value) | a number to the ones next to it, `0`, `1` and `-1` | stronger |
 | [`mutastic/bitwise`](#bitwise) | `&`, `\|` and `^`; `<<` and `>>` | stronger |
 | [`library/unchecked-arithmetic`](#unchecked-arithmetic) | `checked_add` to a `wrapping_add` that can't fail | stronger |
+| [`library/plain-division`](#plain-division) | `div_euclid` and `rem_euclid` to `/` and `%`, which round towards zero | stronger |
 
 Each card below comes from `mutastic run fixtures/operators` with these operators, on
 `src/arithmetic.rs`. A line with several missed mutants gets one card, written about the first, with
@@ -561,3 +562,72 @@ fn too_many_points() {
 
 **Edition notes:** the Java edition has this operator too, `library/unchecked-arithmetic`, for
 `Math.addExact` and the like, which throw.
+
+## Plain division
+
+`library/plain-division`, in the `stronger` set. `a.div_euclid(b)` becomes `a / b`, and
+`a.rem_euclid(b)` becomes `a % b`, which round towards zero instead of down. It goes unnoticed when
+no test has a negative number that doesn't divide exactly.
+
+**The bug it stands for:** a division or remainder that's wrong for negative numbers: `-1 % 3` is
+`-1`, where `(-1).rem_euclid(3)` is `2`. It costs wherever a number can go below zero: an index that
+wraps round a ring backwards, a bucket for a negative hash.
+
+<!-- from: fixtures/operators/src/arithmetic.rs -->
+```rust
+/// The slide shown after moving `steps` from the first, either way, on a carousel that wraps round.
+pub fn slide(steps: i32, count: i32) -> i32 {
+    steps.rem_euclid(count)
+}
+```
+
+<!-- from: fixtures/operators/src/arithmetic.rs -->
+```rust
+#[test]
+fn moving_past_the_last_slide_wraps_round() {
+    assert_eq!(slide(4, 3), 1);
+}
+```
+
+The test only moves forwards, where both agree:
+
+<!-- output: operators/arithmetic/plain-division -->
+```text
+  ✗ MISSED  tests pass even when steps.rem_euclid(count) becomes steps % count in slide()
+    ┌─ src/arithmetic.rs:39
+    │
+ 38 │ pub fn slide(steps: i32, count: i32) -> i32 {
+ 39 │     steps.rem_euclid(count)
+    │           ^^^^^^^^^^ changed to steps % count
+ 40 │ }
+    │
+    = mutant  - steps.rem_euclid(count)
+              + steps % count
+    = note: inputs seen: count = 3; steps = 4
+            covered by arithmetic::tests::moving_past_the_last_slide_wraps_round (its 1 covering test still passes)
+    = help: use inputs where steps.rem_euclid(count) and steps % count differ, and assert what slide() does
+
+            // in mod arithmetic::tests
+            #[test]
+            fn slide_with_steps_minus_1_and_count_3() {
+                assert_eq!(slide(-1, 3), 2); // today 2 · with this mutant -1
+            }
+            check today's value is the one you intend: the test pins what the code does now
+
+    done when  mutastic verify m874bc313 fixtures/operators passes
+    reproduce  mutastic run --only=m874bc313 fixtures/operators
+```
+
+**The test that catches it:** one with a negative number that doesn't divide exactly.
+
+<!-- added to: fixtures/operators/src/arithmetic.rs -->
+```rust
+#[test]
+fn moving_back_from_the_first_slide_wraps_round() {
+    assert_eq!(slide(-1, 3), 2);
+}
+```
+
+**Edition notes:** a value the source proves unsigned, `n.rem_euclid(3)` where `n` is a `u32`, is
+skipped as equivalent, as unsigned numbers divide the same either way. The Java edition has this
+operator too, `library/plain-division`, for `Math.floorDiv` and `Math.floorMod`.

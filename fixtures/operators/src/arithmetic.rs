@@ -34,6 +34,11 @@ pub fn add_points(points: u32, more: u32) -> Option<u32> {
     points.checked_add(more)
 }
 
+/// The slide shown after moving `steps` from the first, either way, on a carousel that wraps round.
+pub fn slide(steps: i32, count: i32) -> i32 {
+    steps.rem_euclid(count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -76,5 +81,10 @@ mod tests {
     #[test]
     fn points_add_up() {
         assert_eq!(add_points(1, 2), Some(3));
+    }
+
+    #[test]
+    fn moving_past_the_last_slide_wraps_round() {
+        assert_eq!(slide(4, 3), 1);
     }
 }

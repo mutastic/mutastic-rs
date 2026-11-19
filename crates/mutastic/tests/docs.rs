@@ -30,7 +30,7 @@ mod common;
 /// `fixtures/operators/src/`, and the operators its run uses.
 const FAMILIES: &[(&str, &str)] = &[
     ("conditions", "mutastic/boundary,mutastic/comparison,mutastic/other-comparison,mutastic/remove-conditional,mutastic/logical-connector"),
-    ("arithmetic", "mutastic/math,mutastic/arithmetic-replacement,mutastic/other-arithmetic,mutastic/keep-operand,mutastic/remove-negation,mutastic/constant-value,mutastic/bitwise,library/unchecked-arithmetic"),
+    ("arithmetic", "mutastic/math,mutastic/arithmetic-replacement,mutastic/other-arithmetic,mutastic/keep-operand,mutastic/remove-negation,mutastic/constant-value,mutastic/bitwise,library/unchecked-arithmetic,library/plain-division"),
     ("returns", "mutastic/return-value,mutastic/return-value(extended),mutastic/replace-body,mutastic/unwrap-try,mutastic/remove-throw"),
     ("calls", "mutastic/remove-void-call,mutastic/remove-discarded-call,mutastic/remove-assignment,mutastic/remove-field-write,mutastic/remove-struct-field"),
     ("arguments", "mutastic/omit-call,mutastic/swap-arguments,mutastic/drop-vararg,mutastic/null-parameter,mutastic/default-parameter"),
@@ -55,6 +55,7 @@ const CARDS: &[(&str, &str, &str)] = &[
     ("arithmetic", "postage", "mutastic/constant-value"),
     ("arithmetic", "has_flag", "mutastic/bitwise"),
     ("arithmetic", "add_points", "library/unchecked-arithmetic"),
+    ("arithmetic", "slide", "library/plain-division"),
     ("returns", "loyalty_points", "mutastic/return-value"),
     ("returns", "is_valid_code", "mutastic/replace-body"),
     ("returns", "parse_quantity", "mutastic/unwrap-try"),
