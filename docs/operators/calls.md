@@ -90,8 +90,11 @@ that returns `void`.
 ## Remove discarded call
 
 `mutastic/remove-discarded-call`, in the defaults. A call whose result is thrown away is removed:
-`map.insert(k, v);`, `w.flush()?;`, `let _ = f();`. A bare `x.unwrap();` is left alone, as its only
-effect is the panic.
+`map.insert(k, v);`, `w.flush()?;`, `let _ = f();`. A call whose result is only checked goes too:
+`handle.join().unwrap();` removed leaves the thread running when the function returns, and
+`tx.send(v).expect("sent");` removed sends nothing. A statement that checks a value it's given,
+`x.unwrap();`, is skipped as arid, `arid: only checks the value is there`, as the Java edition skips
+a removed `Objects.requireNonNull(x);`.
 
 **The bug it stands for:** the same as a removed void call: a step left out. Many calls that do
 something also return something nobody needs: `insert` returns what was there, `write` how much it
