@@ -2231,6 +2231,7 @@ mbe69e645	truth	arithmetic	mutastic/other-arithmetic	c -= 1 → c %= (1)
 mbe77df32	truth	comparisons	mutastic/math	out += 8 → out -= (8)
 mbe80e198	truth	overflowing	mutastic/constant-value	100000 → 1
 mbe89e58d	truth	wider_returns	mutastic/string-constant	"big" → ""
+mbe98811d	operators	calls::run_and_wait	mutastic/remove-discarded-call	handle.join().unwrap(); → 
 mbe9d1162	truth	checked	mutastic/remove-throw	return Err(Problem::TooBig); → 
 mbed250f8	suggestions	rates::late_fee	mutastic/math	days_late - 7 → (days_late) + (7)
 mbed3c12d	operators	arithmetic::postage	mutastic/constant-value	3 → 4
@@ -2766,6 +2767,7 @@ mee6d599d	truth	optional	mutastic/other-arithmetic	e * 1000 → (e) - (1000)
 mee78486a	truth	arithmetic	mutastic/other-arithmetic	a * 100 + b * 10 + c → (a * 100 + b * 10) % (c)
 meea22115	suggestions	rates::late_fee	mutastic/comparison	days_late <= 7 → (days_late) == (7)
 meeb63c9e	truth	patterns	mutastic/keep-operand	x as i64 * 137 → x as i64
+mef128be2	operators	calls::run_and_wait	mutastic/replace-body	{ let handle = std::thread::spawn(work); handle.join().unwrap(); } → 
 mef1c5f61	operators	conditions::is_newer	mutastic/comparison	major > than_major → (major) != (than_major)
 mef1c7a24	truth	constants	mutastic/constant-value	100 → 99
 mef6d2db8	truth	pipelines	mutastic/other-arithmetic	v * x → (v) - (x)
