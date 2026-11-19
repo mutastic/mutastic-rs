@@ -34,13 +34,25 @@ pub struct Rule {
 /// The arid skip of an output macro's mutant, in the Java edition's words.
 pub const ONLY_WRITES_OUTPUT: &str = "arid: only writes output";
 
+/// The arid skip of a statement that only checks a value it's given, `x.unwrap();`, as the Java
+/// edition skips a removed `Objects.requireNonNull(x)`.
+pub const ONLY_CHECKS_A_VALUE: &str = "arid: only checks the value is there";
+
 /// The rules this edition has.
-pub const RULES: &[Rule] = &[Rule {
-    id: "mutastic:output",
-    scope: Scope::Site,
-    reasons: &[ONLY_WRITES_OUTPUT],
-    example: "println!(\"saved {id}\");",
-}];
+pub const RULES: &[Rule] = &[
+    Rule {
+        id: "mutastic:output",
+        scope: Scope::Site,
+        reasons: &[ONLY_WRITES_OUTPUT],
+        example: "println!(\"saved {id}\");",
+    },
+    Rule {
+        id: "mutastic:null-checks",
+        scope: Scope::Site,
+        reasons: &[ONLY_CHECKS_A_VALUE],
+        example: "order.unwrap();",
+    },
+];
 
 /// The page with a section for each rule, shared by both editions.
 pub const PAGE: &str = "https://docs.mutastic.io/reference/arid/";
@@ -77,7 +89,10 @@ mod tests {
     #[test]
     fn each_rules_example_is_skipped_by_it() {
         for rule in RULES {
-            let source = format!("pub fn example(id: u32) {{\n    {}\n}}\n", rule.example);
+            let source = format!(
+                "pub fn example(id: u32, order: Option<u32>) {{\n    {}\n}}\n",
+                rule.example
+            );
             let dir = std::env::temp_dir().join(format!(
                 "mutastic-arid-example-{}-{}",
                 rule.anchor(),

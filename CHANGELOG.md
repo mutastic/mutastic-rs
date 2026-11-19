@@ -7,6 +7,11 @@ newest come first.
 
 ### Additions
 
+- **The arid rules have the Java edition's ids.** A statement that only writes output is
+  `mutastic:output`, and a removed `x.unwrap();` that only checks the value is there is
+  `mutastic:null-checks`, as Java's `Objects.requireNonNull(x)` is. The editions' contract lists
+  every rule, and each has a section on the [Arid rules](https://docs.mutastic.io/reference/arid/)
+  page.
 - **`mutastic/boolean-constant`, in `stronger`: a flag set the other way.** A `true` or `false`
   passed to a function, bound by a `let`, assigned, or given to a struct's field becomes the other,
   where only a returned one did. One in a condition isn't changed. The Java edition has it too. See

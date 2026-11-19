@@ -7,7 +7,7 @@
 //! the build withdraws it.
 
 use super::*;
-use crate::arid::ONLY_WRITES_OUTPUT;
+use crate::arid::{ONLY_CHECKS_A_VALUE, ONLY_WRITES_OUTPUT};
 use ra_ap_syntax::ast::{HasArgList, RangeItem};
 
 /// Method names and their counterparts, by operator.
@@ -78,9 +78,6 @@ const CHECK_CALLS: &[&str] = &["unwrap", "expect"];
 /// Calls that only give a view of a value (`x.as_ref().unwrap();`), so checking what they give
 /// checks the value itself.
 const VIEW_CALLS: &[&str] = &["as_ref", "as_mut", "as_deref", "as_deref_mut"];
-
-/// The arid skip of a statement that only checks a value it's given.
-const ONLY_CHECKS_A_VALUE: &str = "arid: only checks the value is there";
 
 /// Macros whose statement only writes output, to the terminal or a logger: removing one changes
 /// nothing a test should have to notice, so its mutant is made, for its id, and skipped as arid,
