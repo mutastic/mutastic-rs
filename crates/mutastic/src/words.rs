@@ -134,6 +134,15 @@ fn advise_change(mutant: &Mutant, name: &str, seen: &BTreeMap<String, Vec<i128>>
                 "use inputs where `{before}` and `{after}` give different results, and assert what {method} does"
             ),
         },
+        Change::Removed { statement } if starts_a_thread(statement) => Advice {
+            change: format!("`{statement}` is removed"),
+            caret: "removed".into(),
+            headline: format!(
+                "no test waits for the thread started in {method} and checks what it did"
+            ),
+            notes: inputs_seen(seen),
+            help: "wait for the thread to finish (`join()` its handle, or wait on a channel its closure sends to), then assert what it did".into(),
+        },
         Change::Removed { statement } => Advice {
             change: format!("`{statement}` is removed"),
             caret: "removed".into(),
@@ -319,6 +328,15 @@ fn returns(method: &str, value: &str, seen: &BTreeMap<String, Vec<i128>>) -> Adv
     }
 }
 
+/// Whether a statement starts a thread of the standard library's that nothing waits for here:
+/// `thread::spawn(..)`, or a `thread::Builder`'s `spawn`. A scoped thread's `s.spawn(..)` isn't
+/// one: its scope waits for it, so a test of the function only has to check what it did.
+fn starts_a_thread(statement: &str) -> bool {
+    let flat: String = statement.split_whitespace().collect();
+    flat.contains("thread::spawn(")
+        || (flat.contains("thread::Builder::new()") && flat.contains(".spawn("))
+}
+
 /// "inputs seen: total = 50, 250".
 fn inputs_seen(seen: &BTreeMap<String, Vec<i128>>) -> Vec<String> {
     if seen.is_empty() {
@@ -424,5 +442,19 @@ mod tests {
         assert_eq!(number("1_000u32"), Some(1000));
         assert_eq!(number("total"), None);
         assert_eq!(number("100.0"), None);
+    }
+
+    #[test]
+    fn a_thread_started_is_one_nothing_here_waits_for() {
+        assert!(starts_a_thread("thread::spawn(move || work());"));
+        assert!(starts_a_thread("let _ = std::thread::spawn(work);"));
+        assert!(starts_a_thread(
+            "let _ = thread::Builder::new()\n    .name(n)\n    .spawn(move || work());"
+        ));
+        assert!(!starts_a_thread("scope.spawn(|| work());"));
+        assert!(!starts_a_thread(
+            "thread::scope(|s| { s.spawn(|| work()); });"
+        ));
+        assert!(!starts_a_thread("tasks.spawn(work());"));
     }
 }
