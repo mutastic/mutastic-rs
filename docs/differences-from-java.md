@@ -127,7 +127,9 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
   list before its own run, where Java waits for its count after: so a hooked check sets aside a
   run as long as the last check's when it works out how long the budget leaves for the wait.
 - **Skipped as arid:** a statement that only writes output, `println!`, `eprintln!`, `dbg!` or a
-  logger's macro, where the Java edition skips a call to a logger or `System.out`.
+  logger's macro, where the Java edition skips a call to a logger or `System.out`. And a statement
+  that only checks a value it's given, `x.unwrap();` or `x.expect("..");`, where the Java edition
+  skips a removed `Objects.requireNonNull(x);`.
 - **Skipped as equivalent:** a `?` that only passes on a formatter's error, inside the `fmt` of
   `Display` and the other formatting traits, or on a write to a `Formatter`: no test can make that
   error happen.

@@ -69,9 +69,17 @@ const VOID_STD: &[&str] = &[
     "insert_str",
 ];
 
-/// A statement that only checks a value (`x.unwrap();`) is a check, not work: removing it says
-/// nothing about the tests.
-const ARID_STATEMENT_CALLS: &[&str] = &["unwrap", "expect"];
+/// The calls that only check a value (`x.unwrap();`). A statement of one is work when what it
+/// checks comes from a call, `handle.join().unwrap();`, and that call is removed; one that checks
+/// a value it's given only checks it, as the Java edition's `Objects.requireNonNull(x);` does.
+const CHECK_CALLS: &[&str] = &["unwrap", "expect"];
+
+/// Calls that only give a view of a value (`x.as_ref().unwrap();`), so checking what they give
+/// checks the value itself.
+const VIEW_CALLS: &[&str] = &["as_ref", "as_mut", "as_deref", "as_deref_mut"];
+
+/// The arid skip of a statement that only checks a value it's given.
+const ONLY_CHECKS_A_VALUE: &str = "arid: only checks the value is there";
 
 /// Macros whose statement only writes output, to the terminal or a logger: removing one changes
 /// nothing a test should have to notice, so its mutant is made, for its id, and skipped as arid,
@@ -254,7 +262,8 @@ impl Finder<'_> {
         let Some((call, name)) = called(&expr) else {
             return;
         };
-        if ARID_STATEMENT_CALLS.contains(&name.as_str()) {
+        if CHECK_CALLS.contains(&name.as_str()) {
+            self.checked_call(statement, &call, context);
             return;
         }
         let operator = if self.facts.unit_fns.contains(&name) || VOID_STD.contains(&name.as_str()) {
@@ -263,6 +272,45 @@ impl Finder<'_> {
             REMOVE_DISCARDED_CALL
         };
         self.removal(operator, statement.syntax(), &call, String::new(), context);
+    }
+
+    /// `handle.join().unwrap();` removed, as the call whose result it checks is; or `x.unwrap();`,
+    /// which only checks a value it's given, made, so it's counted, and skipped as arid.
+    fn checked_call(
+        &mut self,
+        statement: &ast::ExprStmt,
+        check: &SyntaxNode,
+        context: Context<'_>,
+    ) {
+        let mut checked = checked_value(check);
+        while let Some((call, name)) = checked.as_ref().and_then(called) {
+            if CHECK_CALLS.contains(&name.as_str()) || VIEW_CALLS.contains(&name.as_str()) {
+                checked = checked_value(&call);
+                continue;
+            }
+            // What's checked is a result, so the call returns one, and it's thrown away.
+            self.removal(
+                REMOVE_DISCARDED_CALL,
+                statement.syntax(),
+                &call,
+                String::new(),
+                context,
+            );
+            return;
+        }
+        let before = self.found.mutants.len();
+        self.removal(
+            REMOVE_DISCARDED_CALL,
+            statement.syntax(),
+            check,
+            String::new(),
+            context,
+        );
+        if self.found.mutants.len() > before {
+            if let Some(mutant) = self.found.mutants.last_mut() {
+                mutant.skipped = Some(ONLY_CHECKS_A_VALUE.to_string());
+            }
+        }
     }
 
     /// `log::warn!(..);` or `eprintln!(..);` removed: made, so it's counted and keeps an id, and
@@ -704,6 +752,14 @@ fn called(expr: &ast::Expr) -> Option<(SyntaxNode, String)> {
         }
         _ => None,
     }
+}
+
+/// What a check or a view is called on: `x` in `x.unwrap()` or `Option::unwrap(x)`.
+fn checked_value(call: &SyntaxNode) -> Option<ast::Expr> {
+    if let Some(call) = ast::MethodCallExpr::cast(call.clone()) {
+        return call.receiver();
+    }
+    ast::CallExpr::cast(call.clone())?.arg_list()?.args().next()
 }
 
 pub(super) fn counterpart<'p>(pairs: &'p [(&'p str, &'p str)], name: &str) -> Option<&'p str> {

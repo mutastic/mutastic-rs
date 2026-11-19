@@ -58,9 +58,19 @@ pub fn muted(settings: &Settings) -> Settings {
     }
 }
 
+/// Runs `work` on a thread of its own, and waits for it to finish.
+pub fn run_and_wait(work: impl FnOnce() + Send + 'static) {
+    let handle = std::thread::spawn(work);
+    handle.join().unwrap();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+    use std::thread;
+    use std::time::Duration;
 
     #[test]
     fn adding_an_item_counts_it() {
@@ -87,6 +97,17 @@ mod tests {
             total: 30,
         };
         assert_eq!(order.pay(), 30);
+    }
+
+    #[test]
+    fn the_work_is_done_when_it_returns() {
+        let done = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&done);
+        run_and_wait(move || {
+            thread::sleep(Duration::from_millis(200));
+            flag.store(true, Ordering::SeqCst);
+        });
+        assert!(done.load(Ordering::SeqCst));
     }
 
     #[test]
