@@ -703,6 +703,32 @@ fn error_case(found: &mut Vec<Found>, case: &Value) {
     if let Some(code) = case["code"].as_str() {
         error_code(found, &item, code, &run);
     }
+    if let Some(message) = case["message"].as_str() {
+        error_message(found, &item, message, &run, &dir);
+    }
+}
+
+/// The error's first line, the event's `message`, with the fixture's directory as `{dir}`, the
+/// empty one as `{empty}` and the missed mutant as `{id}`.
+fn error_message(found: &mut Vec<Found>, item: &str, message: &str, run: &Run, dir: &str) {
+    let said = run
+        .out
+        .lines()
+        .filter(|line| line.starts_with('{'))
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .rfind(|event| event["reason"] == "run-failed")
+        .map_or("no run-failed event".to_string(), |event| {
+            text(&event, "message").to_string()
+        })
+        .replace(&place().empty.display().to_string(), "{empty}")
+        .replace(dir, "{dir}")
+        .replace(ID, "{id}");
+    if said != message {
+        found.push(self::found(
+            format!("{item}:message"),
+            format!("it says \"{said}\""),
+        ));
+    }
 }
 
 fn error_code(found: &mut Vec<Found>, item: &str, code: &str, run: &Run) {

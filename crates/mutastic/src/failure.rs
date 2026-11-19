@@ -105,6 +105,7 @@ impl Code {
         Failure {
             code: self,
             message: message.into(),
+            correction: None,
         }
     }
 }
@@ -114,6 +115,57 @@ impl Code {
 pub struct Failure {
     pub code: Code,
     pub message: String,
+    /// A word of the command line, and the close name to write in its place: the line, so
+    /// corrected, follows the message, once the line is known.
+    pub correction: Option<(String, String)>,
+}
+
+impl Failure {
+    /// The failure, with `typed`, a word of the command line or part of one, to be corrected to
+    /// `instead` in the line that follows it.
+    pub fn correcting(mut self, typed: &str, instead: &str) -> Failure {
+        self.correction = Some((typed.to_string(), instead.to_string()));
+        self
+    }
+
+    /// The failure with its correction made in `args`, the line as typed, as the line to copy that
+    /// ends its message; as it was when the word isn't in the line.
+    pub fn corrected(mut self, args: &[String]) -> Failure {
+        let Some((typed, instead)) = self.correction.take() else {
+            return self;
+        };
+        let at = args
+            .iter()
+            .position(|arg| arg == &typed || arg.split(['=', ',']).any(|part| part == typed));
+        if let Some(at) = at {
+            let with = if args[at] == typed {
+                instead
+            } else {
+                let (option, list) = args[at].split_once('=').unwrap_or(("", &args[at]));
+                let list: Vec<&str> = list
+                    .split(',')
+                    .map(|part| {
+                        if part == typed {
+                            instead.as_str()
+                        } else {
+                            part
+                        }
+                    })
+                    .collect();
+                if option.is_empty() {
+                    list.join(",")
+                } else {
+                    format!("{option}={}", list.join(","))
+                }
+            };
+            self.message = format!(
+                "{}\n{}",
+                self.message,
+                crate::mistyped::line(args, at, &with, 0)
+            );
+        }
+        self
+    }
 }
 
 impl std::fmt::Display for Failure {

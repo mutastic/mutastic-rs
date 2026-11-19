@@ -250,16 +250,14 @@ fn a_word_a_command_doesnt_take_stops_it() {
     assert_eq!(
         stopped(&["explain", &dir]),
         format!(
-            "mutastic: explain needs a mutant's id, m and eight hex digits as a card shows it, \
-             and {dir} is a directory: mutastic explain ID [DIR], as in mutastic explain \
-             m1a2b3c4d {dir}\n"
+            "mutastic: {dir} is a directory, not a mutant id. explain needs a mutant id first, an \
+             m and eight hex digits as a run prints them:\n  mutastic explain <id> {dir}\n"
         )
     );
     assert_eq!(
         stopped(&["verify", "m1a2b3c4d,total", &dir]),
-        "mutastic: verify needs a mutant's id, m and eight hex digits as a card shows it, and \
-         m1a2b3c4d,total isn't one: mutastic verify ID... [DIR], as in mutastic verify \
-         m1a2b3c4d\n"
+        "mutastic: m1a2b3c4d,total isn't a mutant id. verify needs a mutant id first, an m and \
+         eight hex digits as a run prints them:\n  mutastic verify <id>\n"
     );
     assert_eq!(
         stopped(&["verify", "mb2f8ae57", "m0b3873d0", &dir, "extra"]),
@@ -3061,7 +3059,7 @@ fn the_words_colour_and_links_are_chosen_as_the_java_edition_chooses_them() {
         let said = String::from_utf8_lossy(&refused.stderr);
         assert_eq!(refused.status.code(), Some(2), "{said}");
         assert!(
-            said.contains(&format!("{option}: {value} isn't one of")),
+            said.contains(&format!("{option} takes ")) && said.contains(&format!(", not {value}")),
             "{said}"
         );
     }

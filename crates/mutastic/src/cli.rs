@@ -44,7 +44,7 @@ pub fn main(args: Vec<OsString>) -> ExitCode {
     };
     match dispatch(&args) {
         Ok(code) => code,
-        Err(failure) => failed(&args, &failure),
+        Err(failure) => failed(&args, &failure.corrected(&args)),
     }
 }
 
@@ -403,18 +403,20 @@ fn set(parsed: &mut Parsed, name: &str, value: &str) -> Result<bool, String> {
         }
         "format" => {
             parsed.format = Some(Format::parse(value).ok_or_else(|| {
-                format!(
-                    "--format: {value} isn't one of full, brief, concise, grouped, agent or jsonl"
+                crate::mistyped::not_one_of(
+                    "--format",
+                    value,
+                    &["full", "brief", "concise", "grouped", "agent", "jsonl"],
                 )
             })?)
         }
         "threshold" => parsed.threshold = f64::from(whole("--threshold", value, 0, 100)?),
         "workers" => {
-            parsed.workers = value
-                .parse()
-                .ok()
-                .filter(|&n: &usize| n > 0)
-                .ok_or_else(|| format!("--workers: {value} isn't a positive number"))?
+            parsed.workers = match value.parse::<usize>() {
+                Ok(0) => return Err("--workers is at least 1, not 0".into()),
+                Ok(workers) => workers,
+                Err(_) => return Err(format!("--workers needs a whole number, not {value}")),
+            }
         }
         "operators" => {
             // A name only a rules file has is checked once the rules files are read.
@@ -424,16 +426,14 @@ fn set(parsed: &mut Parsed, name: &str, value: &str) -> Result<bool, String> {
             parsed.operators_given = Some(value.to_string());
         }
         "unsafe" => {
-            parsed.unsafe_mode = UnsafeMode::parse(value)
-                .ok_or_else(|| format!("--unsafe: {value} isn't one of skip, enclosing or all"))?
+            parsed.unsafe_mode = UnsafeMode::parse(value).ok_or_else(|| {
+                crate::mistyped::not_one_of("--unsafe", value, &["skip", "enclosing", "all"])
+            })?
         }
         "reason" => parsed.reason = Some(value.to_string()),
         "as" => {
             if !ignores::KINDS.contains(&value) {
-                return Err(format!(
-                    "--as: {value} isn't one of {}",
-                    ignores::KINDS.join(", ")
-                ));
+                return Err(crate::mistyped::not_one_of("--as", value, ignores::KINDS));
             }
             parsed.kind = value.to_string()
         }
@@ -449,29 +449,15 @@ fn set(parsed: &mut Parsed, name: &str, value: &str) -> Result<bool, String> {
         "from-shards" => parsed.from_shards = Some(value.to_string()),
         "hook" => {
             if value != "claude" {
-                return Err(format!("--hook: {value} isn't claude"));
+                return Err(crate::mistyped::not_one_of("--hook", value, &["claude"]));
             }
             parsed.hook = value.to_string();
         }
         "top" => {
-            parsed.top = value
-                .parse()
-                .ok()
-                .filter(|n: &usize| (1..=report::next::MOST).contains(n))
-                .ok_or_else(|| {
-                    format!(
-                        "--top: {value} isn't a number from 1 to {}",
-                        report::next::MOST
-                    )
-                })?
+            let most = u32::try_from(report::next::MOST).unwrap_or(u32::MAX);
+            parsed.top = whole("--top", value, 1, most)? as usize
         }
-        "tries" => {
-            parsed.tries = value
-                .parse()
-                .ok()
-                .filter(|n: &usize| (1..=100).contains(n))
-                .ok_or_else(|| format!("--tries: {value} isn't a number from 1 to 100"))?
-        }
+        "tries" => parsed.tries = whole("--tries", value, 1, 100)? as usize,
         "report" => {
             let reports = parsed.reports.get_or_insert_with(Vec::new);
             let (kind, path) = match value.split_once(':') {
@@ -486,22 +472,26 @@ fn set(parsed: &mut Parsed, name: &str, value: &str) -> Result<bool, String> {
             }
         }
         "vocabulary" => {
-            parsed.vocabulary =
-                Some(report::Vocabulary::parse(value).ok_or_else(|| {
-                    format!("--vocabulary: {value} isn't one of plain or classic")
-                })?)
+            parsed.vocabulary = Some(report::Vocabulary::parse(value).ok_or_else(|| {
+                crate::mistyped::not_one_of("--vocabulary", value, &["plain", "classic"])
+            })?)
         }
         "color" => parsed.color = choice("--color", value)?,
         "hyperlinks" => parsed.hyperlinks = choice("--hyperlinks", value)?,
         "progress" => {
             parsed.progress = Shown::parse(value).ok_or_else(|| {
-                format!("--progress: {value} isn't one of auto, bar, counter or none")
+                crate::mistyped::not_one_of(
+                    "--progress",
+                    value,
+                    &["auto", "bar", "counter", "none"],
+                )
             })?
         }
         // Which edition runs is decided before this one reads its options.
         "edition" => {
-            Edition::parse(value)
-                .ok_or_else(|| format!("--edition: {value} isn't one of java or rust"))?;
+            Edition::parse(value).ok_or_else(|| {
+                crate::mistyped::not_one_of("--edition", value, &["java", "rust"])
+            })?;
         }
         "fraction" => {
             parsed.fraction = value
@@ -592,7 +582,7 @@ fn arguments(command: &str, parsed: &Parsed) -> Result<(), Failure> {
         if let Some(given) = parsed.positional.first() {
             let mut named = ids(given).peekable();
             if named.peek().is_none() || !named.all(|id| is_mutant_id(&id)) {
-                return Err(Code::NeedsId.with(needs_id(command, given, usage)));
+                return Err(Code::NeedsId.with(needs_id(command, given)));
             }
         }
     }
@@ -648,28 +638,31 @@ fn is_mutant_id(word: &str) -> bool {
         .is_some_and(|hex| hex.len() == 8 && hex.bytes().all(|digit| digit.is_ascii_hexdigit()))
 }
 
-/// What's wrong with the word where `command` needs a mutant's id, with an example: one that keeps
-/// the directory, when that's what was given.
-fn needs_id(command: &str, given: &str, usage: &str) -> String {
-    let directory = std::path::Path::new(given).is_dir();
-    let what = if directory {
-        format!("{given} is a directory")
+/// What's wrong with the word where `command` needs a mutant's id, in the Java edition's words,
+/// and the command with one to fill in: one that keeps the directory, when that's what was given.
+fn needs_id(command: &str, given: &str) -> String {
+    if std::path::Path::new(given).is_dir() {
+        format!(
+            "{given} is a directory, not a mutant id. {}",
+            id_first(command, Some(given))
+        )
     } else {
-        format!("{given} isn't one")
-    };
-    let dir = if directory {
-        format!(" {given}")
-    } else {
-        String::new()
-    };
+        format!("{given} isn't a mutant id. {}", id_first(command, None))
+    }
+}
+
+/// What `command` needs first, as a run names a mutant, and the command with it to fill in, with
+/// `dir` after it, and for `ignore` its reason.
+fn id_first(command: &str, dir: Option<&str>) -> String {
+    let dir = dir.map_or(String::new(), |dir| format!(" {}", shell(dir)));
     let reason = if command == "ignore" {
-        " --reason=\"…\""
+        " --reason=\"<why>\""
     } else {
         ""
     };
     format!(
-        "{command} needs a mutant's id, m and eight hex digits as a card shows it, and {what}: \
-         {usage}, as in mutastic {command} m1a2b3c4d{dir}{reason}"
+        "{command} needs a mutant id first, an m and eight hex digits as a run prints them:\n  \
+         mutastic {command} <id>{dir}{reason}"
     )
 }
 
@@ -907,8 +900,10 @@ fn choice(option: &str, value: &str) -> Result<Option<bool>, String> {
         "auto" => Ok(None),
         "always" => Ok(Some(true)),
         "never" => Ok(Some(false)),
-        _ => Err(format!(
-            "{option}: {value} isn't one of auto, always or never"
+        _ => Err(crate::mistyped::not_one_of(
+            option,
+            value,
+            &["auto", "always", "never"],
         )),
     }
 }
@@ -1396,7 +1391,7 @@ fn set_named(ids: &str) -> String {
 fn verify(parsed: &Parsed) -> Result<ExitCode, Failure> {
     let (only, taken) = verify_ids(&parsed.positional);
     if only.is_empty() {
-        return Err(Code::NeedsId.with("verify needs a mutant's id: mutastic verify ID... [DIR]"));
+        return Err(Code::NeedsId.with(id_first("verify", None)));
     }
     let dir = parsed.positional.get(taken).map_or(".", String::as_str);
     let progress = start(parsed, false);
@@ -1442,7 +1437,7 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, Failure> {
 /// it, with how the last full run went. It explains; it doesn't judge, so it exits 0.
 fn explain(parsed: &Parsed) -> Result<ExitCode, Failure> {
     let Some(id) = parsed.positional.first() else {
-        return Err(Code::NeedsId.with("explain needs a mutant's id: mutastic explain ID [DIR]"));
+        return Err(Code::NeedsId.with(id_first("explain", None)));
     };
     if let Some(other) = parsed
         .format
@@ -1475,6 +1470,21 @@ fn explain(parsed: &Parsed) -> Result<ExitCode, Failure> {
     Ok(ExitCode::SUCCESS)
 }
 
+/// The rest of an ignore's command line after `ignore`: its id, its directory as given, a reason to
+/// fill in, and its other options, as the Java edition writes it.
+fn with_reason(id: &str, parsed: &Parsed) -> String {
+    let mut words = vec![shell(id)];
+    words.extend(parsed.positional.iter().skip(1).map(|word| shell(word)));
+    words.push("--reason=\"<why>\"".to_string());
+    if !parsed.kind.is_empty() {
+        words.push(format!("--as={}", parsed.kind));
+    }
+    if parsed.propose {
+        words.push("--propose".to_string());
+    }
+    words.join(" ")
+}
+
 /// `ignore`: records a decision not to test a mutant in `.mutastic/ignores.yaml`, with the line it's
 /// on and the reason; proposes one, in `.mutastic/proposals.yaml`, for a person to accept; accepts
 /// a proposal; removes one; or removes those that no longer hold. Runs no tests, and says how to
@@ -1485,9 +1495,7 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, Failure> {
             let dir = parsed.positional.first().map_or(".", String::as_str);
             return prune(dir);
         }
-        return Err(
-            Code::NeedsId.with("ignore needs a mutant's id: mutastic ignore ID [DIR] --reason=WHY")
-        );
+        return Err(Code::NeedsId.with(id_first("ignore", None)));
     };
     let dir = parsed
         .positional
@@ -1515,7 +1523,8 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, Failure> {
         .filter(|reason| !reason.trim().is_empty())
     else {
         return Err(Code::NeedsId.with(format!(
-            "ignore needs a reason, for whoever reviews it: mutastic ignore {id} --reason=\"<why>\" {dir}"
+            "ignore needs a reason, for whoever reviews it:\n  mutastic ignore {}",
+            with_reason(&id, parsed)
         )));
     };
     if parsed.propose {
@@ -1774,29 +1783,34 @@ fn gate_command(parsed: &Parsed) -> Result<ExitCode, Failure> {
 fn gate_help(action: &str) -> Result<String, Failure> {
     commands::command(&format!("gate {action}"))
         .map(crate::help::of)
-        .ok_or_else(|| Code::UnknownCommand.with(no_gate_action(action)))
+        .ok_or_else(|| no_gate_action(action))
 }
 
 /// `gate`'s action: open, check or close. Checked before the project is looked for, so a mistyped
 /// one is said as that wherever it's run.
 fn gate_action(parsed: &Parsed) -> Result<&str, Failure> {
     match parsed.positional.first().map(String::as_str) {
-        None => {
-            Err(Code::UnknownCommand
-                .with("gate needs open, check or close: mutastic gate open [DIR]"))
-        }
+        None => Err(Code::UnknownCommand.with(
+            "gate needs what to do: open, check or close. To see what each does:\n  mutastic --help",
+        )),
         Some(action @ ("open" | "check" | "close")) => Ok(action),
-        Some(other) => Err(Code::UnknownCommand.with(no_gate_action(other))),
+        Some(other) => Err(no_gate_action(other)),
     }
 }
 
-/// `gate`'s action isn't one it has.
-fn no_gate_action(action: &str) -> String {
-    let actions = ["open", "check", "close"];
-    format!(
-        "gate: {action} isn't one of open, check or close.{}",
-        crate::similar::offered(action, actions)
-    )
+/// `gate`'s action isn't one it has: the close one, in the line, or where the commands are listed.
+fn no_gate_action(action: &str) -> Failure {
+    match crate::similar::closest(action, ["open", "check", "close"]) {
+        Some(close) => Code::UnknownCommand
+            .with(format!(
+                "gate has no command {action}. There's one called {close}."
+            ))
+            .correcting(action, close),
+        None => Code::UnknownCommand.with(format!(
+            "gate has no command {action}. {}",
+            crate::mistyped::commands_usage()
+        )),
+    }
 }
 
 /// The operators a gated task runs, chosen when it opens, as chosen and resolved: `--operators`,
@@ -2748,17 +2762,17 @@ mod tests {
         }
     }
 
-    /// A word no command takes gets one line of usage, never the whole help.
+    /// A word no command takes ends in the help that lists what there is: no usage line, never
+    /// the whole help.
     #[test]
-    fn a_word_it_cant_place_gets_one_line_of_usage() {
+    fn a_word_it_cant_place_ends_in_the_help_to_read() {
         for typed in ["run --verbose", "build-it", "--verbose"] {
             let refused = check(&words(typed)).unwrap_err();
-            let usage: Vec<&str> = refused
-                .lines()
-                .filter(|l| l.starts_with("Usage: "))
-                .collect();
-            assert_eq!(usage.len(), 1, "{typed}: {refused}");
-            assert!(refused.lines().count() <= 3, "{typed}: {refused}");
+            assert!(
+                !refused.lines().any(|l| l.starts_with("Usage: ")),
+                "{typed}: {refused}"
+            );
+            assert_eq!(refused.lines().count(), 2, "{typed}: {refused}");
             assert!(refused.ends_with(" --help"), "{typed}: {refused}");
         }
     }

@@ -1,6 +1,6 @@
 //! A command line mutastic doesn't take, answered in the person's own words: the word as they typed
 //! it, the one name close to it, if there is one, and last the line again with only that word
-//! changed, to copy. At most one line of usage, never the whole help: that's a `--help` away.
+//! changed, to copy. With none close, the command that lists what there is, never the whole help.
 //! A close name is offered, never acted on: a guess acted on runs what nobody asked for.
 
 use crate::commands::{self, CliOption, Kind};
@@ -60,7 +60,7 @@ pub fn command_at(args: &[String], at: usize) -> String {
                 )
             }
             None => format!(
-                "mutastic takes a command before its options, and {word} isn't one.\n{}",
+                "mutastic takes a command before its options, and {word} isn't one. {}",
                 commands_usage()
             ),
         };
@@ -70,13 +70,13 @@ pub fn command_at(args: &[String], at: usize) -> String {
             "mutastic has no command {word}. There's one called {close}.\n{}",
             line(args, at, close, 0)
         ),
-        None => format!("mutastic has no command {word}.\n{}", commands_usage()),
+        None => format!("mutastic has no command {word}. {}", commands_usage()),
     }
 }
 
-/// The one line of usage for a command mutastic doesn't have, and where its commands are listed.
-fn commands_usage() -> String {
-    "Usage: mutastic COMMAND [DIR] [OPTIONS]. To see the commands:\n  mutastic --help".into()
+/// Where the commands are listed, for a command mutastic doesn't have.
+pub fn commands_usage() -> &'static str {
+    "To see its commands:\n  mutastic --help"
 }
 
 /// The options a command takes, and `help`, every command's; every option for a command that
@@ -94,7 +94,7 @@ fn options_of(command: Option<&commands::Command>) -> Vec<&'static str> {
 }
 
 /// `--name`, at `args[at]`, is no option mutastic has: the close one this command takes, with the
-/// line again using it, or the command's usage and how to list its options.
+/// line again using it, or how to list its options.
 pub fn option(
     command: Option<&commands::Command>,
     args: &[String],
@@ -105,10 +105,8 @@ pub fn option(
     let typed = command.map_or(args[0].as_str(), |command| command.name);
     let candidates = options_of(command);
     let Some(close) = similar::closest(name, candidates.iter().copied()) else {
-        let synopsis = command.map_or("mutastic gate open|check|close [DIR]", |c| c.synopsis);
         return format!(
-            "{typed} has no option --{name}.\nUsage: {synopsis}. To see its options:\n  mutastic {} --help",
-            args[0]
+            "{typed} has no option --{name}. To see its options:\n  mutastic {typed} --help"
         );
     };
     let (with, taken) = match (commands::option(close), value) {
@@ -138,9 +136,9 @@ fn spaced(args: &[String], at: usize) -> Option<&str> {
         .filter(|next| !next.starts_with('-'))
 }
 
-/// Options whose own error says what an empty value needs: a mutant's id, the shares' directory,
-/// a reason for whoever reviews it.
-const SAY_WHAT_THEY_NEED: &[&str] = &["only", "from-shards", "reason"];
+/// Options whose own error says what an empty value needs: the shares' directory, a reason for
+/// whoever reviews it.
+const SAY_WHAT_THEY_NEED: &[&str] = &["from-shards", "reason"];
 
 /// `--name`, at `args[at]`, needs a value and has none: the form it takes, and its choices. One
 /// that must take a value has its value after a space joined to it first (`cli::joined`); an
@@ -171,29 +169,39 @@ pub fn value(option: &CliOption, args: &[String], at: usize) -> Option<String> {
     };
     Some(format!(
         "--{name} needs a value{one_of}.\n{}",
-        line(args, at, &option.synopsis(), 0)
+        line(args, at, &placeholder(option), 0)
     ))
+}
+
+/// The option with its value to fill in, as an error's command writes it: `--format=<format>`.
+fn placeholder(option: &CliOption) -> String {
+    let synopsis = option.synopsis();
+    match synopsis.split_once('=') {
+        Some((name, value)) => format!("{name}=<{}>", value.to_lowercase()),
+        None => synopsis,
+    }
 }
 
 /// `value`, given to `--name`, isn't one of its choices: they're listed, and a close one is offered,
 /// with the line again using it.
 pub fn choice(option: &CliOption, args: &[String], at: usize, value: &str) -> String {
     let name = option.name;
-    let said = match option.choices {
-        [only] => format!("--{name}: {value} isn't {only}."),
-        choices => format!("--{name}: {value} isn't one of {}.", listed(choices)),
-    };
     match similar::closest(value, option.choices.iter().copied()) {
         Some(close) => {
             let typed = &args[at];
             let with = typed.replacen(&format!("={value}"), &format!("={close}"), 1);
             format!(
-                "{said} There's one called {close}.\n{}",
+                "--{name} has no value {value}. There's one called {close}.\n{}",
                 line(args, at, &with, 0)
             )
         }
-        None => said,
+        None => not_one_of(&format!("--{name}"), value, option.choices),
     }
+}
+
+/// `value` isn't one of `choices`, the values `option` takes, in the Java edition's words.
+pub fn not_one_of(option: &str, value: &str, choices: &[&str]) -> String {
+    format!("{option} takes {}, not {value}", listed(choices))
 }
 
 /// `a, b or c`.
@@ -222,8 +230,7 @@ mod tests {
         );
         assert_eq!(
             command(&words("build")),
-            "mutastic has no command build.\nUsage: mutastic COMMAND [DIR] [OPTIONS]. To see \
-             the commands:\n  mutastic --help"
+            "mutastic has no command build. To see its commands:\n  mutastic --help"
         );
         assert_eq!(
             command(&words("--format=agent run .")),
@@ -245,8 +252,7 @@ mod tests {
         );
         assert_eq!(
             option(run, &words("run --verbose"), 1, "verbose", None),
-            "run has no option --verbose.\nUsage: mutastic run [DIR] [OPTIONS]. To see its \
-             options:\n  mutastic run --help"
+            "run has no option --verbose. To see its options:\n  mutastic run --help"
         );
     }
 
@@ -256,7 +262,7 @@ mod tests {
         assert_eq!(
             value(format, &words("run --format"), 1).unwrap(),
             "--format needs a value, one of full, brief, concise, grouped, agent or jsonl.\n  \
-             mutastic run --format=FORMAT"
+             mutastic run --format=<format>"
         );
         let since = commands::option("since").unwrap();
         assert_eq!(
@@ -272,8 +278,11 @@ mod tests {
         let format = commands::option("format").unwrap();
         assert_eq!(
             choice(format, &words("run --format=agnet"), 1, "agnet"),
-            "--format: agnet isn't one of full, brief, concise, grouped, agent or jsonl. There's \
-             one called agent.\n  mutastic run --format=agent"
+            "--format has no value agnet. There's one called agent.\n  mutastic run --format=agent"
+        );
+        assert_eq!(
+            choice(format, &words("run --format=xyz"), 1, "xyz"),
+            "--format takes full, brief, concise, grouped, agent or jsonl, not xyz"
         );
     }
 }
