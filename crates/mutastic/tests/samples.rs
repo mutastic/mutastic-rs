@@ -1144,7 +1144,7 @@ fn an_ignore_holds_while_its_line_does() {
     );
     let (_, out) = mutastic_in(&dir, &["ignore", "--prune"]);
     assert!(
-        out.starts_with("mutastic: removed 1 ignore that no longer hold: mb2f8ae57\n"),
+        out.starts_with("mutastic: removed 1 ignore that no longer holds: mb2f8ae57\n"),
         "{out}"
     );
 
@@ -1448,7 +1448,7 @@ fn next_puts_new_misses_first_and_prune_drops_the_caught() {
     let (_, out) = mutastic_in(&dir, &["run", "--report=none", "--progress=none"]);
     assert!(
         out.contains(
-            "note: 1 of the baseline's mutants are caught now: `mutastic baseline --prune` drops them\n"
+            "note: 1 of the baseline's mutants is caught now: `mutastic baseline --prune` drops it\n"
         ),
         "{out}"
     );
@@ -1456,7 +1456,7 @@ fn next_puts_new_misses_first_and_prune_drops_the_caught() {
     assert_eq!(code, 0, "{out}");
     assert!(
         out.starts_with(
-            "mutastic: 1 of the baseline's mutants are caught now, and are dropped from \
+            "mutastic: 1 of the baseline's mutants is caught now, and is dropped from \
              .mutastic/baseline.yaml\n"
         ),
         "{out}"
