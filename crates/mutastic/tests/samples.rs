@@ -298,7 +298,9 @@ fn unsafe_code_is_fenced_off_and_crashes_are_told_apart() {
         events
             .iter()
             .find(|e| {
-                e["location"]["method"] == method && e["mutation"]["replacement"] == replacement
+                e["location"]["method"] == method
+                    && e["mutation"]["replacement"] == replacement
+                    && e.get("sameAs").is_none()
             })
             .unwrap_or_else(|| panic!("{method} {replacement}: {stdout}"))
     };
@@ -2580,7 +2582,7 @@ fn a_flaky_test_is_left_out_and_one_that_always_fails_stops_the_run() {
 /// on its own after the mutants, as in the Java edition. In the `false-catches` fixture,
 /// `a_new_ledger_takes_an_amount_less_its_fee` keeps a file it never cleans up: it passes the first
 /// time it runs, before any mutant, then fails against every mutant it reaches, and on its own.
-/// Taken at face value the tests caught all 20 mutants, a pass at 100%.
+/// Taken at face value the tests caught all 18 mutants that run, a pass at 100%.
 #[test]
 fn a_false_catch_is_found_and_the_mutants_it_reached_run_again() {
     let dir = copy_of("false-catches", "false-catches");
@@ -2593,7 +2595,7 @@ fn a_false_catch_is_found_and_the_mutants_it_reached_run_again() {
     assert_eq!(code, 2, "{agent}");
     assert!(
         agent.starts_with(
-            "mutastic: FAIL (a test that caught mutants fails on its own, with no mutant in) · score 40.0% (threshold 80; 57.1% where tests reach) · 6 missed, 6 not covered, 8 caught of 20 mutants\n"
+            "mutastic: FAIL (a test that caught mutants fails on its own, with no mutant in) · score 33.3% (threshold 80; 50.0% where tests reach) · 6 missed, 6 not covered, 6 caught of 18 mutants (2 more skipped)\n"
         ),
         "{agent}"
     );
@@ -2649,7 +2651,7 @@ fn a_false_catch_is_found_and_the_mutants_it_reached_run_again() {
     }
     let last = found.last().unwrap();
     assert_eq!(last["reason"], "run-finished");
-    assert_eq!(last["killed"], 8, "{last}");
+    assert_eq!(last["killed"], 6, "{last}");
     assert_eq!(last["passed"], false, "{last}");
     assert_eq!(last["flaky"], serde_json::json!([broken]));
     assert_eq!(
@@ -3255,7 +3257,7 @@ fn next_works_through_the_misses_one_at_a_time() {
     assert_eq!(head["reason"], "next-item");
     assert_eq!(head["location"]["line"], 15);
     let ids = ids_of(head);
-    assert_eq!(ids.len(), 3, "{head}");
+    assert_eq!(ids.len(), 2, "{head}");
     assert_eq!(head["ids"][0], head["id"], "the lead first");
     assert_eq!(head["rank"]["position"], 1);
     assert_eq!(head["rank"]["order"], "run-1");
@@ -3274,7 +3276,7 @@ fn next_works_through_the_misses_one_at_a_time() {
     );
     assert_eq!(
         events[1],
-        serde_json::json!({"schema": "mutastic.events/v1", "edition": "rust", "reason": "next-finished", "queued": 3, "mutants": 7, "shown": 1, "legacy": 0, "waiting": 0})
+        serde_json::json!({"schema": "mutastic.events/v1", "edition": "rust", "reason": "next-finished", "queued": 3, "mutants": 5, "shown": 1, "legacy": 0, "waiting": 0})
     );
     // That was a run of every mutant, so explain has a last run to say.
     let (_, explained) = mutastic_in(&copy, &["explain", &ids[0]]);
@@ -3283,11 +3285,11 @@ fn next_works_through_the_misses_one_at_a_time() {
         "{explained}"
     );
 
-    // Again, with the code as it was: only the seven left uncaught run. --top shows two, as two is
+    // Again, with the code as it was: only the five left uncaught run. --top shows two, as two is
     // the most from one file.
     let (code, out) = next(&["--top=3", "--format=concise", "--progress=counter"]);
     assert_eq!(code, 1, "{out}");
-    assert_eq!(ran(&out).as_deref(), Some("7 mutants"), "{out}");
+    assert_eq!(ran(&out).as_deref(), Some("5 mutants"), "{out}");
     assert!(
         out.contains("Next: the first 2 of 3 lines with missed mutants in ranking\n"),
         "{out}"
@@ -3387,7 +3389,7 @@ fn next_works_through_the_misses_one_at_a_time() {
     };
     let (code, out) = next(&["--format=concise", "--progress=counter"]);
     assert_eq!(code, 1, "{out}");
-    let rerun = format!("{} mutants", 3 + doubled.len());
+    let rerun = format!("{} mutants", 2 + doubled.len());
     assert_eq!(ran(&out), Some(rerun), "{out}");
     assert!(
         out.contains(&format!(

@@ -273,11 +273,32 @@ A skipped mutant's reason starts with its kind, and the summary counts them by k
 | `arid:` | Code whose change no test should have to notice | `arid: only writes output`, for a `println!` or `log::warn!` statement removed |
 | `equivalent:` | No test can tell it from the code | a `?` that only passes on a formatter's error |
 | `user:` | The project's own decision, in `mutastic.yaml` or `.mutastic/ignores.yaml` | ``user: written by a code generator (rule `skip: shop::generated::**`)`` |
+| `twin:` | It always does what another mutant at its place does, and that one runs for it ([Twins](#twins)) | `twin: same as m2e329a72`, for `n < 10`, which `is_small` returns, made `true` by `mutastic/remove-conditional`: the same code `mutastic/return-value` makes |
 
 Code mutastic doesn't make mutants for at all, such as test code and code inside `unsafe`, isn't in
 the count. The summary names what was left out around unsafe code (`not mutated: unsafe`, with how
 many), and code under a `cfg` this build doesn't have (``not built here: `cfg(windows)` ``, with how
 many), so you know what the score doesn't cover.
+
+### Twins
+
+Two mutants at one place can always do the same. Running both would cost a second build and run,
+and count one gap twice. So only one of them runs, and the other is skipped as `twin: same as
+<id>`, naming the one that runs. Its result is that one's, and the place counts once in the score.
+
+- **The same code.** A function that ends in `n > 0` gets `true` from `mutastic/return-value` and
+  from `mutastic/remove-conditional`. It's one change, made twice.
+- **A comparison of an unsigned value with 0.** The value can't be below 0, so `n > 0` made `n >=
+  0` is always true, as `n > 0` made `true` is.
+
+A twin keeps its id, and the id keeps working. `verify`, `run --only` and `explain` run the one
+it's the same as, and say so: `mutastic: m729a5380 is the same as m2e329a72, which is still
+missed`. `mutastic ignore` records the decision for that one, and an ignore you made of either
+holds for both. A run on changed lines that has a twin runs the one it's the same as too.
+
+The one that runs is the first of them in `defaults`, then `stronger`, then `extended`, in the
+order `mutastic mutants` lists them. A run whose operators leave it out runs the twin as it would
+any mutant.
 
 ## What `verify` says
 
@@ -294,6 +315,7 @@ how it went:
 | `isn't reached by any test` | no test reaches it | no |
 | `is skipped (unviable: …), so it isn't run and needs no test` | it doesn't compile | yes |
 | `crashes, and no test can be said to catch it (…)` | it crashed where a crash proves nothing | yes |
+| `is the same as m2e329a72, which is still missed` | a twin: the one it's the same as ran for it, and its fate follows | as that one |
 
 See [`mutastic verify`](../reference/commands.md#verify) for the command itself.
 

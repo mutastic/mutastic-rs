@@ -1086,3 +1086,181 @@ fn the_report_has_the_contracts_key_paths() {
     );
     assert_kept(&found, &["report"]);
 }
+
+/// The pricing fixture with a comparison of an unsigned value returned as it is, which has twins:
+/// `n > 0` made `true` by mutastic/return-value and by mutastic/remove-conditional, and made `n >=
+/// 0`. Its test checks `positive(1)` only, so the one that runs for the `true` twins is missed.
+fn twins() -> &'static (PathBuf, Vec<Value>) {
+    static TWINS: OnceLock<(PathBuf, Vec<Value>)> = OnceLock::new();
+    TWINS.get_or_init(|| {
+        let dir = common::own_copy("pricing", "contract-twins");
+        let lib = dir.join("src/lib.rs");
+        let text = std::fs::read_to_string(&lib).unwrap();
+        if !text.contains("fn positive") {
+            std::fs::write(
+                &lib,
+                format!(
+                    "{text}\n/// Whether there are any.\npub fn positive(n: usize) -> bool {{\n    n > 0\n}}\n\n#[cfg(test)]\nmod twins {{\n    #[test]\n    fn one_is_positive() {{\n        assert!(super::positive(1));\n    }}\n}}\n"
+                ),
+            )
+            .unwrap();
+        }
+        let given = dir.display().to_string();
+        let events = run(&["run", &given, "--format=jsonl", "--no-suggestions"])
+            .out
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .filter(|event| event["reason"] == "mutant-finished")
+            .collect();
+        (dir, events)
+    })
+}
+
+/// A twin whose partner is missed, and that partner.
+fn missed_twin() -> (&'static Value, &'static Value) {
+    let (_, events) = twins();
+    events
+        .iter()
+        .filter(|event| event.get("sameAs").is_some())
+        .find_map(|twin| {
+            let runs = events.iter().find(|event| event["id"] == twin["sameAs"])?;
+            (runs["status"] == "Survived").then_some((twin, runs))
+        })
+        .expect("a twin of a missed mutant")
+}
+
+fn twins_pattern(name: &str) -> Regex {
+    Regex::new(contract()["twins"][name].as_str().unwrap()).unwrap()
+}
+
+fn matching<'a>(out: &'a str, pattern: &Regex) -> regex::Captures<'a> {
+    out.lines()
+        .find_map(|line| pattern.captures(line))
+        .unwrap_or_else(|| panic!("no line matches {pattern} in\n{out}"))
+}
+
+#[test]
+fn a_twin_is_skipped_as_the_same_as_the_one_that_runs() {
+    let (_, events) = twins();
+    let skip = twins_pattern("skip");
+    let found: Vec<&Value> = events
+        .iter()
+        .filter(|event| event.get("sameAs").is_some())
+        .collect();
+    assert!(found.len() >= 3, "{found:?}");
+    for twin in found {
+        let runs = events
+            .iter()
+            .find(|event| event["id"] == twin["sameAs"])
+            .unwrap();
+        let reason = twin["statusReason"].as_str().unwrap();
+        assert_eq!(twin["status"], "Ignored");
+        assert_eq!(twin["skipKind"], "twin");
+        assert!(skip.is_match(reason), "{reason}");
+        assert_eq!(
+            reason,
+            format!("twin: same as {}", twin["sameAs"].as_str().unwrap())
+        );
+        assert!(runs.get("skipKind").is_none(), "{runs}");
+        assert_eq!(runs["location"]["line"], twin["location"]["line"]);
+    }
+}
+
+#[test]
+fn the_summary_counts_a_twin_with_the_skipped() {
+    let (dir, _) = twins();
+    let out = run(&["run", &dir.display().to_string(), "--no-suggestions"]).out;
+    let row = Regex::new(r"Mutants  .* skipped \(.*\d+ twin\)").unwrap();
+    assert!(row.is_match(&out), "{out}");
+}
+
+#[test]
+fn verify_runs_the_one_a_twin_is_the_same_as() {
+    let (dir, _) = twins();
+    let (twin, runs) = missed_twin();
+    let verified = run(&[
+        "verify",
+        twin["id"].as_str().unwrap(),
+        &dir.display().to_string(),
+    ]);
+    let line = matching(&verified.out, &twins_pattern("verify"));
+    assert_eq!(&line["twin"], twin["id"].as_str().unwrap());
+    assert_eq!(&line["runs"], runs["id"].as_str().unwrap());
+    assert_eq!(&line["fate"], "is still missed");
+    assert_eq!(verified.exit, 1);
+    // The one that runs isn't named, so it has no line of its own.
+    let own = format!("mutastic: {} ", runs["id"].as_str().unwrap());
+    assert!(!verified.out.contains(&own), "{}", verified.out);
+}
+
+#[test]
+fn explain_shows_the_one_a_twin_is_the_same_as() {
+    let (dir, _) = twins();
+    let (twin, runs) = missed_twin();
+    let explained = run(&[
+        "explain",
+        twin["id"].as_str().unwrap(),
+        &dir.display().to_string(),
+    ]);
+    let line = matching(&explained.out, &twins_pattern("explain"));
+    assert_eq!(&line["twin"], twin["id"].as_str().unwrap());
+    assert_eq!(&line["runs"], runs["id"].as_str().unwrap());
+    assert!(explained.out.contains("MISSED"), "{}", explained.out);
+}
+
+#[test]
+fn ignoring_a_twin_records_the_decision_for_the_one_that_runs() {
+    let (dir, _) = twins();
+    let (twin, runs) = missed_twin();
+    let (copy, _) = common::slot(&common::slots(), "contract-twins-ignored");
+    common::fresh(dir, &copy);
+    let ignored = run(&[
+        "ignore",
+        twin["id"].as_str().unwrap(),
+        &copy.display().to_string(),
+        "--reason=tested elsewhere",
+    ]);
+    let line = matching(&ignored.out, &twins_pattern("ignore"));
+    assert_eq!(&line["runs"], runs["id"].as_str().unwrap());
+    let kept = std::fs::read_to_string(copy.join(".mutastic/ignores.yaml")).unwrap();
+    assert!(
+        kept.contains(&format!("id: {}", runs["id"].as_str().unwrap())),
+        "{kept}"
+    );
+    assert!(
+        !kept.contains(&format!("id: {}", twin["id"].as_str().unwrap())),
+        "{kept}"
+    );
+}
+
+#[test]
+fn an_ignore_of_a_twin_holds_for_the_one_that_runs() {
+    let (dir, _) = twins();
+    let (twin, runs) = missed_twin();
+    let (copy, _) = common::slot(&common::slots(), "contract-twins-kept");
+    common::fresh(dir, &copy);
+    std::fs::create_dir_all(copy.join(".mutastic")).unwrap();
+    std::fs::write(
+        copy.join(".mutastic/ignores.yaml"),
+        format!(
+            "ignores:\n  - id: {}\n    at: 'pricing::positive, line {}'\n    change: '`n > 0` is always true'\n    code: 'n > 0'\n    reason: 'tested elsewhere'\n",
+            twin["id"].as_str().unwrap(),
+            twin["location"]["line"]
+        ),
+    )
+    .unwrap();
+    let verified = run(&[
+        "verify",
+        runs["id"].as_str().unwrap(),
+        &copy.display().to_string(),
+    ]);
+    assert!(
+        verified.out.contains(&format!(
+            "mutastic: {} is skipped (user: tested elsewhere",
+            runs["id"].as_str().unwrap()
+        )),
+        "{}",
+        verified.out
+    );
+    assert_eq!(verified.exit, 0);
+}

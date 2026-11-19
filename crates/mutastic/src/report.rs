@@ -2790,6 +2790,9 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
             event["skipKind"] = json!(skip_kind(result));
         }
     }
+    if let Some(partner) = crate::sites::twins::partner_of(mutant) {
+        event["sameAs"] = json!(partner);
+    }
     if let Some(near) = mutant.near_unsafe {
         event["nearUnsafe"] = json!(near);
     }
@@ -2925,13 +2928,29 @@ pub fn last_run(report_file: &std::path::Path, id: &str) -> Option<LastRun> {
         })
 }
 
+/// The result `explain` shows: its mutant's, or for a twin that of the mutant it's the same as,
+/// which ran for it.
+fn explained_result(report: &Report) -> Option<&MutantResult> {
+    let first = report.results.first()?;
+    let runs = crate::sites::twins::partner_of(&report.found.mutants[first.mutant]);
+    Some(
+        runs.and_then(|id| {
+            report
+                .results
+                .iter()
+                .find(|result| report.found.mutants[result.mutant].id == id)
+        })
+        .unwrap_or(first),
+    )
+}
+
 /// `explain`: one mutant in full whatever became of it, as the Java edition explains it: a miss
 /// gets its card; anything else a card that says what happened instead, without help or a test to
 /// add; then what the change is, its operator, its id, its site and how the last full run went.
 pub fn explained(report: &Report, last: Option<LastRun>, style: Style) -> String {
     let view = View::of(report, true);
     let mut out = String::new();
-    let Some(result) = report.results.first() else {
+    let Some(result) = explained_result(report) else {
         return out;
     };
     if result.status == Status::Survived {
@@ -3177,7 +3196,7 @@ fn about(
 pub fn explained_jsonl(report: &Report, last: Option<LastRun>) -> String {
     let view = View::of(report, false);
     let mut out = jsonl(report);
-    let Some(result) = report.results.first() else {
+    let Some(result) = explained_result(report) else {
         return out;
     };
     let about = About::of(&view, result, last);

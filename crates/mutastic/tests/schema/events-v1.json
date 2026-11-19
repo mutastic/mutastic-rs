@@ -254,8 +254,12 @@
           "description": "Why it was skipped, kind first: `arid: trivial getter of name`. Only for a skipped mutant."
         },
         "skipKind": {
-          "enum": ["generated", "equivalent", "unviable", "arid", "user"],
-          "description": "The kind of reason it was skipped, the first word of `statusReason`: code the compiler wrote, a change that can't be told apart, one that can't run, code not worth a test, or the project's own decision. Only with `statusReason`."
+          "enum": ["generated", "equivalent", "unviable", "arid", "user", "twin"],
+          "description": "The kind of reason it was skipped, the first word of `statusReason`: code the compiler wrote, a change that can't be told apart, one that can't run, code not worth a test, the project's own decision, or a twin, which always does what another mutant at its place does (`sameAs`). Only with `statusReason`."
+        },
+        "sameAs": {
+          "$ref": "#/$defs/mutantId",
+          "description": "For a twin: the mutant at its place that always does the same, which runs for it, so the place counts once in the score. Its result is that mutant's mutant-finished. Only with `skipKind` `twin`."
         },
         "coveredBy": {
           "type": "array",

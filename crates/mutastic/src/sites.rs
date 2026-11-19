@@ -32,6 +32,7 @@ mod operators;
 mod profile;
 mod rollback;
 mod stronger;
+pub mod twins;
 mod unsigned;
 
 /// The operators, by the ids the Java edition uses.
@@ -333,6 +334,8 @@ pub struct Mutant {
     /// Why it isn't run, by its kind (`equivalent: …`): it's made, so it keeps its id, but it's
     /// out of the score and needs no test.
     pub skipped: Option<String>,
+    /// What it does, as keys a mutant that always does the same shares: a twin ([`twins`]).
+    pub twin_keys: Vec<String>,
 }
 
 impl Mutant {
@@ -683,6 +686,7 @@ pub fn find_with(
         });
     }
     found.files.sort_by(|a, b| a.path.cmp(&b.path));
+    twins::mark(&mut found.mutants);
     found
 }
 
@@ -1524,7 +1528,8 @@ impl Finder<'_> {
             .or_else(|| guarded::never_equal(node, &change, self.module, &self.facts.structs))
             .or_else(|| edge::same_at_edge(node, &change, self.module, &self.facts.structs))
             .or_else(|| profile::decided_by_profile(node, &change));
-        self.found.mutants.push(Mutant {
+        let answers = unsigned::answers_key(node, &change);
+        let mut mutant = Mutant {
             ordinal,
             id,
             fingerprint,
@@ -1542,7 +1547,12 @@ impl Finder<'_> {
             form,
             claimed,
             skipped,
-        });
+            twin_keys: Vec::new(),
+        };
+        mutant.twin_keys = std::iter::once(twins::code_key(&mutant))
+            .chain(answers)
+            .collect();
+        self.found.mutants.push(mutant);
     }
 
     /// The tier of the code at `node`: its function's, or unsafe inside an `unsafe` block.

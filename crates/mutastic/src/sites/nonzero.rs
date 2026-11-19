@@ -516,7 +516,8 @@ mod tests {
             let entry = skipped
                 .entry(found.functions[mutant.function].path.clone())
                 .or_default();
-            if mutant.skipped.is_some() {
+            // A twin is skipped for another mutant's sake, not for what the code proves.
+            if mutant.skipped.is_some() && twins::partner_of(mutant).is_none() {
                 entry.push(mutant.replacement.clone());
             }
         }
