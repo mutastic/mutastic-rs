@@ -1,7 +1,8 @@
 //! The Rust edition keeps the editions' contract, `mutastic.contract/v1`, which lives in the Java
 //! repository beside the events schema (`docs/public/contract/v1.json`): its command line,
 //! its help's layout, the error code and exit code of each error case, the human summary's rows,
-//! the agent format's lines, the events' key paths and order, and mutation.json's key paths. Each
+//! the agent format's lines, the events' key paths and order, mutation.json's key paths, and the
+//! arid rules this edition has, by id. Each
 //! is found by running the built binary on a copy of `fixtures/pricing`, as a person does, and
 //! compared with the contract. A difference the contract doesn't record fails, naming the item and
 //! what to do; so does a recorded one that has gone, so the list only shrinks for real.
@@ -328,6 +329,43 @@ fn the_contract_names_this_edition_and_its_ids_are_one_each() {
     ids.sort_unstable();
     ids.dedup();
     assert_eq!(ids.len(), all, "a difference's id is used twice");
+}
+
+/// The arid rules this edition has are the contract's for it: each id, what it judges, its
+/// reasons and its example, and no rule the contract doesn't give this edition.
+#[test]
+fn the_arid_rules_are_the_contracts() {
+    let theirs: Vec<String> = contract()["arid"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|rule| strings(&rule["editions"]).iter().any(|e| e == EDITION))
+        .map(|rule| {
+            format!(
+                "{} | {} | {} | {}",
+                text(rule, "id"),
+                text(rule, "scope"),
+                strings(&rule["reasons"][EDITION]).join(" / "),
+                text(&rule["examples"], EDITION)
+            )
+        })
+        .collect();
+    let mine: Vec<String> = mutastic::arid::RULES
+        .iter()
+        .map(|rule| {
+            format!(
+                "{} | {} | {} | {}",
+                rule.id,
+                rule.scope.written(),
+                rule.reasons.join(" / "),
+                rule.example
+            )
+        })
+        .collect();
+    assert_eq!(
+        mine, theirs,
+        "this edition's arid rules (src/arid.rs) and the contract's `arid`, for rust"
+    );
 }
 
 #[test]
