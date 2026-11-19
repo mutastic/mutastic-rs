@@ -1,1 +1,1 @@
-mutastic gate: passed: the tests catch 5 of the 5 mutants on the lines the task changed (operators: defaults)
+mutastic gate: passed: the tests catch all 5 mutants on the lines the task changed (operators: defaults)

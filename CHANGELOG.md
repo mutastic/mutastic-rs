@@ -26,6 +26,16 @@ newest come first.
 
 ### Scoring changes
 
+Expect your score to move, for this reason, not because your tests changed:
+
+- **A call whose result is only checked is removed: `handle.join().unwrap();` is a mutant.** A
+  statement ending in `.unwrap()` or `.expect(..)` had no mutant and wasn't counted, so a test that
+  didn't wait for a thread, or never saw what `tx.send(v).unwrap();` sent, was never asked to. Now
+  the statement is removed, by `mutastic/remove-discarded-call`, as the Java edition removes
+  `thread.join();`. One that checks a value it's given, `x.unwrap();`, is counted and skipped as
+  arid, `arid: only checks the value is there`, as the Java edition skips a removed
+  `Objects.requireNonNull(x);`. New ids appear; none moves. See [Remove discarded
+  call](docs/operators/calls.md#remove-discarded-call).
 - **Twins run once, and their place counts once.** Two mutants at one place that always do the
   same now run as one: the other is skipped as `twin: same as <id>`, naming the one that runs, and
   is out of the score. Two operators making the same code are twins, as a function that ends in
@@ -39,6 +49,11 @@ newest come first.
 
 ### Fixes
 
+- **A count of one reads as one.** The gate's pass said the tests `catch 1 of the 1 mutant`; it
+  now says they `catch the only mutant`, `catch all 6 mutants` when they catch every one, and
+  `catch 4 of the 6 mutants` otherwise. `1 of the baseline's mutants is caught now`, from a run
+  and from `baseline --prune`, and `removed 1 ignore that no longer holds`, from `ignore
+  --prune`, take their verb from the count too, as the Java edition's do.
 - **A test stopped for time takes the processes it started with it.** A mutant that made a test
   run past its time stopped the test process, and left whatever it had started running: a build,
   a server, a `sleep`. They went on taking memory and cores from the next mutants' tests, and on

@@ -2017,6 +2017,70 @@ mod tests {
     }
 
     #[test]
+    fn a_checked_call_is_removed_and_a_checked_value_is_skipped_as_arid() {
+        let source = "pub fn wait(h: std::thread::JoinHandle<()>, r: Result<u8, ()>, o: Option<String>, rx: std::sync::mpsc::Receiver<u8>) {\n\
+             h.join().unwrap();\n\
+             std::thread::scope(|s| s.spawn(|| ()).join().expect(\"joined\"));\n\
+             r.unwrap();\n\
+             o.as_deref().expect(\"named\");\n\
+             Option::unwrap(rx.recv().ok());\n\
+             }";
+        let dir = std::env::temp_dir().join(format!("mutastic-checked-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(dir.join("src/lib.rs"), source).unwrap();
+        let found = find(
+            &dir,
+            "sample",
+            &[PathBuf::from("src/lib.rs")],
+            &[REMOVE_VOID_CALL, REMOVE_DISCARDED_CALL],
+        );
+        std::fs::remove_dir_all(&dir).ok();
+        let made: Vec<(&str, &str, &str, Option<&str>)> = found
+            .mutants
+            .iter()
+            .map(|m| {
+                (
+                    &source[m.site.clone()],
+                    &source[m.caret.clone()],
+                    m.operator,
+                    m.skipped.as_deref(),
+                )
+            })
+            .collect();
+        let arid = Some("arid: only checks the value is there");
+        assert_eq!(
+            made,
+            [
+                (
+                    "h.join().unwrap();",
+                    "h.join()",
+                    REMOVE_DISCARDED_CALL,
+                    None
+                ),
+                (
+                    "std::thread::scope(|s| s.spawn(|| ()).join().expect(\"joined\"));",
+                    "std::thread::scope(|s| s.spawn(|| ()).join().expect(\"joined\"))",
+                    REMOVE_DISCARDED_CALL,
+                    None
+                ),
+                ("r.unwrap();", "r.unwrap()", REMOVE_DISCARDED_CALL, arid),
+                (
+                    "o.as_deref().expect(\"named\");",
+                    "o.as_deref().expect(\"named\")",
+                    REMOVE_DISCARDED_CALL,
+                    arid
+                ),
+                (
+                    "Option::unwrap(rx.recv().ok());",
+                    "rx.recv().ok()",
+                    REMOVE_DISCARDED_CALL,
+                    None
+                ),
+            ]
+        );
+    }
+
+    #[test]
     fn ids_do_not_move_when_code_above_them_moves() {
         let one = found("pub fn d(t: u32) -> bool { t >= 100 }");
         let two = found("\n\n// a comment\npub fn d(t: u32) -> bool {\n    t >= 100\n}");
