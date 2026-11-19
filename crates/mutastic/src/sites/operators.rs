@@ -7,6 +7,7 @@
 //! the build withdraws it.
 
 use super::*;
+use crate::arid::ONLY_WRITES_OUTPUT;
 use ra_ap_syntax::ast::{HasArgList, RangeItem};
 
 /// Method names and their counterparts, by operator.
@@ -81,9 +82,6 @@ const OUTPUT_MACROS: &[&str] = &[
     "print", "println", "eprint", "eprintln", "dbg", "trace", "debug", "info", "warn", "error",
     "log", "event",
 ];
-
-/// The arid skip of an output macro's mutant, in the Java edition's words.
-const ONLY_WRITES_OUTPUT: &str = "arid: only writes output";
 
 /// Item-preserving iterator stages, which can be left out without changing the item type.
 const STAGES: &[&str] = &[
