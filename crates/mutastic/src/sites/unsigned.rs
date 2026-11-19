@@ -312,9 +312,13 @@ fn enumerated(function: &ast::Fn, name: &str, used: &SyntaxNode) -> bool {
 mod tests {
     use super::*;
 
-    /// Each function's skipped mutants, by replacement.
+    /// Each function's skipped mutants, by replacement. Each call has a directory of its own: the
+    /// tests run at once, and one taking away a shared directory took the other's source with it.
     fn skipped(source: &str) -> BTreeMap<String, Vec<String>> {
-        let dir = std::env::temp_dir().join(format!("mutastic-unsigned-{}", std::process::id()));
+        static CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let call = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir =
+            std::env::temp_dir().join(format!("mutastic-unsigned-{}-{call}", std::process::id()));
         std::fs::create_dir_all(dir.join("src")).unwrap();
         std::fs::write(dir.join("src/lib.rs"), source).unwrap();
         let found = find(&dir, "sample", &[PathBuf::from("src/lib.rs")], STRONGER);
