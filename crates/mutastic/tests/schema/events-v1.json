@@ -755,6 +755,10 @@
         "durationMs": {
           "$ref": "#/$defs/count",
           "description": "How long the run took, in milliseconds."
+        },
+        "sleptMs": {
+          "$ref": "#/$defs/count",
+          "description": "How long the machine slept during the run, in milliseconds, which `durationMs` leaves out: the wall clock's time less the time awake, from the start of the run. 0 unless it's at least 5 seconds and a tenth of the wall clock's time, when the summary says it under Duration. Always there from 1.3.0."
         }
       },
       "allOf": [
