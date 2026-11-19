@@ -32,6 +32,7 @@ mod operators;
 mod profile;
 mod rollback;
 mod stronger;
+mod threads;
 pub mod twins;
 mod unsigned;
 
@@ -465,6 +466,8 @@ struct Facts {
     receivers: BTreeMap<(String, String), callable::Receiver>,
     /// The structs declared outside functions, with their fields' types.
     structs: guarded::Structs,
+    /// Whether the crate reads a thread's name, so that names mean something in it.
+    reads_thread_names: bool,
 }
 
 impl Facts {
@@ -537,6 +540,7 @@ impl Facts {
             facts.defaults(&parsed.tree);
             callable::receivers(&parsed.module, &parsed.tree, &mut facts.receivers);
             guarded::index(&parsed.module, &parsed.tree, &mut facts.structs);
+            facts.reads_thread_names |= threads::reads_names(&parsed.tree);
             for node in parsed.tree.syntax().descendants() {
                 if !opens_unsafe(&node) {
                     continue;
@@ -1527,7 +1531,10 @@ impl Finder<'_> {
             .or_else(|| unsigned::divides_unsigned(node, operator))
             .or_else(|| guarded::never_equal(node, &change, self.module, &self.facts.structs))
             .or_else(|| edge::same_at_edge(node, &change, self.module, &self.facts.structs))
-            .or_else(|| profile::decided_by_profile(node, &change));
+            .or_else(|| profile::decided_by_profile(node, &change))
+            .or_else(|| {
+                threads::reason(operator, node, &replacement, self.facts.reads_thread_names)
+            });
         let answers = unsigned::answers_key(node, &change);
         let mut mutant = Mutant {
             ordinal,
