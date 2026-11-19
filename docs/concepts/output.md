@@ -276,8 +276,23 @@ it finishes, and a `progress` event every 30 seconds; then `run-finished`. See
 {"schema":"mutastic.events/v1","edition":"rust","reason":"phase-finished","phase":"mutants","durationMs":66}
 {"schema":"mutastic.events/v1","edition":"rust","reason":"phase-started","phase":"checking"}
 {"schema":"mutastic.events/v1","edition":"rust","reason":"phase-finished","phase":"checking","durationMs":9}
-{"schema":"mutastic.events/v1","edition":"rust","reason":"run-finished","toolchain":{"name":"rustc","version":"1.99.1"},"mutants":11,"killed":10,"survived":1,"timeout":0,"noCoverage":0,"ignored":0,"runtimeError":0,"notMutated":{"unsafe":0,"cfg":0},"score":90.9,"threshold":80,"passed":true,"coveredScore":90.9,"tests":3,"workers":1,"workersStarted":1,"coverageMs":11,"flaky":[],"flakyEvidence":[],"likelyFlaky":[],"unrelatedCatches":[],"reports":["target/mutastic/mutation.json","target/mutastic/mutation.html"],"staleIgnores":[],"build":{"rounds":2,"unviable":0,"setupMs":101},"durationMs":212}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"run-finished","toolchain":{"name":"rustc","version":"1.99.1"},"mutants":11,"killed":10,"survived":1,"timeout":0,"noCoverage":0,"ignored":0,"runtimeError":0,"notMutated":{"unsafe":0,"cfg":0},"score":90.9,"threshold":80,"passed":true,"coveredScore":90.9,"tests":3,"workers":1,"workersStarted":1,"coverageMs":11,"flaky":[],"flakyEvidence":[],"likelyFlaky":[],"unrelatedCatches":[],"reports":["target/mutastic/mutation.json","target/mutastic/mutation.html"],"staleIgnores":[],"build":{"rounds":2,"unviable":0,"setupMs":101},"durationMs":212,"sleptMs":0}
 ```
+
+## When the machine sleeps
+
+A laptop can sleep in the middle of a run, and Duration counts only the time it was awake. A run
+that took four minutes by the clock can say 15.4s. When the clock ran at least 5 seconds, and a
+tenth of its time, more than that, a line under Duration says how long the machine slept:
+
+```text
+  Duration  15.4s (setup 0.4s, build 8.7s, coverage 1.2s, mutants 4.6s, checking 0.5s)
+            The machine slept for 3m49s during the run, which Duration leaves out.
+```
+
+`run-finished`'s `sleptMs` has the same time in milliseconds, and is 0 when there's no line.
+Under 5 seconds, a correction to the clock is as likely the cause; under a tenth, Duration still
+reads about right. The Java edition says it the same way.
 
 ## Words, colour and links
 
