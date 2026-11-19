@@ -270,7 +270,7 @@ A skipped mutant's reason starts with its kind, and the summary counts them by k
 | Kind | Means | Example |
 |---|---|---|
 | `unviable:` | It doesn't compile | `unviable: doesn't compile (E0308: mismatched types)` |
-| `arid:` | Code whose change no test should have to notice | `arid: only writes output`, for a `println!` or `log::warn!` statement removed; `arid: only checks the value is there`, for an `x.unwrap();` statement removed |
+| `arid:` | Code whose change no test should have to notice | `arid: only writes output`, for a `println!` or `log::warn!` statement removed; `arid: only checks the value is there`, for an `x.unwrap();` statement removed; [each rule](https://docs.mutastic.io/reference/arid/) |
 | `equivalent:` | No test can tell it from the code | a `?` that only passes on a formatter's error |
 | `user:` | The project's own decision, in `mutastic.yaml` or `.mutastic/ignores.yaml` | ``user: written by a code generator (rule `skip: shop::generated::**`)`` |
 

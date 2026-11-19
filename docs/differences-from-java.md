@@ -129,7 +129,9 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
 - **Skipped as arid:** a statement that only writes output, `println!`, `eprintln!`, `dbg!` or a
   logger's macro, where the Java edition skips a call to a logger or `System.out`. And a statement
   that only checks a value it's given, `x.unwrap();` or `x.expect("..");`, where the Java edition
-  skips a removed `Objects.requireNonNull(x);`.
+  skips a removed `Objects.requireNonNull(x);`. Other code the Java edition skips as arid, this
+  edition doesn't make a mutant for, or counts: [Arid rules](https://docs.mutastic.io/reference/arid/)
+  says which, rule by rule.
 - **Skipped as equivalent:** a `?` that only passes on a formatter's error, inside the `fmt` of
   `Display` and the other formatting traits, or on a write to a `Formatter`: no test can make that
   error happen.

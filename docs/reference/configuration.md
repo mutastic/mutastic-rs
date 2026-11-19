@@ -41,7 +41,9 @@ with the crate's name or `crate::` before it or not: `shop::Money::add`, `crate:
 its path, or by the item that holds it (`shop::Money`), as a Java rule covers a method or its
 class. A `mutate:` rule takes back an arid skip in the code it covers, as in the Java edition: a
 `println!` or `log::warn!` that's a contract runs as a mutant there. It never takes back any other
-skip.
+skip. Each arid rule, what it can hide and the rule that takes it back are in
+[Arid rules](https://docs.mutastic.io/reference/arid/), and why mutastic skips them at all in
+[Arid mutants](https://docs.mutastic.io/concepts/arid/).
 
 ### In a workspace
 
