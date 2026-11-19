@@ -39,6 +39,12 @@ Expect your score to move, for this reason, not because your tests changed:
 
 ### Fixes
 
+- **A thread started and not waited for says which test catches it.** A missed `thread::spawn(..)`
+  or `thread::Builder`'s `spawn` said only that no test checked what the statement does. Its card
+  now says no test waits for the thread and checks what it did, and to join its handle or wait on a
+  channel its closure sends to first. A scoped thread's `spawn` keeps the card any statement gets,
+  as its scope waits for it. The Java edition's cards name the test the same way for threads,
+  pools, interrupts, locks and daemon flags.
 - **A count of one reads as one.** The gate's pass said the tests `catch 1 of the 1 mutant`; it
   now says they `catch the only mutant`, `catch all 6 mutants` when they catch every one, and
   `catch 4 of the 6 mutants` otherwise. `1 of the baseline's mutants is caught now`, from a run
