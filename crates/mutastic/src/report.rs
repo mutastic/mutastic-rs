@@ -2788,6 +2788,9 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
         event["statusReason"] = json!(reason);
         if result.status == Status::Ignored {
             event["skipKind"] = json!(skip_kind(result));
+            if let Some(rule) = crate::arid::rule(reason) {
+                event["skipRule"] = json!(rule.id);
+            }
         }
     }
     if let Some(near) = mutant.near_unsafe {
@@ -3046,6 +3049,9 @@ struct About {
     site: String,
     last: Option<LastRun>,
     last_words: String,
+    /// The arid rule that skipped it, if one of mutastic's own did, and the `mutastic.yaml` text
+    /// that runs it.
+    arid: Option<(&'static crate::arid::Rule, String)>,
 }
 
 impl About {
@@ -3076,6 +3082,12 @@ impl About {
             function: function.path.clone(),
             last_words: last_words(last.as_ref()),
             last,
+            arid: result
+                .reason
+                .as_deref()
+                .filter(|_| result.status == Status::Ignored)
+                .and_then(crate::arid::rule)
+                .map(|rule| (rule, rule.bring_back(&function.path))),
         }
     }
 }
@@ -3084,7 +3096,11 @@ impl About {
     /// The same, its text of the project's (the code, names, what the last run says) as it's
     /// shown.
     fn shown(self) -> About {
+        let arid = self
+            .arid
+            .map(|(rule, _)| (rule, rule.bring_back(&untrusted::value(&self.function))));
         About {
+            arid,
             from: untrusted::value(&self.from),
             to: untrusted::value(&self.to),
             operator_description: untrusted::escape(&self.operator_description),
@@ -3166,6 +3182,21 @@ fn about(
             .into_iter()
             .collect(),
     );
+    if let Some((rule, bring_back)) = &about.arid {
+        row(
+            out,
+            "arid",
+            format!("{}: {}", rule.id, rule.description),
+            vec![
+                format!("docs: {}", rule.url()),
+                "to run it, add to mutastic.yaml:".into(),
+            ],
+        );
+        // As it's to be copied: as it is.
+        for line in bring_back.lines() {
+            let _ = writeln!(out, "{}  {line}", " ".repeat(16));
+        }
+    }
     row(out, "id", about.id.clone(), vec![about.id_note.into()]);
     row(out, "site", about.site.clone(), Vec::new());
     row(out, "last run", about.last_words.clone(), Vec::new());
@@ -3201,6 +3232,14 @@ pub fn explained_jsonl(report: &Report, last: Option<LastRun>) -> String {
         "idNote": about.id_note,
         "site": { "method": about.function, "description": about.site },
     });
+    if let Some((rule, bring_back)) = &about.arid {
+        event["arid"] = json!({
+            "id": rule.id,
+            "description": rule.description,
+            "docs": rule.url(),
+            "bringBack": bring_back,
+        });
+    }
     if let Some(last) = &about.last {
         let mut run = json!({ "status": last.status, "description": about.last_words });
         if let Some(caught_by) = &last.caught_by {

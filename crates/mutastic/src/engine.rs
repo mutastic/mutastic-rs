@@ -749,7 +749,8 @@ fn apply_ignores(project: &Project, found: &mut Crate) -> Result<Vec<String>, Fa
 
 /// Skips the mutants in code a `skip:` rule of `mutastic.yaml` covers, with its reason. A mutant
 /// something else already skips keeps that reason, except that a `mutate:` rule takes back an arid
-/// skip, as in the Java edition: the project says that output is a contract. A rule names a
+/// skip, as in the Java edition: the project says that output is a contract. With an `arid:` list,
+/// it takes back only the skips of the arid rules it names. A rule names a
 /// function by its path in the crate, as `generated::checksum`, `crate::generated::checksum` or,
 /// with the crate's name, `shop::generated::checksum`.
 fn apply_rules(rules: &[crate::config::Rule], crate_name: &str, found: &mut Crate) {
@@ -760,26 +761,22 @@ fn apply_rules(rules: &[crate::config::Rule], crate_name: &str, found: &mut Crat
             format!("crate::{path}"),
             format!("{crate_name}::{path}"),
         ];
-        let covering = |mutate: bool| {
-            rules
-                .iter()
-                .find(|rule| rule.mutate == mutate && named.iter().any(|path| rule.covers(path)))
-        };
-        let skip = covering(false);
-        let mutate = covering(true);
+        let covers = |rule: &&crate::config::Rule| named.iter().any(|path| rule.covers(path));
+        let skip = rules.iter().filter(|rule| !rule.mutate).find(covers);
         let mutant = &mut found.mutants[index];
-        if mutate.is_some() && mutant.skipped.as_deref().is_some_and(is_arid) {
-            mutant.skipped = None;
+        if let Some(reason) = mutant.skipped.as_deref() {
+            if rules
+                .iter()
+                .filter(covers)
+                .any(|rule| rule.brings_back(reason))
+            {
+                mutant.skipped = None;
+            }
         }
         if let (Some(rule), None) = (skip, &mutant.skipped) {
             mutant.skipped = Some(rule.skip_reason());
         }
     }
-}
-
-/// `arid: only writes output`: a skip a `mutate:` rule may take back.
-fn is_arid(reason: &str) -> bool {
-    reason.starts_with("arid:")
 }
 
 /// The source line a mutant is on, as written.
@@ -1521,7 +1518,7 @@ mod tests {
         let source = "pub fn told(b: i32) { eprintln!(\"{b}\"); }\n\
                       pub fn quiet(b: i32) { eprintln!(\"{b}\"); }\n";
         std::fs::write(dir.join("src/lib.rs"), source).unwrap();
-        let mut found = sites::find(
+        let found = sites::find(
             &dir,
             "shop",
             &[PathBuf::from("src/lib.rs")],
@@ -1532,14 +1529,41 @@ mod tests {
             mutate,
             target: target.into(),
             reason: "the log is what the operator reads".into(),
+            arid: Vec::new(),
         };
-        apply_rules(
-            &[rule(true, "shop::told"), rule(false, "quiet")],
-            "shop",
-            &mut found,
+        let only = |target: &str, id: &str| crate::config::Rule {
+            arid: vec![id.to_string()],
+            ..rule(true, target)
+        };
+        let skipped = |rules: &[crate::config::Rule]| {
+            let mut found = found.clone();
+            apply_rules(rules, "shop", &mut found);
+            found
+                .mutants
+                .iter()
+                .map(|m| m.skipped.clone())
+                .collect::<Vec<_>>()
+        };
+        let output = Some("arid: only writes output".to_string());
+        assert_eq!(
+            skipped(&[rule(true, "shop::told"), rule(false, "quiet")]),
+            [None, output.clone()]
         );
-        let skipped: Vec<Option<&str>> =
-            found.mutants.iter().map(|m| m.skipped.as_deref()).collect();
-        assert_eq!(skipped, [None, Some("arid: only writes output")]);
+        // An `arid:` list takes back only its rules' skips.
+        assert_eq!(
+            skipped(&[
+                only("told", "mutastic:output"),
+                only("quiet", "mutastic:null-checks")
+            ]),
+            [None, output.clone()]
+        );
+        // Two rules over the same code take back what either names.
+        assert_eq!(
+            skipped(&[
+                only("quiet", "mutastic:null-checks"),
+                only("quiet", "mutastic:output")
+            ]),
+            [output, None]
+        );
     }
 }
