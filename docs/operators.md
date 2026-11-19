@@ -58,6 +58,7 @@ families are the Java edition's, with the Java edition's names wherever the lang
 | [`mutastic/null-parameter`](operators/arguments.md#null-parameter) | an `Option` parameter, `None` from the start of the function | stronger | [Arguments](operators/arguments.md) | the same |
 | [`mutastic/drop-vararg`](operators/arguments.md#drop-vararg) | the last value of an array or `vec!` passed to a call, left out | extended | [Arguments](operators/arguments.md) | the same, in `stronger` |
 | [`mutastic/default-parameter`](operators/arguments.md#default-parameter) | a parameter, its type's default from the start of the function | extended | [Arguments](operators/arguments.md) | — |
+| [`mutastic/boolean-constant`](operators/arguments.md#boolean-constant) | a `true` or `false` passed, bound, assigned or given to a field, to the other | stronger | [Arguments](operators/arguments.md) | the same |
 | [`library/swap-string`](operators/library.md#swap-string) | `starts_with` and `ends_with`, `to_uppercase` and `to_lowercase`, `trim_start` and `trim_end`, `strip_prefix` and `strip_suffix` | defaults | [Library methods](operators/library.md) | the same |
 | [`library/swap-math`](operators/library.md#swap-math) | `min` and `max`, `floor` and `ceil` | defaults | [Library methods](operators/library.md) | the same |
 | [`library/swap-index-of`](operators/library.md#swap-index-of) | `find` and `rfind`, `position` and `rposition`, `split_once` and `rsplit_once` | stronger | [Library methods](operators/library.md) | the same |
@@ -87,7 +88,7 @@ type is rejected by the compiler and reported as unviable, never run.
 
 ## Parity with the Java edition
 
-The Java edition has 47 operator ids. **41 carry over** with the same meaning, all implemented;
+The Java edition has 48 operator ids. **42 carry over** with the same meaning, all implemented;
 **6 don't**, for want of the language feature they change. mutastic for Rust adds **4 ids of its
 own**, each in the family it fits, and implements one of the Java edition's plugin operators.
 

@@ -32,6 +32,19 @@ pub fn greet(name: String, excited: bool) -> String {
     }
 }
 
+/// The amount as a receipt shows it: always two decimal places.
+pub fn receipt(amount: f64) -> String {
+    shown(amount, true)
+}
+
+fn shown(amount: f64, fixed: bool) -> String {
+    if fixed {
+        format!("{amount:.2}")
+    } else {
+        amount.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -59,5 +72,10 @@ mod tests {
     #[test]
     fn a_calm_greeting() {
         assert_eq!(greet("Ann".into(), false), "Hi Ann");
+    }
+
+    #[test]
+    fn a_price_in_pence() {
+        assert_eq!(receipt(2.25), "2.25");
     }
 }
