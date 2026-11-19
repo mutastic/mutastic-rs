@@ -5,6 +5,24 @@ newest come first.
 
 ## Unreleased
 
+### Additions
+
+- **`library/swap-ends`, in `stronger`: one end of a collection for the other.** `first` and
+  `last`, `front` and `back` (and their `_mut` forms), and a `BTreeMap`'s and a `BTreeSet`'s
+  `first_key_value` and `last_key_value`, `first_entry` and `last_entry`, and `pop_first` and
+  `pop_last` swap. It finds the newest taken where the oldest was meant, which tests with one
+  element can't see. An iterator's `last` is left alone, as it has no `first`. The Java edition has
+  it too, for `getFirst` and `getLast` and a `Deque`'s and a sorted collection's ends. See [Swap
+  ends](docs/operators/library.md#swap-ends).
+
+### Fixes
+
+- **A test stopped for time takes the processes it started with it.** A mutant that made a test
+  run past its time stopped the test process, and left whatever it had started running: a build,
+  a server, a `sleep`. They went on taking memory and cores from the next mutants' tests, and on
+  a small machine could take it down. Those processes are now stopped too, as the Java edition
+  does.
+
 ## 1.2.1 (2026-11-18)
 
 ### Fixes

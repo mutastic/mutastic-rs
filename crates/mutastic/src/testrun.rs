@@ -204,7 +204,7 @@ pub fn run(
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
             Ok(None) if started.elapsed() > timeout => {
-                let _ = child.kill();
+                kill_tree(&mut child);
                 let _ = child.wait();
                 break None;
             }
@@ -258,6 +258,68 @@ pub fn run(
         stderr,
         signal: signal_of(&status),
     }
+}
+
+/// Stops a test process that ran out of time, with every process it started. A test can start a
+/// build or a server of its own, and a mutant can make one run on: left running, it would take
+/// memory and cores from the next mutants' tests, a build of a big crate gigabytes of it.
+#[cfg(unix)]
+fn kill_tree(child: &mut std::process::Child) {
+    let descendants = descendants(child.id());
+    let _ = child.kill();
+    if !descendants.is_empty() {
+        let _ = Command::new("kill")
+            .arg("-KILL")
+            .args(descendants.iter().map(u32::to_string))
+            .stderr(Stdio::null())
+            .status();
+    }
+}
+
+#[cfg(windows)]
+fn kill_tree(child: &mut std::process::Child) {
+    let _ = Command::new("taskkill")
+        .args(["/T", "/F", "/PID", &child.id().to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    let _ = child.kill();
+}
+
+#[cfg(not(any(unix, windows)))]
+fn kill_tree(child: &mut std::process::Child) {
+    let _ = child.kill();
+}
+
+/// The processes `pid` started, and theirs, from `ps`: none if it can't be asked.
+#[cfg(unix)]
+fn descendants(pid: u32) -> Vec<u32> {
+    let Ok(output) = Command::new("ps")
+        .args(["-A", "-o", "pid=,ppid="])
+        .stderr(Stdio::null())
+        .output()
+    else {
+        return Vec::new();
+    };
+    let pairs: Vec<(u32, u32)> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| {
+            let mut words = line.split_whitespace();
+            Some((words.next()?.parse().ok()?, words.next()?.parse().ok()?))
+        })
+        .collect();
+    let mut found = vec![pid];
+    let mut next = 0;
+    while let Some(&parent) = found.get(next) {
+        found.extend(
+            pairs
+                .iter()
+                .filter(|&&(_, ppid)| ppid == parent)
+                .map(|&(child, _)| child),
+        );
+        next += 1;
+    }
+    found.split_off(1)
 }
 
 fn read_all(stream: Option<impl Read + Send + 'static>) -> std::thread::JoinHandle<String> {
@@ -412,6 +474,40 @@ mod tests {
             parallel(&items, 4, |&item| item * 2),
             (0..50).map(|i| i * 2).collect::<Vec<_>>()
         );
+    }
+
+    /// A test process stopped for time takes the processes it started with it.
+    #[cfg(unix)]
+    #[test]
+    fn a_stopped_test_takes_what_it_started_with_it() {
+        let mut child = Command::new("sh")
+            .args(["-c", "sleep 300 & echo $!; wait"])
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut line = String::new();
+        std::io::BufRead::read_line(
+            &mut std::io::BufReader::new(child.stdout.take().unwrap()),
+            &mut line,
+        )
+        .unwrap();
+        let sleeper: u32 = line.trim().parse().unwrap();
+        assert_eq!(descendants(child.id()), [sleeper]);
+        kill_tree(&mut child);
+        let _ = child.wait();
+        let alive = || {
+            Command::new("kill")
+                .args(["-0", &sleeper.to_string()])
+                .stderr(Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        };
+        let until = Instant::now() + Duration::from_secs(10);
+        while alive() && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(!alive(), "the sleep {sleeper} still runs");
     }
 
     /// A Windows crash is named as the same crash is elsewhere: Rust's abort as `SIGABRT`.
