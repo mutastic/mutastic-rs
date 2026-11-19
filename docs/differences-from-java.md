@@ -130,6 +130,10 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
   logger's macro, where the Java edition skips a call to a logger or `System.out`. And a statement
   that only checks a value it's given, `x.unwrap();` or `x.expect("..");`, where the Java edition
   skips a removed `Objects.requireNonNull(x);`.
+  Both editions skip a thread's name and stack size; Rust knows the call by the builder its chain
+  starts at, `thread::Builder::new()` or a tokio runtime's builder, where Java knows it by the
+  `Thread` or builder method. Java also skips a priority, which `std` has no call for, and a
+  pool's largest size beside a queue with no limit, as equivalent.
 - **Skipped as equivalent:** a `?` that only passes on a formatter's error, inside the `fmt` of
   `Display` and the other formatting traits, or on a write to a `Formatter`: no test can make that
   error happen.

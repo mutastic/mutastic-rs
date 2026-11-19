@@ -119,6 +119,9 @@ pub struct Report {
     /// rather than with the rest.
     pub streamed: bool,
     pub took: Duration,
+    /// How long the machine slept during the run, which `took` leaves out, when it's worth saying
+    /// (see [`crate::slept`]); else zero.
+    pub slept: Duration,
     pub unsafe_mode: UnsafeMode,
     /// The settings the user's crate was built with, from Cargo: `opt_level`, `debug_assertions`,
     /// `overflow_checks`.
@@ -563,6 +566,7 @@ pub fn run(
         .chain(revised.values())
         .map(|r| r.tests_run)
         .sum::<usize>();
+    let took = started.elapsed();
     Ok(Report {
         project: project.clone(),
         found,
@@ -579,7 +583,8 @@ pub fn run(
         mutants: mutants_took,
         checking,
         streamed: false,
-        took: started.elapsed(),
+        took,
+        slept: crate::slept::since(started_wall, took),
         unsafe_mode: options.unsafe_mode,
         profile: built.profile,
         started_at,
@@ -656,6 +661,7 @@ fn nothing_to_run(
         checking: None,
         streamed: false,
         took: setup,
+        slept: crate::slept::since(unbuilt.started_wall, setup),
         unsafe_mode: options.unsafe_mode,
         // Nothing was built, so Cargo reported nothing: only what mutastic's own profile forces.
         profile: serde_json::json!({ "overflow_checks": true, "debug_assertions": true }),

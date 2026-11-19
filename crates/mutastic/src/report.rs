@@ -1633,7 +1633,6 @@ fn not_covered(out: &mut String, view: &View, or_only_flaky: &str, style: Style)
 
 fn summary(out: &mut String, report: &Report, style: Style) {
     let rows = rows(report, style);
-    let width = rows.iter().map(|(label, _)| label.len()).max().unwrap_or(0);
     out.push('\n');
     // What to do next sits under the misses it's about, and the score, with its verdict, is the
     // last line: the one the cursor lands under. A run of mutants asked for by id ends on each
@@ -1648,9 +1647,7 @@ fn summary(out: &mut String, report: &Report, style: Style) {
             ))
         );
     }
-    for (label, value) in rows {
-        let _ = writeln!(out, " {}  {value}", style.dim(&format!("{label:>width$}")));
-    }
+    write_rows(out, &rows, style);
     if report.only {
         out.push('\n');
         if report.results.is_empty() {
@@ -1707,6 +1704,33 @@ fn fate(view: &View, result: &MutantResult, style: Style) -> String {
 }
 
 /// The summary's rows, label and value, in the order shown.
+/// Each row, its label right-aligned and its value beside it; a value's later lines sit under its
+/// first, in the values' column.
+fn write_rows(out: &mut String, rows: &[(&str, String)], style: Style) {
+    let width = rows.iter().map(|(label, _)| label.len()).max().unwrap_or(0);
+    let under = format!("\n{}", " ".repeat(width + 3));
+    for (label, value) in rows {
+        let value = value.replace('\n', &under);
+        let _ = writeln!(out, " {}  {value}", style.dim(&format!("{label:>width$}")));
+    }
+}
+
+/// The Duration row: the run's time and its phases, and under them, when the machine slept for
+/// long enough during the run, how long: the time awake leaves it out, and the clock doesn't.
+fn duration_row(
+    took: std::time::Duration,
+    phases: &str,
+    slept: std::time::Duration,
+    style: Style,
+) -> String {
+    let row = format!("{} {}", duration(took), style.dim(&format!("({phases})")));
+    if slept.is_zero() {
+        row
+    } else {
+        format!("{row}\n{}", crate::slept::line(slept))
+    }
+}
+
 fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
     let mut rows = vec![
         ("Files", files_row(report, style)),
@@ -1773,11 +1797,7 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
     }
     rows.push((
         "Duration",
-        format!(
-            "{} {}",
-            duration(report.took),
-            style.dim(&format!("({})", phases(report)))
-        ),
+        duration_row(report.took, &phases(report), report.slept, style),
     ));
     rows.push((
         "Tests",
@@ -2666,6 +2686,7 @@ fn jsonl(report: &Report) -> String {
         "setupMs": report.setup.as_millis() as u64,
     });
     finished["durationMs"] = json!(report.took.as_millis() as u64);
+    finished["sleptMs"] = json!(report.slept.as_millis() as u64);
     lines.push(finished);
     lines
         .iter()
@@ -3255,6 +3276,41 @@ pub fn explained_jsonl(report: &Report, last: Option<LastRun>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// When the machine slept during the run, a line under Duration says how long, in the values'
+    /// column. The Java edition's `HumanTextTest` is the same.
+    #[test]
+    fn the_duration_says_when_the_machine_slept() {
+        use std::time::Duration;
+
+        let style = Style::default();
+        let phases = "setup 500ms, coverage 200ms, mutants 200ms";
+        let rows = [
+            (
+                "Duration",
+                duration_row(
+                    Duration::from_millis(900),
+                    phases,
+                    Duration::from_secs(233),
+                    style,
+                ),
+            ),
+            ("Tests", "3 on rustc 1.91.0 · 1 worker".to_string()),
+        ];
+        let mut out = String::new();
+        write_rows(&mut out, &rows, style);
+
+        assert_eq!(
+            out,
+            " Duration  900ms (setup 500ms, coverage 200ms, mutants 200ms)\n\
+             \x20          The machine slept for 3m53s during the run, which Duration leaves out.\n\
+             \x20   Tests  3 on rustc 1.91.0 · 1 worker\n"
+        );
+        assert!(
+            !duration_row(Duration::from_millis(900), phases, Duration::ZERO, style)
+                .contains("slept")
+        );
+    }
 
     /// Each id the run has a page for is linked to it, as a word of its own; an id in a link's
     /// address, one in a longer word, and one with no page are left alone. The Java edition's

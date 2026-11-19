@@ -151,8 +151,14 @@ fn a_second_visit() {
 }
 ```
 
+**A thread started:** when the statement is a `thread::spawn(..)` or a `thread::Builder`'s
+`spawn`, the card names the test that catches it: one that waits for the thread, by joining its
+handle or waiting on a channel its closure sends to, then checks what it did. A scoped thread's
+`spawn` keeps the card any statement gets, as its scope already waits for it.
+
 **Edition notes:** the Java edition has this operator too, `mutastic/remove-discarded-call`, for
-`add`, `put`, `append` and the like.
+`add`, `put`, `append` and the like. Its cards name the test the same way for a thread started,
+work handed to a pool, an interrupt, a lock let go of and a daemon flag.
 
 ## Remove assignment
 

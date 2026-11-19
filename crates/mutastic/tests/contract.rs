@@ -827,6 +827,31 @@ fn red_baseline() -> String {
     .to_string()
 }
 
+/// The line under Duration when the machine slept: no run here sleeps, so its words are checked
+/// as the summary would say them. The Java edition's `ContractTest` is the same.
+#[test]
+fn the_machine_slept_as_the_contract_says_it() {
+    use std::time::Duration;
+
+    let rows = contract()["output"]["summary"]["rows"].as_array().unwrap();
+    let duration = rows.iter().find(|row| row["label"] == "Duration").unwrap();
+    let slept = &duration["under"][0];
+    let pattern = Regex::new(slept["pattern"].as_str().unwrap()).unwrap();
+
+    assert_eq!(
+        slept["example"].as_str().unwrap(),
+        mutastic::slept::line(Duration::from_secs(233))
+    );
+    for took in [
+        Duration::from_secs(5),
+        Duration::from_secs(59),
+        Duration::from_secs(7200),
+    ] {
+        let line = mutastic::slept::line(took);
+        assert!(pattern.is_match(&line), "{line}");
+    }
+}
+
 #[test]
 fn the_summary_has_the_contracts_rows() {
     let mut found = Vec::new();
