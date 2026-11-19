@@ -23,6 +23,12 @@ newest come first.
   element can't see. An iterator's `last` is left alone, as it has no `first`. The Java edition has
   it too, for `getFirst` and `getLast` and a `Deque`'s and a sorted collection's ends. See [Swap
   ends](docs/operators/library.md#swap-ends).
+- **The summary says when the machine slept during the run.** Duration counts the time the
+  machine was awake, so a run a Mac slept through for four minutes said 15.4s. When the clock ran
+  at least 5 seconds and a tenth of its time more, a line under Duration says `The machine slept
+  for 3m49s during the run, which Duration leaves out.`, and `run-finished` has it as `sleptMs`,
+  else 0. The Java edition says it too. See [When the machine
+  sleeps](docs/concepts/output.md#when-the-machine-sleeps).
 
 ### Scoring changes
 
@@ -49,6 +55,12 @@ Expect your score to move, for this reason, not because your tests changed:
 
 ### Fixes
 
+- **A thread started and not waited for says which test catches it.** A missed `thread::spawn(..)`
+  or `thread::Builder`'s `spawn` said only that no test checked what the statement does. Its card
+  now says no test waits for the thread and checks what it did, and to join its handle or wait on a
+  channel its closure sends to first. A scoped thread's `spawn` keeps the card any statement gets,
+  as its scope waits for it. The Java edition's cards name the test the same way for threads,
+  pools, interrupts, locks and daemon flags.
 - **A count of one reads as one.** The gate's pass said the tests `catch 1 of the 1 mutant`; it
   now says they `catch the only mutant`, `catch all 6 mutants` when they catch every one, and
   `catch 4 of the 6 mutants` otherwise. `1 of the baseline's mutants is caught now`, from a run

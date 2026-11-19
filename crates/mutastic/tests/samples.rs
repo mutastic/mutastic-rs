@@ -215,6 +215,86 @@ fn every_shape_gets_a_card() {
     );
 }
 
+/// The mutants of a run, by function: each one's status and the first line of its card.
+fn by_function(stdout: &str) -> Vec<(String, String, String)> {
+    let mut found: Vec<(String, String, String)> = events(stdout)
+        .iter()
+        .filter(|e| e["reason"] == "mutant-finished")
+        .map(|e| {
+            let card = e["rendered"].as_str().unwrap_or_default();
+            (
+                e["location"]["method"].as_str().unwrap().to_string(),
+                e["status"].as_str().unwrap().to_string(),
+                card.lines().next().unwrap_or_default().to_string(),
+            )
+        })
+        .collect();
+    found.sort();
+    found
+}
+
+/// A thread started and not waited for: the test its card names, one that waits on a channel the
+/// thread sends to and then looks, catches its `spawn` taken away, whether it's `thread::spawn` or a
+/// builder's. Where no test waits, the card says so. A scoped thread's scope waits for it, so its
+/// card is any statement's.
+#[test]
+fn a_spawned_threads_card_names_the_test_that_waits_for_it() {
+    let dir = fixture("spawns");
+    let (_, stdout) = mutastic(&["run", &dir, "--format=jsonl"]);
+    let mutants = by_function(&stdout);
+    let spawns: Vec<&(String, String, String)> = mutants
+        .iter()
+        .filter(|(function, ..)| function == "spawned" || function == "built")
+        .collect();
+    assert!(spawns.len() >= 2, "{mutants:?}");
+    assert!(
+        spawns.iter().all(|(_, status, _)| status == "Killed"),
+        "{mutants:?}"
+    );
+    let unwaited: Vec<&(String, String, String)> = mutants
+        .iter()
+        .filter(|(function, ..)| function == "unwaited")
+        .collect();
+    assert_eq!(unwaited.len(), 1, "{mutants:?}");
+    assert_eq!(unwaited[0].1, "Survived");
+    assert!(
+        unwaited[0].2.ends_with(
+            "no test waits for the thread started in `unwaited()` and checks what it did"
+        ),
+        "{mutants:?}"
+    );
+    assert!(
+        mutants
+            .iter()
+            .filter(|(function, ..)| function == "scoped")
+            .all(|(_, _, card)| card.contains("no test checks what `")),
+        "{mutants:?}"
+    );
+}
+
+/// A binary its test runs as a separate process, through `CARGO_BIN_EXE_…`: the mutant is in the
+/// binary the test runs, and the run that maps coverage sees it there too, so `main`'s mutants are
+/// reached and caught, not missed or reported as reached by no test.
+#[test]
+fn a_binary_a_test_runs_as_a_process_is_mutated_there() {
+    let dir = fixture("binary");
+    let (code, stdout) = mutastic(&["run", &dir, "--format=jsonl"]);
+    assert_eq!(code, 0, "{stdout}");
+    let mutants: Vec<(String, String, String)> = by_function(&stdout)
+        .into_iter()
+        .filter(|(_, status, _)| status != "Ignored")
+        .collect();
+    assert!(mutants.len() >= 3, "{mutants:?}");
+    assert!(
+        mutants.iter().all(|(_, status, _)| status == "Killed"),
+        "{mutants:?}"
+    );
+    assert!(
+        mutants.iter().any(|(function, ..)| function == "main"),
+        "{mutants:?}"
+    );
+}
+
 /// A pattern that binds by `ref mut` into a field changes the field, so the copy keeps the field a
 /// place, not a value in a switch: its test passes there as under `cargo test`, as url's do.
 #[test]
