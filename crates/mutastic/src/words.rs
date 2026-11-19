@@ -452,7 +452,9 @@ mod tests {
             "let _ = thread::Builder::new()\n    .name(n)\n    .spawn(move || work());"
         ));
         assert!(!starts_a_thread("scope.spawn(|| work());"));
-        assert!(!starts_a_thread("thread::scope(|s| { s.spawn(|| work()); });"));
+        assert!(!starts_a_thread(
+            "thread::scope(|s| { s.spawn(|| work()); });"
+        ));
         assert!(!starts_a_thread("tasks.spawn(work());"));
     }
 }
