@@ -80,6 +80,11 @@ Expect your score to move, for these reasons, not because your tests changed:
 
 ### Fixes
 
+- **`--operators` given twice adds, as in the Java edition.** `--operators=stronger
+  --operators=-stream` runs `stronger` without the `stream` operators, where the second replaced
+  the first. A list that only leaves operators out, `--operators=-mutastic/boundary`, leaves them
+  out of the defaults, where it ran no operator at all. `run --help` lists `--shard` and
+  `--from-shards` after `--workers`, in the editions' shared order.
 - **A thread started and not waited for says which test catches it.** A missed `thread::spawn(..)`
   or `thread::Builder`'s `spawn` said only that no test checked what the statement does. Its card
   now says no test waits for the thread and checks what it did, and to join its handle or wait on a
