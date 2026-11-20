@@ -33,6 +33,13 @@ call to a logger: no test should have to notice it. It's counted in the summary'
 score. A `mutate:` rule takes the skip back, where output is a contract. A `write!` goes to a writer
 the code chose, which a test can read, so it isn't skipped.
 
+Nothing in a macro's arguments is mutated, so `info!("took {}", a - b)` has no mutants. A value
+worked out in a `let` only for output macros to read is skipped too, `arid: only feeds a log
+line`: in `let took = start.elapsed().as_millis() - base; info!("took {took} ms");` the `-` only
+changes what the log says. Every read of the name has to be in an output macro, as an argument,
+`{took}` in the format string or a tracing field. A value also returned, compared, passed to a
+function, `format!`ted, read in a closure or shadowed stays counted.
+
 <!-- from: fixtures/operators/src/calls.rs -->
 ```rust
 impl Cart {

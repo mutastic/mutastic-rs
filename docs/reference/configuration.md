@@ -46,7 +46,7 @@ skip. Each arid rule, what it can hide and the rule that takes it back are in
 [Arid mutants](https://docs.mutastic.io/concepts/arid/).
 
 Every arid skip is one rule's, by the id the Java edition uses: `mutastic:output` for a statement
-that only writes output, `mutastic:null-checks` for a `x.unwrap();` that only checks the value is
+that only writes output or a value worked out only for one, `mutastic:null-checks` for a `x.unwrap();` that only checks the value is
 there. An `arid:` list on a `mutate:` rule takes back only those rules' skips:
 
 ```yaml
