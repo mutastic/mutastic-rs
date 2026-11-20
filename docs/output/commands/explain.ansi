@@ -28,9 +28,13 @@
 [1m About this mutant [0m[2m───────────────────────────────────────────────[0m
     [2m=[0m [1;34m[1mchange  [0m[0m  [1mtotal >= 100 → (total) > (100)[0m
                 [2mthe code the switch puts in place of the original when this mutant is live[0m
-    [2m=[0m [1;34m[1moperator[0m[0m  mutastic/boundary: `>=` becomes `>`
+    [2m=[0m [1;34m[1moperator[0m[0m  mutastic/boundary: `<` becomes `<=`, `>=` becomes `>`, and the other way round. In a
+                `for` loop, a slice (`&s[lo..hi]`) or a `contains`, `lo..hi` becomes `lo..=hi`, and
+                back. It finds the off-by-one at the edge of a range, which tests that only try
+                values far from the edge never notice.
                 [2mdocs: https://docs.mutastic.io/rust/operators/conditions/#boundary[0m
-    [2m=[0m [1;34m[1mid      [0m[0m  mb2f8ae57: `m` and the first 8 hex digits of its fingerprint, b2f8ae57ca6c48cb, a SHA-256 of the crate, function, operator, site and change
+    [2m=[0m [1;34m[1mid      [0m[0m  mb2f8ae57: `m` and the first 8 hex digits of its fingerprint, b2f8ae57ca6c48cb, a
+                SHA-256 of the crate, function, operator, site and change
                 [2mno line number goes in, so the id stays the same when code above it moves[0m
     [2m=[0m [1;34m[1msite    [0m[0m  `total >= 100` in Pricing::discount, line 26, column 18
     [2m=[0m [1;34m[1mlast run[0m[0m  missed: every covering test still passed

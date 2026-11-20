@@ -58,7 +58,7 @@ pub fn document(report: &Report) -> Value {
             "tool": { "driver": {
                 "name": "mutastic",
                 "version": env!("CARGO_PKG_VERSION"),
-                "informationUri": "https://mutastic.io",
+                "informationUri": "https://docs.mutastic.io",
                 "rules": rules.into_values().collect::<Vec<_>>(),
             }},
             "originalUriBaseIds": { "%SRCROOT%": { "uri": directory_uri(&root) } },
@@ -67,27 +67,26 @@ pub fn document(report: &Report) -> Value {
     })
 }
 
-/// An operator as a rule: a rules file's own explanation, or, for mutastic's own, its section in
-/// the docs, `https://docs.mutastic.io/rust/operators/conditions/#boundary`, as its `helpUri`. A
-/// rules file's operator has no section there, so no `helpUri`.
+/// An operator as a rule, as the Java edition writes one: what it changes, from a rules file's own
+/// explanation or, for mutastic's own, its section in the docs, whose first sentence is the short
+/// description; and for mutastic's own that section,
+/// `https://docs.mutastic.io/rust/operators/conditions/#boundary`, as its `helpUri`.
 fn rule(operator: &str) -> Value {
-    let explained = crate::callrules::find(operator).map(|rule| rule.explanation.clone());
-    let docs = crate::operator_docs::url(operator);
-    let short = format!("A mutant of {operator} that no test catches");
-    let help = match (&explained, &docs) {
-        (Some(explanation), _) => explanation.clone(),
-        (None, Some(url)) => format!("What {operator} changes, and the bug it stands for: {url}"),
-        (None, None) => short.clone(),
-    };
+    let explained = crate::callrules::find(operator)
+        .map(|rule| rule.explanation.clone())
+        .or_else(|| crate::operator_docs::explanation(operator))
+        .unwrap_or_else(|| format!("A mutant of {operator} that no test catches."));
     let mut rule = serde_json::Map::new();
     rule.insert("id".into(), json!(operator));
-    rule.insert("shortDescription".into(), json!({ "text": short }));
-    let full = explained.unwrap_or_else(|| short.clone());
-    rule.insert("fullDescription".into(), json!({ "text": full }));
-    if let Some(url) = docs {
+    rule.insert(
+        "shortDescription".into(),
+        json!({ "text": crate::operator_docs::first_sentence(&explained) }),
+    );
+    rule.insert("fullDescription".into(), json!({ "text": explained }));
+    rule.insert("help".into(), json!({ "text": explained }));
+    if let Some(url) = crate::operator_docs::url(operator) {
         rule.insert("helpUri".into(), json!(url));
     }
-    rule.insert("help".into(), json!({ "text": help }));
     rule.insert("defaultConfiguration".into(), json!({ "level": "warning" }));
     let tags = json!({ "tags": ["mutation-testing", "tests"] });
     rule.insert("properties".into(), tags);

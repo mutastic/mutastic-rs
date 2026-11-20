@@ -1196,7 +1196,7 @@ fn an_ignore_holds_while_its_line_does() {
     // The summary counts an ignore apart, by the sort it was given, as the Java edition does.
     let (_, out) = mutastic_in(&dir, &["run", "--format=full", "--report=none"]);
     assert!(
-        out.contains(" · 1 skipped (1 ignored as unreachable)\n"),
+        out.contains(" · 1 skipped (1 ignored as unreachable) (11)\n"),
         "{out}"
     );
 
@@ -1497,10 +1497,12 @@ fn next_puts_new_misses_first_and_prune_drops_the_caught() {
     assert_eq!(items[1]["rank"]["factors"][0]["value"], "legacy");
     assert_eq!(events.last().unwrap()["legacy"], 1, "{jsonl}");
     let (_, out) = mutastic_in(&dir, &["next", "--progress=none"]);
+    // The package by its directory's name, as the Java edition names a project.
+    let named = dir.file_name().unwrap().to_string_lossy();
     assert!(
-        out.contains(
-            "Next: 1 of 2 lines with missed mutants in pricing (1 new, 1 in the baseline)\n"
-        ),
+        out.contains(&format!(
+            "Next: 1 of 2 lines with missed mutants in {named} (1 new, 1 in the baseline)\n"
+        )),
         "{out}"
     );
     assert!(
@@ -1678,7 +1680,7 @@ fn since_runs_the_changed_lines_mutants() {
         &["run", "--since=HEAD", "--format=full", "--report=none"],
     );
     assert!(
-        out.contains("  Mutants  ✓ 0 caught (0) · 1 skipped (1 arid)\n"),
+        out.contains("  Mutants  ✓ 0 caught · 1 skipped (1 arid) (1)\n"),
         "{out}"
     );
     assert!(
@@ -3366,6 +3368,8 @@ fn a_closed_stdout_ends_the_run_as_an_open_one() {
 #[test]
 fn next_works_through_the_misses_one_at_a_time() {
     let copy = copy_of("ranking", "next");
+    // The package by its directory's name, as the Java edition names a project.
+    let named = copy.file_name().unwrap().to_string_lossy().into_owned();
     let next = |args: &[&str]| mutastic_in(&copy, &[&["next"], args].concat());
     let add_test = |test: &str| {
         let lib = copy.join("src/lib.rs");
@@ -3441,7 +3445,9 @@ fn next_works_through_the_misses_one_at_a_time() {
     assert_eq!(code, 1, "{out}");
     assert_eq!(ran(&out).as_deref(), Some("5 mutants"), "{out}");
     assert!(
-        out.contains("Next: the first 2 of 3 lines with missed mutants in ranking\n"),
+        out.contains(&format!(
+            "Next: the first 2 of 3 lines with missed mutants in {named}\n"
+        )),
         "{out}"
     );
     let places: Vec<&str> = out
@@ -3466,11 +3472,11 @@ fn next_works_through_the_misses_one_at_a_time() {
     let (code, agent) = next(&["--format=agent"]);
     assert_eq!(code, 1, "{agent}");
     assert!(
-        agent.starts_with(
-            "mutastic next: 1 of 3 lines with missed mutants in ranking; close this one, then ask \
+        agent.starts_with(&format!(
+            "mutastic next: 1 of 3 lines with missed mutants in {named}; close this one, then ask \
              for the next\nwhy first: a condition or a removal: it changes what the code decides \
              or does; 3 tests run it, and none checks it\n"
-        ),
+        )),
         "{agent}"
     );
     let done_when = format!("mutastic verify {} .", ids.join(","));
@@ -3543,7 +3549,7 @@ fn next_works_through_the_misses_one_at_a_time() {
     assert_eq!(ran(&out), Some(rerun), "{out}");
     assert!(
         out.contains(&format!(
-            "Next: 1 of 1 line with missed mutants in ranking; {waiting}\n"
+            "Next: 1 of 1 line with missed mutants in {named}; {waiting}\n"
         )),
         "{out}"
     );
@@ -3553,7 +3559,7 @@ fn next_works_through_the_misses_one_at_a_time() {
         "    #[test]\n    fn a_hundred_is_big() {\n        assert!(is_big(100));\n        \
          assert!(!is_big(99));\n    }\n",
     );
-    let nothing_but_waiting = format!("Next: nothing missed is left in ranking but {waiting}\n");
+    let nothing_but_waiting = format!("Next: nothing missed is left in {named} but {waiting}\n");
     let (code, out) = next(&["--format=concise"]);
     assert_eq!(code, 0, "{out}");
     assert!(out.starts_with(&nothing_but_waiting), "{out}");
@@ -3586,7 +3592,9 @@ fn next_works_through_the_misses_one_at_a_time() {
     let (code, out) = next(&["--format=concise"]);
     assert_eq!(code, 1, "{out}");
     assert!(
-        out.contains("Next: 1 of 1 line with missed mutants in ranking\n"),
+        out.contains(&format!(
+            "Next: 1 of 1 line with missed mutants in {named}\n"
+        )),
         "{out}"
     );
     add_test(
@@ -3595,7 +3603,7 @@ fn next_works_through_the_misses_one_at_a_time() {
     let (code, out) = next(&["--format=concise"]);
     assert_eq!(code, 0, "{out}");
     assert!(
-        out.starts_with("Next: nothing missed is left in ranking\n"),
+        out.starts_with(&format!("Next: nothing missed is left in {named}\n")),
         "{out}"
     );
     // Nothing was left uncaught, and the code is the same: nothing runs.
@@ -3603,12 +3611,15 @@ fn next_works_through_the_misses_one_at_a_time() {
     assert_eq!(code, 0, "{out}");
     assert_eq!(ran(&out), None, "{out}");
     assert!(
-        out.starts_with("Next: nothing missed is left in ranking\n"),
+        out.starts_with(&format!("Next: nothing missed is left in {named}\n")),
         "{out}"
     );
     let (code, agent) = next(&["--format=agent"]);
     assert_eq!(code, 0, "{agent}");
-    assert_eq!(agent, "mutastic next: nothing missed is left in ranking\n");
+    assert_eq!(
+        agent,
+        format!("mutastic next: nothing missed is left in {named}\n")
+    );
 }
 
 /// Two mutants of one line with a test each, as the test-first guide's loyalty credit has: one fix
@@ -3756,8 +3767,10 @@ fn explain_as_events_says_what_the_text_says() {
         &explained["lastRun"]["description"],
         &explained["applied"]["description"],
     ] {
+        // The text wraps its rows at 100 columns: compared word for word.
+        let squashed = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(
-            text.contains(words.as_str().unwrap()),
+            squashed(&text).contains(&squashed(words.as_str().unwrap())),
             "{words} isn't in:\n{text}"
         );
     }
