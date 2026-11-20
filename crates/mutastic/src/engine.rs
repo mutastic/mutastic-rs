@@ -375,18 +375,25 @@ pub fn run(
     let started_at = clock();
     let started_wall = std::time::SystemTime::now();
     let (found, stale_ignores) = find_for_run(project, options)?;
-    let selected: BTreeSet<usize> = found
+    let chosen: BTreeSet<&str> = found
         .mutants
         .iter()
-        .enumerate()
-        .filter(|(_, m)| options.only.is_empty() || options.only.contains(&m.id))
-        .filter(|(_, m)| options.shard.is_none_or(|shard| shard.holds(&m.id)))
-        .filter(|(_, m)| {
+        .filter(|m| options.only.is_empty() || options.only.contains(&m.id))
+        .filter(|m| {
             options
                 .since
                 .as_ref()
                 .is_none_or(|changed| changed.touches(&project.workspace.join(&m.file), m.line))
         })
+        // A twin doesn't run: the mutant it's the same as runs for it.
+        .flat_map(|m| std::iter::once(m.id.as_str()).chain(crate::sites::twins::partner_of(m)))
+        .collect();
+    let selected: BTreeSet<usize> = found
+        .mutants
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| chosen.contains(m.id.as_str()))
+        .filter(|(_, m)| options.shard.is_none_or(|shard| shard.holds(&m.id)))
         .map(|(index, _)| index)
         .collect();
     let scope = options.since.as_ref().map(|changed| {
@@ -795,10 +802,16 @@ fn apply_ignores(project: &Project, found: &mut Crate) -> Result<Vec<String>, Fa
             continue;
         };
         let line = source_line(found, index);
-        let mutant = &mut found.mutants[index];
         if !ignore.holds_for(&line) {
             stale.push(ignore.id);
-        } else if mutant.skipped.is_none() {
+            continue;
+        }
+        // An ignore of a twin, kept maybe from before mutastic knew the two are the same, is the
+        // decision of the mutant that runs for it.
+        let partner = crate::sites::twins::partner_of(&found.mutants[index])
+            .and_then(|partner| found.mutants.iter().position(|m| m.id == partner));
+        let mutant = &mut found.mutants[partner.unwrap_or(index)];
+        if mutant.skipped.is_none() {
             mutant.skipped = Some(ignore.skip_reason());
         }
     }

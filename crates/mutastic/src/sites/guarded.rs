@@ -600,7 +600,12 @@ mod tests {
         let found = find(&dir, "sample", &[PathBuf::from("src/lib.rs")], STRONGER);
         std::fs::remove_dir_all(&dir).ok();
         let mut skipped: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for mutant in &found.mutants {
+        // A twin is skipped for another mutant's sake, not for what the code proves.
+        for mutant in found
+            .mutants
+            .iter()
+            .filter(|m| twins::partner_of(m).is_none())
+        {
             if let Some(reason) = &mutant.skipped {
                 skipped
                     .entry(found.functions[mutant.function].path.clone())

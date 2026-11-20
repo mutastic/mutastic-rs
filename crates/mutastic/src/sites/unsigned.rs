@@ -21,9 +21,20 @@ use ra_ap_syntax::ast::{HasArgList, HasGenericParams, HasLoopBody};
 /// The unsigned types, as written.
 const UNSIGNED: &[&str] = &["u8", "u16", "u32", "u64", "u128", "usize"];
 
-/// Why a comparison's mutant is equivalent, when it differs from the comparison only where an
-/// unsigned value would be below 0.
-pub(super) fn never_negative(node: &SyntaxNode, change: &Change) -> Option<String> {
+/// What a comparison of a value the source proves unsigned with 0 gives, before and after a
+/// change, for 0 and for a value above it: the only values it can see.
+struct Answers {
+    /// The value, as written.
+    value: String,
+    /// Why it can't be below 0.
+    why: String,
+    before: [bool; 2],
+    after: [bool; 2],
+}
+
+/// The answers of the comparison at `node`, as it is and with `change` made, when it compares a
+/// value the source proves unsigned with 0.
+fn answers(node: &SyntaxNode, change: &Change) -> Option<Answers> {
     let expr = ast::BinExpr::cast(node.clone())?;
     let Some(BinaryOp::CmpOp(_)) = expr.op_kind() else {
         return None;
@@ -67,15 +78,38 @@ pub(super) fn never_negative(node: &SyntaxNode, change: &Change) -> Option<Strin
         return None;
     }
     let why = unsigned(&function, &value)?;
-    let agrees = [Sign::Zero, Sign::Positive]
-        .iter()
-        .all(|&sign| holds(&before, sign) == Some(after(sign)));
-    agrees.then(|| {
+    Some(Answers {
+        value: plain(value.syntax()),
+        why,
+        before: [holds(&before, Sign::Zero)?, holds(&before, Sign::Positive)?],
+        after: [after(Sign::Zero), after(Sign::Positive)],
+    })
+}
+
+/// Why a comparison's mutant is equivalent, when it differs from the comparison only where an
+/// unsigned value would be below 0.
+pub(super) fn never_negative(node: &SyntaxNode, change: &Change) -> Option<String> {
+    let answers = answers(node, change)?;
+    (answers.before == answers.after).then(|| {
         format!(
-            "equivalent: differs only when {} is below 0. That can't happen because {why}.",
-            plain(value.syntax())
+            "equivalent: differs only when {} is below 0. That can't happen because {}.",
+            answers.value, answers.why
         )
     })
+}
+
+/// What a mutant of a comparison of an unsigned value with 0 makes it give, for 0 and above, as a
+/// key two mutants of the comparison share when they always do the same: twins. `n > 0` made `n
+/// >= 0` and made `true` both give `true` for every value `n` can have.
+pub(super) fn answers_key(node: &SyntaxNode, change: &Change) -> Option<String> {
+    let answers = answers(node, change)?;
+    let range = node.text_range();
+    Some(format!(
+        "unsigned@{}..{}:{:?}",
+        usize::from(range.start()),
+        usize::from(range.end()),
+        answers.after
+    ))
 }
 
 /// Why `a.div_euclid(b)` made `a / b`, or `rem_euclid` made `%`, is equivalent, when it is:
@@ -325,7 +359,8 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
         let mut skipped: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for mutant in &found.mutants {
-            if mutant.skipped.is_some() {
+            // A twin is skipped for another mutant's sake, not for what the code proves.
+            if mutant.skipped.is_some() && twins::partner_of(mutant).is_none() {
                 skipped
                     .entry(found.functions[mutant.function].path.clone())
                     .or_default()

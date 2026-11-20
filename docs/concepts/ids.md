@@ -66,6 +66,13 @@ mutastic: m00000000 isn't a mutant of pricing. To see its mutants:
   mutastic mutants fixtures/pricing
 ```
 
+## Twins keep their ids
+
+Two mutants at one place may turn out to always do the same, as a returned `n > 0` made `true` by
+two operators does. Both keep their ids. Only one runs, and the other says it's the same as that
+one ([Twins](results.md#twins)). Either id works with `verify`, `explain`, `ignore` and `run
+--only`, so an id you kept from before still names its mutant.
+
 ## The Java edition's ids
 
 The two editions make ids the same way, from what the mutant is. The Rust edition hashes its own
