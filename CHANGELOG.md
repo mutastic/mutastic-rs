@@ -7,6 +7,13 @@ newest come first.
 
 ### Additions
 
+- **`MUTASTIC_ARID=audit`: see whether the arid rules hide anything.** Set it, and a run runs the
+  mutants mutastic's arid rules skip as well, out of the score and the counts, and the summary has
+  an `Arid audit` row: how many ran, how many the tests caught, how many of those by a test's own
+  assertion, and where. A catch by an assertion means a test checks what the arid code does, so the
+  row gives the `mutastic.yaml` rule that brings that rule's mutants back there. `run-finished`
+  has it as `aridAudit`. The Java edition has it too.
+
 - **Bring back one arid rule: `arid:` on a `mutate:` rule.** `arid: [mutastic:output]` under a
   `mutate:` rule takes back only that rule's skips in the code it covers; without it, every arid
   skip, as before. An id mutastic doesn't have is refused, with the one meant when it's close.
@@ -48,6 +55,25 @@ newest come first.
 ### Scoring changes
 
 Expect your score to move, for these reasons, not because your tests changed:
+
+- **More of the arid cases are mutants, made and skipped, as in the Java edition.** A number
+  given to `with_capacity`, `with_capacity_and_hasher` or `reserve` had no mutant, and arithmetic
+  there, `Vec::with_capacity(n * 2)`, was counted; both are now skipped as `arid: only sizes a
+  collection's first allocation`. A sleep removed, `thread::sleep(d);` or `sleep(d).await;`, was
+  counted; it's `arid: only waits`, and the number or the sum that only sets how long it waits is
+  `arid: only sets how long to wait`. An `Err`'s, a `context`'s or an `expect`'s text, a
+  `let`'s first `0` or `1`, and every mutant in a `Debug` or `Hash` impl are made and skipped too,
+  with the Java edition's ids. Each is counted under `skipped`, audited by `MUTASTIC_ARID=audit`
+  and brought back by a `mutate:` rule. Scores on code that sizes collections or sleeps can go up.
+- **A time that isn't a sleep's is counted.** A number in `Duration::from_secs(30)` had no mutant
+  wherever it was; now only one that goes into a sleep is skipped, so a timeout, a deadline or a
+  backoff is mutated, as the Java edition counts them. A runtime's keep-alive that the change
+  makes zero is counted too, as the keep-alive rule says. Scores on code with timeouts can go
+  down.
+- **A `Display` impl is counted, and `new` has its body replaced.** A `fmt`'s `Ok(())`, and with
+  `extended` a `fmt`'s or a `hash`'s or a `new`'s body replaced, had no mutant. Outside a `Debug`
+  or `Hash` impl they're mutants now: what a `Display` writes is often what a person or a program
+  reads. New ids appear; none moves.
 
 - **A call whose result is only checked is removed: `handle.join().unwrap();` is a mutant.** A
   statement ending in `.unwrap()` or `.expect(..)` had no mutant and wasn't counted, so a test that

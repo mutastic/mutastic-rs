@@ -14,6 +14,7 @@ use crate::suggest::{self, SuggestedTest};
 use crate::untrusted;
 use crate::words::{self, Advice};
 
+pub mod audit;
 pub mod files;
 pub mod next;
 pub mod sarif;
@@ -1752,6 +1753,9 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
             ),
         ));
     }
+    if let Some(audit) = audit::AridAudit::of(report) {
+        rows.push(("Arid audit", audit.row()));
+    }
     if let Some(worst) = worst_at(report) {
         rows.push(("Worst at", worst));
     }
@@ -2673,6 +2677,9 @@ fn jsonl(report: &Report) -> String {
         });
     }
     finished["reports"] = json!(report.reports);
+    if let Some(audit) = audit::AridAudit::of(report) {
+        finished["aridAudit"] = audit.event();
+    }
     finished["staleIgnores"] = json!(report.stale_ignores);
     finished["build"] = json!({
         "rounds": report.rounds,

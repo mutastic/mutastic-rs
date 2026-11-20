@@ -956,6 +956,7 @@ fn options(parsed: &Parsed, only: Vec<String>) -> Options {
         suggestions: false,
         shard: None,
         force_coverage: parsed.force_coverage,
+        audit_arid: std::env::var("MUTASTIC_ARID").is_ok_and(|value| value == "audit"),
     }
 }
 

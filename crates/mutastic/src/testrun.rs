@@ -396,6 +396,15 @@ pub fn language_panic(output: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Whether a test failed on an assertion of its own: `assert!`'s `assertion failed: ..`, or
+/// `assert_eq!`'s ``assertion `left == right` failed``, rather than a panic in the code it ran.
+pub fn assertion_failed(output: &str) -> bool {
+    output
+        .lines()
+        .map(str::trim)
+        .any(|line| line.starts_with("assertion failed") || line.starts_with("assertion `"))
+}
+
 /// Runs `work` on each item on `workers` threads, keeping the items' order in the results.
 /// A panic in `work` is the caller's: it's raised again here, never a shorter result.
 pub fn parallel<T: Sync, R: Send>(
@@ -455,6 +464,24 @@ pub fn default_workers() -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A test's own `assert!` or `assert_eq!` is an assertion; a panic in the code it ran isn't.
+    #[test]
+    fn an_assertion_is_told_from_a_panic_in_the_code() {
+        let failed = |message: &str| {
+            format!("---- tests::t stdout ----\n\nthread 'tests::t' panicked at src/lib.rs:9:9:\n{message}\n")
+        };
+        assert!(assertion_failed(&failed(
+            "assertion `left == right` failed\n  left: 1\n right: 2"
+        )));
+        assert!(assertion_failed(&failed("assertion failed: x > 0")));
+        assert!(!assertion_failed(&failed(
+            "attempt to subtract with overflow"
+        )));
+        assert!(!assertion_failed(&failed(
+            "called `Option::unwrap()` on a `None` value"
+        )));
+    }
 
     /// A worker's panic isn't a shorter result: every item comes back, or the panic does.
     #[test]

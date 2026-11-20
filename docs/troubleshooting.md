@@ -86,7 +86,7 @@ pub fn digits(mut n: u64) -> u64 {
 
 <!-- output: troubleshooting/loops -->
 ```text
-   Mutants  ✓ 14 caught · ✗ 6 missed · ⏱ 5 timed out (25)
+   Mutants  ✓ 14 caught · ✗ 6 missed · ⏱ 5 timed out (25) · 2 skipped (2 arid)
   Worst at  digits() 6 ✗
      Build  one build of every mutant, 2 rounds (check and build)
  Test runs  25 (25 without coverage selection)

@@ -517,6 +517,7 @@ impl Shares {
             fail_on_new: None,
             built: true,
             only: false,
+            audited: Vec::new(),
         }
     }
 
@@ -653,6 +654,7 @@ fn result_of(index: usize, event: &Value) -> Option<MutantResult> {
             })
             .unwrap_or_default(),
         suggestion: suggestion_of(&event["suggestion"]),
+        by_assertion: false,
     })
 }
 

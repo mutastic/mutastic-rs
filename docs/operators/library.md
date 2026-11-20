@@ -329,9 +329,11 @@ edition has this operator too, `library/swap-ends`, for `getFirst` and `getLast`
 ## String constant
 
 `mutastic/string-constant`, in the `stronger` set. A string in the code becomes `""`, and `""`
-becomes `"mutastic"`. Not a string given straight to `Err`, `expect`, `context`, `with_context` or
-`wrap_err`, which is a message for people; not a returned one, which is return value's; and not one
-inside a macro such as `format!`, whose tokens mutastic leaves alone.
+becomes `"mutastic"`. Not a returned one, which is return value's, and not one inside a macro such
+as `format!`, whose tokens mutastic leaves alone. A string given to `Err`, `context`,
+`with_context` or `wrap_err`, straight or through `.into()`, `.to_string()` or `String::from`, is a
+message for people: it's made and skipped as arid, `arid: only an error's message`, and one given
+to `expect` as `arid: only a failed check's message`.
 
 **The bug it stands for:** the wrong key, name or format: a typo in a header, a separator someone
 changed in one place and not the other. The compiler can't check any of it.
@@ -383,7 +385,7 @@ fn columns_are_separated_by_commas() {
 ```
 
 **Edition notes:** the Java edition has this operator too, `mutastic/string-constant`, and skips as
-arid what goes into a log or an exception's message.
+arid what goes into a log or an exception's message, as this edition skips an error's.
 
 ## Regex constant
 

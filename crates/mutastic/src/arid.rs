@@ -33,6 +33,30 @@ pub struct Rule {
     pub example: &'static str,
 }
 
+/// The arid skip of a mutant in `impl Debug for T`, as the Java edition skips `toString()`.
+pub const DEBUG: &str = "arid: `Debug::fmt` is a debug representation";
+
+/// The arid skip of a mutant in `impl Hash for T`, as the Java edition skips `hashCode()`.
+pub const HASH: &str = "arid: `Hash::hash` may give any value consistent with `Eq`";
+
+/// The arid skip of an `Err`'s or a `context`'s text.
+pub const ERROR_MESSAGE: &str = "arid: only an error's message";
+
+/// The arid skip of an `expect`'s text.
+pub const FAILED_CHECK_MESSAGE: &str = "arid: only a failed check's message";
+
+/// The arid skip of a number that only sizes a collection: `Vec::with_capacity(n * 2)`.
+pub const ONLY_SIZES: &str = "arid: only sizes a collection's first allocation";
+
+/// The arid skip of a number that only says how long a sleep waits.
+pub const WAIT_TIME: &str = "arid: only sets how long to wait";
+
+/// The arid skip of a sleep removed.
+pub const ONLY_WAITS: &str = "arid: only waits";
+
+/// The arid skip of a counter's or a total's first value.
+pub const FIRST_VALUE: &str = "arid: a variable's first value of 0 or 1";
+
 /// The arid skip of an output macro's mutant, in the Java edition's words.
 pub const ONLY_WRITES_OUTPUT: &str = "arid: only writes output";
 
@@ -52,6 +76,13 @@ pub const KEEP_ALIVE: &str = "arid: only sets how long idle threads live";
 /// The rules this edition has.
 pub const RULES: &[Rule] = &[
     Rule {
+        id: "mutastic:debug-representations",
+        scope: Scope::Method,
+        description: "`toString()` and `hashCode()`, the lambdas they define and the helpers only they call; in Rust, a `Debug` or a `Hash` impl.",
+        reasons: &[DEBUG, HASH],
+        example: "impl fmt::Debug for Order { fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { f.write_str(\"Order\") } }",
+    },
+    Rule {
         id: "mutastic:output",
         scope: Scope::Site,
         description: "Code that only writes output: a log line, or text printed to the console.",
@@ -59,11 +90,46 @@ pub const RULES: &[Rule] = &[
         example: "println!(\"saved {id}\");",
     },
     Rule {
+        id: "mutastic:messages",
+        scope: Scope::Site,
+        description: "The text of an exception's or an error's message, or of a failed check's.",
+        reasons: &[ERROR_MESSAGE, FAILED_CHECK_MESSAGE],
+        example: "let order = order.expect(\"an order to ship\");",
+    },
+    Rule {
+        id: "mutastic:capacity",
+        scope: Scope::Site,
+        description: "The room a collection or a buffer starts with or makes, and how full a hash table gets before it grows, while it stays above zero.",
+        reasons: &[ONLY_SIZES],
+        example: "let mut names = Vec::with_capacity(orders.len() * 2);",
+    },
+    Rule {
+        id: "mutastic:wait-times",
+        scope: Scope::Site,
+        description: "How long a sleep waits, where the time goes only into the sleep. A timeout's, a deadline's or a backoff's stays counted.",
+        reasons: &[WAIT_TIME],
+        example: "std::thread::sleep(Duration::from_millis(attempt * 100));",
+    },
+    Rule {
+        id: "mutastic:waits",
+        scope: Scope::Site,
+        description: "A sleep removed: `Thread.sleep` or `TimeUnit.sleep` in Java, `thread::sleep` or an awaited `sleep` in Rust.",
+        reasons: &[ONLY_WAITS],
+        example: "std::thread::sleep(pause);",
+    },
+    Rule {
         id: "mutastic:null-checks",
         scope: Scope::Site,
         description: "A call that only checks a value is there, its result unused, removed: `Objects.requireNonNull(x)` or `x.getClass()` in Java, `x.unwrap()` or `x.expect(…)` in Rust.",
         reasons: &[ONLY_CHECKS_A_VALUE],
         example: "order.unwrap();",
+    },
+    Rule {
+        id: "mutastic:first-values",
+        scope: Scope::Site,
+        description: "A variable's first value of 0 or 1, where a counter or a total starts.",
+        reasons: &[FIRST_VALUE],
+        example: "let mut count = 0;",
     },
     Rule {
         id: "mutastic:thread-names",
@@ -138,10 +204,15 @@ mod tests {
     #[test]
     fn each_rules_example_is_skipped_by_it() {
         for rule in RULES {
-            let source = format!(
-                "pub fn example(id: u32, order: Option<u32>) {{\n    {}\n}}\n",
-                rule.example
-            );
+            // An item, an `impl`, stands on its own, on line 2 as a statement would.
+            let source = if rule.example.starts_with("impl ") {
+                format!("pub struct Order;\n{}\n", rule.example)
+            } else {
+                format!(
+                    "pub fn example(id: u32, order: Option<u32>) {{\n    {}\n}}\n",
+                    rule.example
+                )
+            };
             let dir = std::env::temp_dir().join(format!(
                 "mutastic-arid-example-{}-{}",
                 rule.anchor(),
