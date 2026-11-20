@@ -43,6 +43,21 @@ class. A `mutate:` rule takes back an arid skip in the code it covers, as in the
 `println!` or `log::warn!` that's a contract runs as a mutant there. It never takes back any other
 skip.
 
+Every arid skip is one rule's, by the id the Java edition uses: `mutastic:output` for a statement
+that only writes output, `mutastic:null-checks` for a `x.unwrap();` that only checks the value is
+there. An `arid:` list on a `mutate:` rule takes back only those rules' skips:
+
+```yaml
+rules:
+  - mutate: shop::audit::record
+    arid: [mutastic:output]
+    reason: the audit log is what the auditor reads
+```
+
+An id mutastic doesn't have is an error that names the one meant, when it's close. `mutastic
+explain` on a skipped mutant names its rule, links to its section of
+[Arid rules](https://docs.mutastic.io/reference/arid/) and prints the rule to copy.
+
 ### In a workspace
 
 Each package uses the nearest `mutastic.yaml` at or above its own directory, however it's run:
