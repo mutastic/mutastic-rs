@@ -54,9 +54,6 @@ pub const WAIT_TIME: &str = "arid: only sets how long to wait";
 /// The arid skip of a sleep removed.
 pub const ONLY_WAITS: &str = "arid: only waits";
 
-/// The arid skip of a counter's or a total's first value.
-pub const FIRST_VALUE: &str = "arid: a variable's first value of 0 or 1";
-
 /// The arid skip of an output macro's mutant, in the Java edition's words.
 pub const ONLY_WRITES_OUTPUT: &str = "arid: only writes output";
 
@@ -123,13 +120,6 @@ pub const RULES: &[Rule] = &[
         description: "A call that only checks a value is there, its result unused, removed: `Objects.requireNonNull(x)` or `x.getClass()` in Java, `x.unwrap()` or `x.expect(…)` in Rust.",
         reasons: &[ONLY_CHECKS_A_VALUE],
         example: "order.unwrap();",
-    },
-    Rule {
-        id: "mutastic:first-values",
-        scope: Scope::Site,
-        description: "A variable's first value of 0 or 1, where a counter or a total starts.",
-        reasons: &[FIRST_VALUE],
-        example: "let mut count = 0;",
     },
     Rule {
         id: "mutastic:thread-names",

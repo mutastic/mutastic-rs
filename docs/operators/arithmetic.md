@@ -361,8 +361,9 @@ fn a_balance_reversed() {
 `mutastic/constant-value`, in the `stronger` set. A whole number becomes the numbers next to it,
 `0` and `1`, and `-1` where the type is plainly signed. Never a number outside its type's range. One
 that only sizes a collection (`Vec::with_capacity(16)`), only sets how long a sleep waits
-(`thread::sleep(Duration::from_millis(100))`) or starts a counter at `0` or `1` is made and skipped
-as arid. A time given anywhere else, a timeout's say, is counted: it decides whether code gives up.
+(`thread::sleep(Duration::from_millis(100))`) is made and skipped as arid. A time given anywhere
+else, a timeout's say, is counted: it decides whether code gives up. So is a counter's first `0` or
+`1`: one that starts wrong gives a wrong answer.
 
 **The bug it stands for:** a number set wrong: a rate of `3` that should be `4`, a minimum one too
 high, a digit out. Nothing else shows these: the calculation is right, and only its number is wrong.

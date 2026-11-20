@@ -7,7 +7,6 @@
 //! Vec::with_capacity(orders.len() * 2)                   // only sizes a collection
 //! Err("amount must be positive")                         // only an error's message
 //! order.expect("an order to ship")                       // only a failed check's message
-//! let mut count = 0;                                     // a variable's first value
 //! impl fmt::Debug for Order { .. }                       // a debug representation
 //! impl Hash for Order { .. }                             // any hash consistent with `Eq`
 //! ```
@@ -20,8 +19,7 @@ use super::*;
 use ra_ap_syntax::ast::HasArgList;
 
 use crate::arid::{
-    DEBUG, ERROR_MESSAGE, FAILED_CHECK_MESSAGE, FIRST_VALUE, HASH, ONLY_SIZES, ONLY_WAITS,
-    WAIT_TIME,
+    DEBUG, ERROR_MESSAGE, FAILED_CHECK_MESSAGE, HASH, ONLY_SIZES, ONLY_WAITS, WAIT_TIME,
 };
 
 /// The operators that change a number worked out, or given, by the code.
@@ -151,16 +149,9 @@ fn conversion_from(call: &SyntaxNode) -> bool {
     path == "String::from" || path == "Box::from"
 }
 
-/// A number that only sizes a collection or says how long to sleep, or a variable's first 0 or 1.
-fn number(operator: &str, node: &SyntaxNode) -> Option<&'static str> {
-    if operator == CONSTANT_VALUE
-        && node
-            .parent()
-            .is_some_and(|p| p.kind() == SyntaxKind::LET_STMT)
-        && integer_literal(&plain(node).replace(' ', "")).is_some_and(|(v, _)| matches!(v, 0 | 1))
-    {
-        return Some(FIRST_VALUE);
-    }
+/// A number that only sizes a collection or says how long to sleep. A variable's first `0` or `1`
+/// counts: a counter or a total that starts wrong is a wrong answer, which tests catch.
+fn number(_operator: &str, node: &SyntaxNode) -> Option<&'static str> {
     let (call, position) = taken_by(node)?;
     let name = callee(&call)?;
     if CAPACITY_CALLS.contains(&name.as_str())
@@ -343,7 +334,7 @@ pub fn bound(orders: &[u32]) -> usize {
     }
 
     #[test]
-    fn an_errors_text_and_a_first_zero_or_one_are_arid() {
+    fn an_errors_text_is_arid_and_a_first_zero_or_one_counts() {
         let found = mutants(
             r#"
 pub fn checked(order: Option<u32>, amount: i64) -> Result<u32, String> {
@@ -361,13 +352,12 @@ pub fn checked(order: Option<u32>, amount: i64) -> Result<u32, String> {
         );
         let checked = of(&found, "checked");
         for arid in [
-            "0 -> 1 (arid: a variable's first value of 0 or 1)",
             "\"amount must be positive\" -> \"\" (arid: only an error's message)",
             "\"an order to ship\" -> \"\" (arid: only a failed check's message)",
         ] {
             assert!(checked.iter().any(|m| m == arid), "{arid}: {found:#?}");
         }
-        for counted in ["2 -> 3", "\"an order\" -> \"\""] {
+        for counted in ["0 -> 1", "2 -> 3", "\"an order\" -> \"\""] {
             assert!(
                 checked.iter().any(|m| m == counted),
                 "{counted}: {found:#?}"

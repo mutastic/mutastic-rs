@@ -61,8 +61,8 @@ Expect your score to move, for these reasons, not because your tests changed:
   there, `Vec::with_capacity(n * 2)`, was counted; both are now skipped as `arid: only sizes a
   collection's first allocation`. A sleep removed, `thread::sleep(d);` or `sleep(d).await;`, was
   counted; it's `arid: only waits`, and the number or the sum that only sets how long it waits is
-  `arid: only sets how long to wait`. An `Err`'s, a `context`'s or an `expect`'s text, a
-  `let`'s first `0` or `1`, and every mutant in a `Debug` or `Hash` impl are made and skipped too,
+  `arid: only sets how long to wait`. An `Err`'s, a `context`'s or an `expect`'s text, and every
+  mutant in a `Debug` or `Hash` impl are made and skipped too,
   with the Java edition's ids. Each is counted under `skipped`, audited by `MUTASTIC_ARID=audit`
   and brought back by a `mutate:` rule. Scores on code that sizes collections or sleeps can go up.
 - **A time that isn't a sleep's is counted.** A number in `Duration::from_secs(30)` had no mutant
@@ -70,6 +70,9 @@ Expect your score to move, for these reasons, not because your tests changed:
   backoff is mutated, as the Java edition counts them. A runtime's keep-alive that the change
   makes zero is counted too, as the keep-alive rule says. Scores on code with timeouts can go
   down.
+- **A variable's first `0` or `1` is counted.** `let mut count = 0;` had no mutant; now its
+  changes run like any other number's, as the Java edition counts them since dropping
+  `mutastic:first-values`: a counter or a total that starts wrong is a wrong answer.
 - **A `Display` impl is counted, and `new` has its body replaced.** A `fmt`'s `Ok(())`, and with
   `extended` a `fmt`'s or a `hash`'s or a `new`'s body replaced, had no mutant. Outside a `Debug`
   or `Hash` impl they're mutants now: what a `Display` writes is often what a person or a program
