@@ -215,6 +215,47 @@ fn every_shape_gets_a_card() {
     );
 }
 
+/// `let removed = remove_file(path); removed.unwrap();` is `remove_file(path).unwrap();` in two:
+/// the call goes, with its check, and the test that looks for the file catches it. The check alone
+/// stays skipped as arid.
+#[test]
+fn a_call_stored_and_only_checked_is_removed() {
+    let dir = fixture("operators");
+    let (_, stdout) = mutastic(&[
+        "run",
+        &dir,
+        "--format=jsonl",
+        "--operators=mutastic/remove-discarded-call",
+    ]);
+    let discard: Vec<Value> = events(&stdout)
+        .into_iter()
+        .filter(|e| e["reason"] == "mutant-finished" && e["location"]["method"] == "discard")
+        .collect();
+    let mut statuses: Vec<(&str, &str, u64)> = discard
+        .iter()
+        .map(|e| {
+            (
+                e["mutation"]["original"].as_str().unwrap(),
+                e["status"].as_str().unwrap(),
+                e["location"]["line"].as_u64().unwrap(),
+            )
+        })
+        .collect();
+    statuses.sort_unstable();
+    assert_eq!(
+        statuses,
+        [
+            (
+                "let removed = std::fs::remove_file(path);\n    removed.unwrap();",
+                "Killed",
+                69
+            ),
+            ("removed.unwrap();", "Ignored", 70),
+        ],
+        "{stdout}"
+    );
+}
+
 /// The mutants of a run, by function: each one's status and the first line of its card.
 fn by_function(stdout: &str) -> Vec<(String, String, String)> {
     let mut found: Vec<(String, String, String)> = events(stdout)
