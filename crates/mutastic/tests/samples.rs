@@ -295,6 +295,42 @@ fn a_binary_a_test_runs_as_a_process_is_mutated_there() {
     );
 }
 
+/// A test that calls what `main` calls, in the tests' own process, where a mutant makes it call
+/// `process::exit`. Status 2 fails `cargo test`, so the test that was running caught it, by the
+/// exit, not a crash; status 0 passes it, so it's no catch, and the tests after it decide. A loop
+/// that no longer ends still times out. The Java edition's `ExitingMainTest` is the same.
+#[test]
+fn an_exit_is_caught_by_the_test_that_ran_it_unless_its_status_is_zero() {
+    let dir = fixture("exits");
+    let (_, stdout) = mutastic(&["run", &dir, "--format=jsonl"]);
+    let finished = |description: &str| {
+        events(&stdout)
+            .into_iter()
+            .find(|e| {
+                e["reason"] == "mutant-finished" && e["mutation"]["description"] == description
+            })
+            .unwrap_or_else(|| panic!("no mutant-finished for {description}: {stdout}"))
+    };
+    let exits_2 = finished("`args.is_empty()` is always true");
+    assert_eq!(exits_2["status"], "Killed", "{exits_2}");
+    assert_eq!(exits_2["caughtBy"], "exits::tests::prints_the_discount");
+    assert_eq!(exits_2["caughtWith"], "exit: 2");
+    let exits_0 = finished("`args[0] == \"--help\"` is always true");
+    assert_eq!(exits_0["status"], "Survived", "{exits_0}");
+    assert!(exits_0.get("caughtBy").is_none(), "{exits_0}");
+    let hangs = finished("`total >= 10` is always true");
+    assert_eq!(hangs["status"], "Timeout", "{hangs}");
+
+    let id = exits_2["id"].as_str().unwrap();
+    let (_, explained) = mutastic(&["explain", id, &dir]);
+    assert!(
+        explained.contains(
+            "caught by exits::tests::prints_the_discount, by the process exiting with status 2"
+        ),
+        "{explained}"
+    );
+}
+
 /// A pattern that binds by `ref mut` into a field changes the field, so the copy keeps the field a
 /// place, not a value in a switch: its test passes there as under `cargo test`, as url's do.
 #[test]

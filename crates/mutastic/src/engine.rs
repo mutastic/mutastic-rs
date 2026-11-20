@@ -1215,14 +1215,43 @@ fn result(
         }
         let timeout = timeout(baseline);
         let active = [("MUTASTIC_ACTIVE", mutant.ordinal.to_string())];
-        let outcome: Outcome = testrun::run(&built.binaries[binary], cwd, &names, &active, timeout);
+        let run =
+            |names: &[&str]| testrun::run(&built.binaries[binary], cwd, names, &active, timeout);
+        let mut outcome: Outcome = run(&names);
         result.tests_run += group.len();
+        // Code a test ran exited, status 0: `cargo test` passes, so that test didn't catch it, and
+        // the tests that never ran after it run without it.
+        while outcome.exited == Some(0) {
+            let Some(exit) = exiting(&run, &names) else {
+                break;
+            };
+            names.retain(|name| *name != exit.as_str());
+            outcome = if names.iter().any(|name| !name.starts_with("--")) {
+                run(&names)
+            } else {
+                Outcome::passed()
+            };
+        }
         if outcome.timed_out {
             result.status = Status::Timeout;
             break;
         }
         if outcome.passed {
             continue;
+        }
+        if let Some(code) = outcome.exited {
+            // Code a test ran exited with a status that fails `cargo test`: that test saw the
+            // mutant end the process. Not a crash, and its test is the one that was running.
+            if let Some(exit) = exiting(&run, &names) {
+                result.status = Status::Killed;
+                result.killed_with = Some(format!("exit: {code}"));
+                result.killed_by = group
+                    .iter()
+                    .find(|&&t| tests[t].name == exit)
+                    .map(|&t| tests[t].display.clone())
+                    .or(Some(exit));
+                break;
+            }
         }
         if outcome.failed.is_none() {
             // No test failed: the process died. Run again, one test at a time and uncaptured,
@@ -1420,6 +1449,17 @@ impl<'a> Suggester<'a> {
         }
         result
     }
+}
+
+/// The test whose code exits the process, found by running `names` again one at a time: `None`
+/// if, run that way, none does.
+fn exiting(run: &impl Fn(&[&str]) -> Outcome, names: &[&str]) -> Option<String> {
+    let mut one_at_a_time = names.to_vec();
+    if !one_at_a_time.contains(&"--test-threads=1") {
+        one_at_a_time.push("--test-threads=1");
+    }
+    let again = run(&one_at_a_time);
+    again.exited.and_then(|_| testrun::running(&again.stdout))
 }
 
 /// What a crash means. A safe mutant that crashes the process was caught, but by the crash, not a
