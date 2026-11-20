@@ -1044,7 +1044,8 @@ fn human(report: &Report, style: Style, format: Format) -> String {
 /// The run's warnings, before the summary: each flaky test left out, as the Java edition shows them.
 fn warnings(out: &mut String, report: &Report, style: Style) {
     let likely_flaky = likely_flaky(report);
-    if report.flaky.is_empty() && likely_flaky.is_empty() {
+    let unrelated = unrelated_catches(report);
+    if report.flaky.is_empty() && likely_flaky.is_empty() && unrelated.is_empty() {
         return;
     }
     out.push('\n');
@@ -1075,6 +1076,74 @@ fn warnings(out: &mut String, report: &Report, style: Style) {
             names(mutants)
         );
     }
+    for note in unrelated {
+        let _ = writeln!(out, " {} {}", style.dim("note:"), note.said());
+    }
+}
+
+/// A test that caught mutants in several functions, each time failing the same way in its own
+/// code: one that fails like that whatever changed may be failing for its own reasons, or may just
+/// call a lot of code. A note, not a verdict, as in the Java edition.
+struct UnrelatedCatches {
+    test: String,
+    /// What each catch failed with, as `caughtWith` says it.
+    failure: String,
+    mutants: Vec<String>,
+    functions: usize,
+}
+
+impl UnrelatedCatches {
+    /// The fewest functions before the catches are worth a note.
+    const FUNCTIONS: usize = 3;
+
+    /// `tests::totals caught 4 mutants in 3 different functions, each with a panic in the test
+    /// itself`.
+    fn said(&self) -> String {
+        format!(
+            "{} caught {} mutants in {} different functions, each with a {} in the test itself",
+            untrusted::value(&self.test),
+            self.mutants.len(),
+            self.functions,
+            untrusted::value(&self.failure)
+        )
+    }
+}
+
+/// Each test whose catches all failed alike in the test's own code, across
+/// [`UnrelatedCatches::FUNCTIONS`] functions or more, by name.
+fn unrelated_catches(report: &Report) -> Vec<UnrelatedCatches> {
+    let mut by_test: BTreeMap<&str, Vec<&MutantResult>> = BTreeMap::new();
+    for result in &report.results {
+        if result.status == Status::Killed && result.failure_origin.as_deref() == Some("test") {
+            if let Some(test) = &result.killed_by {
+                by_test.entry(test).or_default().push(result);
+            }
+        }
+    }
+    by_test
+        .into_iter()
+        .filter_map(|(test, catches)| {
+            let failures: BTreeSet<&str> = catches
+                .iter()
+                .map(|result| result.killed_with.as_deref().unwrap_or("panic"))
+                .collect();
+            let functions: BTreeSet<usize> = catches
+                .iter()
+                .map(|result| report.found.mutants[result.mutant].function)
+                .collect();
+            (failures.len() == 1 && functions.len() >= UnrelatedCatches::FUNCTIONS).then(|| {
+                UnrelatedCatches {
+                    test: test.to_string(),
+                    failure: failures.into_iter().next().unwrap_or("panic").to_string(),
+                    mutants: catches
+                        .iter()
+                        .map(|result| report.found.mutants[result.mutant].id.clone())
+                        .collect(),
+                    functions: functions.len(),
+                }
+            })
+        })
+        .collect()
 }
 
 /// Each test whose catches changed since the last run with the code and mutastic unchanged, and
@@ -2263,6 +2332,13 @@ fn agent(report: &Report, style: Style) -> String {
             names(&mutants)
         );
     }
+    for note in unrelated_catches(report) {
+        let _ = writeln!(
+            out,
+            "note: {}; if it fails that way whatever changes, it may be flaky",
+            note.said()
+        );
+    }
     let _ = writeln!(
         out,
         "rules: {RULE}; a fix counts when `{}` passes",
@@ -2663,8 +2739,14 @@ fn jsonl(report: &Report) -> String {
             "reasons": ["changed-since-last-run"],
         }))
         .collect::<Vec<_>>());
-    // Nothing of this is built yet, so it's empty, as the schema asks.
-    finished["unrelatedCatches"] = json!([]);
+    finished["unrelatedCatches"] = json!(unrelated_catches(report)
+        .into_iter()
+        .map(|note| json!({
+            "test": note.test,
+            "failure": note.failure,
+            "mutants": note.mutants,
+        }))
+        .collect::<Vec<_>>());
     if let Some(scope) = &report.scope {
         finished["scope"] = json!({
             "since": scope.since,
@@ -2827,25 +2909,31 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
     if let Some(failure) = &result.killed_with {
         event["caughtWith"] = json!(failure);
     }
+    if let Some(origin) = &result.failure_origin {
+        event["failureOrigin"] = json!(origin);
+    }
     if let Some(test) = &result.false_catch_by {
         event["falseCatchBy"] = json!(test);
     }
     if let Some(inputs) = inputs(result) {
         event["inputs"] = inputs;
     }
+    // In the Java edition's order: the suggestion with the inputs it came from, then the counts,
+    // then what to do.
+    let missed = result.status == Status::Survived;
+    if let Some((test, found)) = missed.then(|| suggested(view, result)).flatten() {
+        event["suggestedTest"] = test;
+        if let Some(found) = found {
+            event["suggestion"] = found;
+        }
+    }
     event["testsRun"] = json!(result.tests_run);
     event["durationMs"] = json!(result.took.as_millis() as u64);
-    if result.status == Status::Survived {
+    if missed {
         event["doneWhen"] = json!(format!("{} passes", view.command("verify", &mutant.id)));
         event["reproduce"] = json!(view.command("run", &mutant.id));
         event["ignore"] = json!(view.command("ignore", &mutant.id));
         event["propose"] = json!(view.command("propose", &mutant.id));
-        if let Some((test, found)) = suggested(view, result) {
-            event["suggestedTest"] = test;
-            if let Some(found) = found {
-                event["suggestion"] = found;
-            }
-        }
         let entry = Entry {
             main: result,
             also: Vec::new(),
@@ -2889,14 +2977,20 @@ fn suggested(view: &View, result: &MutantResult) -> Option<(Value, Option<Value>
     let found = result
         .suggestion
         .as_ref()
-        .map(|found| suggestion(view, view.mutant(result), found, &test.call));
+        .map(|found| suggestion(view, result, found, &test.call));
     Some((shown, found))
 }
 
 /// The call a suggested test was found by, whole, as the Java edition writes it: what a share's
 /// events need for the card to be written again from them. The receiver's numbers come first in
 /// what the probe found, then the function's own.
-fn suggestion(view: &View, mutant: &Mutant, found: &suggest::Suggestion, call: &str) -> Value {
+fn suggestion(
+    view: &View,
+    result: &MutantResult,
+    found: &suggest::Suggestion,
+    call: &str,
+) -> Value {
+    let mutant = view.mutant(result);
     let callable = view.found.functions[mutant.function].callable.as_ref();
     let receiver = callable.and_then(|callable| callable.receiver.as_ref());
     let taken = receiver.map_or(0, |receiver| receiver.parameters.len());
@@ -2915,10 +3009,26 @@ fn suggestion(view: &View, mutant: &Mutant, found: &suggest::Suggestion, call: &
         "receiver": receiver.map_or_else(Vec::new, |receiver| vec![json!({
             "type": receiver.type_name,
             "arguments": numbers(made),
+            "parameters": receiver
+                .parameters
+                .iter()
+                .map(|(name, _)| name.clone())
+                .collect::<Vec<_>>(),
         })]),
         "today": found.today,
         "withMutant": found.mutated,
     });
+    // The value the call is at the edge of, when the source names it: what the test is named for.
+    if let Some(named) = view.named(result) {
+        let mut said = json!({ "name": named.name, "note": named.note });
+        if let Some(local) = &named.local {
+            said["local"] = json!(local);
+        }
+        if !named.meaning.is_empty() {
+            said["meaning"] = json!(named.meaning);
+        }
+        value["named"] = said;
+    }
     if let Some(test) = &found.built_by {
         value["builtBy"] = json!(test);
     }
@@ -3087,6 +3197,8 @@ struct About {
     id_note: &'static str,
     function: String,
     site: String,
+    /// Which site of its function it is, counting from 1 in source order.
+    ordinal: usize,
     last: Option<LastRun>,
     last_words: String,
     /// The arid rule that skipped it, if one of mutastic's own did, and the `mutastic.yaml` text
@@ -3104,11 +3216,22 @@ impl About {
             || view.advice(result).change,
             |rule| rule.explanation.clone(),
         );
+        // The function's sites in source order: a site with several mutants counts once.
+        let sites: BTreeSet<usize> = view
+            .found
+            .mutants
+            .iter()
+            .filter(|other| other.function == mutant.function && other.file == mutant.file)
+            .map(|other| other.site.start)
+            .collect();
+        let ordinal = sites.range(..mutant.site.start).count() + 1;
         About {
             site: format!(
-                "`{from}` in {}, line {}, column {}",
+                "`{from}` in {}, line {}, column {}: the function's site {ordinal}, counting from \
+                 1 in source order",
                 function.path, mutant.line, mutant.column
             ),
+            ordinal,
             from,
             to: mutant.replacement.clone(),
             operator: mutant.operator.to_string(),
@@ -3270,7 +3393,7 @@ pub fn explained_jsonl(report: &Report, last: Option<LastRun>) -> String {
         "fingerprint": about.fingerprint,
         "idDescription": about.id,
         "idNote": about.id_note,
-        "site": { "method": about.function, "description": about.site },
+        "site": { "ordinal": about.ordinal, "method": about.function, "description": about.site },
     });
     if let Some((rule, bring_back)) = &about.arid {
         event["arid"] = json!({

@@ -84,6 +84,9 @@ pub struct MutantResult {
     pub covered_by: Vec<String>,
     pub killed_by: Option<String>,
     pub killed_with: Option<String>,
+    /// Where the catching test's failure came from: `assertion`, `test`, `code` or `unknown`
+    /// ([`crate::origin`]).
+    pub failure_origin: Option<String>,
     /// A test that failed against the mutant, then failed on its own with no mutant in too: its
     /// catch didn't count, and the mutant ran again without it.
     pub false_catch_by: Option<String>,
@@ -642,6 +645,7 @@ fn nothing_to_run(
                 covered_by: Vec::new(),
                 killed_by: None,
                 killed_with: None,
+                failure_origin: None,
                 false_catch_by: None,
                 tests_run: 0,
                 took: Duration::ZERO,
@@ -1150,6 +1154,7 @@ fn result(
             covered_by: Vec::new(),
             killed_by: None,
             killed_with: None,
+            failure_origin: None,
             false_catch_by: None,
             tests_run: 0,
             took: Duration::ZERO,
@@ -1175,6 +1180,7 @@ fn result(
         covered_by: covering.iter().map(|&t| tests[t].display.clone()).collect(),
         killed_by: None,
         killed_with: None,
+        failure_origin: None,
         false_catch_by: None,
         tests_run: 0,
         took: Duration::ZERO,
@@ -1255,10 +1261,17 @@ fn result(
         });
         // Of the tests that failed, the first as they're listed, not the first to finish: the
         // threads finish in a different order each run.
-        result.killed_by = group
+        let catcher = group
             .iter()
             .find(|&&t| outcome.failures.contains(&tests[t].name))
-            .map(|&t| tests[t].display.clone())
+            .map(|&t| &tests[t]);
+        let failed = catcher.map(|test| &test.name).or(outcome.failed.as_ref());
+        // A panic names its file from the package, or from the workspace above it.
+        let roots: Vec<&std::path::Path> = cwd.ancestors().collect();
+        result.failure_origin =
+            failed.map(|name| crate::origin::of(&outcome.stdout, name, &roots).to_string());
+        result.killed_by = catcher
+            .map(|test| test.display.clone())
             .or_else(|| outcome.failed.clone());
         break;
     }

@@ -7,6 +7,17 @@ newest come first.
 
 ### Additions
 
+- **Events say where a catch failed, and which tests catch everything alike.** `mutant-finished`
+  and mutation.json have `failureOrigin`, as in the Java edition: `assertion` when an `assert!`
+  failed, `test` when the test's own code panicked, `code` when the code under test did. A test
+  that caught mutants in three or more functions, each time with a panic in its own code, gets a
+  note under the summary and in the agent format, and `run-finished`'s `unrelatedCatches` names
+  it, where the list was always empty: it may be flaky, or call a lot of code.
+- **More of what a suggestion is found by, in events.** `suggestion` names the constant or field
+  the call is at the edge of (`named`) and the receiver's parameters, and `explain`'s site says
+  which of its function's sites it is (`site.ordinal`), as in the Java edition. `mutant-finished`'s
+  keys come in the Java edition's order.
+
 - **Bring back one arid rule: `arid:` on a `mutate:` rule.** `arid: [mutastic:output]` under a
   `mutate:` rule takes back only that rule's skips in the code it covers; without it, every arid
   skip, as before. An id mutastic doesn't have is refused, with the one meant when it's close.

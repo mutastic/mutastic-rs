@@ -416,6 +416,9 @@ fn mutant_more(
         }
         more.insert("suggestedTest".into(), test);
     }
+    if let Some(origin) = &result.failure_origin {
+        more.insert("failureOrigin".into(), json!(origin));
+    }
     if let Some(near) = mutant.near_unsafe {
         more.insert("nearUnsafe".into(), json!(near));
     }

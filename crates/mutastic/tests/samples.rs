@@ -5,6 +5,7 @@
     reason = "a helper here asserts as the tests it serves do: a value that isn't there fails the test"
 )]
 
+use std::collections::BTreeSet;
 use std::io::BufRead as _;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -283,6 +284,49 @@ fn a_file_one_mutant_leaves_isnt_there_for_the_next() {
         "a test wrote to mutastic's own"
     );
     std::fs::remove_dir_all(&temp).ok();
+}
+
+/// Each catch says where its failure came from, as the Java edition's do: an assertion, the test's
+/// own code or the code under test. A test that catches mutants in three functions, each time with
+/// a panic in its own code, is noted as catching everything alike.
+#[test]
+fn a_catch_says_where_it_failed() {
+    let dir = fixture("origins");
+    let (_, stdout) = mutastic(&["run", &dir, "--format=jsonl"]);
+    let events = events(&stdout);
+    let origins = |function: &str| -> BTreeSet<String> {
+        events
+            .iter()
+            .filter(|e| e["reason"] == "mutant-finished" && e["location"]["method"] == function)
+            .map(|e| e["failureOrigin"].as_str().unwrap_or("none").to_string())
+            .collect()
+    };
+    let only = |origin: &str| BTreeSet::from([origin.to_string()]);
+    assert_eq!(origins("double"), only("test"), "{stdout}");
+    assert_eq!(origins("half"), only("assertion"), "{stdout}");
+    assert!(origins("last").contains("code"), "{stdout}");
+    let finished = events.last().unwrap();
+    assert_eq!(
+        finished["unrelatedCatches"][0]["test"], "tests::totals",
+        "{stdout}"
+    );
+    assert_eq!(
+        finished["unrelatedCatches"][0]["failure"], "panic",
+        "{stdout}"
+    );
+    assert_eq!(
+        finished["unrelatedCatches"].as_array().unwrap().len(),
+        1,
+        "{stdout}"
+    );
+    let (_, shown) = mutastic(&["run", &dir]);
+    assert!(
+        shown.contains(
+            " note: tests::totals caught 6 mutants in 3 different functions, each with a panic in \
+             the test itself\n"
+        ),
+        "{shown}"
+    );
 }
 
 /// The mutants of a run, by function: each one's status and the first line of its card.
