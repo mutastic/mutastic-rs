@@ -1152,9 +1152,15 @@ function why(m){
   if (m.status === 'Killed') return '<section class="sec"><h2>How it was caught</h2><p>' + (m.killedBy.length ? '<code>' + esc(testShort(m.killedBy[0])) + '</code> failed' : 'A test failed') + (m.reason ? ' with <code>' + esc(m.reason) + '</code>' : '') + '.</p></section>';
   if (m.status === 'NoCoverage') return '<section class="sec"><h2>Why it counts as a miss</h2><p>No test runs this line, so nothing could catch the change.</p></section>';
   if (m.status === 'Timeout') return '<section class="sec"><h2>Why it counts as caught</h2><p>' + words(cap(m.reason || 'the tests didn\'t finish in time')) + '. A change that hangs the tests is one they notice.</p></section>';
-  if (m.status === 'Ignored') return '<section class="sec"><h2>Why it was skipped</h2><p>' + words(cap(m.reason || 'skipped')) + '.</p><p class="cap">Skipped mutants are out of the score.</p></section>';
+  if (m.status === 'Ignored') return '<section class="sec"><h2>Why it was skipped</h2><p>' + words(cap(m.reason || 'skipped')) + '.</p>' + aridRule(m) + '<p class="cap">Skipped mutants are out of the score.</p></section>';
   if (m.status === 'RuntimeError') return '<section class="sec"><h2>Why it\'s out of the score</h2><p>' + words(cap(m.reason || 'the tests crashed')) + '. A crash that may be undefined behaviour isn\'t a catch.</p></section>';
   return m.reason ? '<section class="sec"><h2>Why</h2><p>' + words(cap(m.reason)) + '.</p></section>' : '';
+}
+function aridRule(m){
+  var x = m.x, id = str(x.skipRule), docs = str(x.skipDocs), yaml = str(x.bringBack);
+  if (!id) return '';
+  return '<p>The arid rule <code>' + esc(id) + '</code>' + (docs.indexOf('https://docs.mutastic.io/') === 0 ? ' (<a href="' + esc(docs) + '" target="_blank" rel="noopener">what it skips, and why</a>)' : '') + ' skipped it.</p>' +
+    (yaml ? '<div class="cmd col"><div class="head"><span class="cap">to run it, add to <code>mutastic.yaml</code></span>' + copyBtn(yaml, 'the rule', 'btn') + '</div><pre class="code">' + escLines(yaml) + '</pre></div>' : '');
 }
 function suggestion(m){
   var x = m.x, st = obj(x.suggestedTest), fix = toWrite(m) ? fixOf(m, true) : '';
