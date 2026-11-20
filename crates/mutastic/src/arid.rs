@@ -73,18 +73,18 @@ pub const RULES: &[Rule] = &[
         example: "let builder = thread::Builder::new().name(\"squarer\".into());",
     },
     Rule {
-        id: "mutastic:stack-sizes",
-        scope: Scope::Site,
-        description: "The size of a thread's stack, while it stays above zero.",
-        reasons: &[STACK],
-        example: "let builder = thread::Builder::new().stack_size(64 * 1024);",
-    },
-    Rule {
         id: "mutastic:keep-alive-times",
         scope: Scope::Site,
         description: "How long a pool's idle threads live before they stop, while it stays above zero.",
         reasons: &[KEEP_ALIVE],
         example: "let runtime = Builder::new_multi_thread().thread_keep_alive(Duration::from_secs(5 * 60));",
+    },
+    Rule {
+        id: "mutastic:stack-sizes",
+        scope: Scope::Site,
+        description: "The size of a thread's stack, while it stays above zero.",
+        reasons: &[STACK],
+        example: "let builder = thread::Builder::new().stack_size(64 * 1024);",
     },
 ];
 
