@@ -83,7 +83,7 @@ const VIEW_CALLS: &[&str] = &["as_ref", "as_mut", "as_deref", "as_deref_mut"];
 /// nothing a test should have to notice, so its mutant is made, for its id, and skipped as arid,
 /// as the Java edition skips a call to a logger or `System.out`. A `write!` goes to a writer the
 /// code chose, which a test may read, so it isn't one.
-const OUTPUT_MACROS: &[&str] = &[
+pub(super) const OUTPUT_MACROS: &[&str] = &[
     "print", "println", "eprint", "eprintln", "dbg", "trace", "debug", "info", "warn", "error",
     "log", "event",
 ];

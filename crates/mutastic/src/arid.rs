@@ -36,6 +36,10 @@ pub struct Rule {
 /// The arid skip of an output macro's mutant, in the Java edition's words.
 pub const ONLY_WRITES_OUTPUT: &str = "arid: only writes output";
 
+/// The arid skip of a value a `let` works out only for output macros to read, in the Java
+/// edition's words.
+pub const ONLY_FEEDS_A_LOG_LINE: &str = "arid: only feeds a log line";
+
 /// The arid skip of a statement that only checks a value it's given, `x.unwrap();`, as the Java
 /// edition skips a removed `Objects.requireNonNull(x)`.
 pub const ONLY_CHECKS_A_VALUE: &str = "arid: only checks the value is there";
@@ -54,8 +58,8 @@ pub const RULES: &[Rule] = &[
     Rule {
         id: "mutastic:output",
         scope: Scope::Site,
-        description: "Code that only writes output: a log line, or text printed to the console.",
-        reasons: &[ONLY_WRITES_OUTPUT],
+        description: "Code that only writes output: a log line, or text printed to the console, and a value worked out for nothing else.",
+        reasons: &[ONLY_WRITES_OUTPUT, ONLY_FEEDS_A_LOG_LINE],
         example: "println!(\"saved {id}\");",
     },
     Rule {
