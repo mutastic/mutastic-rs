@@ -64,6 +64,12 @@ pub fn run_and_wait(work: impl FnOnce() + Send + 'static) {
     handle.join().unwrap();
 }
 
+/// Deletes the file at `path`, which must be there.
+pub fn discard(path: &std::path::Path) {
+    let removed = std::fs::remove_file(path);
+    removed.unwrap();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -108,6 +114,16 @@ mod tests {
             flag.store(true, Ordering::SeqCst);
         });
         assert!(done.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn a_discarded_file_is_gone() {
+        // A name of its own: copies of this module can run side by side in one process.
+        let name = format!("{}-discarded.txt", module_path!().replace("::", "-"));
+        let path = std::env::temp_dir().join(name);
+        std::fs::write(&path, "old").unwrap();
+        discard(&path);
+        assert!(!path.exists());
     }
 
     #[test]
