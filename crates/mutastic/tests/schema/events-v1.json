@@ -261,6 +261,11 @@
           "$ref": "#/$defs/mutantId",
           "description": "For a twin: the mutant at its place that always does the same, which runs for it, so the place counts once in the score. Its result is that mutant's mutant-finished. Only with `skipKind` `twin`."
         },
+        "skipRule": {
+          "type": "string",
+          "pattern": "^mutastic:[a-z]+(-[a-z]+)*$",
+          "description": "The arid rule that skipped it, by id: `mutastic:waits`. Its docs are at https://docs.mutastic.io/reference/arid/#waits, the id after `mutastic:`, and a `mutate:` rule's `arid: [mutastic:waits]` brings it back. Only with `skipKind` `arid`, and only for mutastic's own rules."
+        },
         "coveredBy": {
           "type": "array",
           "items": { "$ref": "#/$defs/test" },
@@ -682,6 +687,10 @@
               "type": "array",
               "items": { "type": "string" },
               "description": "The methods of the catches by an assertion, `Board.toString()`, in the order found."
+            },
+            "bringBack": {
+              "type": "string",
+              "description": "The `mutastic.yaml` text that runs those arid mutants in the first three of those methods: a `rules:` list with a `mutate:` rule for each, its `arid:` naming the rule and a `reason:` to fill in, lines ending in a newline. Only when a test's assertion caught one of mutastic's own rules' mutants."
             }
           }
         },
@@ -918,6 +927,17 @@
             "ordinal": { "type": "integer", "minimum": 1, "description": "Which site, counting from 1, as `description` says they're counted. Not for a change to the class as a whole." },
             "method": { "type": "string", "description": "The method, with its JVM descriptor: `discount(I)I`." },
             "description": { "type": "string", "description": "Which site it is and how the sites are counted, in words." }
+          }
+        },
+        "arid": {
+          "type": "object",
+          "description": "The arid rule that skipped it, as the text's `arid` row says it. Only when one of mutastic's own rules did.",
+          "required": ["id", "description", "docs", "bringBack"],
+          "properties": {
+            "id": { "type": "string", "pattern": "^mutastic:[a-z]+(-[a-z]+)*$", "description": "The rule's id, as `mutant-finished`'s `skipRule`: `mutastic:waits`." },
+            "description": { "type": "string", "description": "What the rule skips, in a sentence." },
+            "docs": { "type": "string", "description": "The rule's section of the docs: `https://docs.mutastic.io/reference/arid/#waits`." },
+            "bringBack": { "type": "string", "description": "The `mutastic.yaml` text that runs this rule's mutants in the mutant's method, a `rules:` list of one `mutate:` rule with `arid:` and a `reason:` to fill in, lines ending in a newline." }
           }
         },
         "lastRun": {
