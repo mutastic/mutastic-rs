@@ -495,7 +495,9 @@ pub fn run(
     let suggester = Suggester::new(project, &found, &built, options);
     let files = Files::new(&found, &order);
     let indexed: Vec<(usize, &Cost)> = order.iter().copied().zip(&costs).collect();
-    let mut results = testrun::parallel_on(&indexed, options.workers, |worker, &(mutant, cost)| {
+    // No more workers than mutants, as the Java edition starts them: `--only` on one is one.
+    let workers = options.workers.min(order.len().max(1));
+    let mut results = testrun::parallel_on(&indexed, workers, |worker, &(mutant, cost)| {
         if cost.expected > Duration::ZERO {
             progress(Progress::MutantStarted {
                 worker,
@@ -581,7 +583,7 @@ pub fn run(
         tests: tests.len(),
         test_runs,
         rounds: built.rounds.len(),
-        workers: options.workers,
+        workers,
         rustc,
         threshold: options.threshold,
         setup,
