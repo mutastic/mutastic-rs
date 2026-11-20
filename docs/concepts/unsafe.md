@@ -74,17 +74,17 @@ end of `mutastic run fixtures/unsafety`:
 
 <!-- output: concepts/unsafe-summary -->
 ```text
-   Mutants  ✓ 5 caught · ✗ 7 missed · ○ 2 not covered (14) · 3 crashed where a crash proves nothing
+   Mutants  ✓ 5 caught · ✗ 6 missed · ○ 2 not covered (13) · 2 skipped (2 twin) · 2 crashed where a crash proves nothing
   Left out  not mutated: unsafe (4), in or around unsafe blocks; --unsafe=enclosing or --unsafe=all includes them
-  Worst at  raw::positive() 3 ✗ · raw::checked() 2 ✗ · plain::guarded() 2 ✗
+  Worst at  raw::positive() 2 ✗ · raw::checked() 2 ✗ · plain::guarded() 2 ✗
    Crashes  1 caught only because the test process crashed, not by a test's check
      Build  one build of every mutant, 2 rounds (check and build)
- Test runs  15 (90 without coverage selection)
+ Test runs  13 (78 without coverage selection)
   Start at  11:03:14
   Duration  334ms (setup 20ms, build 279ms, coverage 3ms, mutants 10ms, checking 6ms)
      Tests  6 on rustc 1.99.1 · 4 workers
    Reports  fixtures/unsafety/target/mutastic/mutation.json · fixtures/unsafety/target/mutastic/mutation.html
-     Score  35.7%   FAIL  Below the threshold of 80: 7 missed, 2 not covered.  · 41.7% where tests reach
+     Score  38.5%   FAIL  Below the threshold of 80: 6 missed, 2 not covered.  · 45.5% where tests reach
 ```
 
 A safe function with an `unsafe` block is left alone because it usually exists to uphold what the
