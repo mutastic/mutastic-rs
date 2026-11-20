@@ -927,10 +927,16 @@ fn style(parsed: &Parsed, terminal: bool) -> Style {
                 .and_then(|name| report::Vocabulary::parse(&name))
         })
         .unwrap_or_default();
+    // Checked before anything runs: one it doesn't take is refused there.
+    let labels = std::env::var("MUTASTIC_PILLS")
+        .ok()
+        .and_then(|name| report::Labels::parse(&name))
+        .unwrap_or_default();
     Style {
         color,
         links,
         words,
+        labels,
     }
 }
 
@@ -1696,8 +1702,9 @@ fn accept(
     let proposals = ignores::proposed(here)?;
     let Some(proposal) = proposals.iter().find(|entry| entry.id == id).cloned() else {
         stderr_line!(
-            "mutastic: {id} isn't proposed in {}: nothing to accept",
-            ignores::PROPOSALS
+            "mutastic: {id} isn't proposed in {}: nothing to accept{}",
+            ignores::PROPOSALS,
+            close_id(id, &proposals, "--accept", command)
         );
         return Ok(ExitCode::FAILURE);
     };
@@ -1760,10 +1767,30 @@ fn remove(
         return Ok(ExitCode::SUCCESS);
     }
     stderr_line!(
-        "mutastic: {id} isn't ignored in {}: nothing to remove",
-        ignores::FILE
+        "mutastic: {id} isn't ignored in {}: nothing to remove{}",
+        ignores::FILE,
+        close_id(id, &entries, "--remove", command)
     );
     Ok(ExitCode::FAILURE)
+}
+
+/// The one id among `entries` a slip away from `id`, said with the command for it, as the Java
+/// edition says it: never acted on.
+fn close_id(
+    id: &str,
+    entries: &[ignores::Entry],
+    action: &str,
+    command: &dyn Fn(&[&str]) -> String,
+) -> String {
+    crate::similar::closest_within(id, entries.iter().map(|entry| entry.id.as_str()), 1).map_or(
+        String::new(),
+        |close| {
+            format!(
+                ". There's one called {close}:\n  {}",
+                command(&[action, close])
+            )
+        },
+    )
 }
 
 /// `ignore --prune`: takes away every ignore whose line has changed since it was made.

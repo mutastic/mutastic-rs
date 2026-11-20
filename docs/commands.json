@@ -1085,6 +1085,11 @@
       "detail": "`classic` says killed and survived instead of caught and missed. The JSON report and the event stream always use the standard names. Any other value is refused."
     },
     {
+      "name": "MUTASTIC_PILLS",
+      "meaning": "Labels: square (the default), rounded (for a Nerd Font) or off",
+      "detail": "How labels such as MISSED and PASS are drawn. `rounded` needs a terminal font with Nerd Font glyphs; `off` leaves out the coloured blocks and keeps the words. Any other value is refused."
+    },
+    {
       "name": "MUTASTIC_GATE_BUDGET",
       "meaning": "Seconds a hooked gate check may take",
       "detail": "600 unless set: what the agents' plugins' Stop hook allows. The check waits for the count of the task's start only as long as this leaves, and hands over before it runs when its last run took longer."
@@ -1148,6 +1153,11 @@
       "name": "MUTASTIC_VERSION",
       "meaning": "In a Maven or Gradle project, the Java edition's release to use",
       "detail": "Such as `0.5.0`, fetched if it isn't kept. Unset, from 1.0.0 it's the newest release of this mutastic's own major and minor version."
+    },
+    {
+      "name": "MUTASTIC_INCREMENTAL",
+      "meaning": "0 to build the mutants without Cargo's incremental compilation",
+      "detail": "1 unless set: Cargo's `CARGO_INCREMENTAL` for the build mutastic makes with the mutants in, which keeps the next run's build quick. 0 saves the disk it takes."
     },
     {
       "name": "MUTASTIC_HOME",
