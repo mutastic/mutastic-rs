@@ -443,7 +443,93 @@ impl Finder<'_> {
                     context,
                 );
             }
+            return;
         }
+        self.stored_then_checked(statement, &pat, &value, context);
+    }
+
+    /// `let removed = remove_file(&p); removed.unwrap();` removed, both statements, caret on the
+    /// call: the value is only checked, so this is `remove_file(&p).unwrap();` written in two, and
+    /// goes as that does. The check alone stays skipped as arid. Only when the check comes next
+    /// and nothing else uses the value: removing what stands between would remove more than the
+    /// call.
+    fn stored_then_checked(
+        &mut self,
+        statement: &ast::LetStmt,
+        pat: &ast::Pat,
+        value: &ast::Expr,
+        context: Context<'_>,
+    ) {
+        let ast::Pat::IdentPat(binding) = pat else {
+            return;
+        };
+        if binding.ref_token().is_some() || binding.pat().is_some() {
+            return;
+        }
+        let Some(name) = binding.name().map(|name| name.text().to_string()) else {
+            return;
+        };
+        let Some(call) = work_call(value) else {
+            return;
+        };
+        let Some(check) = statement
+            .syntax()
+            .siblings(ra_ap_syntax::Direction::Next)
+            .skip(1)
+            .find_map(ast::Stmt::cast)
+        else {
+            return;
+        };
+        let ast::Stmt::ExprStmt(check) = check else {
+            return;
+        };
+        if !checks_only(&check, &name)
+            || plain(check.syntax()).starts_with("#[")
+            || plain(statement.syntax()).starts_with("#[")
+        {
+            return;
+        }
+        // Used anywhere else after the `let`, the value is more than checked.
+        let Some(block) = statement.syntax().parent() else {
+            return;
+        };
+        let uses = block
+            .descendants()
+            .filter_map(ast::NameRef::cast)
+            .filter(|reference| reference.text() == name.as_str())
+            .filter(|reference| {
+                reference.syntax().text_range().start() > statement.syntax().text_range().end()
+            })
+            .filter(|reference| {
+                !check
+                    .syntax()
+                    .text_range()
+                    .contains_range(reference.syntax().text_range())
+            })
+            .count();
+        if uses > 0 {
+            return;
+        }
+        let site = statement
+            .syntax()
+            .text_range()
+            .cover(check.syntax().text_range());
+        self.make(
+            Make {
+                operator: REMOVE_DISCARDED_CALL,
+                node: statement.syntax(),
+                site,
+                caret: call.text_range(),
+                replacement: String::new(),
+                change: Change::Removed {
+                    statement: format!("{} {}", plain(statement.syntax()), plain(check.syntax())),
+                },
+                operands: Vec::new(),
+                form: Form::Statement,
+                claimed: None,
+            },
+            context,
+        );
     }
 
     /// A `let Some(..) = e` that never matches: `e` is `None`.
@@ -747,6 +833,38 @@ fn called(expr: &ast::Expr) -> Option<(SyntaxNode, String)> {
         }
         _ => None,
     }
+}
+
+/// The call that does the work in what a `let` stores: `remove_file(&p)`, through any check or
+/// view on it (`h.join().as_ref()`); none for a value it's given.
+fn work_call(value: &ast::Expr) -> Option<SyntaxNode> {
+    let (mut call, mut name) = called(value)?;
+    while CHECK_CALLS.contains(&name.as_str()) || VIEW_CALLS.contains(&name.as_str()) {
+        (call, name) = checked_value(&call).as_ref().and_then(called)?;
+    }
+    Some(call)
+}
+
+/// Whether `statement` only checks the value `name`: `name.unwrap();`, `name.expect("..");`, or the
+/// same through a view, `name.as_ref().unwrap();`.
+fn checks_only(statement: &ast::ExprStmt, name: &str) -> bool {
+    if statement.semicolon_token().is_none() {
+        return false;
+    }
+    let Some((call, check)) = statement.expr().as_ref().and_then(called) else {
+        return false;
+    };
+    if !CHECK_CALLS.contains(&check.as_str()) {
+        return false;
+    }
+    let mut checked = checked_value(&call);
+    while let Some((call, view)) = checked.as_ref().and_then(called) {
+        if !(CHECK_CALLS.contains(&view.as_str()) || VIEW_CALLS.contains(&view.as_str())) {
+            return false;
+        }
+        checked = checked_value(&call);
+    }
+    matches!(&checked, Some(ast::Expr::PathExpr(path)) if plain(path.syntax()) == name)
 }
 
 /// What a check or a view is called on: `x` in `x.unwrap()` or `Option::unwrap(x)`.
