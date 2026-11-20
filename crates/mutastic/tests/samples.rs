@@ -1069,14 +1069,16 @@ fn additions(report: &Value, dir: &str) {
             },
         })
     );
-    // A caught mutant has no card: where it is, and what its function was called with.
+    // A caught mutant has no card: where it is, what its function was called with, and where the
+    // catching test's failure came from.
     let caught = mutants.iter().find(|m| m["status"] == "Killed").unwrap();
     let keys: Vec<&String> = caught["mutastic"].as_object().unwrap().keys().collect();
     assert!(
         keys.iter()
-            .all(|key| ["method", "inputs"].contains(&key.as_str())),
+            .all(|key| ["method", "inputs", "failureOrigin"].contains(&key.as_str())),
         "{caught}"
     );
+    assert_eq!(caught["mutastic"]["failureOrigin"], "assertion", "{caught}");
 
     // The tests, by the file each is written in, with where.
     let tests = &report["testFiles"];
