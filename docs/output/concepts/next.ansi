@@ -12,8 +12,6 @@
               [32m+ [0mn <= 10
     [2m=[0m also    [1;31m✗[0m no test checks [1mis_small()[0m returning [1mfalse[0m here [2m· m2e329a72[0m
               [32m+ [0mtrue
-    [2m=[0m also    [1;31m✗[0m no test needs [1mn < 10[0m to be false in [1mis_small()[0m [2m· m729a5380[0m
-              [32m+ [0mtrue
     [2m=[0m [1;34m[1mnote[0m[0m: every test calls [1mis_small()[0m away from the boundary
             [2minputs seen: 4, 5, 6 (none is 10)[0m
             [2mcovered by tests::five_doubled_is_more_than_one_and_small, tests::four_doubled_is_more_than_one_and_small, tests::six_doubled_is_more_than_one_and_small (all 3 covering tests still pass)[0m
@@ -26,9 +24,9 @@
             }
             [2mcheck today's value is the one you intend: the test pins what the code does now[0m
 
-    [2mdone when [0m mutastic verify md0d6db64,m2e329a72,m729a5380 fixtures/ranking [2mpasses[0m
-    [2mreproduce [0m mutastic run --only=md0d6db64,m2e329a72,m729a5380 fixtures/ranking
-    [2mor ignore [0m mutastic ignore <id> --reason="<why>" fixtures/ranking for each of md0d6db64, m2e329a72, m729a5380
+    [2mdone when [0m mutastic verify md0d6db64,m2e329a72 fixtures/ranking [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=md0d6db64,m2e329a72 fixtures/ranking
+    [2mor ignore [0m mutastic ignore <id> --reason="<why>" fixtures/ranking for each of md0d6db64, m2e329a72
  [1mRanked first because[0m
    a condition or a removal: it changes what the code decides or does
    3 tests run it, and none checks it
