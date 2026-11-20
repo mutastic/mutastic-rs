@@ -809,7 +809,7 @@ pub fn without_test_code(text: &str) -> String {
 }
 
 /// Whether a node is test code: a `#[test]`-like function, or under a `cfg` that needs `test`.
-fn is_test_only(node: &SyntaxNode) -> bool {
+pub(crate) fn is_test_only(node: &SyntaxNode) -> bool {
     node.ancestors().any(|ancestor| {
         ast::AnyHasAttrs::cast(ancestor)
             .is_some_and(|item| item.attrs().any(|attr| is_test_attribute(&attr)))

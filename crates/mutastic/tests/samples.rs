@@ -5,6 +5,7 @@
     reason = "a helper here asserts as the tests it serves do: a value that isn't there fails the test"
 )]
 
+use std::collections::BTreeSet;
 use std::io::BufRead as _;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -324,6 +325,49 @@ fn a_file_one_mutant_leaves_isnt_there_for_the_next() {
         "a test wrote to mutastic's own"
     );
     std::fs::remove_dir_all(&temp).ok();
+}
+
+/// Each catch says where its failure came from, as the Java edition's do: an assertion, the test's
+/// own code or the code under test. A test that catches mutants in three functions, each time with
+/// a panic in its own code, is noted as catching everything alike.
+#[test]
+fn a_catch_says_where_it_failed() {
+    let dir = fixture("origins");
+    let (_, stdout) = mutastic(&["run", &dir, "--format=jsonl"]);
+    let events = events(&stdout);
+    let origins = |function: &str| -> BTreeSet<String> {
+        events
+            .iter()
+            .filter(|e| e["reason"] == "mutant-finished" && e["location"]["method"] == function)
+            .map(|e| e["failureOrigin"].as_str().unwrap_or("none").to_string())
+            .collect()
+    };
+    let only = |origin: &str| BTreeSet::from([origin.to_string()]);
+    assert_eq!(origins("double"), only("test"), "{stdout}");
+    assert_eq!(origins("half"), only("assertion"), "{stdout}");
+    assert!(origins("last").contains("code"), "{stdout}");
+    let finished = events.last().unwrap();
+    assert_eq!(
+        finished["unrelatedCatches"][0]["test"], "tests::totals",
+        "{stdout}"
+    );
+    assert_eq!(
+        finished["unrelatedCatches"][0]["failure"], "panic",
+        "{stdout}"
+    );
+    assert_eq!(
+        finished["unrelatedCatches"].as_array().unwrap().len(),
+        1,
+        "{stdout}"
+    );
+    let (_, shown) = mutastic(&["run", &dir]);
+    assert!(
+        shown.contains(
+            " note: tests::totals caught 6 mutants in 3 different functions, each with a panic in \
+             the test itself\n"
+        ),
+        "{shown}"
+    );
 }
 
 /// The mutants of a run, by function: each one's status and the first line of its card.
@@ -1165,14 +1209,16 @@ fn additions(report: &Value, dir: &str) {
             },
         })
     );
-    // A caught mutant has no card: where it is, and what its function was called with.
+    // A caught mutant has no card: where it is, what its function was called with, and where the
+    // catching test's failure came from.
     let caught = mutants.iter().find(|m| m["status"] == "Killed").unwrap();
     let keys: Vec<&String> = caught["mutastic"].as_object().unwrap().keys().collect();
     assert!(
         keys.iter()
-            .all(|key| ["method", "inputs"].contains(&key.as_str())),
+            .all(|key| ["method", "inputs", "failureOrigin"].contains(&key.as_str())),
         "{caught}"
     );
+    assert_eq!(caught["mutastic"]["failureOrigin"], "assertion", "{caught}");
 
     // The tests, by the file each is written in, with where.
     let tests = &report["testFiles"];
