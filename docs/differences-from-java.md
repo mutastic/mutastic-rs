@@ -138,7 +138,9 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
   Both editions skip a thread's name and stack size; Rust knows the call by the builder its chain
   starts at, `thread::Builder::new()` or a tokio runtime's builder, where Java knows it by the
   `Thread` or builder method. Java also skips a priority, which `std` has no call for, and a
-  pool's largest size beside a queue with no limit, as equivalent.
+  pool's largest size beside a queue with no limit, as equivalent. Other code the Java edition
+  skips as arid, this edition doesn't make a mutant for, or counts:
+  [Arid rules](https://docs.mutastic.io/reference/arid/) says which, rule by rule.
 - **Skipped as equivalent:** a `?` that only passes on a formatter's error, inside the `fmt` of
   `Display` and the other formatting traits, or on a write to a `Formatter`: no test can make that
   error happen.

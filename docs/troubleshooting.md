@@ -311,6 +311,12 @@ A test that passes in `cargo test` but fails here usually depends on another tes
 first, or on running in parallel with others: mutastic runs each one alone, in a process of its
 own. Make it stand alone.
 
+Each test process also gets an empty temporary directory of its own, deleted when it ends. A test
+that counts on finding something already in `std::env::temp_dir()`, such as a file another test
+or an earlier run left there, won't find it: make the test write what it reads. A file it writes
+to a fixed path elsewhere, in the project or `target/`, is beyond mutastic's reach, so clean that
+up in the test.
+
 ## No tests
 
 A package with no tests has nothing to catch a mutant: every one is not covered, and the run says
