@@ -100,6 +100,13 @@ built, with `MUTASTIC_ACTIVE` naming it. The first test to fail stops it: the mu
 they all pass, it's missed. If none reach it, it isn't run, and it's not covered. Mutants run side
 by side, one process each, on `--workers` threads.
 
+Each test process gets an empty temporary directory of its own, deleted once it ends: `TMPDIR`, and
+`TMP` and `TEMP` on Windows, which `std::env::temp_dir()` and the `tempfile` crate read. A file one
+mutant's tests leave there, as a mutant that removes a `remove_file` does, can't make the next
+mutant's tests pass, and nothing is left on your machine. The coverage pass's processes get one
+each too. It's made inside the temporary directory mutastic is given, so a `TMPDIR` you set still
+picks the disk.
+
 Each run has a time limit, set from how long its tests took in the coverage pass, so a mutant
 that makes a loop run forever is stopped and counted as timed out, which counts as caught.
 

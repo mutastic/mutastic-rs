@@ -256,6 +256,76 @@ fn a_call_stored_and_only_checked_is_removed() {
     );
 }
 
+/// A file one mutant's test leaves in the temporary directory isn't there for the next mutant's:
+/// with `stash`'s delete removed, `shared.txt` stays, and `measure`'s test, on its write removed,
+/// would read it and pass. Each test process gets an empty temporary directory of its own, inside
+/// mutastic's, and nothing is left in mutastic's once the run is done.
+#[test]
+fn a_file_one_mutant_leaves_isnt_there_for_the_next() {
+    let dir = fixture("leftovers");
+    let temp = std::path::PathBuf::from(&dir).with_extension("tmp");
+    let _ = std::fs::remove_dir_all(&temp);
+    std::fs::create_dir_all(&temp).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+        // One worker, mutants in the order found, and only the removals: any other mutant of
+        // `measure` runs it whole, and its delete would tidy up before its write's mutant runs.
+        .args([
+            "run",
+            &dir,
+            "--format=jsonl",
+            "--workers=1",
+            "--operators=mutastic/remove-discarded-call",
+        ])
+        .env_remove("MUTASTIC_FORMAT")
+        .env_remove("MUTASTIC_AGENT")
+        .env("NO_COLOR", "1")
+        .env("TMPDIR", &temp)
+        .env("TMP", &temp)
+        .env("TEMP", &temp)
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let finished: Vec<Value> = events(&stdout)
+        .into_iter()
+        .filter(|e| e["reason"] == "mutant-finished")
+        .collect();
+    let removed = |function: &str, statement: &str| {
+        finished
+            .iter()
+            .find(|e| {
+                e["location"]["method"]
+                    .as_str()
+                    .is_some_and(|m| m.ends_with(function))
+                    && e["mutation"]["original"]
+                        .as_str()
+                        .is_some_and(|o| o.starts_with(statement))
+            })
+            .unwrap_or_else(|| panic!("no mutant removes {statement} in {function}: {stdout}"))
+            ["status"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    assert_eq!(
+        removed("stash", "std::fs::remove_file"),
+        "Survived",
+        "{stdout}"
+    );
+    assert_eq!(removed("measure", "std::fs::write"), "Killed", "{stdout}");
+    let left: Vec<_> = std::fs::read_dir(&temp)
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name())
+        .filter(|name| name.to_string_lossy().starts_with("mutastic-test-"))
+        .collect();
+    assert!(left.is_empty(), "left behind: {left:?}");
+    assert!(
+        !temp.join("shared.txt").exists(),
+        "a test wrote to mutastic's own"
+    );
+    std::fs::remove_dir_all(&temp).ok();
+}
+
 /// The mutants of a run, by function: each one's status and the first line of its card.
 fn by_function(stdout: &str) -> Vec<(String, String, String)> {
     let mut found: Vec<(String, String, String)> = events(stdout)
