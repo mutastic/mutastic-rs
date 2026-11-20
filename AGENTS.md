@@ -109,3 +109,7 @@ Formatting is rustfmt's, with its defaults: that is the spec, not taste.
   claims in one build, as the truth tests do, rather than a build per claim.
 - **Check claims against real crates,** not only the fixtures: the bugs that matter are found
   there.
+- **The changelog is files until a release.** An entry is `changes/<section>/<slug>.md`, the
+  entry exactly as `CHANGELOG.md` will show it ([changes/README.md](changes/README.md)); never edit
+  `CHANGELOG.md` outside a `chore(release)` commit. A change that adds mutants to the default set
+  moves scores, so it needs a `changes/scoring-changes/` entry.
