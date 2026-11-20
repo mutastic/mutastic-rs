@@ -80,6 +80,12 @@ Expect your score to move, for these reasons, not because your tests changed:
 
 ### Fixes
 
+- **Code only `main` runs says so, and what to do.** A binary's `main` no test reaches read as not
+  covered, like any other function. Its line in the Not covered list now says it's reached only
+  from `main()`, and to move what it does into `run(args, out)`, which returns the exit code, test
+  `run`, and leave `main()` a one-line call to it; a `main` whose mutants are all on one line gets
+  no such advice. The Java edition says the same. See [Code reached only from
+  main](https://docs.mutastic.io/rust/concepts/results/#code-reached-only-from-main).
 - **A thread started and not waited for says which test catches it.** A missed `thread::spawn(..)`
   or `thread::Builder`'s `spawn` said only that no test checked what the statement does. Its card
   now says no test waits for the thread and checks what it did, and to join its handle or wait on a
