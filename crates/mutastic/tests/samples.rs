@@ -1174,7 +1174,7 @@ fn an_ignore_holds_while_its_line_does() {
     assert_eq!(code, 0, "{out}");
     assert_eq!(
         out,
-        "mutastic: mb2f8ae57 is ignored: totals are tens\n  recorded in .mutastic/ignores.yaml: commit it, as a decision to review\n  to undo: mutastic ignore --remove mb2f8ae57 .\n"
+        "mutastic: mb2f8ae57 is ignored: totals are tens\n  recorded in .mutastic/ignores.yaml: commit it, as a decision to review\n  to undo: mutastic ignore --remove mb2f8ae57\n"
     );
     let file = std::fs::read_to_string(dir.join(".mutastic/ignores.yaml")).unwrap();
     assert!(
@@ -1225,7 +1225,7 @@ fn an_ignore_holds_while_its_line_does() {
         &["ignore", "mb2f8ae57", "--propose", "--reason=only tens"],
     );
     assert!(
-        out.contains("  to accept: mutastic ignore --accept mb2f8ae57 .\n"),
+        out.contains("  to accept: mutastic ignore --accept mb2f8ae57\n"),
         "{out}"
     );
     let (_, out) = mutastic_in(&dir, &["ignore", "--accept", "mb2f8ae57"]);
@@ -1236,7 +1236,7 @@ fn an_ignore_holds_while_its_line_does() {
     assert!(!dir.join(".mutastic/proposals.yaml").exists());
     let (_, out) = mutastic_in(&dir, &["ignore", "--remove", "mb2f8ae57"]);
     assert!(
-        out.contains("  to undo: mutastic ignore mb2f8ae57 '--reason=only tens' .\n"),
+        out.contains("  to undo: mutastic ignore mb2f8ae57 '--reason=only tens'\n"),
         "{out}"
     );
     let (code, out) = mutastic_in(&dir, &["ignore", "mb2f8ae57"]);
