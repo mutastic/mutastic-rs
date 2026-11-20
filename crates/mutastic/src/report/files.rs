@@ -419,6 +419,18 @@ fn mutant_more(
     if let Some(near) = mutant.near_unsafe {
         more.insert("nearUnsafe".into(), json!(near));
     }
+    // The arid rule that skipped it, its docs and what runs it, as the Java edition gives them.
+    if let Some(rule) = result
+        .reason
+        .as_deref()
+        .filter(|_| result.status == Status::Ignored)
+        .and_then(crate::arid::rule)
+    {
+        let function = &view.found.functions[mutant.function].path;
+        more.insert("skipRule".into(), json!(rule.id));
+        more.insert("skipDocs".into(), json!(rule.url()));
+        more.insert("bringBack".into(), json!(rule.bring_back(function)));
+    }
     more
 }
 

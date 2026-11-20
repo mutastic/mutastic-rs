@@ -2809,7 +2809,13 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
         event["statusReason"] = json!(reason);
         if result.status == Status::Ignored {
             event["skipKind"] = json!(skip_kind(result));
+            if let Some(rule) = crate::arid::rule(reason) {
+                event["skipRule"] = json!(rule.id);
+            }
         }
+    }
+    if let Some(partner) = crate::sites::twins::partner_of(mutant) {
+        event["sameAs"] = json!(partner);
     }
     if let Some(near) = mutant.near_unsafe {
         event["nearUnsafe"] = json!(near);
@@ -2946,13 +2952,29 @@ pub fn last_run(report_file: &std::path::Path, id: &str) -> Option<LastRun> {
         })
 }
 
+/// The result `explain` shows: its mutant's, or for a twin that of the mutant it's the same as,
+/// which ran for it.
+fn explained_result(report: &Report) -> Option<&MutantResult> {
+    let first = report.results.first()?;
+    let runs = crate::sites::twins::partner_of(&report.found.mutants[first.mutant]);
+    Some(
+        runs.and_then(|id| {
+            report
+                .results
+                .iter()
+                .find(|result| report.found.mutants[result.mutant].id == id)
+        })
+        .unwrap_or(first),
+    )
+}
+
 /// `explain`: one mutant in full whatever became of it, as the Java edition explains it: a miss
 /// gets its card; anything else a card that says what happened instead, without help or a test to
 /// add; then what the change is, its operator, its id, its site and how the last full run went.
 pub fn explained(report: &Report, last: Option<LastRun>, style: Style) -> String {
     let view = View::of(report, true);
     let mut out = String::new();
-    let Some(result) = report.results.first() else {
+    let Some(result) = explained_result(report) else {
         return out;
     };
     if result.status == Status::Survived {
@@ -3067,6 +3089,9 @@ struct About {
     site: String,
     last: Option<LastRun>,
     last_words: String,
+    /// The arid rule that skipped it, if one of mutastic's own did, and the `mutastic.yaml` text
+    /// that runs it.
+    arid: Option<(&'static crate::arid::Rule, String)>,
 }
 
 impl About {
@@ -3097,6 +3122,12 @@ impl About {
             function: function.path.clone(),
             last_words: last_words(last.as_ref()),
             last,
+            arid: result
+                .reason
+                .as_deref()
+                .filter(|_| result.status == Status::Ignored)
+                .and_then(crate::arid::rule)
+                .map(|rule| (rule, rule.bring_back(&function.path))),
         }
     }
 }
@@ -3105,7 +3136,11 @@ impl About {
     /// The same, its text of the project's (the code, names, what the last run says) as it's
     /// shown.
     fn shown(self) -> About {
+        let arid = self
+            .arid
+            .map(|(rule, _)| (rule, rule.bring_back(&untrusted::value(&self.function))));
         About {
+            arid,
             from: untrusted::value(&self.from),
             to: untrusted::value(&self.to),
             operator_description: untrusted::escape(&self.operator_description),
@@ -3187,6 +3222,21 @@ fn about(
             .into_iter()
             .collect(),
     );
+    if let Some((rule, bring_back)) = &about.arid {
+        row(
+            out,
+            "arid",
+            format!("{}: {}", rule.id, rule.description),
+            vec![
+                format!("docs: {}", rule.url()),
+                "to run it, add to mutastic.yaml:".into(),
+            ],
+        );
+        // As it's to be copied: as it is.
+        for line in bring_back.lines() {
+            let _ = writeln!(out, "{}  {line}", " ".repeat(16));
+        }
+    }
     row(out, "id", about.id.clone(), vec![about.id_note.into()]);
     row(out, "site", about.site.clone(), Vec::new());
     row(out, "last run", about.last_words.clone(), Vec::new());
@@ -3198,7 +3248,7 @@ fn about(
 pub fn explained_jsonl(report: &Report, last: Option<LastRun>) -> String {
     let view = View::of(report, false);
     let mut out = jsonl(report);
-    let Some(result) = report.results.first() else {
+    let Some(result) = explained_result(report) else {
         return out;
     };
     let about = About::of(&view, result, last);
@@ -3222,6 +3272,14 @@ pub fn explained_jsonl(report: &Report, last: Option<LastRun>) -> String {
         "idNote": about.id_note,
         "site": { "method": about.function, "description": about.site },
     });
+    if let Some((rule, bring_back)) = &about.arid {
+        event["arid"] = json!({
+            "id": rule.id,
+            "description": rule.description,
+            "docs": rule.url(),
+            "bringBack": bring_back,
+        });
+    }
     if let Some(last) = &about.last {
         let mut run = json!({ "status": last.status, "description": about.last_words });
         if let Some(caught_by) = &last.caught_by {

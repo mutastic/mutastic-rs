@@ -547,18 +547,50 @@ function nodeAt(dir){
 // a path to a wrapper or the tool: from here (`./gradlew`, `../../mvnw`) or absolute
 // (`/repo/gradlew`, `/opt/gradle/bin/gradle`), after `sh` when the wrapper isn't executable; on
 // Windows `.\gradlew.bat` or `C:\repo\mvnw.cmd`. A path is plain names between its separators, so
-// nothing in it is a shell's or cmd's to expand (no `$`, `%`, quote or space).
-var LAUNCHER = /^(?:mutastic|cargo mutastic|mvn|gradle|gradlew|(?:sh )?(?:\.\.?)?\/(?:[\w.@+=,~-]+\/)*(?:gradlew|mvnw)|\/(?:[\w.@+=,~-]+\/)*(?:gradle|mvn)|(?:\.\.?|[A-Za-z]:)\\(?:[\w.@+=,~-]+\\)*(?:gradlew\.bat|mvnw\.cmd)) /;
+// nothing in it is a shell's or cmd's to expand (no `$`, `%`, quote or space). A path with a space
+// is in quotes, as the Java edition writes it: a shell's single quotes (`'/My Projects/gradlew'`),
+// or cmd's double quotes for a `.bat` or `.cmd` (`"C:\My Projects\gradlew.bat"`), where its names
+// may have spaces and still nothing else.
+var LAUNCHER = /^(?:mutastic|cargo mutastic|mvn|gradle|gradlew|(?:sh )?(?:\.\.?)?\/(?:[\w.@+=,~-]+\/)*(?:gradlew|mvnw)|\/(?:[\w.@+=,~-]+\/)*(?:gradle|mvn)|(?:\.\.?|[A-Za-z]:)\\(?:[\w.@+=,~-]+\\)*(?:gradlew\.bat|mvnw\.cmd)|(?:sh )?'(?:\.\.?)?\/(?:[\w.@+=,~ -]+\/)*(?:gradlew|mvnw)'|'\/(?:[\w.@+=,~ -]+\/)*(?:gradle|mvn)'|"(?:\.\.?|[A-Za-z]:)\\(?:[\w.@+=,~ -]+\\)*(?:gradlew\.bat|mvnw\.cmd)") /;
 // The commands for a mutant: the run's own (`mutastic.commands`, written for its project and as
 // mutastic was started), its id put where `<id>` is. Only an id that looks like mutastic's goes in,
 // and only into a template that's one command of mutastic's, the command line's or a build tool's:
-// it starts with a LAUNCHER, and nothing after that can start another command.
+// it starts with a LAUNCHER, and the rest is only its arguments.
 function command(template, id){
   var start = LAUNCHER.exec(template);
-  if (!start) return null;
-  var bare = template.slice(start[0].length).replace(/<[^<>\n]*>/g, '').replace(/'(?:[^']|'\\'')*'/g, '');
-  if (template.indexOf('<id>') < 0 || /[\n\r;&|`$\\<>]/.test(bare)) return null;
+  if (!start || template.indexOf('<id>') < 0 || !argumentsOnly(template.slice(start[0].length))) return null;
   return template.split('<id>').join(id);
+}
+// Whether the words after the launcher are only its arguments, read as a shell or cmd reads them.
+// Anywhere: no line's end, `%` or backquote. Outside quotes, nothing that ends the command, starts
+// another, redirects, expands or globs (`;&|<>^$!*?[]{}()`); a `<…>` only as one of mutastic's
+// placeholders (`<id>`, `<equivalent|unreachable|…>`). In single quotes, which cmd doesn't take for
+// quotes, nothing cmd reads (`&|<>^"`). In double quotes nothing a shell expands (`$`, `!`). A
+// backslash only before a name's character (`C:\dir`, `'it'\''s'`), which a shell reads as that
+// character and cmd as a backslash: never before a quote it could hide, in double quotes. Every
+// quote is closed.
+function argumentsOnly(rest){
+  var quote = '';
+  for (var i = 0; i < rest.length; i++){
+    var c = rest.charAt(i);
+    if (/[\n\r%`]/.test(c)) return false;
+    if (quote === "'"){
+      if (c === "'") quote = '';
+      else if (/[&|<>^"]/.test(c)) return false;
+    } else if (c === '\\'){
+      if (!(quote ? /[\w.@+=,~-]/ : /[\w.@+=,~'-]/).test(rest.charAt(i + 1))) return false;
+      i++;
+    } else if (quote === '"'){
+      if (c === '"') quote = '';
+      else if (/[$!]/.test(c)) return false;
+    } else if (c === '<'){
+      var placeholder = /^<[a-z|…]+>/.exec(rest.slice(i));
+      if (!placeholder) return false;
+      i += placeholder[0].length - 1;
+    } else if (c === "'" || c === '"') quote = c;
+    else if (/[;&|<>^$!*?[\]{}()]/.test(c)) return false;
+  }
+  return !quote;
 }
 // A word as a shell takes it: as it is when it's only safe characters, else in single quotes, a
 // quote inside written '\''. As the editions quote a directory or a word they write into a command.
@@ -1120,9 +1152,15 @@ function why(m){
   if (m.status === 'Killed') return '<section class="sec"><h2>How it was caught</h2><p>' + (m.killedBy.length ? '<code>' + esc(testShort(m.killedBy[0])) + '</code> failed' : 'A test failed') + (m.reason ? ' with <code>' + esc(m.reason) + '</code>' : '') + '.</p></section>';
   if (m.status === 'NoCoverage') return '<section class="sec"><h2>Why it counts as a miss</h2><p>No test runs this line, so nothing could catch the change.</p></section>';
   if (m.status === 'Timeout') return '<section class="sec"><h2>Why it counts as caught</h2><p>' + words(cap(m.reason || 'the tests didn\'t finish in time')) + '. A change that hangs the tests is one they notice.</p></section>';
-  if (m.status === 'Ignored') return '<section class="sec"><h2>Why it was skipped</h2><p>' + words(cap(m.reason || 'skipped')) + '.</p><p class="cap">Skipped mutants are out of the score.</p></section>';
+  if (m.status === 'Ignored') return '<section class="sec"><h2>Why it was skipped</h2><p>' + words(cap(m.reason || 'skipped')) + '.</p>' + aridRule(m) + '<p class="cap">Skipped mutants are out of the score.</p></section>';
   if (m.status === 'RuntimeError') return '<section class="sec"><h2>Why it\'s out of the score</h2><p>' + words(cap(m.reason || 'the tests crashed')) + '. A crash that may be undefined behaviour isn\'t a catch.</p></section>';
   return m.reason ? '<section class="sec"><h2>Why</h2><p>' + words(cap(m.reason)) + '.</p></section>' : '';
+}
+function aridRule(m){
+  var x = m.x, id = str(x.skipRule), docs = str(x.skipDocs), yaml = str(x.bringBack);
+  if (!id) return '';
+  return '<p>The arid rule <code>' + esc(id) + '</code>' + (docs.indexOf('https://docs.mutastic.io/') === 0 ? ' (<a href="' + esc(docs) + '" target="_blank" rel="noopener">what it skips, and why</a>)' : '') + ' skipped it.</p>' +
+    (yaml ? '<div class="cmd col"><div class="head"><span class="cap">to run it, add to <code>mutastic.yaml</code></span>' + copyBtn(yaml, 'the rule', 'btn') + '</div><pre class="code">' + escLines(yaml) + '</pre></div>' : '');
 }
 function suggestion(m){
   var x = m.x, st = obj(x.suggestedTest), fix = toWrite(m) ? fixOf(m, true) : '';

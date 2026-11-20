@@ -7,6 +7,7 @@
 //! the build withdraws it.
 
 use super::*;
+use crate::arid::{ONLY_CHECKS_A_VALUE, ONLY_WRITES_OUTPUT};
 use ra_ap_syntax::ast::{HasArgList, RangeItem};
 
 /// Method names and their counterparts, by operator.
@@ -78,9 +79,6 @@ const CHECK_CALLS: &[&str] = &["unwrap", "expect"];
 /// checks the value itself.
 const VIEW_CALLS: &[&str] = &["as_ref", "as_mut", "as_deref", "as_deref_mut"];
 
-/// The arid skip of a statement that only checks a value it's given.
-const ONLY_CHECKS_A_VALUE: &str = "arid: only checks the value is there";
-
 /// Macros whose statement only writes output, to the terminal or a logger: removing one changes
 /// nothing a test should have to notice, so its mutant is made, for its id, and skipped as arid,
 /// as the Java edition skips a call to a logger or `System.out`. A `write!` goes to a writer the
@@ -89,9 +87,6 @@ const OUTPUT_MACROS: &[&str] = &[
     "print", "println", "eprint", "eprintln", "dbg", "trace", "debug", "info", "warn", "error",
     "log", "event",
 ];
-
-/// The arid skip of an output macro's mutant, in the Java edition's words.
-const ONLY_WRITES_OUTPUT: &str = "arid: only writes output";
 
 /// Item-preserving iterator stages, which can be left out without changing the item type.
 const STAGES: &[&str] = &[

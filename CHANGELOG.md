@@ -7,6 +7,21 @@ newest come first.
 
 ### Additions
 
+- **Bring back one arid rule: `arid:` on a `mutate:` rule.** `arid: [mutastic:output]` under a
+  `mutate:` rule takes back only that rule's skips in the code it covers; without it, every arid
+  skip, as before. An id mutastic doesn't have is refused, with the one meant when it's close.
+  The thread settings' skips have ids too: `mutastic:thread-names`, `mutastic:stack-sizes` and
+  `mutastic:keep-alive`.
+- **A skip says which arid rule made it, and how to undo it.** `explain` on a mutant an arid rule
+  skipped has an `arid` row: the rule's id, what it skips, a link to its docs and the
+  `mutastic.yaml` rule to copy that runs it. The HTML report says the same. Events carry the id as
+  `skipRule` (`mutant-finished`) and the row as `arid` (`mutant-explained`), and mutation.json as
+  `mutastic.skipRule`, as in the Java edition.
+- **The arid rules have the Java edition's ids.** A statement that only writes output is
+  `mutastic:output`, and a removed `x.unwrap();` that only checks the value is there is
+  `mutastic:null-checks`, as Java's `Objects.requireNonNull(x)` is. The editions' contract lists
+  every rule, and each has a section on the [Arid rules](https://docs.mutastic.io/reference/arid/)
+  page.
 - **`mutastic/boolean-constant`, in `stronger`: a flag set the other way.** A `true` or `false`
   passed to a function, bound by a `let`, assigned, or given to a struct's field becomes the other,
   where only a returned one did. One in a condition isn't changed. The Java edition has it too. See
@@ -52,6 +67,16 @@ Expect your score to move, for these reasons, not because your tests changed:
   crate that reads names (`thread::current().name()`) keeps its name mutants. A spawn, a `join`
   and `worker_threads` still run. Runs on code that sets threads up get fewer mutants, and scores
   can go up; a `mutate:` rule brings them back. The Java edition skips them too, and a priority.
+- **Twins run once, and their place counts once.** Two mutants at one place that always do the
+  same now run as one: the other is skipped as `twin: same as <id>`, naming the one that runs, and
+  is out of the score. Two operators making the same code are twins, as a function that ends in
+  `n > 0` made `true` by `mutastic/return-value` and by `mutastic/remove-conditional` is; so are
+  the changes to a comparison of an unsigned value with 0 that agree for 0 and above, `n > 0` made
+  `n >= 0` and made `true`. No id changes, and each still works: `verify`, `run --only` and
+  `explain` run the one it's the same as, `mutastic ignore` records the decision for that one, and
+  an ignore of either holds for both. Runs have fewer mutants to build and run, and a score moves
+  a little where a place was counted twice. Events give a twin's `sameAs` and the skip kind
+  `twin`. The Java edition has twins too. See [Twins](docs/concepts/results.md#twins).
 
 ### Fixes
 

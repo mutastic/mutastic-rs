@@ -19,9 +19,7 @@
 use super::*;
 use ra_ap_syntax::ast::HasArgList;
 
-const NAMES: &str = "arid: only names a thread";
-const STACK: &str = "arid: only sizes a thread's stack";
-const KEEP_ALIVE: &str = "arid: only sets how long idle threads live";
+use crate::arid::{KEEP_ALIVE, NAMES, STACK};
 
 /// The operators that change a value worked out, or given, by the code.
 const VALUES: &[&str] = &[
