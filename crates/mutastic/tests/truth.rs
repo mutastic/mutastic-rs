@@ -276,12 +276,81 @@ fn every_card_claim_behaves_as_its_mutant_does() {
     }
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
     skipped_as_equivalent_behave_as_the_original(&found, &compared);
+    twins_behave_as_the_one_they_are_the_same_as(&found, &compared);
     // Most mutants change something the probe sees, so the comparison means something.
     assert!(
         changed * 10 > compared.len() * 8,
         "{changed} of {}",
         compared.len()
     );
+}
+
+/// A twin behaves as the mutant it's the same as on every input the probe gives: it doesn't run,
+/// and that one's result is its own, so a twin that isn't one would hide a mutant a test could
+/// catch. The same code made by two operators, and the changes to a comparison of an unsigned
+/// value with 0 that agree for 0 and above, are each found.
+fn twins_behave_as_the_one_they_are_the_same_as(
+    found: &sites::Crate,
+    compared: &[(u32, Probed, Probed)],
+) {
+    let mutant_of = |ordinal: u32| &found.mutants[ordinal as usize - 1];
+    let function_of = |ordinal: u32| found.functions[mutant_of(ordinal).function].name.as_str();
+    let probed = |id: &str| {
+        compared
+            .iter()
+            .skip(1)
+            .find(|(ordinal, ..)| mutant_of(*ordinal).id == id)
+    };
+    let mut differ = Vec::new();
+    let mut pairs = BTreeSet::new();
+    for (ordinal, twin, _) in compared.iter().skip(1) {
+        let mutant = mutant_of(*ordinal);
+        let Some(partner) = sites::twins::partner_of(mutant) else {
+            continue;
+        };
+        let (runs, runs_probed, _) = probed(partner).expect("the mutant a twin is the same as");
+        let runs = mutant_of(*runs);
+        assert!(
+            runs.skipped.is_none() && runs.function == mutant.function,
+            "{} is the same as {}, which doesn't run beside it",
+            mutant.id,
+            runs.id
+        );
+        if !twin.agrees(runs_probed) {
+            differ.push(format!(
+                "{} {} `{}` and {} {} `{}` in {}: {:?} and {:?}",
+                mutant.id,
+                mutant.operator,
+                mutant.replacement,
+                runs.id,
+                runs.operator,
+                runs.replacement,
+                function_of(*ordinal),
+                twin.lines.first(),
+                runs_probed.lines.first()
+            ));
+        }
+        pairs.insert(format!(
+            "{} {} = {}",
+            function_of(*ordinal),
+            mutant.operator,
+            runs.operator
+        ));
+    }
+    assert!(
+        differ.is_empty(),
+        "twins that behave differently:\n{}",
+        differ.join("\n")
+    );
+    // The same code: a returned comparison made `false` by both. The answers for 0 and above: `n
+    // == 0` made `n >= 0`, and `(x as u8) > 0` made `>= 0`, are each always true.
+    for pair in [
+        "is_one mutastic/remove-conditional = mutastic/return-value",
+        "unsigned_zero mutastic/comparison = mutastic/remove-conditional",
+        "unsigned_zero mutastic/remove-conditional = mutastic/boundary",
+    ] {
+        assert!(pairs.contains(pair), "{pair}: {pairs:?}");
+    }
 }
 
 /// A mutant skipped as equivalent behaves as the original on every input the probe gives: a skip

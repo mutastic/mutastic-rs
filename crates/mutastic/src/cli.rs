@@ -1426,14 +1426,48 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, Failure> {
     let progress = start(parsed, false);
     let project = workspace::read(dir)?;
     progress.package(&project.package);
-    let report = engine::run(&project, &options(parsed, only), &|step| {
+    let report = engine::run(&project, &options(parsed, only.clone()), &|step| {
         progress.step(step)
     })?;
     progress.finished();
     let mut settled = true;
+    let result_of = |id: &str| {
+        report
+            .results
+            .iter()
+            .find(|result| report.found.mutants[result.mutant].id == id)
+    };
     for result in &report.results {
         let mutant = &report.found.mutants[result.mutant];
-        let fate = match result.status {
+        // A twin is said with the result of the mutant it's the same as, which ran for it and
+        // decides; that one's own line comes only when it was named too.
+        if let Some(runs) = crate::sites::twins::partner_of(mutant).and_then(result_of) {
+            settled &= runs.status.settled();
+            stdout_line!(
+                "mutastic: {} is the same as {}, which {}",
+                mutant.id,
+                report.found.mutants[runs.mutant].id,
+                fate(runs)
+            );
+        } else if only.contains(&mutant.id) {
+            settled &= result.status.settled();
+            stdout_line!("mutastic: {} {}", mutant.id, fate(result));
+        }
+    }
+    if !report.failing_alone().is_empty() {
+        stdout_text!("{}", report::failing_alone(&report));
+        return Ok(ExitCode::from(2));
+    }
+    Ok(if settled {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    })
+}
+
+/// What `verify` says of a mutant after its id: caught, missed, or what became of it instead.
+fn fate(result: &engine::MutantResult) -> String {
+    match result.status {
             Status::Killed => caught(result),
             Status::Timeout => "is caught by a timeout".to_string(),
             Status::Survived => "is still missed".to_string(),
@@ -1446,19 +1480,7 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, Failure> {
                 "crashes, and no test can be said to catch it ({}): it's left out of the score; check the unsafe code it reaches with Miri",
                 untrusted::value(result.reason.as_deref().unwrap_or("crash"))
             ),
-        };
-        settled &= result.status.settled();
-        stdout_line!("mutastic: {} {fate}", mutant.id);
     }
-    if !report.failing_alone().is_empty() {
-        stdout_text!("{}", report::failing_alone(&report));
-        return Ok(ExitCode::from(2));
-    }
-    Ok(if settled {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
-    })
 }
 
 /// "is caught by tests::big_orders", and how, when it wasn't by a test's own check.
@@ -1485,7 +1507,21 @@ fn explain(parsed: &Parsed) -> Result<ExitCode, Failure> {
     options.suggestions = !parsed.no_suggestions;
     let report = engine::run(&project, &options, &|step| progress.step(step))?;
     progress.finished();
-    let last = report::last_run(&project.mutastic_dir().join("mutation.json"), id);
+    // A twin didn't run: the mutant it's the same as ran for it, and is what there is to explain.
+    let runs = report
+        .found
+        .mutants
+        .iter()
+        .find(|mutant| &mutant.id == id)
+        .and_then(crate::sites::twins::partner_of)
+        .map(str::to_string);
+    let explained = runs.as_deref().unwrap_or(id);
+    let last = report::last_run(&project.mutastic_dir().join("mutation.json"), explained);
+    if let (Some(runs), false) = (&runs, parsed.format == Some(Format::Jsonl)) {
+        stdout_line!(
+            "mutastic: {id} is the same as {runs}, which runs for it: what follows is that one's"
+        );
+    }
     let shown = if parsed.format == Some(Format::Jsonl) {
         report::explained_jsonl(&report, last)
     } else {
@@ -1563,6 +1599,19 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, Failure> {
     let found = engine::find_all(&project);
     let Some(index) = found.mutants.iter().position(|m| m.id == id) else {
         return Err(engine::not_a_mutant(&id, &project.package, &dir, &found));
+    };
+    // A decision on a twin is the mutant's that runs for it, so it holds where that one runs.
+    let (id, index) = match crate::sites::twins::partner_of(&found.mutants[index])
+        .and_then(|partner| found.mutants.iter().position(|m| m.id == partner))
+    {
+        Some(runs) => {
+            stdout_line!(
+                "mutastic: {id} is the same as {}, which runs for it: the decision is recorded for that one",
+                found.mutants[runs].id
+            );
+            (found.mutants[runs].id.clone(), runs)
+        }
+        None => (id, index),
     };
     let mutant = &found.mutants[index];
     if let Some(skipped) = &mutant.skipped {
