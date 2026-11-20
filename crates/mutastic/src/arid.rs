@@ -73,7 +73,7 @@ pub const RULES: &[Rule] = &[
         example: "let builder = thread::Builder::new().name(\"squarer\".into());",
     },
     Rule {
-        id: "mutastic:keep-alive-times",
+        id: "mutastic:keep-alive",
         scope: Scope::Site,
         description: "How long a pool's idle threads live before they stop, while it stays above zero.",
         reasons: &[KEEP_ALIVE],
