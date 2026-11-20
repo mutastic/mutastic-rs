@@ -23,10 +23,16 @@ newest come first.
   element can't see. An iterator's `last` is left alone, as it has no `first`. The Java edition has
   it too, for `getFirst` and `getLast` and a `Deque`'s and a sorted collection's ends. See [Swap
   ends](docs/operators/library.md#swap-ends).
+- **The summary says when the machine slept during the run.** Duration counts the time the
+  machine was awake, so a run a Mac slept through for four minutes said 15.4s. When the clock ran
+  at least 5 seconds and a tenth of its time more, a line under Duration says `The machine slept
+  for 3m49s during the run, which Duration leaves out.`, and `run-finished` has it as `sleptMs`,
+  else 0. The Java edition says it too. See [When the machine
+  sleeps](docs/concepts/output.md#when-the-machine-sleeps).
 
 ### Scoring changes
 
-Expect your score to move, for this reason, not because your tests changed:
+Expect your score to move, for these reasons, not because your tests changed:
 
 - **A call whose result is only checked is removed: `handle.join().unwrap();` is a mutant.** A
   statement ending in `.unwrap()` or `.expect(..)` had no mutant and wasn't counted, so a test that
@@ -36,9 +42,25 @@ Expect your score to move, for this reason, not because your tests changed:
   arid, `arid: only checks the value is there`, as the Java edition skips a removed
   `Objects.requireNonNull(x);`. New ids appear; none moves. See [Remove discarded
   call](docs/operators/calls.md#remove-discarded-call).
+- **A thread's name, its stack size and how long a runtime's idle threads live are skipped as
+  arid.** None of them changes whether, when or how often work runs. A name given to
+  `thread::Builder`'s `name`, or to a tokio runtime builder's `thread_name` or `thread_name_fn`, is
+  `arid: only names a thread`; a stack size, `stack_size` or `thread_stack_size`, is `arid: only
+  sizes a thread's stack` while the source shows it stays above zero; and tokio's
+  `thread_keep_alive` is `arid: only sets how long idle threads live` on the same terms. The call
+  is known by the builder its chain starts at, so any other `.name(..)` is mutated as before. A
+  crate that reads names (`thread::current().name()`) keeps its name mutants. A spawn, a `join`
+  and `worker_threads` still run. Runs on code that sets threads up get fewer mutants, and scores
+  can go up; a `mutate:` rule brings them back. The Java edition skips them too, and a priority.
 
 ### Fixes
 
+- **A thread started and not waited for says which test catches it.** A missed `thread::spawn(..)`
+  or `thread::Builder`'s `spawn` said only that no test checked what the statement does. Its card
+  now says no test waits for the thread and checks what it did, and to join its handle or wait on a
+  channel its closure sends to first. A scoped thread's `spawn` keeps the card any statement gets,
+  as its scope waits for it. The Java edition's cards name the test the same way for threads,
+  pools, interrupts, locks and daemon flags.
 - **A count of one reads as one.** The gate's pass said the tests `catch 1 of the 1 mutant`; it
   now says they `catch the only mutant`, `catch all 6 mutants` when they catch every one, and
   `catch 4 of the 6 mutants` otherwise. `1 of the baseline's mutants is caught now`, from a run
