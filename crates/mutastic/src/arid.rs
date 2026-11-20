@@ -27,6 +27,8 @@ impl Scope {
 pub struct Rule {
     pub id: &'static str,
     pub scope: Scope,
+    /// What it skips, in a sentence, in the words of the contract.
+    pub description: &'static str,
     pub reasons: &'static [&'static str],
     pub example: &'static str,
 }
@@ -38,19 +40,51 @@ pub const ONLY_WRITES_OUTPUT: &str = "arid: only writes output";
 /// edition skips a removed `Objects.requireNonNull(x)`.
 pub const ONLY_CHECKS_A_VALUE: &str = "arid: only checks the value is there";
 
+/// The arid skip of a thread's name, as the Java edition words it.
+pub const NAMES: &str = "arid: only names a thread";
+
+/// The arid skip of a thread's stack size.
+pub const STACK: &str = "arid: only sizes a thread's stack";
+
+/// The arid skip of how long a pool's idle threads live.
+pub const KEEP_ALIVE: &str = "arid: only sets how long idle threads live";
+
 /// The rules this edition has.
 pub const RULES: &[Rule] = &[
     Rule {
         id: "mutastic:output",
         scope: Scope::Site,
+        description: "Code that only writes output: a log line, or text printed to the console.",
         reasons: &[ONLY_WRITES_OUTPUT],
         example: "println!(\"saved {id}\");",
     },
     Rule {
         id: "mutastic:null-checks",
         scope: Scope::Site,
+        description: "A call that only checks a value is there, its result unused, removed: `Objects.requireNonNull(x)` or `x.getClass()` in Java, `x.unwrap()` or `x.expect(…)` in Rust.",
         reasons: &[ONLY_CHECKS_A_VALUE],
         example: "order.unwrap();",
+    },
+    Rule {
+        id: "mutastic:thread-names",
+        scope: Scope::Site,
+        description: "A thread's or a pool's name, which only people and their tools read: a thread dump, a profiler, a log pattern.",
+        reasons: &[NAMES],
+        example: "let builder = thread::Builder::new().name(\"squarer\".into());",
+    },
+    Rule {
+        id: "mutastic:keep-alive",
+        scope: Scope::Site,
+        description: "How long a pool's idle threads live before they stop, while it stays above zero.",
+        reasons: &[KEEP_ALIVE],
+        example: "let runtime = Builder::new_multi_thread().thread_keep_alive(Duration::from_secs(5 * 60));",
+    },
+    Rule {
+        id: "mutastic:stack-sizes",
+        scope: Scope::Site,
+        description: "The size of a thread's stack, while it stays above zero.",
+        reasons: &[STACK],
+        example: "let builder = thread::Builder::new().stack_size(64 * 1024);",
     },
 ];
 
@@ -67,11 +101,26 @@ impl Rule {
     pub fn url(&self) -> String {
         format!("{PAGE}#{}", self.anchor())
     }
+
+    /// The `mutastic.yaml` text that runs this rule's mutants in the function at `path`
+    /// (`Money::add`), as the Java edition writes it: a `rules:` list of one `mutate:` rule, with
+    /// a reason to fill in.
+    pub fn bring_back(&self, path: &str) -> String {
+        format!(
+            "rules:\n  - mutate: {path}\n    arid: [{}]\n    reason: <why a test should check it>\n",
+            self.id
+        )
+    }
 }
 
 /// The rule that gives `reason` (`arid: only writes output`), if one of mutastic's own does.
 pub fn rule(reason: &str) -> Option<&'static Rule> {
     RULES.iter().find(|rule| rule.reasons.contains(&reason))
+}
+
+/// Every rule's id, in order.
+pub fn ids() -> Vec<&'static str> {
+    RULES.iter().map(|rule| rule.id).collect()
 }
 
 /// The rule with id `id`, `mutastic:output`.

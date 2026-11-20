@@ -36,6 +36,9 @@ pub struct Rule {
     pub mutate: bool,
     pub target: String,
     pub reason: String,
+    /// A `mutate:` rule's `arid:` list: the ids of the arid rules it brings back
+    /// (`mutastic:output`); empty for every arid skip, and for a `skip:` rule.
+    pub arid: Vec<String>,
 }
 
 impl Rule {
@@ -55,6 +58,16 @@ impl Rule {
             if self.mutate { "mutate" } else { "skip" },
             self.target
         )
+    }
+
+    /// Whether a `mutate:` rule brings back a mutant skipped for `reason` (`arid: only writes
+    /// output`): an arid skip, of one of the rules its `arid:` lists if it has one.
+    pub fn brings_back(&self, reason: &str) -> bool {
+        self.mutate
+            && reason.starts_with("arid:")
+            && (self.arid.is_empty()
+                || crate::arid::rule(reason)
+                    .is_some_and(|rule| self.arid.iter().any(|id| id == rule.id)))
     }
 
     /// `user: protobuf output (rule `skip: shop::generated::**`)`: the skip reason a mutant gets.
@@ -298,7 +311,7 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
     let mut section = "";
     // Under `gate:`, whether its `operators:` has been read.
     let mut gate_key = false;
-    let mut pending: Option<(bool, String)> = None;
+    let mut pending: Option<Pending> = None;
     let mut last = 0;
     for (index, raw) in text.lines().enumerate() {
         let error = |what: &str| format!("{shown} line {}: {what}", index + 1);
@@ -308,8 +321,8 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
         }
         last = index + 1;
         if !line.starts_with(' ') {
-            if let Some((mutate, target)) = &pending {
-                return Err(error(&needs_reason(*mutate, target)));
+            if let Some(rule) = pending.take() {
+                config.rules.push(rule.done().map_err(|what| error(&what))?);
             }
             if let Some(path) = line.trim().strip_prefix("extends:") {
                 if extends.is_some() {
@@ -349,15 +362,29 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
         }
         let item = line.trim();
         if section == "rules" {
-            if let (Some(reason), Some((mutate, target))) =
-                (item.strip_prefix("reason:"), pending.take())
-            {
-                config.rules.push(Rule {
-                    mutate,
-                    target,
-                    reason: value(reason),
-                });
-                continue;
+            let indent = line.len() - line.trim_start().len();
+            if let Some(rule) = pending.as_mut() {
+                if rule.arid_indent.is_some_and(|under| indent > under) && item.starts_with("- ") {
+                    rule.arid_id(&value(&item[2..]))
+                        .map_err(|what| error(&what))?;
+                    continue;
+                }
+                rule.arid_indent = None;
+                if let Some(reason) = item.strip_prefix("reason:") {
+                    if rule.reason.is_some() {
+                        return Err(error(&format!(
+                            "the rule `{}` has one `reason:`",
+                            rule.written()
+                        )));
+                    }
+                    rule.reason = Some(value(reason));
+                    continue;
+                }
+                if let Some(arid) = item.strip_prefix("arid:") {
+                    rule.arid(&value(arid), indent)
+                        .map_err(|what| error(&what))?;
+                    continue;
+                }
             }
             let listed = listed(item).ok_or_else(|| error("expected a list item, `- …`"))?;
             let (verb, target) = listed.split_once(':').unwrap_or(("", ""));
@@ -366,10 +393,14 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
                     "a rule is `- skip: <pattern>` or `- mutate: <pattern>`, then `reason: …`",
                 ));
             }
-            if let Some((mutate, target)) = &pending {
-                return Err(error(&needs_reason(*mutate, target)));
+            if let Some(rule) = pending.take() {
+                config.rules.push(rule.done().map_err(|what| error(&what))?);
             }
-            pending = Some((verb == "mutate", value(target)));
+            pending = Some(Pending {
+                mutate: verb == "mutate",
+                target: value(target),
+                ..Pending::default()
+            });
             continue;
         }
         if section == "gate" {
@@ -404,11 +435,11 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
             _ => return Err(error("a list item needs a section above it")),
         }
     }
-    if let Some((mutate, target)) = &pending {
-        return Err(format!(
-            "{shown} line {last}: {}",
-            needs_reason(*mutate, target)
-        ));
+    if let Some(rule) = pending.take() {
+        config.rules.push(
+            rule.done()
+                .map_err(|what| format!("{shown} line {last}: {what}"))?,
+        );
     }
     Ok(Written {
         own: config,
@@ -416,12 +447,102 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
     })
 }
 
-/// Every skip says why: a rule without a reason is an error, not "no reason given".
-fn needs_reason(mutate: bool, target: &str) -> String {
-    format!(
-        "the rule `{}: {target}` needs a `reason:` under it",
-        if mutate { "mutate" } else { "skip" }
-    )
+/// A rule being read: its verb and pattern, and what's under it so far.
+#[derive(Default)]
+struct Pending {
+    mutate: bool,
+    target: String,
+    reason: Option<String>,
+    arid: Vec<String>,
+    arid_given: bool,
+    /// The indent of an `arid:` with its list under it, while that list is read.
+    arid_indent: Option<usize>,
+}
+
+impl Pending {
+    fn written(&self) -> String {
+        format!(
+            "{}: {}",
+            if self.mutate { "mutate" } else { "skip" },
+            self.target
+        )
+    }
+
+    /// A `mutate:` rule's `arid:`: a list on its line, `[mutastic:output]`, one id, or nothing,
+    /// and its list on the lines under it.
+    fn arid(&mut self, value: &str, indent: usize) -> Result<(), String> {
+        if !self.mutate {
+            return Err(
+                "`arid:` goes on a `mutate:` rule: it says which arid skips to bring back, \
+                        and a `skip:` rule skips everything it covers"
+                    .to_string(),
+            );
+        }
+        if self.arid_given {
+            return Err(format!(
+                "the rule `{}` has one `arid:` list",
+                self.written()
+            ));
+        }
+        self.arid_given = true;
+        if value.is_empty() {
+            self.arid_indent = Some(indent);
+            return Ok(());
+        }
+        let items = value
+            .strip_prefix('[')
+            .and_then(|inner| inner.strip_suffix(']'))
+            .unwrap_or(value);
+        if items.trim().is_empty() {
+            return Ok(());
+        }
+        for id in items.split(',') {
+            self.arid_id(&self::value(id))?;
+        }
+        Ok(())
+    }
+
+    /// One id in an `arid:` list, which must be one of mutastic's arid rules.
+    fn arid_id(&mut self, id: &str) -> Result<(), String> {
+        let ids = crate::arid::ids();
+        if !ids.contains(&id) {
+            return Err(match crate::similar::closest(id, ids.iter().copied()) {
+                Some(close) => format!("{id} isn't an arid rule. There's one called {close}."),
+                None => format!(
+                    "{} isn't an arid rule; the rules are {}",
+                    if id.is_empty() { "\"\"" } else { id },
+                    match ids.split_last() {
+                        Some((last, rest)) if !rest.is_empty() =>
+                            format!("{} and {last}", rest.join(", ")),
+                        _ => ids.join(""),
+                    }
+                ),
+            });
+        }
+        self.arid.push(id.to_string());
+        Ok(())
+    }
+
+    /// The rule, once it has its reason: every skip says why, so a rule without one is an error,
+    /// not "no reason given".
+    fn done(self) -> Result<Rule, String> {
+        let written = self.written();
+        let Some(reason) = self.reason else {
+            return Err(format!("the rule `{written}` needs a `reason:` under it"));
+        };
+        if self.arid_given && self.arid.is_empty() {
+            return Err(format!(
+                "the rule `{written}` has an empty `arid:` list: name the rules to bring back, or \
+                 leave `arid:` out to bring back every arid skip"
+            ));
+        }
+        Ok(Rule {
+            mutate: self.mutate,
+            target: self.target,
+            reason,
+            arid: self.arid,
+        })
+    }
 }
 
 fn listed(item: &str) -> Option<String> {
@@ -583,9 +704,45 @@ mod tests {
             ("rules:\n  - skip: a::**\n", "mutastic.yaml line 2: the rule `skip: a::**` needs a `reason:` under it"),
             ("rules:\n  - drop: a\n", "mutastic.yaml line 2: a rule is `- skip: <pattern>` or `- mutate: <pattern>`, then `reason: …`"),
             ("operators:\n  stronger\n", "mutastic.yaml line 2: expected a list item, `- …`"),
+            ("rules:\n  - mutate: a\n    arid: [mutastic:outptu]\n    reason: r\n", "mutastic.yaml line 3: mutastic:outptu isn't an arid rule. There's one called mutastic:output."),
+            ("rules:\n  - mutate: a\n    arid: [sleeps]\n    reason: r\n", "mutastic.yaml line 3: sleeps isn't an arid rule; the rules are mutastic:output, mutastic:null-checks, mutastic:thread-names, mutastic:keep-alive and mutastic:stack-sizes"),
+            ("rules:\n  - skip: a\n    arid: [mutastic:output]\n    reason: r\n", "mutastic.yaml line 3: `arid:` goes on a `mutate:` rule: it says which arid skips to bring back, and a `skip:` rule skips everything it covers"),
+            ("rules:\n  - mutate: a\n    arid: []\n    reason: r\n", "mutastic.yaml line 4: the rule `mutate: a` has an empty `arid:` list: name the rules to bring back, or leave `arid:` out to bring back every arid skip"),
         ] {
             assert_eq!(parse(text).unwrap_err(), error);
         }
+    }
+
+    /// A `mutate:` rule's `arid:` names the arid rules it brings back, on its line or under it,
+    /// before or after its reason, as in the Java edition.
+    #[test]
+    fn a_mutate_rule_names_the_arid_rules_it_brings_back() {
+        let config = parse(
+            "rules:\n  - mutate: shop::log\n    arid: [mutastic:output, \"mutastic:null-checks\"]\n    reason: read\n\
+             \x20 - mutate: shop::check\n    reason: checked\n    arid: mutastic:null-checks\n\
+             \x20 - mutate: shop::both\n    arid:\n      - mutastic:output\n    reason: both\n\
+             \x20 - mutate: shop::all\n    reason: all\n",
+        )
+        .unwrap();
+        let arid: Vec<(&str, Vec<&str>)> = config
+            .rules
+            .iter()
+            .map(|rule| {
+                (
+                    rule.target.as_str(),
+                    rule.arid.iter().map(String::as_str).collect(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            arid,
+            [
+                ("shop::log", vec!["mutastic:output", "mutastic:null-checks"]),
+                ("shop::check", vec!["mutastic:null-checks"]),
+                ("shop::both", vec!["mutastic:output"]),
+                ("shop::all", vec![]),
+            ]
+        );
     }
 
     /// A directory of its own for one test, with `files` written in it.
@@ -715,6 +872,7 @@ mod tests {
             mutate: false,
             target: target.into(),
             reason: "r".into(),
+            arid: Vec::new(),
         };
         assert!(rule("shop::generated::**").covers("shop::generated::proto::Order::new"));
         assert!(rule("shop::*::Money").covers("shop::money::Money::add"));
