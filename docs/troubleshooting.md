@@ -86,15 +86,15 @@ pub fn digits(mut n: u64) -> u64 {
 
 <!-- output: troubleshooting/loops -->
 ```text
-   Mutants  ✓ 14 caught · ✗ 6 missed · ⏱ 5 timed out (25) · 2 skipped (2 arid)
+   Mutants  ✓ 16 caught · ✗ 6 missed · ⏱ 5 timed out (27)
   Worst at  digits() 6 ✗
      Build  one build of every mutant, 2 rounds (check and build)
- Test runs  25 (25 without coverage selection)
+ Test runs  27 (27 without coverage selection)
   Start at  11:03:14
   Duration  10.1s (setup 19ms, build 20ms, coverage 2ms, mutants 10.0s, checking 8ms)
      Tests  1 on rustc 1.99.1 · 5 workers
    Reports  fixtures/loops/target/mutastic/mutation.json · fixtures/loops/target/mutastic/mutation.html
-     Score  76.0%   FAIL  Below the threshold of 80: 6 missed, 0 not covered.
+     Score  77.8%   FAIL  Below the threshold of 80: 6 missed, 0 not covered.
 ```
 
 Nothing needs fixing: those mutants are caught. If the time matters more than the extra mutants,
