@@ -23,6 +23,7 @@ use ra_ap_syntax::{AstNode, Edition, SourceFile, SyntaxKind, SyntaxNode, TextRan
 use crate::cfg::Cfg;
 use crate::id;
 
+mod arid_sites;
 pub mod callable;
 mod edge;
 mod extended;
@@ -1419,12 +1420,8 @@ impl Finder<'_> {
             other => {
                 self.returned.insert(other.syntax().text_range());
                 let text = plain(other.syntax());
-                // A formatter's `Ok(())` writes nothing: arid, as `toString` is in the Java edition.
-                let formats = self.found.functions[context.function].name == "fmt";
+                // A formatter's `Ok(())` writes nothing: made, and arid only in a `Debug` impl.
                 for replacement in self.extended_returns(returns, &text, other) {
-                    if formats && replacement.starts_with("Ok(") {
-                        continue;
-                    }
                     self.add(
                         RETURN_VALUE,
                         other.syntax(),
@@ -1534,7 +1531,8 @@ impl Finder<'_> {
             .or_else(|| profile::decided_by_profile(node, &change))
             .or_else(|| {
                 threads::reason(operator, node, &replacement, self.facts.reads_thread_names)
-            });
+            })
+            .or_else(|| arid_sites::reason(operator, node));
         let answers = unsigned::answers_key(node, &change);
         let mut mutant = Mutant {
             ordinal,

@@ -93,6 +93,9 @@ pub struct MutantResult {
     pub inputs: BTreeMap<String, Vec<i128>>,
     /// A test that would catch it, found by running its function with and without it.
     pub suggestion: Option<crate::suggest::Suggestion>,
+    /// Whether the test that caught it failed on an assertion of its own (`assert!`,
+    /// `assert_eq!`), not on a panic in the code it ran: what an audit of the arid rules counts.
+    pub by_assertion: bool,
 }
 
 #[derive(Debug)]
@@ -165,6 +168,9 @@ pub struct Report {
     /// Whether the run was of mutants asked for by id (`--only`): each one's fate is the verdict,
     /// not a score, as the Java edition judges it.
     pub only: bool,
+    /// In an audit of the arid rules (`MUTASTIC_ARID=audit`), each arid mutant's result when run
+    /// anyway, in the order found; none otherwise. Never in `results`, the counts or the score.
+    pub audited: Vec<MutantResult>,
 }
 
 impl Report {
@@ -233,6 +239,9 @@ pub struct Options {
     pub shard: Option<crate::shares::Shard>,
     /// `--force-coverage`: build and run the coverage pass even when no mutant is there to run.
     pub force_coverage: bool,
+    /// `MUTASTIC_ARID=audit`: run the mutants mutastic's arid rules skip anyway, and say what
+    /// happened to them, out of the score.
+    pub audit_arid: bool,
 }
 
 /// The change a run was scoped to: what it's since, and the crate's lines and files it touched.
@@ -415,9 +424,23 @@ pub fn run(
         .copied()
         .filter(|&m| found.mutants[m].skipped.is_none())
         .collect();
+    // In an audit, an arid mutant is built and run too, as if it weren't skipped, on the side.
+    let audited: BTreeSet<usize> = selected
+        .iter()
+        .copied()
+        .filter(|&m| options.audit_arid && is_arid(&found.mutants[m]))
+        .collect();
+    let unskipped = (!audited.is_empty()).then(|| {
+        let mut unskipped = found.clone();
+        for &m in &audited {
+            unskipped.mutants[m].skipped = None;
+        }
+        unskipped
+    });
+    let built_set: BTreeSet<usize> = live.union(&audited).copied().collect();
     // With no mutant to run, a build and a pass of every test would take minutes to measure
     // nothing.
-    if live.is_empty() && !options.force_coverage {
+    if built_set.is_empty() && !options.force_coverage {
         progress(Progress::NothingToRun);
         let unbuilt = Unbuilt {
             started,
@@ -436,7 +459,7 @@ pub fn run(
         mutants: selected.len(),
     });
     let building = Instant::now();
-    let built = compile::build(project, &found, &live, &recorders, progress)?;
+    let built = compile::build(project, &found, &built_set, &recorders, progress)?;
     let build_took = building.elapsed();
     let steps: Vec<&str> = built.rounds.iter().map(|round| round.phase).collect();
     progress(Progress::Built {
@@ -477,7 +500,7 @@ pub fn run(
     let coverage_took = coverage_started.elapsed();
     let rustc = rustc_version();
     let order: Vec<usize> = selected.iter().copied().collect();
-    let first = first_at_site(&found, &live, &built);
+    let first = first_at_site(&found, &built_set, &built);
     let costs: Vec<Cost> = order
         .iter()
         .map(|&mutant| cost(&found, mutant, first[mutant], &built, &tests, &reach))
@@ -495,7 +518,7 @@ pub fn run(
     let suggester = Suggester::new(project, &found, &built, options);
     let files = Files::new(&found, &order);
     let indexed: Vec<(usize, &Cost)> = order.iter().copied().zip(&costs).collect();
-    let mut results = testrun::parallel_on(&indexed, options.workers, |worker, &(mutant, cost)| {
+    let ran = testrun::parallel_on(&indexed, options.workers, |worker, &(mutant, cost)| {
         if cost.expected > Duration::ZERO {
             progress(Progress::MutantStarted {
                 worker,
@@ -517,8 +540,25 @@ pub fn run(
             (worker, cost.expected),
             progress,
         );
-        result
+        let audit = unskipped
+            .as_ref()
+            .filter(|_| audited.contains(&mutant))
+            .map(|unskipped| {
+                self::result(
+                    unskipped,
+                    mutant,
+                    first[mutant],
+                    &built,
+                    &tests,
+                    &reach,
+                    &cwd,
+                )
+            });
+        (result, audit)
     });
+    let (mut results, audited): (Vec<MutantResult>, Vec<Option<MutantResult>>) =
+        ran.into_iter().unzip();
+    let audited: Vec<MutantResult> = audited.into_iter().flatten().collect();
     let mutants_took = mutants_started.elapsed();
     progress(Progress::Ran { took: mutants_took });
     // Each catch checked on the code as it is, once the mutants have run: the checking phase.
@@ -609,7 +649,17 @@ pub fn run(
         fail_on_new: None,
         built: true,
         only: !options.only.is_empty(),
+        audited,
     })
+}
+
+/// Whether one of mutastic's arid rules, or an ignore as arid, skipped the mutant: what an audit
+/// runs anyway, as the Java edition's does.
+fn is_arid(mutant: &crate::sites::Mutant) -> bool {
+    mutant
+        .skipped
+        .as_deref()
+        .is_some_and(|reason| reason.starts_with("arid:"))
 }
 
 /// What a run knows before its build: when it started, the ignores that no longer hold, and the
@@ -647,6 +697,7 @@ fn nothing_to_run(
                 took: Duration::ZERO,
                 inputs: BTreeMap::new(),
                 suggestion: None,
+                by_assertion: false,
             })
         })
         .collect();
@@ -687,6 +738,7 @@ fn nothing_to_run(
         fail_on_new: None,
         built: false,
         only: !options.only.is_empty(),
+        audited: Vec::new(),
     }
 }
 
@@ -1155,6 +1207,7 @@ fn result(
             took: Duration::ZERO,
             inputs: BTreeMap::new(),
             suggestion: None,
+            by_assertion: false,
         };
     }
     let covering: Vec<usize> = (0..tests.len())
@@ -1188,6 +1241,7 @@ fn result(
             })
             .collect(),
         suggestion: None,
+        by_assertion: false,
     };
     listed(&function.module, &mut result.covered_by);
     if let Some(error) = built.unviable.get(&index) {
@@ -1249,6 +1303,7 @@ fn result(
             break;
         }
         result.status = Status::Killed;
+        result.by_assertion = testrun::assertion_failed(&outcome.stdout);
         result.killed_with = Some(match testrun::language_panic(&outcome.stdout) {
             Some(message) => format!("panic: {message}"),
             None => "panic".into(),

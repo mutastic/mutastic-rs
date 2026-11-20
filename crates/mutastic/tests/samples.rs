@@ -4558,3 +4558,54 @@ fn a_threads_name_and_stack_are_arid_and_its_work_still_runs() {
         "{kept:?}"
     );
 }
+
+/// `MUTASTIC_ARID=audit` runs the mutants the arid rules skip, out of the score and the counts, as
+/// the Java edition's does, and says where a test's own assertion catches one: there a rule may
+/// hide a contract, so it gives the `mutate:` rule that brings it back. Here only a test of a
+/// `Debug`'s text does; a sum underflowing in a sleep's time is caught by a panic, which says
+/// nothing; a capacity, an error's text and a sleep go unnoticed by tests that check what the code
+/// does.
+#[test]
+fn an_audit_runs_the_arid_mutants_and_says_where_a_test_checks_them() {
+    let dir = copy_of("arid", "audit");
+    let run = |audit: bool| {
+        let env: &[(&str, &str)] = if audit {
+            &[("MUTASTIC_ARID", "audit")]
+        } else {
+            &[]
+        };
+        let args = ["run", "--operators=extended", "--report=none"];
+        let (_, jsonl) =
+            mutastic_with_input_and_env(&dir, &[&args[..], &["--format=jsonl"]].concat(), "", env);
+        let (_, full) =
+            mutastic_with_input_and_env(&dir, &[&args[..], &["--format=full"]].concat(), "", env);
+        (events(&jsonl).pop().unwrap(), full)
+    };
+    let (plain, plain_full) = run(false);
+    let (audited, full) = run(true);
+    assert!(plain.get("aridAudit").is_none(), "{plain}");
+    assert!(!plain_full.contains("Arid audit"), "{plain_full}");
+    for counted in ["score", "killed", "survived", "ignored", "noCoverage"] {
+        assert_eq!(audited[counted], plain[counted], "{counted}: {audited}");
+    }
+    assert_eq!(
+        audited["aridAudit"],
+        serde_json::json!({
+            "ran": 20,
+            "caught": 3,
+            "caughtByAssertion": 2,
+            "missed": 17,
+            "notCovered": 0,
+            "checkedIn": ["<Order as fmt::Debug>::fmt()"],
+            "bringBack": "rules:\n  - mutate: <Order as fmt::Debug>::fmt\n    arid: [mutastic:debug-representations]\n    reason: <why a test should check it>\n",
+        })
+    );
+    assert!(
+        full.contains(
+            " Arid audit  20 ran anyway: 3 caught (2 by an assertion), 17 missed, 0 not covered; \
+             checked in <Order as fmt::Debug>::fmt()\n             a test checks what they do: to \
+             run them, add to mutastic.yaml\n               rules:\n"
+        ),
+        "{full}"
+    );
+}

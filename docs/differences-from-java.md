@@ -130,6 +130,11 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
   logger's macro, where the Java edition skips a call to a logger or `System.out`. And a statement
   that only checks a value it's given, `x.unwrap();` or `x.expect("..");`, where the Java edition
   skips a removed `Objects.requireNonNull(x);`.
+  Both editions skip a sleep removed (`thread::sleep`, an awaited tokio `sleep`), the number that
+  only sets how long it waits, the number that only sizes a collection (`with_capacity`,
+  `reserve`), and an error's or a failed check's text (`Err`, `context`, `expect`). Both count a
+  counter's first `0` or `1`. Every mutant in a `Debug` or `Hash` impl is arid, as Java's `toString()` and
+  `hashCode()` are; a `Display` is counted, as what it writes is often what a person reads.
   Both editions skip a thread's name and stack size; Rust knows the call by the builder its chain
   starts at, `thread::Builder::new()` or a tokio runtime's builder, where Java knows it by the
   `Thread` or builder method. Java also skips a priority, which `std` has no call for, and a
