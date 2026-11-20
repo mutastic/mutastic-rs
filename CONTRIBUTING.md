@@ -66,6 +66,10 @@ crates the tests run mutastic on.
 - **Docs:** user-facing changes update the pages in `docs/` (see [docs/README.md](docs/README.md)).
   After changing what mutastic prints, run `MUTASTIC_DOCS_WRITE=1 cargo test --test docs`, which
   writes the docs' copies of its output again, then read the diff.
+- **The changelog:** a change someone using mutastic would notice gets an entry, as a file of its
+  own in `changes/<section>/` ([changes/README.md](changes/README.md) has the sections and the
+  shape). Don't edit `CHANGELOG.md`: a release gathers the files into it, and CI fails a pull
+  request that edits it, as pull requests that all added to its end conflicted in the merge queue.
 - **Ids:** after adding an operator, or a shape an operator finds, run
   `MUTASTIC_IDS_WRITE=1 cargo test --test ids`. Lines may be added to the list, never changed or
   removed: a changed line is an id that broke.

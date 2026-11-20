@@ -27,6 +27,23 @@ a `#[should_panic]` test that no longer panics. mutastic says which test, and ho
 raised the panic itself. A test that fails only because the arithmetic overflowed is still a catch,
 but worth knowing about: see [Profiles](profiles.md#why-overflow-checks-are-forced).
 
+## Code reached only from main
+
+`main` is often the one piece of code no test reaches: it reads the process's arguments, prints,
+and sets the exit status, all of which a test finds awkward to check. So it reads as not covered,
+and the line says so, with what to do:
+
+```text
+○ src/main.rs:5-8 main() (5 mutants)
+  reached only from main(): move what it does into run(args, out), which returns the exit code,
+  test run, and leave main() a one-line call to it
+```
+
+A test can then call `run` with the arguments it likes and an `out` it reads back, a `Vec<u8>`
+say, and check the exit code it returns. What's left in `main`, the one line, stays not covered,
+and gets no such advice. mutastic doesn't leave `main` out of the run for you: what it does matters
+too.
+
 ## Tables of cases and property tests
 
 A test often runs one check over a table of cases. What mutastic makes of it depends on how the
@@ -270,7 +287,13 @@ A skipped mutant's reason starts with its kind, and the summary counts them by k
 | Kind | Means | Example |
 |---|---|---|
 | `unviable:` | It doesn't compile | `unviable: doesn't compile (E0308: mismatched types)` |
+<<<<<<< HEAD
+| `arid:` | Code whose change no test should have to notice | `arid: only writes output`, for a `println!` or `log::warn!` statement removed; `arid: only checks the value is there`, for an `x.unwrap();` statement removed; [each rule](https://docs.mutastic.io/reference/arid/) |
+||||||| dcb68a8
+| `arid:` | Code whose change no test should have to notice | `arid: only writes output`, for a `println!` or `log::warn!` statement removed; `arid: only checks the value is there`, for an `x.unwrap();` statement removed |
+=======
 | `arid:` | Code whose change no test should have to notice | `arid: only writes output`, for a `println!` or `log::warn!` statement removed; `arid: only checks the value is there`, for an `x.unwrap();` statement removed; `arid: only names a thread`, for a `thread::Builder`'s name |
+>>>>>>> origin/main
 | `equivalent:` | No test can tell it from the code | a `?` that only passes on a formatter's error |
 | `user:` | The project's own decision, in `mutastic.yaml` or `.mutastic/ignores.yaml` | ``user: written by a code generator (rule `skip: shop::generated::**`)`` |
 | `twin:` | It always does what another mutant at its place does, and that one runs for it ([Twins](#twins)) | `twin: same as m2e329a72`, for `n < 10`, which `is_small` returns, made `true` by `mutastic/remove-conditional`: the same code `mutastic/return-value` makes |

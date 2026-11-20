@@ -160,6 +160,7 @@ pub fn run(
     timeout: Duration,
 ) -> Outcome {
     let started = Instant::now();
+    let temp = RunTemp::create();
     let mut command = Command::new(&binary.path);
     command
         .arg("--exact")
@@ -180,6 +181,9 @@ pub fn run(
     // cases would make a mutant caught in one run and missed in the next.
     if std::env::var_os("PROPTEST_RNG_SEED").is_none() {
         command.env("PROPTEST_RNG_SEED", PROPTEST_SEED);
+    }
+    if let Some(temp) = &temp {
+        temp.set_on(&mut command);
     }
     for (key, value) in env {
         command.env(key, value);
@@ -218,6 +222,7 @@ pub fn run(
     let took = started.elapsed();
     let text = reader.join().unwrap_or_default();
     let stderr = errors.join().unwrap_or_default();
+    drop(temp);
     let Some(status) = status else {
         return Outcome {
             passed: false,
@@ -257,6 +262,44 @@ pub fn run(
         stdout: text,
         stderr,
         signal: signal_of(&status),
+    }
+}
+
+/// A test process's own temporary directory, empty when it starts and deleted once it has ended.
+/// Tests share the system's otherwise, and a file one mutant's tests leave there (a mutant that
+/// removes the `remove_file`) is still there for the next mutant's: a test that reads it back can
+/// pass on a mutant that never wrote it. So every process, the coverage pass's too, starts with
+/// nothing there, and leaves nothing behind on the machine.
+struct RunTemp(std::path::PathBuf);
+
+/// How many test processes this run has started, to name each one's temporary directory.
+static RUNS: AtomicUsize = AtomicUsize::new(0);
+
+impl RunTemp {
+    /// A new, empty directory, or none if it can't be made: the tests then share the system's, as
+    /// they do under `cargo test`.
+    fn create() -> Option<RunTemp> {
+        let run = RUNS.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("mutastic-test-{}-{run}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).ok().map(|()| RunTemp(dir))
+    }
+
+    /// Makes it the process's temporary directory: `TMPDIR`, which `std::env::temp_dir()` and the
+    /// `tempfile` crate read, and on Windows `TMP` and `TEMP`, which they read there. It's made
+    /// inside the temporary directory mutastic itself was given, so a `TMPDIR` set for the run
+    /// still decides the disk.
+    fn set_on(&self, command: &mut Command) {
+        command.env("TMPDIR", &self.0);
+        if cfg!(windows) {
+            command.env("TMP", &self.0).env("TEMP", &self.0);
+        }
+    }
+}
+
+impl Drop for RunTemp {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 
