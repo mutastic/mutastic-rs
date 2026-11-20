@@ -342,9 +342,10 @@ fn the_arid_rules_are_the_contracts() {
         .filter(|rule| strings(&rule["editions"]).iter().any(|e| e == EDITION))
         .map(|rule| {
             format!(
-                "{} | {} | {} | {}",
+                "{} | {} | {} | {} | {}",
                 text(rule, "id"),
                 text(rule, "scope"),
+                text(rule, "description"),
                 strings(&rule["reasons"][EDITION]).join(" / "),
                 text(&rule["examples"], EDITION)
             )
@@ -354,9 +355,10 @@ fn the_arid_rules_are_the_contracts() {
         .iter()
         .map(|rule| {
             format!(
-                "{} | {} | {} | {}",
+                "{} | {} | {} | {} | {}",
                 rule.id,
                 rule.scope.written(),
+                rule.description,
                 rule.reasons.join(" / "),
                 rule.example
             )
