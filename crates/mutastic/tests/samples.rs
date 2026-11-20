@@ -344,6 +344,88 @@ fn by_function(stdout: &str) -> Vec<(String, String, String)> {
     found
 }
 
+/// Releases a test can see: the test each card names catches the release taken away. A `drop` of
+/// a lock's guard before the lock is taken again, a `Drop` body, and a file removed; the same code
+/// run by a test that checks nothing keeps its mutant, and shows the card.
+#[test]
+fn a_cleanup_calls_card_names_the_test_that_catches_it() {
+    let dir = fixture("cleanups");
+    let (_, stdout) = mutastic(&["run", &dir, "--format=jsonl"]);
+    let finished: Vec<Value> = events(&stdout)
+        .into_iter()
+        .filter(|e| e["reason"] == "mutant-finished")
+        .collect();
+    // Each release's mutants in `function`: their status, and the first line of the card.
+    let release = |function: &str, operator: &str, original: &str| -> Vec<(String, String)> {
+        finished
+            .iter()
+            .filter(|e| {
+                e["location"]["method"] == function
+                    && e["operator"] == operator
+                    && e["mutation"]["original"]
+                        .as_str()
+                        .is_some_and(|text| text.contains(original))
+            })
+            .map(|e| {
+                let card = e["rendered"].as_str().unwrap_or_default();
+                (
+                    e["status"].as_str().unwrap_or_default().to_string(),
+                    card.lines().next().unwrap_or_default().to_string(),
+                )
+            })
+            .collect()
+    };
+    let void = "mutastic/remove-void-call";
+    for (tested, untested, operator, original, headline) in [
+        (
+            "bump",
+            "bump_alone",
+            void,
+            "drop(",
+            "`guard` is still dropped at the end of its scope, so this `drop` only lets it go sooner",
+        ),
+        (
+            "drop",
+            "drop",
+            "mutastic/remove-discarded-call",
+            "fetch_add",
+            "no test checks what dropping a value does in `drop()`",
+        ),
+        (
+            "cleaned",
+            "left",
+            "",
+            "remove_file",
+            "no test checks that the file is gone after `left()`",
+        ),
+    ] {
+        let mutants = |function| {
+            if operator.is_empty() {
+                finished
+                    .iter()
+                    .filter(|e| e["location"]["method"] == function)
+                    .filter_map(|e| e["operator"].as_str())
+                    .flat_map(|named| release(function, named, original))
+                    .collect::<Vec<_>>()
+            } else {
+                release(function, operator, original)
+            }
+        };
+        let caught = mutants(tested);
+        let missed = mutants(untested);
+        assert!(
+            caught.iter().any(|(status, _)| status == "Killed"),
+            "{tested}: {finished:?}"
+        );
+        assert!(
+            missed
+                .iter()
+                .any(|(status, card)| status == "Survived" && card.ends_with(headline)),
+            "{untested}: {missed:?}"
+        );
+    }
+}
+
 /// A thread started and not waited for: the test its card names, one that waits on a channel the
 /// thread sends to and then looks, catches its `spawn` taken away, whether it's `thread::spawn` or a
 /// builder's. Where no test waits, the card says so. A scoped thread's scope waits for it, so its
