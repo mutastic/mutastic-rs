@@ -143,6 +143,23 @@ fn advise_change(mutant: &Mutant, name: &str, seen: &BTreeMap<String, Vec<i128>>
             notes: inputs_seen(seen),
             help: "wait for the thread to finish (`join()` its handle, or wait on a channel its closure sends to), then assert what it did".into(),
         },
+        Change::Removed { statement } if name == "drop" => Advice {
+            change: format!("`{statement}` is removed"),
+            caret: "removed".into(),
+            headline: "no test checks what dropping a value does in `drop()`".into(),
+            notes: inputs_seen(seen),
+            help: format!("let one go out of scope (or `drop` it), then assert what `{statement}` changes: a counter, a sink or a file"),
+        },
+        Change::Removed { statement } if released(statement, &method).is_some() => {
+            let (headline, help) = released(statement, &method).unwrap_or_default();
+            Advice {
+                change: format!("`{statement}` is removed"),
+                caret: "removed".into(),
+                headline,
+                notes: inputs_seen(seen),
+                help,
+            }
+        }
         Change::Removed { statement } => Advice {
             change: format!("`{statement}` is removed"),
             caret: "removed".into(),
@@ -174,6 +191,13 @@ fn advise_change(mutant: &Mutant, name: &str, seen: &BTreeMap<String, Vec<i128>>
             help: format!(
                 "add a test where the `{name}` given changes what {method} does, and assert it"
             ),
+        },
+        Change::Body { value } if value.is_empty() && name == "drop" => Advice {
+            change: format!("{method} does nothing"),
+            caret: "does nothing".into(),
+            headline: "no test checks what dropping a value does: `drop()` can do nothing".into(),
+            notes: inputs_seen(seen),
+            help: "let one go out of scope (or `drop` it), then assert the counter, sink or file `drop()` should change".into(),
         },
         Change::Body { value } if value.is_empty() => Advice {
             change: format!("{method} does nothing"),
@@ -331,6 +355,33 @@ fn returns(method: &str, value: &str, seen: &BTreeMap<String, Vec<i128>>) -> Adv
 /// Whether a statement starts a thread of the standard library's that nothing waits for here:
 /// `thread::spawn(..)`, or a `thread::Builder`'s `spawn`. A scoped thread's `s.spawn(..)` isn't
 /// one: its scope waits for it, so a test of the function only has to check what it did.
+/// The headline and help for a statement that releases something, taken away: a `drop(x)`, which
+/// the end of the scope does anyway, so its card says when that matters; or a file removed, which a
+/// test can look for.
+fn released(statement: &str, method: &str) -> Option<(String, String)> {
+    let flat: String = statement.split_whitespace().collect();
+    if let Some(dropped) = flat
+        .strip_prefix("drop(")
+        .and_then(|rest| rest.strip_suffix(");").or_else(|| rest.strip_suffix(')')))
+    {
+        return Some((
+            format!("`{dropped}` is still dropped at the end of its scope, so this `drop` only lets it go sooner"),
+            format!("if code after it in {method} takes the lock or waits on a thread that does, test that path with a timeout; if nothing does, the `drop` can go"),
+        ));
+    }
+    let gone = if flat.contains("remove_file(") {
+        "file"
+    } else if flat.contains("remove_dir(") || flat.contains("remove_dir_all(") {
+        "directory"
+    } else {
+        return None;
+    };
+    Some((
+        format!("no test checks that the {gone} is gone after {method}"),
+        format!("call {method}, then assert that the path no longer `exists()`"),
+    ))
+}
+
 fn starts_a_thread(statement: &str) -> bool {
     let flat: String = statement.split_whitespace().collect();
     flat.contains("thread::spawn(")
