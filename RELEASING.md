@@ -18,10 +18,10 @@ day.
    pinned in `crates/mutastic/tests/schema/`), and, from 1.0.0, on a command, option, variable,
    exit status, `mutastic.yaml` or rules file the last 1.0+ release took and this one doesn't
    (`tests/compat.rs`). These are left to you:
-   - **Scores.** Read the changelog's *Scoring changes*. A patch release (`X.Y.Z+1`) has none:
-     anything that moves a score (an operator into or out of the default set, a filter that skips
-     more or less) waits for a minor release. A minor release's changelog says which scores move,
-     and how.
+   - **Scores.** Read the *Scoring changes* that `scripts/changelog.sh preview` prints, the
+     entries waiting in `changes/`. A patch release (`X.Y.Z+1`) has none: anything that moves a
+     score (an operator into or out of the default set, a filter that skips more or less) waits
+     for a minor release. A minor release's changelog says which scores move, and how.
    - **Ids.** Run `MUTASTIC_IDS_WRITE=1 cargo test --test ids`. If `tests/ids/ids.tsv` changes, only
      by lines added for an operator new since the last release, commit it, so its ids are held
      from this release on.
@@ -29,9 +29,18 @@ day.
      is ready to publish beside this one (the Java repository's `RELEASING.md`). A patch needs
      nothing from it.
 2. **The release commit,** `chore(release): version X.Y.Z`: the version in `Cargo.toml` (and
-   `Cargo.lock`), the changelog's *Unreleased* moved under the version and date, and the docs' kept
-   outputs that print the version, written again with `MUTASTIC_DOCS_WRITE=1 cargo test --test
-   docs`. From 1.0.0, keep what this release takes, so the next is held to it:
+   `Cargo.lock`), the changelog's section for it, and the docs' kept outputs that print the
+   version, written again with `MUTASTIC_DOCS_WRITE=1 cargo test --test docs`. Each entry since the
+   last release is a file in `changes/` ([changes/README.md](changes/README.md)), so pull requests
+   don't conflict over `CHANGELOG.md`. Read them as one section, then gather them into
+   `CHANGELOG.md` as `## X.Y.Z (YYYY-MM-DD)`, dated today, which deletes the files:
+   ```sh
+   scripts/changelog.sh preview X.Y.Z   # prints the section, writes nothing
+   scripts/changelog.sh release X.Y.Z   # writes it below Unreleased, deletes the entries
+   ```
+   Edit the section if it needs it, a paragraph above a section's entries or one at the top. Only
+   a commit with the `release` scope may edit `CHANGELOG.md`. From 1.0.0, keep what this release
+   takes, so the next is held to it:
    ```sh
    MUTASTIC_RELEASED_WRITE=1 cargo test --test compat   # writes crates/mutastic/tests/released/X.Y.Z
    ```
