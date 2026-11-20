@@ -2,11 +2,12 @@
 # error, and the tests, which run mutastic on the fixtures, on Linux, macOS and Windows; and a build
 # on the oldest toolchain `rust-version` names. Actions are pinned to a commit: a tag can be moved.
 #
-# On a pull request that changes nothing the build or the tests read (the issue and pull request
-# templates, the citation, workflows other than this one, the hooks), the jobs that build and test
-# are skipped, as `changes` decides: a skipped job counts as passed for branch protection, and the
-# test matrix, whose checks are named for their platform, runs on Linux with nothing to do instead,
-# since a matrix skipped whole reports one check under the job's bare name. The docs tests read
+# On a pull request that changes nothing the build or the tests read (the changelog's entries, the
+# issue and pull request templates, the citation, workflows other than this one, the hooks), the
+# jobs that build and test are skipped, as `changes` decides: a skipped job counts as passed for
+# branch protection, and the test matrix, whose checks are named for their platform, runs on Linux
+# with nothing to do instead, since a matrix skipped whole reports one check under the job's bare
+# name. The docs tests read
 # every Markdown page, the README and docs/ included, so a change to one runs everything. The
 # merge queue and main always run everything: main is always fully tested.
 name: CI
@@ -50,9 +51,9 @@ jobs:
           EVENT: ${{ github.event_name }}
           NUMBER: ${{ github.event.pull_request.number }}
           COUNT: ${{ github.event.pull_request.changed_files }}
-          # What neither reads: the citation, the templates and picture under .github, the
-          # workflows other than this one, and the hooks.
-          UNREAD: '^(CITATION\.cff|\.github/(ISSUE_TEMPLATE/.*|PULL_REQUEST_TEMPLATE\.md|pip\.webp|workflows/(audit|commits|release)\.yml)|\.githooks/.*)$'
+          # What neither reads: the changelog's entries and script, the citation, the templates and
+          # picture under .github, the workflows other than this one, and the hooks.
+          UNREAD: '^(changes/.*|scripts/changelog\.sh|CITATION\.cff|\.github/(ISSUE_TEMPLATE/.*|PULL_REQUEST_TEMPLATE\.md|pip\.webp|workflows/(audit|commits|release)\.yml)|\.githooks/.*)$'
         run: |
           code=true
           if [ "$EVENT" = pull_request ] &&
