@@ -1,6 +1,7 @@
 # The typos mutastic answers with "There's one called …", and those it answers without.
 # Columns, split by tabs: the word typed; the names valid where it was typed, split by commas;
 # the one name offered, or - for none. The Java edition holds its suggestions to the same rows.
+# Rows under a heading that starts with `# Ids` are matched as ids are, one edit at most.
 # Commands
 rnu	run,verify,explain,ignore,gate,mutants,next,baseline,help	run
 urn	run,verify,explain,ignore,gate,mutants,next,baseline,help	run
@@ -37,3 +38,28 @@ mutate	extends,rules,plugins,filters,operators	-
 # A transposition is one edit, and of two as close the nearer length wins
 tset	test,set	test
 lsit	edit,list	list
+# Gate actions
+opne	open,check,close	open
+chekc	open,check,close	check
+clsoe	open,check,close	close
+stop	open,check,close	-
+# Modules and directories, without a module's colon
+aap	core,app,api	app
+cor	core,app,api	core
+pricng	pricing,checkout,courier	pricing
+chekout	pricing,checkout,courier	checkout
+shipping	pricing,checkout,courier	-
+# Rule verbs, without their colons
+skp	skip,mutate	skip
+mutat	skip,mutate	mutate
+drop	skip,mutate	-
+# Ignore keys, without their colons
+resaon	id,code,reason,kind,at,change	reason
+kidn	id,code,reason,kind,at,change	kind
+why	id,code,reason,kind,at,change	-
+# A character is a code point: one outside the Basic Multilingual Plane is one edit
+😀un	run,verify,explain	run
+# Ids, offered only one edit away: an id is random, so two edits are some other mutant's
+m855c83ec	m855c8e3c,m2e491c40	m855c8e3c
+m855c8e3d	m855c8e3c,m2e491c40	m855c8e3c
+m855c8eff	m855c8e3c,m2e491c40	-
