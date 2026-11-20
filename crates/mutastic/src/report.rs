@@ -1557,7 +1557,7 @@ const NOT_COVERED_SHOWN: usize = 50;
 /// tier()`) and how many mutants, as the Java edition counts them.
 /// Each function with mutants no test reaches, `src/lib.rs:18-20 tier()`, with each of those
 /// mutants' line and id, in the order found.
-fn not_covered_places(view: &View) -> Vec<(String, Vec<(usize, String)>)> {
+fn not_covered_places(view: &View) -> Vec<NotCovered> {
     let mut by_function: Vec<(usize, Vec<(usize, String)>)> = Vec::new();
     for result in view.results {
         if result.status == Status::NoCoverage {
@@ -1582,16 +1582,46 @@ fn not_covered_places(view: &View) -> Vec<(String, Vec<(usize, String)>)> {
             } else {
                 format!("{from}-{to}")
             };
-            (
-                format!(
+            let mut lines: Vec<usize> = mutants.iter().map(|(line, _)| *line).collect();
+            lines.dedup();
+            NotCovered {
+                place: format!(
                     "{}:{place} {}()",
                     view.value(&f.file.display().to_string()),
                     view.value(&f.name)
                 ),
+                advice: (is_main(f) && lines.len() > 1).then_some(ONLY_FROM_MAIN),
                 mutants,
-            )
+            }
         })
         .collect()
+}
+
+/// A function with mutants no test reaches: where, each mutant's line and id, and what to do
+/// about it when there's more to say than to write a test.
+struct NotCovered {
+    place: String,
+    mutants: Vec<(usize, String)>,
+    advice: Option<&'static str>,
+}
+
+/// What to do about a `main` no test calls that does more than one line's work. A test can call
+/// what `main` calls, and check it, where `main` itself reads the process's arguments, prints and
+/// may exit. One that already only calls it has nothing left to move. The Java edition says the
+/// same.
+const ONLY_FROM_MAIN: &str =
+    "reached only from `main()`: move what it does into `run(args, out)`, \
+     which returns the exit code, test `run`, and leave `main()` a one-line call to it";
+
+/// Whether a function is a binary's `main`, where the process starts: `main` at the root of
+/// `src/main.rs` or of a file under `src/bin/`.
+fn is_main(f: &crate::sites::Function) -> bool {
+    f.path == "main"
+        && (f.file.file_name().is_some_and(|name| name == "main.rs")
+            || f.file
+                .parent()
+                .and_then(|parent| parent.file_name())
+                .is_some_and(|name| name == "bin"))
 }
 
 /// `Not covered (no test reaches these lines)`, then each function with mutants no test reaches:
@@ -1607,7 +1637,12 @@ fn not_covered(out: &mut String, view: &View, or_only_flaky: &str, style: Style)
         style.amber(&style.bold(" Not covered ")),
         style.dim(&format!("(no test reaches these lines{})", or_only_flaky))
     );
-    for (place, mutants) in places.iter().take(NOT_COVERED_SHOWN) {
+    for NotCovered {
+        place,
+        mutants,
+        advice,
+    } in places.iter().take(NOT_COVERED_SHOWN)
+    {
         let count = mutants.len();
         let _ = writeln!(
             out,
@@ -1618,6 +1653,9 @@ fn not_covered(out: &mut String, view: &View, or_only_flaky: &str, style: Style)
                 if count == 1 { "" } else { "s" }
             ))
         );
+        if let Some(advice) = advice {
+            let _ = writeln!(out, "     {}", style.code(advice));
+        }
     }
     if places.len() > NOT_COVERED_SHOWN {
         let _ = writeln!(
@@ -2319,13 +2357,21 @@ fn agent(report: &Report, style: Style) -> String {
                 }
             }
         );
-        for (place, mutants) in places {
+        for NotCovered {
+            place,
+            mutants,
+            advice,
+        } in places
+        {
             let count = mutants.len();
             let _ = writeln!(
                 quoted,
                 "- {place} ({count} mutant{})",
                 if count == 1 { "" } else { "s" }
             );
+            if let Some(advice) = advice {
+                let _ = writeln!(quoted, "  {advice}");
+            }
             // An agent decides a line no test reaches can't be reached as it decides a missed
             // mutant's case can't happen: so each id, by line, with how to propose it.
             let mut lines: Vec<usize> = mutants.iter().map(|(line, _)| *line).collect();

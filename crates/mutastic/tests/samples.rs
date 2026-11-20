@@ -406,6 +406,105 @@ fn a_binary_a_test_runs_as_a_process_is_mutated_there() {
     );
 }
 
+/// Code only `main` runs, which no test calls: the not-covered line says it's reached only from
+/// `main`, and to move what it does into `run(args, out)`, test that, and leave `main` a one-line
+/// call. What it says is checked by doing it: moved into `run`, with a test of `run`, every mutant
+/// is caught, and the line left in `main` gets no such advice. The Java edition's
+/// `OnlyFromMainTest` is the same.
+#[test]
+fn code_only_main_runs_says_so_and_the_advice_holds() {
+    const ADVICE: &str = "reached only from `main()`: move what it does into `run(args, out)`, \
+         which returns the exit code, test `run`, and leave `main()` a one-line call to it";
+    let copy = copy_of("binary", "only-main");
+    let _ = std::fs::remove_dir_all(copy.join("tests"));
+    let main = copy.join("src/main.rs");
+    std::fs::write(
+        &main,
+        r#"use std::process::ExitCode;
+
+fn main() -> ExitCode {
+    let name = std::env::args().nth(1).unwrap_or_default();
+    if name.is_empty() {
+        return ExitCode::from(2);
+    }
+    if name.len() > 20 {
+        return ExitCode::from(3);
+    }
+    println!("{}", greeting(&name));
+    ExitCode::SUCCESS
+}
+
+fn greeting(name: &str) -> String {
+    format!("hello {name}")
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn greets() {
+        assert_eq!(super::greeting("ada"), "hello ada");
+    }
+}
+"#,
+    )
+    .unwrap();
+    let (_, agent) = mutastic_in(&copy, &["run", "--format=agent"]);
+    assert!(
+        agent.contains(&format!(
+            "- src/main.rs:5-8 main() (5 mutants)\n  {ADVICE}\n"
+        )),
+        "{agent}"
+    );
+
+    std::fs::write(
+        &main,
+        r#"use std::io::Write;
+use std::process::ExitCode;
+
+fn main() -> ExitCode {
+    run(&std::env::args().skip(1).collect::<Vec<_>>(), &mut std::io::stdout())
+}
+
+fn run(args: &[String], out: &mut impl Write) -> ExitCode {
+    let name = args.first().cloned().unwrap_or_default();
+    if name.is_empty() {
+        return ExitCode::from(2);
+    }
+    writeln!(out, "hello {name}").unwrap();
+    ExitCode::SUCCESS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_empty_name_exits_with_two() {
+        assert_eq!(run(&[], &mut Vec::new()), ExitCode::from(2));
+    }
+
+    #[test]
+    fn greets_a_name() {
+        let mut out = Vec::new();
+        assert_eq!(run(&["ada".to_string()], &mut out), ExitCode::SUCCESS);
+        assert_eq!(out, b"hello ada\n");
+    }
+}
+"#,
+    )
+    .unwrap();
+    let (_, stdout) = mutastic_in(&copy, &["run", "--format=jsonl"]);
+    let in_run: Vec<Value> = events(&stdout)
+        .into_iter()
+        .filter(|e| e["reason"] == "mutant-finished" && e["location"]["method"] == "run")
+        .filter(|e| e["status"] != "Ignored")
+        .collect();
+    assert!(!in_run.is_empty(), "{stdout}");
+    assert!(in_run.iter().all(|e| e["status"] == "Killed"), "{in_run:?}");
+    let (_, agent) = mutastic_in(&copy, &["run", "--format=agent"]);
+    assert!(!agent.contains("reached only from"), "{agent}");
+}
+
 /// A pattern that binds by `ref mut` into a field changes the field, so the copy keeps the field a
 /// place, not a value in a switch: its test passes there as under `cargo test`, as url's do.
 #[test]
