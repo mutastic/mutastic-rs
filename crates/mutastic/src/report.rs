@@ -3010,6 +3010,10 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
                     Some(how) if how.starts_with("crash") => {
                         format!(", by a crash ({})", untrusted::value(how))
                     }
+                    Some(how) if how.starts_with("exit: ") => format!(
+                        ", by the process exiting with status {}",
+                        untrusted::value(&how["exit: ".len()..])
+                    ),
                     _ => String::new(),
                 }
             ),
