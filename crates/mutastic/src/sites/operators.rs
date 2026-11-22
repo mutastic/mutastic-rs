@@ -88,6 +88,68 @@ pub(super) const OUTPUT_MACROS: &[&str] = &[
     "log", "event",
 ];
 
+/// Macros that check whether a log level is on, `log_enabled!(Level::Debug)` and `tracing`'s
+/// `enabled!`: around a body that only writes output, all they decide is whether it's written.
+const LEVEL_CHECKS: &[&str] = &[
+    "log_enabled",
+    "enabled",
+    "event_enabled",
+    "span_enabled",
+    "level_enabled",
+];
+
+/// The last segment of a macro's path: `warn` for `log::warn!(..)`.
+fn macro_name(output: &ast::MacroExpr) -> String {
+    output
+        .macro_call()
+        .and_then(|call| call.path())
+        .and_then(|path| path.segment())
+        .map(|segment| segment.syntax().text().to_string())
+        .unwrap_or_default()
+}
+
+/// An output macro, as a statement or a block's last expression.
+fn writes_output(expr: Option<ast::Expr>) -> bool {
+    matches!(expr, Some(ast::Expr::MacroExpr(output)) if OUTPUT_MACROS.contains(&macro_name(&output).as_str()))
+}
+
+/// `if log_enabled!(Level::Debug) { debug!(..); }`: a level's check, `!` or not, with no `else`,
+/// around a body each statement of which is an output macro. A body that does anything else, a
+/// `let` or a call of the code's own, keeps the check counted.
+pub(super) fn guards_only_output(expr: &ast::IfExpr) -> bool {
+    let mut condition = expr.condition();
+    loop {
+        condition = match condition {
+            Some(ast::Expr::ParenExpr(paren)) => paren.expr(),
+            Some(ast::Expr::PrefixExpr(prefix)) if prefix.op_kind() == Some(ast::UnaryOp::Not) => {
+                prefix.expr()
+            }
+            other => break condition = other,
+        };
+    }
+    let checks = matches!(&condition, Some(ast::Expr::MacroExpr(check)) if LEVEL_CHECKS.contains(&macro_name(check).as_str()));
+    let Some(body) = expr.then_branch().and_then(|block| block.stmt_list()) else {
+        return false;
+    };
+    if !checks || expr.else_branch().is_some() {
+        return false;
+    }
+    let mut statements = 0;
+    for statement in body.statements() {
+        let ast::Stmt::ExprStmt(statement) = statement else {
+            return false;
+        };
+        if statement.semicolon_token().is_none() || !writes_output(statement.expr()) {
+            return false;
+        }
+        statements += 1;
+    }
+    match body.tail_expr() {
+        Some(tail) => writes_output(Some(tail)),
+        None => statements > 0,
+    }
+}
+
 /// Item-preserving iterator stages, which can be left out without changing the item type.
 const STAGES: &[&str] = &[
     "filter",
@@ -319,12 +381,7 @@ impl Finder<'_> {
         let Some(call) = output.macro_call() else {
             return;
         };
-        let name = call
-            .path()
-            .and_then(|path| path.segment())
-            .map(|segment| segment.syntax().text().to_string())
-            .unwrap_or_default();
-        if !OUTPUT_MACROS.contains(&name.as_str()) {
+        if !OUTPUT_MACROS.contains(&macro_name(output).as_str()) {
             return;
         }
         let before = self.found.mutants.len();
