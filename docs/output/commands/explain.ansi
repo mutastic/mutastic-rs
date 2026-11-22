@@ -36,5 +36,6 @@
     [2m=[0m [1;34m[1mid      [0m[0m  mb2f8ae57: `m` and the first 8 hex digits of its fingerprint, b2f8ae57ca6c48cb, a
                 SHA-256 of the crate, function, operator, site and change
                 [2mno line number goes in, so the id stays the same when code above it moves[0m
-    [2m=[0m [1;34m[1msite    [0m[0m  `total >= 100` in Pricing::discount, line 26, column 18: the function's site 3, counting from 1 in source order
+    [2m=[0m [1;34m[1msite    [0m[0m  `total >= 100` in Pricing::discount, line 26, column 18: the function's site 3,
+                counting from 1 in source order
     [2m=[0m [1;34m[1mlast run[0m[0m  missed: every covering test still passed

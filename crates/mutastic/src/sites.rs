@@ -28,6 +28,7 @@ pub mod callable;
 mod edge;
 mod extended;
 mod guarded;
+mod logged;
 mod nonzero;
 mod operators;
 mod profile;
@@ -1532,7 +1533,8 @@ impl Finder<'_> {
             .or_else(|| {
                 threads::reason(operator, node, &replacement, self.facts.reads_thread_names)
             })
-            .or_else(|| arid_sites::reason(operator, node));
+            .or_else(|| arid_sites::reason(operator, node))
+            .or_else(|| logged::reason(operator, node));
         let answers = unsigned::answers_key(node, &change);
         let mut mutant = Mutant {
             ordinal,
