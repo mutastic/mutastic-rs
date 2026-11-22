@@ -16,7 +16,10 @@ terminal, such as in CI or a pipe, it's `concise`; with `MUTASTIC_AGENT=1` it's 
 
 A card for each line with a missed mutant, for a person reading at a terminal: the gap, the code
 with the change marked, the evidence, the test to add, and the commands that prove it, then the
-summary. On the pricing fixture:
+summary. One test usually catches every mutant on a line, so a line's mutants share a card, the
+others under `= also`; `--each-mutant` gives every missed mutant a card of its own, in each format
+a person or an agent reads, and lists code no test reaches by line, not by function. On the
+pricing fixture:
 
 <!-- output: getting-started/run -->
 ```text
