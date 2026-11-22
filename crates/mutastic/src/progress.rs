@@ -373,7 +373,8 @@ impl Inner {
                     "{}{} in one build · {}",
                     frames::word("building"),
                     frames::count(mutants, "mutant"),
-                    frames::count(self.workers, "worker")
+                    // No more workers than mutants run, as the run starts.
+                    frames::count(self.workers.min(mutants.max(1)), "worker")
                 );
                 self.write(state, &line);
             }

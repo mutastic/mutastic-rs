@@ -60,10 +60,75 @@ pub fn url(operator: &str) -> Option<String> {
     Some(format!("{DOCS}operators/{family}/#{name}"))
 }
 
+/// Each family's page, as the binary was built with it.
+fn page(family: &str) -> Option<&'static str> {
+    Some(match family {
+        "conditions" => include_str!("../../../docs/operators/conditions.md"),
+        "arithmetic" => include_str!("../../../docs/operators/arithmetic.md"),
+        "returns" => include_str!("../../../docs/operators/returns.md"),
+        "calls" => include_str!("../../../docs/operators/calls.md"),
+        "arguments" => include_str!("../../../docs/operators/arguments.md"),
+        "library" => include_str!("../../../docs/operators/library.md"),
+        "iterators" => include_str!("../../../docs/operators/iterators.md"),
+        "options" => include_str!("../../../docs/operators/options.md"),
+        "control" => include_str!("../../../docs/operators/control.md"),
+        _ => return None,
+    })
+}
+
+/// What one of mutastic's own operators changes and when a test misses it, as its section in the
+/// docs opens, after the sentence naming it and its set: "`<` becomes `<=`, `>=` becomes `>`, and
+/// the other way round. … never notice." `explain`, SARIF's rules and the docs say the same.
+/// `None` for a rules file's operator, whose explanation is its own.
+pub fn explanation(operator: &str) -> Option<String> {
+    let text = page(family(operator)?)?;
+    let opening = format!("`{operator}`, ");
+    let mut lines = text.lines().skip_while(|line| !line.starts_with(&opening));
+    let paragraph: Vec<&str> = lines
+        .by_ref()
+        .take_while(|line| !line.trim().is_empty())
+        .map(str::trim)
+        .collect();
+    let paragraph = paragraph.join(" ");
+    let (_, rest) = paragraph.split_once(". ")?;
+    // A paragraph that opens a table of what becomes what ends as a sentence here.
+    Some(match rest.strip_suffix(':') {
+        Some(before) => format!("{before}."),
+        None => rest.to_string(),
+    })
+}
+
+/// The first sentence of an explanation, for SARIF's `shortDescription`, as the Java edition cuts
+/// it.
+pub fn first_sentence(text: &str) -> &str {
+    text.find(". ").map_or(text, |end| &text[..=end])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::sites::RETURN_VALUE_EXTENDED;
+
+    /// Every operator with a section has an explanation from it, a sentence or more that says
+    /// what it changes.
+    #[test]
+    fn each_operator_is_explained_as_its_section_opens() {
+        assert_eq!(
+            explanation(BOUNDARY).as_deref().map(first_sentence),
+            Some("`<` becomes `<=`, `>=` becomes `>`, and the other way round.")
+        );
+        for operator in crate::sites::ALL {
+            if url(operator).is_none() {
+                continue;
+            }
+            let explained = explanation(operator).unwrap_or_default();
+            assert!(
+                explained.ends_with('.') && explained.len() > 8,
+                "{operator}: {explained:?}"
+            );
+        }
+        assert_eq!(explanation("acme/remove-trim"), None);
+    }
 
     #[test]
     fn an_operator_links_to_its_section_and_a_rules_files_to_none() {

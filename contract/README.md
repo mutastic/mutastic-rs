@@ -22,9 +22,9 @@ scripts/pin-contract.sh take-operators-as-java 1f83d4d    # a commit, or a branc
 
 ```json
 {
-  "commit": "2ac2b3b6e6b2ab44593e523d09770931a5fb70cc",
-  "date": "2026-11-22T09:04:22Z",
-  "position": 14
+  "commit": "21a50a9347b6313ab9e7777de0fb0a232b676729",
+  "date": "2026-11-22T10:03:40Z",
+  "position": 16
 }
 ```
 

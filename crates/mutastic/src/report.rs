@@ -1242,17 +1242,21 @@ fn or_only_flaky(report: &Report) -> &'static str {
 /// `┌─ src/lib.rs:26`, then the changed line between the lines either side, the change marked under
 /// it; gives the gutter the rest of the card is indented by. With `docs`, the mark links to its
 /// operator's section in the docs when links are on, as the Java edition's full card does.
+/// The frame around a mutant's line, with a line of context each side unless `brief`, which shows
+/// the mutated line alone, as the Java edition's brief card does.
 fn frame(
     out: &mut String,
     view: &View,
     mutant: &Mutant,
     advice: &Advice,
     docs: Option<&str>,
+    brief: bool,
     style: Style,
 ) -> String {
     let text = view.text(mutant);
     let lines: Vec<&str> = text.lines().collect();
-    let width = (mutant.line + 1).to_string().len();
+    let context = usize::from(!brief);
+    let width = (mutant.line + context).to_string().len();
     let g = " ".repeat(width + 2);
     let bar = style.dim("│");
     let _ = writeln!(
@@ -1265,7 +1269,8 @@ fn frame(
         )
     );
     let _ = writeln!(out, "{g}{bar}");
-    for number in mutant.line.saturating_sub(1).max(1)..=(mutant.line + 1).min(lines.len()) {
+    let first = mutant.line.saturating_sub(context).max(1);
+    for number in first..=(mutant.line + context).min(lines.len()) {
         let _ = writeln!(
             out,
             " {} {bar} {}",
@@ -1501,7 +1506,7 @@ fn brief_card(out: &mut String, view: &View, entry: &Entry, style: Style) {
         ),
         style.code(&advice.headline)
     );
-    let g = frame(out, view, mutant, &advice, None, style);
+    let g = frame(out, view, mutant, &advice, None, true, style);
     let equals = style.dim("=");
     for (index, note) in advice.notes.iter().enumerate() {
         if index == 0 {
@@ -1544,7 +1549,7 @@ fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
         }
     );
     let docs = crate::operator_docs::url(mutant.operator);
-    let g = frame(out, view, mutant, &advice, docs.as_deref(), style);
+    let g = frame(out, view, mutant, &advice, docs.as_deref(), false, style);
     let equals = style.dim("=");
     before_and_after(out, &g, &view.changed_lines(mutant), style);
     for other in &entry.also {
@@ -1886,9 +1891,6 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
         ("Files", files_row(report, style)),
         ("Mutants", mutants_row(report, style)),
     ];
-    for (index, line) in not_mutated(report).into_iter().enumerate() {
-        rows.push((if index == 0 { "Left out" } else { "" }, style.dim(&line)));
-    }
     if let Some(scope) = &report.scope {
         rows.push((
             "Changed",
@@ -1976,6 +1978,11 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
             .collect();
         rows.push(("Reports", files.join(&style.dim(" · "))));
     }
+    // What the run left out, after the reports, where the Java edition says the test classes
+    // `--exclude-tests` leaves out: here the code it doesn't mutate.
+    for (index, line) in not_mutated(report).into_iter().enumerate() {
+        rows.push((if index == 0 { "Left out" } else { "" }, style.dim(&line)));
+    }
     // A run of mutants asked for by id has a fate for each, not a score.
     if !report.only {
         rows.push(("Score", score_row(report, style)));
@@ -2054,21 +2061,18 @@ fn mutants_row(report: &Report, style: Style) -> String {
     if not_covered > 0 {
         counts.push(style.amber(&format!("○ {not_covered} {}", words.not_covered())));
     }
-    let scored = report.results.len() - report.unscored();
-    let mut row = format!(
-        "{}{}",
-        counts.join(&style.dim(" · ")),
-        style.dim(&format!(" ({scored})"))
-    );
+    // Every count, then every mutant in brackets, as the Java edition's row ends.
     if skipped > 0 {
-        row.push_str(&style.dim(&format!(" · {}", skipped_by_kind(report))));
+        counts.push(style.dim(&skipped_by_kind(report)));
     }
     if crashed > 0 {
-        row.push_str(&style.dim(&format!(
-            " · {crashed} crashed where a crash proves nothing"
-        )));
+        counts.push(style.dim(&format!("{crashed} crashed where a crash proves nothing")));
     }
-    row
+    format!(
+        "{}{}",
+        counts.join(&style.dim(" · ")),
+        style.dim(&format!(" ({})", report.results.len()))
+    )
 }
 
 /// `2 skipped (1 equivalent, 1 ignored as unreachable)`: the kind is each reason's first word,
@@ -3248,7 +3252,7 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
     };
     let _ = writeln!(out, "\n {label} {}", style.bold(&outcome));
     let docs = crate::operator_docs::url(mutant.operator);
-    let g = frame(out, view, mutant, &advice, docs.as_deref(), style);
+    let g = frame(out, view, mutant, &advice, docs.as_deref(), false, style);
     before_and_after(out, &g, &view.changed_lines(mutant), style);
     // A note that says no test fails is a miss's, and this mutant wasn't missed.
     let mut notes: Vec<String> = advice
@@ -3311,10 +3315,12 @@ impl About {
         let function = &view.found.functions[mutant.function];
         let text = view.text(mutant);
         let from = sites_plain(&text[mutant.site.clone()]);
-        let operator_description = crate::callrules::find(mutant.operator).map_or_else(
-            || view.advice(result).change,
-            |rule| rule.explanation.clone(),
-        );
+        // What the operator does, as SARIF's rules and the docs say it, as the Java edition's
+        // `explain` gives it; the change itself where neither has it.
+        let operator_description = crate::callrules::find(mutant.operator)
+            .map(|rule| rule.explanation.clone())
+            .or_else(|| crate::operator_docs::explanation(mutant.operator))
+            .unwrap_or_else(|| view.advice(result).change);
         // The function's sites in source order: a site with several mutants counts once.
         let sites: BTreeSet<usize> = view
             .found
@@ -3400,6 +3406,12 @@ fn last_words(last: Option<&LastRun>) -> String {
 const CHANGE_NOTE: &str =
     "the code the switch puts in place of the original when this mutant is live";
 
+/// The columns `explain`'s rows are wrapped at, their indent included, as in the Java edition.
+const EXPLAIN_WIDTH: usize = 100;
+
+/// Under the text after a row's label: `    = operator  `.
+const EXPLAIN_INDENT: &str = "                ";
+
 /// `About this mutant`: the change, the operator, the id, the site, and the last full run.
 fn about(
     out: &mut String,
@@ -3416,22 +3428,38 @@ fn about(
         style.bold(title),
         style.dim(&"─".repeat(66 - title.len()))
     );
-    let row = |out: &mut String, label: &str, first: String, rest: Vec<String>| {
+    // Each row's text wrapped at 100 columns, its indent included, under the first line's text,
+    // as the Java edition's `explain` writes it.
+    let wrapped = |text: &str| crate::help::wrapped(text, EXPLAIN_WIDTH - EXPLAIN_INDENT.len());
+    let row_styled = |out: &mut String,
+                      label: &str,
+                      first: String,
+                      rest: Vec<String>,
+                      shown: &dyn Fn(&str) -> String| {
+        let first = wrapped(&first);
         let _ = writeln!(
             out,
-            "    {} {}  {first}",
+            "    {} {}  {}",
             style.dim("="),
-            style.blue(&style.bold(&format!("{label:<8}")))
+            style.blue(&style.bold(&format!("{label:<8}"))),
+            shown(&first[0])
         );
-        for line in rest {
-            let _ = writeln!(out, "{}{}", " ".repeat(16), style.dim(&line));
+        for line in &first[1..] {
+            let _ = writeln!(out, "{EXPLAIN_INDENT}{}", shown(line));
+        }
+        for line in rest.iter().flat_map(|line| wrapped(line)) {
+            let _ = writeln!(out, "{EXPLAIN_INDENT}{}", style.dim(&line));
         }
     };
-    row(
+    let row = |out: &mut String, label: &str, first: String, rest: Vec<String>| {
+        row_styled(out, label, first, rest, &|line: &str| line.to_string());
+    };
+    row_styled(
         out,
         "change",
-        style.bold(&format!("{} → {}", about.from, about.to)),
+        format!("{} → {}", about.from, about.to),
         vec![CHANGE_NOTE.into()],
+        &|line: &str| style.bold(line),
     );
     row(
         out,

@@ -79,18 +79,26 @@ mod tests {
     #[test]
     fn the_typos_table_offers_what_it_says() {
         let table = include_str!("../tests/typos.tsv");
-        let rows = table
-            .lines()
-            .filter(|line| !line.starts_with('#') && !line.trim().is_empty());
         let mut checked = 0;
-        for row in rows {
+        // Rows under a heading that starts with `# Ids` are matched as ids are.
+        let mut ids = false;
+        for row in table.lines().filter(|line| !line.trim().is_empty()) {
+            if let Some(heading) = row.strip_prefix('#') {
+                ids = heading.starts_with(" Ids");
+                continue;
+            }
             let [typed, names, offered]: [&str; 3] = row
                 .split('\t')
                 .collect::<Vec<_>>()
                 .try_into()
                 .unwrap_or_else(|_| panic!("three columns: {row}"));
             let expected = (offered != "-").then_some(offered);
-            assert_eq!(closest(typed, names.split(',')), expected, "{row}");
+            let found = if ids {
+                closest_within(typed, names.split(','), 1)
+            } else {
+                closest(typed, names.split(','))
+            };
+            assert_eq!(found, expected, "{row}");
             checked += 1;
         }
         assert!(checked >= 20, "{checked} rows");
