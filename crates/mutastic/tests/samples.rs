@@ -5,6 +5,7 @@
     reason = "a helper here asserts as the tests it serves do: a value that isn't there fails the test"
 )]
 
+use std::collections::BTreeSet;
 use std::io::BufRead as _;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -215,6 +216,47 @@ fn every_shape_gets_a_card() {
     );
 }
 
+/// `let removed = remove_file(path); removed.unwrap();` is `remove_file(path).unwrap();` in two:
+/// the call goes, with its check, and the test that looks for the file catches it. The check alone
+/// stays skipped as arid.
+#[test]
+fn a_call_stored_and_only_checked_is_removed() {
+    let dir = fixture("operators");
+    let (_, stdout) = mutastic(&[
+        "run",
+        &dir,
+        "--format=jsonl",
+        "--operators=mutastic/remove-discarded-call",
+    ]);
+    let discard: Vec<Value> = events(&stdout)
+        .into_iter()
+        .filter(|e| e["reason"] == "mutant-finished" && e["location"]["method"] == "discard")
+        .collect();
+    let mut statuses: Vec<(&str, &str, u64)> = discard
+        .iter()
+        .map(|e| {
+            (
+                e["mutation"]["original"].as_str().unwrap(),
+                e["status"].as_str().unwrap(),
+                e["location"]["line"].as_u64().unwrap(),
+            )
+        })
+        .collect();
+    statuses.sort_unstable();
+    assert_eq!(
+        statuses,
+        [
+            (
+                "let removed = std::fs::remove_file(path);\n    removed.unwrap();",
+                "Killed",
+                69
+            ),
+            ("removed.unwrap();", "Ignored", 70),
+        ],
+        "{stdout}"
+    );
+}
+
 /// A file one mutant's test leaves in the temporary directory isn't there for the next mutant's:
 /// with `stash`'s delete removed, `shared.txt` stays, and `measure`'s test, on its write removed,
 /// would read it and pass. Each test process gets an empty temporary directory of its own, inside
@@ -285,6 +327,49 @@ fn a_file_one_mutant_leaves_isnt_there_for_the_next() {
     std::fs::remove_dir_all(&temp).ok();
 }
 
+/// Each catch says where its failure came from, as the Java edition's do: an assertion, the test's
+/// own code or the code under test. A test that catches mutants in three functions, each time with
+/// a panic in its own code, is noted as catching everything alike.
+#[test]
+fn a_catch_says_where_it_failed() {
+    let dir = fixture("origins");
+    let (_, stdout) = mutastic(&["run", &dir, "--format=jsonl"]);
+    let events = events(&stdout);
+    let origins = |function: &str| -> BTreeSet<String> {
+        events
+            .iter()
+            .filter(|e| e["reason"] == "mutant-finished" && e["location"]["method"] == function)
+            .map(|e| e["failureOrigin"].as_str().unwrap_or("none").to_string())
+            .collect()
+    };
+    let only = |origin: &str| BTreeSet::from([origin.to_string()]);
+    assert_eq!(origins("double"), only("test"), "{stdout}");
+    assert_eq!(origins("half"), only("assertion"), "{stdout}");
+    assert!(origins("last").contains("code"), "{stdout}");
+    let finished = events.last().unwrap();
+    assert_eq!(
+        finished["unrelatedCatches"][0]["test"], "tests::totals",
+        "{stdout}"
+    );
+    assert_eq!(
+        finished["unrelatedCatches"][0]["failure"], "panic",
+        "{stdout}"
+    );
+    assert_eq!(
+        finished["unrelatedCatches"].as_array().unwrap().len(),
+        1,
+        "{stdout}"
+    );
+    let (_, shown) = mutastic(&["run", &dir]);
+    assert!(
+        shown.contains(
+            " note: tests::totals caught 6 mutants in 3 different functions, each with a panic in \
+             the test itself\n"
+        ),
+        "{shown}"
+    );
+}
+
 /// The mutants of a run, by function: each one's status and the first line of its card.
 fn by_function(stdout: &str) -> Vec<(String, String, String)> {
     let mut found: Vec<(String, String, String)> = events(stdout)
@@ -301,6 +386,88 @@ fn by_function(stdout: &str) -> Vec<(String, String, String)> {
         .collect();
     found.sort();
     found
+}
+
+/// Releases a test can see: the test each card names catches the release taken away. A `drop` of
+/// a lock's guard before the lock is taken again, a `Drop` body, and a file removed; the same code
+/// run by a test that checks nothing keeps its mutant, and shows the card.
+#[test]
+fn a_cleanup_calls_card_names_the_test_that_catches_it() {
+    let dir = fixture("cleanups");
+    let (_, stdout) = mutastic(&["run", &dir, "--format=jsonl"]);
+    let finished: Vec<Value> = events(&stdout)
+        .into_iter()
+        .filter(|e| e["reason"] == "mutant-finished")
+        .collect();
+    // Each release's mutants in `function`: their status, and the first line of the card.
+    let release = |function: &str, operator: &str, original: &str| -> Vec<(String, String)> {
+        finished
+            .iter()
+            .filter(|e| {
+                e["location"]["method"] == function
+                    && e["operator"] == operator
+                    && e["mutation"]["original"]
+                        .as_str()
+                        .is_some_and(|text| text.contains(original))
+            })
+            .map(|e| {
+                let card = e["rendered"].as_str().unwrap_or_default();
+                (
+                    e["status"].as_str().unwrap_or_default().to_string(),
+                    card.lines().next().unwrap_or_default().to_string(),
+                )
+            })
+            .collect()
+    };
+    let void = "mutastic/remove-void-call";
+    for (tested, untested, operator, original, headline) in [
+        (
+            "bump",
+            "bump_alone",
+            void,
+            "drop(",
+            "`guard` is still dropped at the end of its scope, so this `drop` only lets it go sooner",
+        ),
+        (
+            "drop",
+            "drop",
+            "mutastic/remove-discarded-call",
+            "fetch_add",
+            "no test checks what dropping a value does in `drop()`",
+        ),
+        (
+            "cleaned",
+            "left",
+            "",
+            "remove_file",
+            "no test checks that the file is gone after `left()`",
+        ),
+    ] {
+        let mutants = |function| {
+            if operator.is_empty() {
+                finished
+                    .iter()
+                    .filter(|e| e["location"]["method"] == function)
+                    .filter_map(|e| e["operator"].as_str())
+                    .flat_map(|named| release(function, named, original))
+                    .collect::<Vec<_>>()
+            } else {
+                release(function, operator, original)
+            }
+        };
+        let caught = mutants(tested);
+        let missed = mutants(untested);
+        assert!(
+            caught.iter().any(|(status, _)| status == "Killed"),
+            "{tested}: {finished:?}"
+        );
+        assert!(
+            missed
+                .iter()
+                .any(|(status, card)| status == "Survived" && card.ends_with(headline)),
+            "{untested}: {missed:?}"
+        );
+    }
 }
 
 /// A thread started and not waited for: the test its card names, one that waits on a channel the
@@ -399,6 +566,105 @@ fn an_exit_is_caught_by_the_test_that_ran_it_unless_its_status_is_zero() {
         ),
         "{explained}"
     );
+}
+
+/// Code only `main` runs, which no test calls: the not-covered line says it's reached only from
+/// `main`, and to move what it does into `run(args, out)`, test that, and leave `main` a one-line
+/// call. What it says is checked by doing it: moved into `run`, with a test of `run`, every mutant
+/// is caught, and the line left in `main` gets no such advice. The Java edition's
+/// `OnlyFromMainTest` is the same.
+#[test]
+fn code_only_main_runs_says_so_and_the_advice_holds() {
+    const ADVICE: &str = "reached only from `main()`: move what it does into `run(args, out)`, \
+         which returns the exit code, test `run`, and leave `main()` a one-line call to it";
+    let copy = copy_of("binary", "only-main");
+    let _ = std::fs::remove_dir_all(copy.join("tests"));
+    let main = copy.join("src/main.rs");
+    std::fs::write(
+        &main,
+        r#"use std::process::ExitCode;
+
+fn main() -> ExitCode {
+    let name = std::env::args().nth(1).unwrap_or_default();
+    if name.is_empty() {
+        return ExitCode::from(2);
+    }
+    if name.len() > 20 {
+        return ExitCode::from(3);
+    }
+    println!("{}", greeting(&name));
+    ExitCode::SUCCESS
+}
+
+fn greeting(name: &str) -> String {
+    format!("hello {name}")
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn greets() {
+        assert_eq!(super::greeting("ada"), "hello ada");
+    }
+}
+"#,
+    )
+    .unwrap();
+    let (_, agent) = mutastic_in(&copy, &["run", "--format=agent"]);
+    assert!(
+        agent.contains(&format!(
+            "- src/main.rs:5-8 main() (5 mutants)\n  {ADVICE}\n"
+        )),
+        "{agent}"
+    );
+
+    std::fs::write(
+        &main,
+        r#"use std::io::Write;
+use std::process::ExitCode;
+
+fn main() -> ExitCode {
+    run(&std::env::args().skip(1).collect::<Vec<_>>(), &mut std::io::stdout())
+}
+
+fn run(args: &[String], out: &mut impl Write) -> ExitCode {
+    let name = args.first().cloned().unwrap_or_default();
+    if name.is_empty() {
+        return ExitCode::from(2);
+    }
+    writeln!(out, "hello {name}").unwrap();
+    ExitCode::SUCCESS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_empty_name_exits_with_two() {
+        assert_eq!(run(&[], &mut Vec::new()), ExitCode::from(2));
+    }
+
+    #[test]
+    fn greets_a_name() {
+        let mut out = Vec::new();
+        assert_eq!(run(&["ada".to_string()], &mut out), ExitCode::SUCCESS);
+        assert_eq!(out, b"hello ada\n");
+    }
+}
+"#,
+    )
+    .unwrap();
+    let (_, stdout) = mutastic_in(&copy, &["run", "--format=jsonl"]);
+    let in_run: Vec<Value> = events(&stdout)
+        .into_iter()
+        .filter(|e| e["reason"] == "mutant-finished" && e["location"]["method"] == "run")
+        .filter(|e| e["status"] != "Ignored")
+        .collect();
+    assert!(!in_run.is_empty(), "{stdout}");
+    assert!(in_run.iter().all(|e| e["status"] == "Killed"), "{in_run:?}");
+    let (_, agent) = mutastic_in(&copy, &["run", "--format=agent"]);
+    assert!(!agent.contains("reached only from"), "{agent}");
 }
 
 /// A pattern that binds by `ref mut` into a field changes the field, so the copy keeps the field a
@@ -1061,14 +1327,16 @@ fn additions(report: &Value, dir: &str) {
             },
         })
     );
-    // A caught mutant has no card: where it is, and what its function was called with.
+    // A caught mutant has no card: where it is, what its function was called with, and where the
+    // catching test's failure came from.
     let caught = mutants.iter().find(|m| m["status"] == "Killed").unwrap();
     let keys: Vec<&String> = caught["mutastic"].as_object().unwrap().keys().collect();
     assert!(
         keys.iter()
-            .all(|key| ["method", "inputs"].contains(&key.as_str())),
+            .all(|key| ["method", "inputs", "failureOrigin"].contains(&key.as_str())),
         "{caught}"
     );
+    assert_eq!(caught["mutastic"]["failureOrigin"], "assertion", "{caught}");
 
     // The tests, by the file each is written in, with where.
     let tests = &report["testFiles"];

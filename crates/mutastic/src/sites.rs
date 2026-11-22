@@ -809,7 +809,7 @@ pub fn without_test_code(text: &str) -> String {
 }
 
 /// Whether a node is test code: a `#[test]`-like function, or under a `cfg` that needs `test`.
-fn is_test_only(node: &SyntaxNode) -> bool {
+pub(crate) fn is_test_only(node: &SyntaxNode) -> bool {
     node.ancestors().any(|ancestor| {
         ast::AnyHasAttrs::cast(ancestor)
             .is_some_and(|item| item.attrs().any(|attr| is_test_attribute(&attr)))
@@ -2083,6 +2083,76 @@ mod tests {
                     REMOVE_DISCARDED_CALL,
                     None
                 ),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_call_stored_and_then_only_checked_is_removed_with_its_check() {
+        let source = "pub fn tidy(p: &std::path::Path, h: std::thread::JoinHandle<()>, r: Result<u8, ()>) -> usize {\n\
+             let removed = std::fs::remove_file(p);\n\
+             removed.unwrap();\n\
+             let joined = h.join();\n\
+             joined.as_ref().expect(\"joined\");\n\
+             let given = r;\n\
+             given.unwrap();\n\
+             let read = std::fs::read(p);\n\
+             read.as_ref().unwrap();\n\
+             let len = std::fs::metadata(p);\n\
+             len.as_ref().unwrap();\n\
+             len.unwrap().len() as usize\n\
+             }";
+        let dir = std::env::temp_dir().join(format!("mutastic-stored-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(dir.join("src/lib.rs"), source).unwrap();
+        let found = find(
+            &dir,
+            "sample",
+            &[PathBuf::from("src/lib.rs")],
+            &[REMOVE_DISCARDED_CALL],
+        );
+        std::fs::remove_dir_all(&dir).ok();
+        let made: Vec<(&str, &str, Option<&str>)> = found
+            .mutants
+            .iter()
+            .map(|m| {
+                (
+                    &source[m.site.clone()],
+                    &source[m.caret.clone()],
+                    m.skipped.as_deref(),
+                )
+            })
+            .collect();
+        let arid = Some("arid: only checks the value is there");
+        assert_eq!(
+            made,
+            [
+                (
+                    "let removed = std::fs::remove_file(p);\nremoved.unwrap();",
+                    "std::fs::remove_file(p)",
+                    None
+                ),
+                ("removed.unwrap();", "removed.unwrap()", arid),
+                (
+                    "let joined = h.join();\njoined.as_ref().expect(\"joined\");",
+                    "h.join()",
+                    None
+                ),
+                (
+                    "joined.as_ref().expect(\"joined\");",
+                    "joined.as_ref().expect(\"joined\")",
+                    arid
+                ),
+                // A value it's given: the check alone, skipped.
+                ("given.unwrap();", "given.unwrap()", arid),
+                (
+                    "let read = std::fs::read(p);\nread.as_ref().unwrap();",
+                    "std::fs::read(p)",
+                    None
+                ),
+                ("read.as_ref().unwrap();", "read.as_ref().unwrap()", arid),
+                // Used after its check: more than checked.
+                ("len.as_ref().unwrap();", "len.as_ref().unwrap()", arid),
             ]
         );
     }

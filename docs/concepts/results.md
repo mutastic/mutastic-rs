@@ -41,6 +41,23 @@ What that means depends on the status, as it does under `cargo test`:
 
 A test that hangs is still timed out.
 
+## Code reached only from main
+
+`main` is often the one piece of code no test reaches: it reads the process's arguments, prints,
+and sets the exit status, all of which a test finds awkward to check. So it reads as not covered,
+and the line says so, with what to do:
+
+```text
+○ src/main.rs:5-8 main() (5 mutants)
+  reached only from main(): move what it does into run(args, out), which returns the exit code,
+  test run, and leave main() a one-line call to it
+```
+
+A test can then call `run` with the arguments it likes and an `out` it reads back, a `Vec<u8>`
+say, and check the exit code it returns. What's left in `main`, the one line, stays not covered,
+and gets no such advice. mutastic doesn't leave `main` out of the run for you: what it does matters
+too.
+
 ## Tables of cases and property tests
 
 A test often runs one check over a table of cases. What mutastic makes of it depends on how the
