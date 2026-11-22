@@ -88,7 +88,37 @@ pub struct Style {
     pub color: bool,
     pub links: bool,
     pub words: Vocabulary,
+    pub labels: Labels,
 }
+
+/// How a label such as `MISSED` is drawn in colour (`MUTASTIC_PILLS`), as the Java edition draws
+/// it: a block with square ends, the default; with rounded ends, which need a Nerd Font, or the
+/// ends show as boxes; or no block at all, only the label's words in its colour.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Labels {
+    #[default]
+    Square,
+    Rounded,
+    Off,
+}
+
+impl Labels {
+    /// The choices `MUTASTIC_PILLS` takes.
+    pub const CHOICES: &[&str] = &["square", "rounded", "off"];
+
+    pub fn parse(name: &str) -> Option<Labels> {
+        match name {
+            "square" => Some(Labels::Square),
+            "rounded" => Some(Labels::Rounded),
+            "off" => Some(Labels::Off),
+            _ => None,
+        }
+    }
+}
+
+/// Nerd Font half-circles, for rounded label ends.
+const ROUND_LEFT: &str = "\u{e0b6}";
+const ROUND_RIGHT: &str = "\u{e0b4}";
 
 /// The words people read for a mutant's fate, as the Java edition has them. `plain` (caught, missed)
 /// is the default, because "your tests missed this" needs no metaphor explained; `classic` (killed,
@@ -295,11 +325,23 @@ impl Style {
         self.paint("1", text)
     }
     /// A label, `MISSED` on red: black bold text on a block of colour, `[MISSED]` without colour.
+    /// With rounded ends the ends are drawn in the label's colour; with none, the words are.
     fn label(self, text: &str, background: &str) -> String {
-        if self.color {
-            format!("\x1b[{background};30;1m {text} \x1b[0m")
-        } else {
-            format!("[{text}]")
+        if !self.color {
+            return format!("[{text}]");
+        }
+        // 41, a red background, is 31 for red text.
+        let edge = background
+            .parse::<u8>()
+            .map_or_else(|_| background.to_string(), |code| (code - 10).to_string());
+        match self.labels {
+            Labels::Square => format!("\x1b[{background};30;1m {text} \x1b[0m"),
+            Labels::Rounded => format!(
+                "{}\x1b[{background};30;1m{text}\x1b[0m{}",
+                self.paint(&edge, ROUND_LEFT),
+                self.paint(&edge, ROUND_RIGHT)
+            ),
+            Labels::Off => self.paint(&format!("1;{edge}"), text),
         }
     }
     /// Backticks mark code in the words; at a terminal code is bold instead.
@@ -3475,6 +3517,30 @@ pub fn explained_jsonl(report: &Report, last: Option<LastRun>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `MUTASTIC_PILLS` draws labels as the Java edition's `Style` does: square, rounded ends in
+    /// the label's colour, or only the words in it.
+    #[test]
+    fn labels_are_drawn_as_the_pills_say() {
+        let style = |labels| Style {
+            color: true,
+            labels,
+            ..Style::default()
+        };
+        assert_eq!(
+            style(Labels::Square).label("MISSED", "41"),
+            "\x1b[41;30;1m MISSED \x1b[0m"
+        );
+        assert_eq!(
+            style(Labels::Rounded).label("MISSED", "41"),
+            "\x1b[31m\u{e0b6}\x1b[0m\x1b[41;30;1mMISSED\x1b[0m\x1b[31m\u{e0b4}\x1b[0m"
+        );
+        assert_eq!(
+            style(Labels::Off).label("MISSED", "41"),
+            "\x1b[1;31mMISSED\x1b[0m"
+        );
+        assert_eq!(Style::default().label("MISSED", "41"), "[MISSED]");
+    }
 
     /// When the machine slept during the run, a line under Duration says how long, in the values'
     /// column. The Java edition's `HumanTextTest` is the same.

@@ -13,6 +13,9 @@ const STAND_INS: &[(&str, &str)] = &[
     ("MUTASTIC_PROGRESS", "progress"),
 ];
 
+/// How labels are drawn, read wherever there's colour.
+const PILLS: &str = "MUTASTIC_PILLS";
+
 /// Seconds a log may go without a progress line, read wherever progress is shown.
 const HEARTBEAT: &str = "MUTASTIC_HEARTBEAT";
 
@@ -37,6 +40,12 @@ pub fn check(
                 crate::mistyped::listed(option.choices)
             )));
         }
+    }
+    if let Some(value) = set(PILLS).filter(|value| crate::report::Labels::parse(value).is_none()) {
+        return Err(Code::Environment.with(format!(
+            "{PILLS}: {value} isn't one of {}",
+            crate::mistyped::listed(crate::report::Labels::CHOICES)
+        )));
     }
     if command == "gate check" {
         for name in [crate::gate_budget::BUDGET, crate::gate_budget::COUNT_WAIT] {

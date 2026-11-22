@@ -130,7 +130,7 @@ pub fn parse(text: &str, name: &str) -> Result<Vec<Entry>, String> {
         }
         let Some((key, value)) = line.split_once(':') else {
             return Err(format!(
-                "{name} line {}: can't read `{}`: each line of an entry is `field: value`",
+                "{name} line {}: can't read `{}`; each line is a `key: value`, as `reason: only logs`",
                 index + 1,
                 raw.trim()
             ));
@@ -140,6 +140,9 @@ pub fn parse(text: &str, name: &str) -> Result<Vec<Entry>, String> {
     add(&mut entries, fields, name, starts)?;
     Ok(entries)
 }
+
+/// The keys an entry has.
+const KEYS: &[&str] = &["id", "code", "reason", "kind", "at", "change"];
 
 fn add(
     entries: &mut Vec<Entry>,
@@ -158,8 +161,17 @@ fn add(
     };
     let (Some(id), Some(reason)) = (get("id"), get("reason")) else {
         let missing = if get("id").is_none() { "id" } else { "reason" };
+        // A key of it close to the one missing, as the Java edition says it: `resaon:`.
+        let close = fields
+            .iter()
+            .map(|(key, _)| key.as_str())
+            .filter(|key| !KEYS.contains(key))
+            .find(|key| crate::similar::closest(key, KEYS.iter().copied()) == Some(missing))
+            .map_or(String::new(), |key| {
+                format!(". It has {key}:, close to {missing}:.")
+            });
         return Err(format!(
-            "{name} line {line}: the entry has no {missing}: every entry needs an id and a reason"
+            "{name} line {line}: the entry has no {missing}: every entry needs an id and a reason{close}"
         ));
     };
     entries.push(Entry {
@@ -252,8 +264,13 @@ mod tests {
         );
         assert_eq!(
             parse("ignores:\n  - id: m855c8e3c\n    garbage\n", FILE).unwrap_err(),
-            ".mutastic/ignores.yaml line 3: can't read `garbage`: each line of an entry is \
-             `field: value`"
+            ".mutastic/ignores.yaml line 3: can't read `garbage`; each line is a `key: value`, as \
+             `reason: only logs`"
+        );
+        assert_eq!(
+            parse("ignores:\n  - id: m855c8e3c\n    resaon: r\n", FILE).unwrap_err(),
+            ".mutastic/ignores.yaml line 2: the entry has no reason: every entry needs an id and \
+             a reason. It has resaon:, close to reason:."
         );
     }
 }

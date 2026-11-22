@@ -647,6 +647,13 @@ pub const ENVIRONMENT: &[Entry] = &[
                  and the event stream always use the standard names. Any other value is refused.",
     },
     Entry {
+        name: "MUTASTIC_PILLS",
+        meaning: "Labels: square (the default), rounded (for a Nerd Font) or off",
+        detail: "How labels such as MISSED and PASS are drawn. `rounded` needs a terminal font with \
+                 Nerd Font glyphs; `off` leaves out the coloured blocks and keeps the words. Any \
+                 other value is refused.",
+    },
+    Entry {
         name: "MUTASTIC_ARID=audit",
         meaning: "Run the mutants the arid filters skip, and say what happened",
         detail: "Adds an Arid audit row to the summary: how many of those mutants ran, and how \
@@ -729,6 +736,12 @@ pub const ENVIRONMENT: &[Entry] = &[
         name: "MUTASTIC_VERSION",
         meaning: "In a Maven or Gradle project, the Java edition's release to use",
         detail: "Such as `0.5.0`, fetched if it isn't kept. Unset, from 1.0.0 it's the newest release of this mutastic's own major and minor version.",
+    },
+    Entry {
+        name: "MUTASTIC_INCREMENTAL",
+        meaning: "0 to build the mutants without Cargo's incremental compilation",
+        detail: "1 unless set: Cargo's `CARGO_INCREMENTAL` for the build mutastic makes with the \
+                 mutants in, which keeps the next run's build quick. 0 saves the disk it takes.",
     },
     Entry {
         name: "MUTASTIC_HOME",

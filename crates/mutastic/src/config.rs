@@ -346,17 +346,7 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
                 "operators:" => "operators",
                 "gate:" => "gate",
                 key if key.starts_with("gate:") => return Err(error(GATE_SHAPE)),
-                key => {
-                    let typed = key.trim_end_matches(':');
-                    let close = crate::similar::closest(typed, SECTIONS.iter().copied())
-                        .map_or(String::new(), |name| {
-                            format!(" There's one called {name}:.")
-                        });
-                    return Err(error(&format!(
-                        "expected extends:, rules:, plugins:, filters:, operators: or gate:, not \
-                         {key}.{close}"
-                    )));
-                }
+                line => return Err(error(&not_a_section(line))),
             };
             continue;
         }
@@ -389,6 +379,11 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
             let listed = listed(item).ok_or_else(|| error("expected a list item, `- …`"))?;
             let (verb, target) = listed.split_once(':').unwrap_or(("", ""));
             if verb != "skip" && verb != "mutate" {
+                if let Some(rule) = crate::similar::closest(verb, ["skip", "mutate"]) {
+                    return Err(error(&format!(
+                        "{verb}: isn't a rule. There's one called {rule}:."
+                    )));
+                }
                 return Err(error(
                     "a rule is `- skip: <pattern>` or `- mutate: <pattern>`, then `reason: …`",
                 ));
@@ -635,6 +630,27 @@ pub fn resolve_from(entries: &[String], from: &[String]) -> Result<Vec<&'static 
     Ok(chosen)
 }
 
+/// What a line at the left that isn't a section is told, as the Java edition tells it: a list on
+/// the section's own line, which goes a line under it; a close name; or the sections there are.
+fn not_a_section(line: &str) -> String {
+    let key = line.find(':').map_or(line, |colon| &line[..=colon]);
+    let bare = key.trim_end_matches(':');
+    if SECTIONS.contains(&bare) {
+        let item = line[key.len()..]
+            .trim()
+            .trim_start_matches('[')
+            .trim_end_matches(']');
+        return format!("{key} takes a list, an item a line under it:\n  {key}\n    - {item}");
+    }
+    match crate::similar::closest(bare, SECTIONS.iter().copied()) {
+        Some(close) => format!("{key} isn't a section. There's one called {close}:."),
+        None => format!(
+            "{key} isn't a section; the sections are extends:, rules:, plugins:, filters:, \
+             operators: and gate:"
+        ),
+    }
+}
+
 /// The sections a `mutastic.yaml` has, without their colons.
 const SECTIONS: &[&str] = &[
     "extends",
@@ -701,8 +717,10 @@ mod tests {
     #[test]
     fn what_it_doesnt_understand_is_an_error_that_names_the_line() {
         for (text, error) in [
-            ("rule:\n", "mutastic.yaml line 1: expected extends:, rules:, plugins:, filters:, operators: or gate:, not rule:. There's one called rules:."),
-            ("colour:\n", "mutastic.yaml line 1: expected extends:, rules:, plugins:, filters:, operators: or gate:, not colour:."),
+            ("rule:\n", "mutastic.yaml line 1: rule: isn't a section. There's one called rules:."),
+            ("colour:\n", "mutastic.yaml line 1: colour: isn't a section; the sections are extends:, rules:, plugins:, filters:, operators: and gate:"),
+            ("operators: [stronger]\n", "mutastic.yaml line 1: operators: takes a list, an item a line under it:\n  operators:\n    - stronger"),
+            ("rules:\n  - skp: a\n", "mutastic.yaml line 2: skp: isn't a rule. There's one called skip:."),
             ("extends: a.yaml\nextends: b.yaml\n", "mutastic.yaml line 2: a file extends one other file, once"),
             ("extends: ''\n", "mutastic.yaml line 1: `extends:` needs a path, such as ../mutastic.yaml"),
             ("extends: a.yaml\n  - x\n", "mutastic.yaml line 2: a list item needs a section above it"),
