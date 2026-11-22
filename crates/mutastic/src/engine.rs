@@ -84,6 +84,9 @@ pub struct MutantResult {
     pub covered_by: Vec<String>,
     pub killed_by: Option<String>,
     pub killed_with: Option<String>,
+    /// Where the catching test's failure came from: `assertion`, `test`, `code` or `unknown`
+    /// ([`crate::origin`]).
+    pub failure_origin: Option<String>,
     /// A test that failed against the mutant, then failed on its own with no mutant in too: its
     /// catch didn't count, and the mutant ran again without it.
     pub false_catch_by: Option<String>,
@@ -692,6 +695,7 @@ fn nothing_to_run(
                 covered_by: Vec::new(),
                 killed_by: None,
                 killed_with: None,
+                failure_origin: None,
                 false_catch_by: None,
                 tests_run: 0,
                 took: Duration::ZERO,
@@ -1202,6 +1206,7 @@ fn result(
             covered_by: Vec::new(),
             killed_by: None,
             killed_with: None,
+            failure_origin: None,
             false_catch_by: None,
             tests_run: 0,
             took: Duration::ZERO,
@@ -1228,6 +1233,7 @@ fn result(
         covered_by: covering.iter().map(|&t| tests[t].display.clone()).collect(),
         killed_by: None,
         killed_with: None,
+        failure_origin: None,
         false_catch_by: None,
         tests_run: 0,
         took: Duration::ZERO,
@@ -1282,14 +1288,43 @@ fn result(
         }
         let timeout = timeout(baseline);
         let active = [("MUTASTIC_ACTIVE", mutant.ordinal.to_string())];
-        let outcome: Outcome = testrun::run(&built.binaries[binary], cwd, &names, &active, timeout);
+        let run =
+            |names: &[&str]| testrun::run(&built.binaries[binary], cwd, names, &active, timeout);
+        let mut outcome: Outcome = run(&names);
         result.tests_run += group.len();
+        // Code a test ran exited, status 0: `cargo test` passes, so that test didn't catch it, and
+        // the tests that never ran after it run without it.
+        while outcome.exited == Some(0) {
+            let Some(exit) = exiting(&run, &names) else {
+                break;
+            };
+            names.retain(|name| *name != exit.as_str());
+            outcome = if names.iter().any(|name| !name.starts_with("--")) {
+                run(&names)
+            } else {
+                Outcome::passed()
+            };
+        }
         if outcome.timed_out {
             result.status = Status::Timeout;
             break;
         }
         if outcome.passed {
             continue;
+        }
+        if let Some(code) = outcome.exited {
+            // Code a test ran exited with a status that fails `cargo test`: that test saw the
+            // mutant end the process. Not a crash, and its test is the one that was running.
+            if let Some(exit) = exiting(&run, &names) {
+                result.status = Status::Killed;
+                result.killed_with = Some(format!("exit: {code}"));
+                result.killed_by = group
+                    .iter()
+                    .find(|&&t| tests[t].name == exit)
+                    .map(|&t| tests[t].display.clone())
+                    .or(Some(exit));
+                break;
+            }
         }
         if outcome.failed.is_none() {
             // No test failed: the process died. Run again, one test at a time and uncaptured,
@@ -1310,10 +1345,17 @@ fn result(
         });
         // Of the tests that failed, the first as they're listed, not the first to finish: the
         // threads finish in a different order each run.
-        result.killed_by = group
+        let catcher = group
             .iter()
             .find(|&&t| outcome.failures.contains(&tests[t].name))
-            .map(|&t| tests[t].display.clone())
+            .map(|&t| &tests[t]);
+        let failed = catcher.map(|test| &test.name).or(outcome.failed.as_ref());
+        // A panic names its file from the package, or from the workspace above it.
+        let roots: Vec<&std::path::Path> = cwd.ancestors().collect();
+        result.failure_origin =
+            failed.map(|name| crate::origin::of(&outcome.stdout, name, &roots).to_string());
+        result.killed_by = catcher
+            .map(|test| test.display.clone())
             .or_else(|| outcome.failed.clone());
         break;
     }
@@ -1488,6 +1530,17 @@ impl<'a> Suggester<'a> {
         }
         result
     }
+}
+
+/// The test whose code exits the process, found by running `names` again one at a time: `None`
+/// if, run that way, none does.
+fn exiting(run: &impl Fn(&[&str]) -> Outcome, names: &[&str]) -> Option<String> {
+    let mut one_at_a_time = names.to_vec();
+    if !one_at_a_time.contains(&"--test-threads=1") {
+        one_at_a_time.push("--test-threads=1");
+    }
+    let again = run(&one_at_a_time);
+    again.exited.and_then(|_| testrun::running(&again.stdout))
 }
 
 /// What a crash means. A safe mutant that crashes the process was caught, but by the crash, not a

@@ -586,6 +586,11 @@ pub fn resolve_from(entries: &[String], from: &[String]) -> Result<Vec<&'static 
     use crate::sites;
     let rules = crate::callrules::loaded();
     let mut chosen: Vec<&'static str> = Vec::new();
+    // A list that only leaves operators out leaves them out of the defaults: `-stream`.
+    if entries.iter().all(|entry| entry.starts_with('-')) {
+        chosen.extend(sites::DEFAULTS.iter().copied());
+        chosen.extend(rules.iter().filter(|r| r.in_tier("defaults")).map(|r| r.id));
+    }
     for (index, entry) in entries.iter().enumerate() {
         let (remove, name) = match entry.strip_prefix('-') {
             Some(name) => (true, name),

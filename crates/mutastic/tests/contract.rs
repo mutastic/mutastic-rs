@@ -7,8 +7,9 @@
 //! compared with the contract. A difference the contract doesn't record fails, naming the item and
 //! what to do; so does a recorded one that has gone, so the list only shrinks for real.
 //!
-//! The contract is the one at the commit `contract.json` pins, fetched once and kept under the
-//! target directory. `MUTASTIC_CONTRACT` names a file to check against instead: a working copy
+//! The contract is the one at the commit the newest pin in `contract/pins` names, fetched once and
+//! kept under the target directory: each pull request adds a pin of its own, so none conflicts
+//! with another's (`contract/README.md`). `MUTASTIC_CONTRACT` names a file to check against instead: a working copy
 //! while a change to the contract is being written, or mutastic main's, as the weekly drift job
 //! does. CONTRIBUTING.md says how it works, and how to add an option to both editions.
 //!
@@ -39,13 +40,68 @@ const EDITION: &str = "rust";
 /// The fixture's missed mutant.
 const ID: &str = "mb2f8ae57";
 
-/// Where the contract is pinned: the Java repository, the commit, and the file in it.
-fn pin() -> Value {
-    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contract.json");
+/// Where the contract lives: the Java repository, and the file in it.
+fn source() -> Value {
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contract/source.json");
     serde_json::from_str(&std::fs::read_to_string(file).unwrap()).unwrap()
 }
 
-/// The contract: `MUTASTIC_CONTRACT`'s file, or the pinned commit's, fetched once.
+/// Each pin in `contract/pins`, by file name: a pull request adds its own, so no two change the
+/// same line.
+fn pins() -> BTreeMap<String, String> {
+    let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contract/pins");
+    std::fs::read_dir(directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "json")
+        })
+        .map(|path| {
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            (name, std::fs::read_to_string(&path).unwrap())
+        })
+        .collect()
+}
+
+/// The commit the contract is read at: the newest pin's, by the committer date each gives. A pin
+/// that isn't a full commit and a UTC date fails, as do two commits pinned at one date, naming
+/// the files.
+fn newest(pins: &BTreeMap<String, String>) -> Result<String, String> {
+    let full_commit = Regex::new("^[0-9a-f]{40}$").unwrap();
+    let utc_date = Regex::new(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$").unwrap();
+    let mut dated: BTreeMap<String, (String, String)> = BTreeMap::new();
+    for (name, text) in pins {
+        let pin: Value = serde_json::from_str(text)
+            .map_err(|error| format!("contract/pins/{name} isn't JSON: {error}"))?;
+        let commit = pin["commit"].as_str().unwrap_or_default();
+        let date = pin["date"].as_str().unwrap_or_default();
+        if !full_commit.is_match(commit) || !utc_date.is_match(date) {
+            return Err(format!(
+                "contract/pins/{name} needs a commit of 40 hex digits and a date like \
+                 2026-11-20T10:30:52Z: scripts/pin-contract.sh writes one"
+            ));
+        }
+        let apart = dated
+            .get(date)
+            .filter(|(_, earlier)| earlier != commit)
+            .map(|(other, _)| other);
+        if let Some(other) = apart {
+            return Err(format!(
+                "contract/pins/{other} and contract/pins/{name} pin different commits at {date}: \
+                 one of the dates is wrong"
+            ));
+        }
+        dated.insert(date.to_string(), (name.clone(), commit.to_string()));
+    }
+    dated
+        .into_values()
+        .next_back()
+        .map(|(_, commit)| commit)
+        .ok_or_else(|| "contract/pins has no pin: scripts/pin-contract.sh adds one".to_string())
+}
+
+/// The contract: `MUTASTIC_CONTRACT`'s file, or the newest pin's commit's, fetched once.
 fn contract() -> &'static Value {
     static CONTRACT: OnceLock<Value> = OnceLock::new();
     CONTRACT.get_or_init(|| {
@@ -58,16 +114,16 @@ fn contract() -> &'static Value {
 }
 
 fn pinned() -> String {
-    let pin = pin();
-    let commit = pin["commit"].as_str().unwrap();
+    let source = source();
+    let commit = newest(&pins()).unwrap_or_else(|problem| panic!("{problem}"));
     let kept = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("contract-{commit}.json"));
     if let Ok(text) = std::fs::read_to_string(&kept) {
         return text;
     }
     let url = format!(
         "{}/{commit}/{}",
-        pin["raw"].as_str().unwrap(),
-        pin["path"].as_str().unwrap()
+        source["raw"].as_str().unwrap(),
+        source["path"].as_str().unwrap()
     );
     let output = Command::new("curl")
         .args(["--fail", "--silent", "--show-error", "--location", &url])
@@ -142,8 +198,8 @@ fn unrecorded(found: &[Found], surfaces: &[&str]) -> Vec<String> {
         {
             failures.push(format!(
                 "{}: {}. Make the Rust edition match, or record it under differences in {file} \
-                 (engine with a reason, dated with an until, pending with an issue), then move \
-                 contract.json's pin to that commit",
+                 (engine with a reason, dated with an until, pending with an issue), then pin \
+                 that commit with scripts/pin-contract.sh",
                 each.item, each.what
             ));
         }
@@ -160,7 +216,7 @@ fn unrecorded(found: &[Found], surfaces: &[&str]) -> Vec<String> {
         if !here.is_empty() && !found.iter().any(|each| names(&here, &each.item)) {
             failures.push(format!(
                 "{} now matches for rust: take rust out of its editions, or the entry out, in \
-                 {file}, then move contract.json's pin to that commit",
+                 {file}, then pin that commit with scripts/pin-contract.sh",
                 difference["id"].as_str().unwrap()
             ));
         }
@@ -313,6 +369,62 @@ fn named(found: &mut Vec<Found>, surface: &str, contract: &[String], mine: &[Str
             "this edition has it, and the contract doesn't",
         ));
     }
+}
+
+fn pin(commit: char, date: &str) -> String {
+    let commit = commit.to_string().repeat(40);
+    format!(r#"{{"commit": "{commit}", "date": "{date}"}}"#)
+}
+
+#[test]
+fn the_newest_pin_is_the_one_read_whatever_its_file_is_called() {
+    let pins = BTreeMap::from([
+        (
+            "a-later-change.json".to_string(),
+            pin('b', "2026-11-20T10:30:52Z"),
+        ),
+        (
+            "z-an-earlier-one.json".to_string(),
+            pin('a', "2026-11-19T23:59:59Z"),
+        ),
+    ]);
+    assert_eq!(newest(&pins), Ok("b".repeat(40)));
+}
+
+#[test]
+fn a_pin_without_a_full_commit_and_a_utc_date_fails_by_name() {
+    for text in [
+        r#"{"commit": "8648020", "date": "2026-11-20T10:30:52Z"}"#.to_string(),
+        pin('a', "2026-11-20"),
+        pin('a', "2026-11-20T10:30:52+01:00"),
+    ] {
+        let pins = BTreeMap::from([("short.json".to_string(), text)]);
+        let problem = newest(&pins).unwrap_err();
+        assert!(
+            problem.starts_with("contract/pins/short.json needs"),
+            "{problem}"
+        );
+    }
+    assert!(newest(&BTreeMap::new()).unwrap_err().contains("has no pin"));
+}
+
+#[test]
+fn two_commits_pinned_at_one_date_fail_and_one_commit_pinned_twice_passes() {
+    let date = "2026-11-20T10:30:52Z";
+    let apart = BTreeMap::from([
+        ("one.json".to_string(), pin('a', date)),
+        ("two.json".to_string(), pin('b', date)),
+    ]);
+    let problem = newest(&apart).unwrap_err();
+    assert!(
+        problem.contains("one.json") && problem.contains("two.json"),
+        "{problem}"
+    );
+    let same = BTreeMap::from([
+        ("one.json".to_string(), pin('a', date)),
+        ("two.json".to_string(), pin('a', date)),
+    ]);
+    assert_eq!(newest(&same), Ok("a".repeat(40)));
 }
 
 #[test]

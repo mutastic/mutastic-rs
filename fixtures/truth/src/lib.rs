@@ -936,13 +936,21 @@ fn always() -> bool {
     true
 }
 
+/// A call whose result is stored and then only checked: removed with its check.
+pub fn stored(x: i32) -> i32 {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let sent = tx.send(x + 3);
+    sent.unwrap();
+    rx.try_recv().unwrap_or(-1)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn probe() {
         for x in -6..10 {
             println!(
-                "{x}: {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {}",
+                "{x}: {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {}",
                 super::all(x),
                 super::more(x),
                 super::stronger(x),
@@ -956,7 +964,8 @@ mod tests {
                 super::unsigned_more(x),
                 super::ends(x),
                 super::euclid(x),
-                super::flags(x)
+                super::flags(x),
+                super::stored(x)
             );
         }
     }

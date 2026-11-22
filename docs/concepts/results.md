@@ -27,6 +27,37 @@ a `#[should_panic]` test that no longer panics. mutastic says which test, and ho
 raised the panic itself. A test that fails only because the arithmetic overflowed is still a catch,
 but worth knowing about: see [Profiles](profiles.md#why-overflow-checks-are-forced).
 
+### When the code a test runs exits
+
+A test that calls what `main` calls, in the test's own process, runs whatever it does, exits
+included. If a mutant makes it call `std::process::exit` where it didn't, the test never finishes.
+What that means depends on the status, as it does under `cargo test`:
+
+- **Any status but 0 fails the run,** so the mutant is caught by the test that was running, by the
+  exit, not a crash. The card says `caught by exits::tests::prints_the_discount, by the process
+  exiting with status 2`, and in the event stream `caughtWith` is `exit: 2`.
+- **Status 0 passes it,** though no test after it runs. So it isn't a catch: the tests after that
+  one run without it, and decide.
+
+A test that hangs is still timed out.
+
+## Code reached only from main
+
+`main` is often the one piece of code no test reaches: it reads the process's arguments, prints,
+and sets the exit status, all of which a test finds awkward to check. So it reads as not covered,
+and the line says so, with what to do:
+
+```text
+○ src/main.rs:5-8 main() (5 mutants)
+  reached only from main(): move what it does into run(args, out), which returns the exit code,
+  test run, and leave main() a one-line call to it
+```
+
+A test can then call `run` with the arguments it likes and an `out` it reads back, a `Vec<u8>`
+say, and check the exit code it returns. What's left in `main`, the one line, stays not covered,
+and gets no such advice. mutastic doesn't leave `main` out of the run for you: what it does matters
+too.
+
 ## Tables of cases and property tests
 
 A test often runs one check over a table of cases. What mutastic makes of it depends on how the

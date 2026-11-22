@@ -92,9 +92,12 @@ that returns `void`.
 `mutastic/remove-discarded-call`, in the defaults. A call whose result is thrown away is removed:
 `map.insert(k, v);`, `w.flush()?;`, `let _ = f();`. A call whose result is only checked goes too:
 `handle.join().unwrap();` removed leaves the thread running when the function returns, and
-`tx.send(v).expect("sent");` removed sends nothing. A statement that checks a value it's given,
-`x.unwrap();`, is skipped as arid, `arid: only checks the value is there`, as the Java edition skips
-a removed `Objects.requireNonNull(x);`.
+`tx.send(v).expect("sent");` removed sends nothing. So does a call stored and then only checked,
+`let removed = remove_file(&p); removed.unwrap();`: both statements go, as they're
+`remove_file(&p).unwrap();` written in two. That's only when the check comes straight after and
+nothing else uses the value. A statement that checks a value it's given, `x.unwrap();`, is skipped
+as arid, `arid: only checks the value is there`, as the Java edition skips a removed
+`Objects.requireNonNull(x);`.
 
 **The bug it stands for:** the same as a removed void call: a step left out. Many calls that do
 something also return something nobody needs: `insert` returns what was there, `write` how much it
@@ -156,9 +159,17 @@ fn a_second_visit() {
 handle or waiting on a channel its closure sends to, then checks what it did. A scoped thread's
 `spawn` keeps the card any statement gets, as its scope already waits for it.
 
+**A release:** a removed `std::fs::remove_file` or `remove_dir_all` asks for a test that checks the
+path is gone. A statement removed from a `Drop` impl's `drop` asks for a test that lets a value go
+and checks what dropping it changes. A removed `drop(x)` says the truth: `x` still goes at the end of
+its scope, so the mutant only matters when code after the `drop` takes the lock again or waits on a
+thread that does, and a test of that path, with a timeout, catches it. If nothing after it does, the
+`drop` can go.
+
 **Edition notes:** the Java edition has this operator too, `mutastic/remove-discarded-call`, for
 `add`, `put`, `append` and the like. Its cards name the test the same way for a thread started,
-work handed to a pool, an interrupt, a lock let go of and a daemon flag.
+work handed to a pool, an interrupt, a lock let go of and a daemon flag, and for a `close()`, a
+pool's `shutdown()`, a shutdown hook and a `Cleaner`'s `clean()`.
 
 ## Remove assignment
 

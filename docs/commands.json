@@ -46,13 +46,13 @@
         "--since",
         "--only",
         "--workers",
+        "--shard",
+        "--from-shards",
         "--no-suggestions",
         "--force-coverage",
         "--operators",
         "--unsafe",
         "--report",
-        "--shard",
-        "--from-shards",
         "--format",
         "--vocabulary",
         "--color",
@@ -437,6 +437,44 @@
       }
     },
     {
+      "name": "--shard",
+      "synopsis": "--shard=N/M",
+      "kind": "value",
+      "group": "Running",
+      "value": "N/M",
+      "choices": [],
+      "help": "Run only the Nth of M shares of the mutants, to split one run across machines. It keeps its results in shares/N-of-M in target/mutastic for --from-shards",
+      "commands": [
+        "run"
+      ],
+      "environment": "",
+      "examples": {
+        "run": {
+          "commandLine": "mutastic run --shard=2/4 --threshold=0",
+          "cargo": "cargo mutastic run --shard=2/4 --threshold=0"
+        }
+      }
+    },
+    {
+      "name": "--from-shards",
+      "synopsis": "--from-shards=DIR",
+      "kind": "value",
+      "group": "Running",
+      "value": "DIR",
+      "choices": [],
+      "help": "Run no mutants: put together the results every share of a split run kept, found anywhere in DIR, as the whole run, with its reports and threshold",
+      "commands": [
+        "run"
+      ],
+      "environment": "",
+      "examples": {
+        "run": {
+          "commandLine": "mutastic run --from-shards=shares --threshold=70",
+          "cargo": "cargo mutastic run --from-shards=shares --threshold=70"
+        }
+      }
+    },
+    {
       "name": "--no-suggestions",
       "synopsis": "--no-suggestions",
       "kind": "flag",
@@ -487,11 +525,11 @@
     {
       "name": "--operators",
       "synopsis": "--operators=OPERATORS",
-      "kind": "value",
+      "kind": "repeated",
       "group": "Running",
       "value": "OPERATORS",
       "choices": [],
-      "help": "Which operators run: a set (defaults, stronger or extended), or operator ids split by commas, in place of mutastic.yaml's operators; defaults unless set",
+      "help": "Which operators run: a set (defaults, stronger, extended or all), an operator's id or namespace, or any with - in front to leave it out, in place of mutastic.yaml's operators; defaults unless set",
       "commands": [
         "baseline",
         "gate check",
@@ -587,44 +625,6 @@
         "run": {
           "commandLine": "mutastic run --report=json",
           "cargo": "cargo mutastic run --report=json"
-        }
-      }
-    },
-    {
-      "name": "--shard",
-      "synopsis": "--shard=N/M",
-      "kind": "value",
-      "group": "Running",
-      "value": "N/M",
-      "choices": [],
-      "help": "Run only the Nth of M shares of the mutants, to split one run across machines. It keeps its results in shares/N-of-M in target/mutastic for --from-shards",
-      "commands": [
-        "run"
-      ],
-      "environment": "",
-      "examples": {
-        "run": {
-          "commandLine": "mutastic run --shard=2/4 --threshold=0",
-          "cargo": "cargo mutastic run --shard=2/4 --threshold=0"
-        }
-      }
-    },
-    {
-      "name": "--from-shards",
-      "synopsis": "--from-shards=DIR",
-      "kind": "value",
-      "group": "Running",
-      "value": "DIR",
-      "choices": [],
-      "help": "Run no mutants: put together the results every share of a split run kept, found anywhere in DIR, as the whole run, with its reports and threshold",
-      "commands": [
-        "run"
-      ],
-      "environment": "",
-      "examples": {
-        "run": {
-          "commandLine": "mutastic run --from-shards=shares --threshold=70",
-          "cargo": "cargo mutastic run --from-shards=shares --threshold=70"
         }
       }
     },
