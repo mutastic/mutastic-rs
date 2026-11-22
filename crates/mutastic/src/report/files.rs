@@ -205,6 +205,11 @@ fn log(named: &str, style: super::Style) -> Option<String> {
     Some(style.link(&file, &from_here(&file)))
 }
 
+/// Whether `dir` is where mutastic runs, so a command offered for it needs no directory.
+pub fn is_here(dir: &Path) -> bool {
+    std::env::current_dir().is_ok_and(|here| real(&whole(dir)) == real(&here))
+}
+
 fn real(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
@@ -415,6 +420,9 @@ fn mutant_more(
             test["arguments"] = Value::Object(arguments);
         }
         more.insert("suggestedTest".into(), test);
+    }
+    if let Some(origin) = &result.failure_origin {
+        more.insert("failureOrigin".into(), json!(origin));
     }
     if let Some(near) = mutant.near_unsafe {
         more.insert("nearUnsafe".into(), json!(near));

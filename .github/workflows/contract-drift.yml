@@ -1,4 +1,4 @@
-# Once a week, the editions' contract as it is on mutastic main, not as contract.json pins it: a
+# Once a week, the editions' contract as it is on mutastic main, not as contract/pins pins it: a
 # difference the Java repository has recorded or closed since the pin fails here, so the pin is
 # moved before the two editions drift apart unseen. It opens nothing: a red run is the signal.
 # Actions are pinned to a commit: a tag can be moved.
@@ -25,8 +25,8 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: the contract on mutastic main
         run: |
-          raw=$(jq -r .raw contract.json)
-          path=$(jq -r .path contract.json)
+          raw=$(jq -r .raw contract/source.json)
+          path=$(jq -r .path contract/source.json)
           curl --fail --silent --show-error --location "$raw/main/$path" -o "$RUNNER_TEMP/contract.json"
       - run: cargo test --locked --test contract
         env:

@@ -25,5 +25,5 @@
     [2m=[0m [1;34m[1mid      [0m[0m  m95f96847: `m` and the first 8 hex digits of its fingerprint, 95f96847248b0509, a
                 SHA-256 of the crate, function, operator, site and change
                 [2mno line number goes in, so the id stays the same when code above it moves[0m
-    [2m=[0m [1;34m[1msite    [0m[0m  `total / 10` in Pricing::discount, line 27, column 26
+    [2m=[0m [1;34m[1msite    [0m[0m  `total / 10` in Pricing::discount, line 27, column 26: the function's site 5, counting from 1 in source order
     [2m=[0m [1;34m[1mlast run[0m[0m  caught by pricing::big_orders_get_ten_percent_off

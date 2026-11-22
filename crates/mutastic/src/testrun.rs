@@ -38,6 +38,27 @@ pub struct Outcome {
     pub stderr: String,
     /// The signal that ended the process, when one did.
     pub signal: Option<i32>,
+    /// The status the process exited with before libtest could say how the tests went: code a
+    /// test ran called `std::process::exit`.
+    pub exited: Option<i32>,
+}
+
+impl Outcome {
+    /// A run of no tests: nothing failed.
+    pub fn passed() -> Self {
+        Outcome {
+            passed: true,
+            timed_out: false,
+            failed: None,
+            failures: Vec::new(),
+            failure: None,
+            took: Duration::ZERO,
+            stdout: String::new(),
+            stderr: String::new(),
+            signal: None,
+            exited: None,
+        }
+    }
 }
 
 /// Every test in the binaries that isn't `#[ignore]`d.
@@ -199,6 +220,7 @@ pub fn run(
             stdout: String::new(),
             stderr: String::new(),
             signal: None,
+            exited: None,
         };
     };
     let reader = read_all(child.stdout.take());
@@ -234,6 +256,7 @@ pub fn run(
             stdout: text,
             stderr,
             signal: None,
+            exited: None,
         };
     };
     let failures: Vec<String> = text
@@ -245,6 +268,7 @@ pub fn run(
         })
         .collect();
     let failed = failures.first().cloned();
+    let exited = exited(&status, &text);
     let failure = if status.success() {
         None
     } else if failed.is_some() {
@@ -262,7 +286,29 @@ pub fn run(
         stdout: text,
         stderr,
         signal: signal_of(&status),
+        exited,
     }
+}
+
+/// The status a test process exited with, when it ended before libtest's `test result:` line:
+/// not by a signal, so by an exit some code a test ran called. Status 0 too, which `cargo test`
+/// reads as a pass, though no test after it ran.
+fn exited(status: &std::process::ExitStatus, stdout: &str) -> Option<i32> {
+    if signal_of(status).is_some() || stdout.lines().any(|line| line.starts_with("test result:")) {
+        return None;
+    }
+    status.code()
+}
+
+/// The test that was running when the process exited, from a run with `--test-threads=1`, which
+/// says `test <name> ... ` as each starts and its result as it ends.
+pub fn running(stdout: &str) -> Option<String> {
+    stdout
+        .lines()
+        .last()
+        .and_then(|line| line.strip_prefix("test "))
+        .and_then(|rest| rest.strip_suffix(" ... "))
+        .map(str::to_string)
 }
 
 /// A test process's own temporary directory, empty when it starts and deleted once it has ended.
@@ -439,6 +485,15 @@ pub fn language_panic(output: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Whether a test failed on an assertion of its own: `assert!`'s `assertion failed: ..`, or
+/// `assert_eq!`'s ``assertion `left == right` failed``, rather than a panic in the code it ran.
+pub fn assertion_failed(output: &str) -> bool {
+    output
+        .lines()
+        .map(str::trim)
+        .any(|line| line.starts_with("assertion failed") || line.starts_with("assertion `"))
+}
+
 /// Runs `work` on each item on `workers` threads, keeping the items' order in the results.
 /// A panic in `work` is the caller's: it's raised again here, never a shorter result.
 pub fn parallel<T: Sync, R: Send>(
@@ -499,6 +554,24 @@ pub fn default_workers() -> usize {
 mod tests {
     use super::*;
 
+    /// A test's own `assert!` or `assert_eq!` is an assertion; a panic in the code it ran isn't.
+    #[test]
+    fn an_assertion_is_told_from_a_panic_in_the_code() {
+        let failed = |message: &str| {
+            format!("---- tests::t stdout ----\n\nthread 'tests::t' panicked at src/lib.rs:9:9:\n{message}\n")
+        };
+        assert!(assertion_failed(&failed(
+            "assertion `left == right` failed\n  left: 1\n right: 2"
+        )));
+        assert!(assertion_failed(&failed("assertion failed: x > 0")));
+        assert!(!assertion_failed(&failed(
+            "attempt to subtract with overflow"
+        )));
+        assert!(!assertion_failed(&failed(
+            "called `Option::unwrap()` on a `None` value"
+        )));
+    }
+
     /// A worker's panic isn't a shorter result: every item comes back, or the panic does.
     #[test]
     #[should_panic(expected = "the third")]
@@ -551,6 +624,15 @@ mod tests {
             std::thread::sleep(Duration::from_millis(50));
         }
         assert!(!alive(), "the sleep {sleeper} still runs");
+    }
+
+    /// Run one at a time, libtest says each test as it starts: the last, with no result after it,
+    /// is the one whose code exited.
+    #[test]
+    fn the_test_running_at_an_exit_is_the_last_one_started() {
+        let stdout = "\nrunning 3 tests\ntest tests::a ... ok\ntest tests::b ... ";
+        assert_eq!(running(stdout).as_deref(), Some("tests::b"));
+        assert_eq!(running("\nrunning 1 test\ntest tests::a ... ok\n"), None);
     }
 
     /// A Windows crash is named as the same crash is elsewhere: Rust's abort as `SIGABRT`.
