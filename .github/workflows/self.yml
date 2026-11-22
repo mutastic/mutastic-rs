@@ -27,10 +27,16 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   # One worker and 16 shares took 2 to 5 hours a share; then two mutants at once and 14 shares,
-  # 2 to 3 hours. With more mutants and more tests a share of 14 passed the 5 hours it is given
-  # (20 and 21 Nov 2026: 417 of 548 mutants after 4h51m), and the runner's own limit is 6. So 28
-  # shares, half the mutants each, 14 at a time.
+  # 2 to 3 hours. From 20 Nov 2026 a share of 14 passed the 5 hours it is given (417 of 548
+  # mutants after 4h51m), and the runner's own limit is 6: so 28 shares, half the mutants each, 14
+  # at a time. The cause was the fixtures building cold, below; 28 stay until a run shows what a
+  # share takes with them warm again.
   SHARES: 28
+  # Where the tests keep their fixture copies, with their builds, warm for the next mutant
+  # (scratch in tests/common). mutastic gives each test process an empty temporary directory and
+  # deletes it when the process ends, so kept there, as they are without this, every fixture built
+  # cold for every mutant: the same mutants took two and a half times as long.
+  MUTASTIC_RS_TEST_SCRATCH: /tmp
 
 jobs:
   # mutastic, built once from this commit, for every share.
@@ -111,7 +117,7 @@ jobs:
           name: resources-${{ matrix.share }}
           path: resources.log
           retention-days: 7
-      # The tests' fixture copies are kept in the temporary directory, warm for the next mutant.
+      # The tests' fixture copies are kept in MUTASTIC_RS_TEST_SCRATCH, warm for the next mutant.
       - name: Disk used
         if: always()
         run: df -h / && du -sh /tmp/mutastic-rs-tests target || true

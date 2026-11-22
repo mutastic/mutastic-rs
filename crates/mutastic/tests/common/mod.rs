@@ -1,6 +1,7 @@
 //! What the integration tests share.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsString;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
@@ -52,7 +53,31 @@ fn pinned() -> Value {
     reason = "only some test crates run mutastic in a directory of their own"
 )]
 pub fn slots() -> PathBuf {
-    std::env::temp_dir().join("mutastic-rs-tests")
+    scratch().join("mutastic-rs-tests")
+}
+
+/// Where the tests keep what should last from one test process to the next, a fixture's copy with
+/// its build: the directory `MUTASTIC_RS_TEST_SCRATCH` names, or the temporary directory without
+/// it. mutastic gives each test process an empty temporary directory of its own and deletes it
+/// when the process ends, so in a run of mutastic on itself nothing kept there is found again, and
+/// every fixture builds cold for every mutant: such a run names a directory that lasts.
+#[allow(
+    dead_code,
+    reason = "only some test crates run mutastic in a directory of their own"
+)]
+pub fn scratch() -> PathBuf {
+    scratch_from(std::env::var_os("MUTASTIC_RS_TEST_SCRATCH"))
+}
+
+/// [`scratch`], given what the variable holds: unset or empty, the temporary directory.
+#[allow(
+    dead_code,
+    reason = "only some test crates run mutastic in a directory of their own"
+)]
+pub fn scratch_from(named: Option<OsString>) -> PathBuf {
+    named
+        .filter(|named| !named.is_empty())
+        .map_or_else(std::env::temp_dir, PathBuf::from)
 }
 
 /// A directory under `base` this test process has to itself, `name` or the first of `name-1`,
