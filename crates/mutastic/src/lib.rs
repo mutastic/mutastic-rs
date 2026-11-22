@@ -60,6 +60,7 @@ pub mod locate;
 pub mod mistyped;
 pub mod nextrun;
 pub mod operator_docs;
+pub mod origin;
 pub mod progress;
 pub mod record;
 pub mod records;
