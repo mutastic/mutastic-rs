@@ -1320,10 +1320,19 @@ fn next(parsed: &Parsed) -> Result<ExitCode, Failure> {
             .map(|entry| entry.id)
             .collect();
     let older = baseline::ids(std::path::Path::new(dir));
+    // The package by its directory's name, as the Java edition names a project by its own.
+    let named = project
+        .workspace
+        .join(&project.package_dir)
+        .file_name()
+        .map_or_else(
+            || project.package.clone(),
+            |name| name.to_string_lossy().into_owned(),
+        );
     let asked = report::next::Asked {
         proposed: &proposed,
         baseline: &older,
-        project: &project.package,
+        project: &named,
         dir: &project.given,
         format,
         style: style(parsed, std::io::stdout().is_terminal()),

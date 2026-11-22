@@ -6,10 +6,8 @@
  [41;30;1m ✗ MISSED [0m no test checks [1mdiscount()[0m at [1mtotal == 100[0m
     [2m┌─[0m src/lib.rs:26
     [2m│[0m
- [2m25[0m [2m│[0m     pub fn discount(&self, total: u32) -> u32 {
  [2m26[0m [2m│[0m         if total >= 100 {
     [2m│[0m                  [1;31m^^ >= changed to >[0m
- [2m27[0m [2m│[0m             return total / 10;
     [2m│[0m
     [2m=[0m [1;34m[1mnote[0m[0m: every test calls [1mdiscount()[0m away from the boundary
             [2minputs seen: 50, 250 (none is 100)[0m
@@ -22,8 +20,8 @@
  [2m Worst at[0m  Pricing::discount() 1 ✗
  [2m    Build[0m  one build of every mutant, 2 rounds (check and build)
  [2mTest runs[0m  13[2m (33 without coverage selection)[0m
- [2m Start at[0m  01:27:51
- [2m Duration[0m  2.4s [2m(setup 1.3s, build 1.0s, coverage 7ms, mutants 53ms, checking 20ms)[0m
+ [2m Start at[0m  03:40:33
+ [2m Duration[0m  2.5s [2m(setup 1.6s, build 797ms, coverage 6ms, mutants 44ms, checking 23ms)[0m
  [2m    Tests[0m  3 on rustc 1.94.0 · 4 workers
  [2m  Reports[0m  fixtures/pricing/target/mutastic/mutation.json[2m · [0mfixtures/pricing/target/mutastic/mutation.html
  [2m    Score[0m  [32m[1m90.9%[0m[0m  [42;30;1m PASS [0m [32m1 missed, above the threshold of 80.[0m
