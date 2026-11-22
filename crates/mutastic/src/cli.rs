@@ -1097,8 +1097,8 @@ fn finish(
                 .map(|(kind, path)| (*kind, path.map(str::to_string)))
                 .collect()
         });
-        report.written = report::files::write(&report, &reports, &folder)
-            .map_err(|error| Code::Other.with(error))?;
+        report.written =
+            report::files::write(&report, &reports, &folder).map_err(crate::failure::disk)?;
         report.reports = listed(&report);
         // The ids the output shows open the HTML report on their mutant, but not from a share's own
         // folder: its report is only part of the run.
@@ -1109,10 +1109,8 @@ fn finish(
             .map(|(_, file)| file.clone())
             .next_back();
         if let (Some(html), None) = (html, &report.share) {
-            report.pages = Some(
-                report::files::write_pages(&report, &html)
-                    .map_err(|error| Code::Other.with(error))?,
-            );
+            report.pages =
+                Some(report::files::write_pages(&report, &html).map_err(crate::failure::disk)?);
         }
     }
     // A share's events, kept for `--from-shards`: as `--format=jsonl` writes them, whatever the
@@ -1244,7 +1242,7 @@ fn baseline_command(parsed: &Parsed) -> Result<ExitCode, Failure> {
     progress.finished();
     if parsed.prune {
         let caught = baseline::caught_now(&report, &baseline::ids(here));
-        let dropped = baseline::prune(here, &caught).map_err(|error| Code::Other.with(error))?;
+        let dropped = baseline::prune(here, &caught).map_err(crate::failure::disk)?;
         stdout_line!(
             "mutastic: {}, and {} dropped from {}",
             caught_now(dropped),
@@ -1253,8 +1251,7 @@ fn baseline_command(parsed: &Parsed) -> Result<ExitCode, Failure> {
         );
     } else {
         let entries = baseline::entries(&report);
-        baseline::write(here, &parsed.operators_chosen, &entries)
-            .map_err(|error| Code::Other.with(error))?;
+        baseline::write(here, &parsed.operators_chosen, &entries).map_err(crate::failure::disk)?;
         stdout_line!(
             "mutastic: {} no test catches {} in {}: commit it. A miss that isn't in it is new: the \
              gate holds only new misses, and next offers them first",
@@ -1312,7 +1309,7 @@ fn next(parsed: &Parsed) -> Result<ExitCode, Failure> {
         let uncaught = crate::nextrun::left_uncaught(&asked, results);
         crate::nextrun::NextRun { key, uncaught }
             .write(&folder)
-            .map_err(|error| Code::Other.with(error))?;
+            .map_err(crate::failure::disk)?;
     }
     let proposed: std::collections::BTreeSet<String> =
         ignores::proposed(std::path::Path::new(dir))?
@@ -1374,8 +1371,8 @@ fn next_pass(
             .iter()
             .map(|(kind, path)| (*kind, path.map(str::to_string)))
             .collect();
-        report.written = report::files::write(&report, &reports, &folder)
-            .map_err(|error| Code::Other.with(error))?;
+        report.written =
+            report::files::write(&report, &reports, &folder).map_err(crate::failure::disk)?;
         report.reports = listed(&report);
     }
     Ok(report)
@@ -1408,7 +1405,7 @@ fn recorded(
         .map(|previous| record.against(&previous))
         .or_else(|| under_other_operators(&records, &record));
     records.keep(&record).map_err(|error| {
-        Code::Other.with(format!(
+        crate::failure::disk(format!(
             "couldn't keep the run's record in {}: {error}",
             folder.display()
         ))
@@ -2018,7 +2015,7 @@ fn gate_open(
         if open.stopped.is_some() {
             open.prompted(&ignored_ids(here)?)
                 .write(work)
-                .map_err(|error| Code::Other.with(error))?;
+                .map_err(crate::failure::disk)?;
         }
         return Ok(ExitCode::SUCCESS);
     }
@@ -2046,7 +2043,7 @@ fn gate_open(
         operators: operators.clone(),
         ..gate::State::default()
     };
-    state.write(work).map_err(|error| Code::Other.with(error))?;
+    state.write(work).map_err(crate::failure::disk)?;
     let run_flag = if same_set(&resolved, &parsed.run_operators) {
         String::new()
     } else {
@@ -2114,7 +2111,7 @@ fn gate_check(
         state.blocks = 0;
         state.tree.clear();
         state.stopped = stopped;
-        state.write(work).map_err(|error| Code::Other.with(error))?;
+        state.write(work).map_err(crate::failure::disk)?;
         return Ok(gate_answer(hooked, &for_the_person(here, &state, verdict)));
     }
     // Sent back, unless, as a hook, it changed nothing since it last was, or it has had its tries:
@@ -2139,13 +2136,13 @@ fn gate_check(
     let Some(text) = handed_over else {
         // Sent back, the agent has the turn: what it ignores now is its own.
         state.stopped = None;
-        state.write(work).map_err(|error| Code::Other.with(error))?;
+        state.write(work).map_err(crate::failure::disk)?;
         return Ok(gate_answer(hooked, &verdict));
     };
     state.blocks = 0;
     state.tree.clear();
     state.stopped = stopped;
-    state.write(work).map_err(|error| Code::Other.with(error))?;
+    state.write(work).map_err(crate::failure::disk)?;
     let answer = for_the_person(here, &open, gate::Verdict::pass(text));
     Ok(gate_answer(hooked, &answer))
 }
@@ -2198,7 +2195,7 @@ fn counted(
         }
     }
     open.counting.clear();
-    open.write(work).map_err(|error| Code::Other.with(error))?;
+    open.write(work).map_err(crate::failure::disk)?;
     Ok((open, waiting.elapsed()))
 }
 
