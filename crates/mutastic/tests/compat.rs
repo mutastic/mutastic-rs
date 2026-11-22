@@ -174,7 +174,9 @@ fn command_breaks(kept: &Value, now: &Value) -> Vec<String> {
             breaks.push(format!("the option `{name}` is gone"));
             continue;
         };
-        if current["kind"] != option["kind"] {
+        // An option given once that may now be given again still takes every line it took.
+        let widened = option["kind"] == "value" && current["kind"] == "repeated";
+        if current["kind"] != option["kind"] && !widened {
             breaks.push(format!(
                 "`{name}` was {}, and is {}",
                 option["kind"], current["kind"]

@@ -118,7 +118,7 @@ editions' contract names. Every event says `"edition": "rust"`. Where the editio
 | `tests/truth.rs` | A card says what its mutant does: each claim written into the source behaves as the mutant does |
 | `tests/shares.rs` | Two shares of the pricing fixture, put back together, are the whole run, in every format; shares that aren't one run's are refused |
 | `tests/ids.rs` | Every mutant of every fixture, under every operator, held to `tests/ids/ids.tsv` |
-| `tests/contract.rs` | The editions' contract, pinned from the Java repository by `contract.json`: the command line, help, error codes, the summary, the agent format, events and mutation.json, each as the contract says or a recorded difference |
+| `tests/contract.rs` | The editions' contract, pinned from the Java repository by the newest of `contract/pins`: the command line, help, error codes, the summary, the agent format, events and mutation.json, each as the contract says or a recorded difference |
 | `tests/docs.rs` | Every output block in the docs and the README is what mutastic prints; every link, command, id and Rust example in them is checked; every missed card on the operators fixture is true |
 
 `fixtures/` holds the crates they run on, each a package of its own outside mutastic's workspace:

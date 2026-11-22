@@ -16,19 +16,6 @@ const UNCHECKED: &[&str] = &[
 ];
 /// The operations a `saturating_` call can wrap for instead.
 const SATURATING: &[&str] = &["add", "sub", "mul", "div", "pow", "neg", "abs"];
-/// Calls whose number is a size, a capacity or a wait: arid, as in the Java edition.
-const ARID_NUMBER_CALLS: &[&str] = &[
-    "with_capacity",
-    "reserve",
-    "reserve_exact",
-    "sleep",
-    "from_secs",
-    "from_millis",
-    "from_micros",
-    "from_nanos",
-];
-/// Calls whose text only tells a person something: arid for string-constant.
-const MESSAGE_CALLS: &[&str] = &["Err", "expect", "context", "with_context", "wrap_err"];
 
 impl Finder<'_> {
     /// `if order.is_paid()` to `if !order.is_paid()`: other-comparison's form for a condition that
@@ -385,9 +372,7 @@ impl Finder<'_> {
         token: &ra_ap_syntax::SyntaxToken,
         context: Context<'_>,
     ) {
-        if self.returned.contains(&literal.syntax().text_range())
-            || in_call_of(literal.syntax(), MESSAGE_CALLS)
-        {
+        if self.returned.contains(&literal.syntax().text_range()) {
             return;
         }
         let text = token.text();
@@ -418,20 +403,13 @@ impl Finder<'_> {
         let site = negated
             .as_ref()
             .map_or(literal.syntax().clone(), |prefix| prefix.syntax().clone());
-        if self.returned.contains(&site.text_range()) || in_call_of(&site, ARID_NUMBER_CALLS) {
+        if self.returned.contains(&site.text_range()) {
             return;
         }
         let Some((value, suffix)) = integer_literal(token.text()) else {
             return;
         };
         let value = if negated.is_some() { -value } else { value };
-        // A counter's or a total's first value is arid, as in the Java edition.
-        let first_value = site
-            .parent()
-            .is_some_and(|parent| parent.kind() == SyntaxKind::LET_STMT);
-        if first_value && matches!(value, 0 | 1) {
-            return;
-        }
         let signed = negated.is_some() || suffix.starts_with('i');
         let mut values = vec![value + 1, value - 1, 0, 1, -1];
         values.retain(|candidate| *candidate != value && (signed || *candidate >= 0));
@@ -790,17 +768,6 @@ pub(super) fn is_pure(expr: &ast::Expr) -> bool {
         ast::Expr::ParenExpr(inner) => inner.expr().is_some_and(|inner| is_pure(&inner)),
         _ => false,
     }
-}
-
-/// Whether a node is an argument of a call to one of `names`, directly.
-fn in_call_of(node: &SyntaxNode, names: &[&str]) -> bool {
-    let Some(list) = node.parent().and_then(ast::ArgList::cast) else {
-        return false;
-    };
-    list.syntax()
-        .parent()
-        .and_then(|call| callee(&call))
-        .is_some_and(|name| names.contains(&name.as_str()))
 }
 
 fn is_type_max(value: i128) -> bool {
