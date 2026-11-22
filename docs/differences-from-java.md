@@ -116,7 +116,9 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
 - **`mutastic.yaml` and rules files** are the Java edition's, with Rust paths for classes
   (`shop::generated::**`) and Rust types as owners. A rules file's operator matches a call by its
   method's name, since mutastic reads source without types; a rewrite that doesn't fit doesn't
-  compile, and is withdrawn. See [Configuration](reference/configuration.md).
+  compile, and is withdrawn. The rewrites are the Java edition's, but for `omit last argument`,
+  which calls a shorter overload: a Rust method has one count of arguments. See
+  [Configuration](reference/configuration.md#rewrites).
 - **The gate** is the Java edition's, so the coding agents' plugins run it unchanged. A test it
   counts is one the test binaries list, each `#[case]` and test-case row a test of its own, and one
   turned off is `#[ignore]`, where Java counts `@Test` and `@Disabled` in the source. `gate open`

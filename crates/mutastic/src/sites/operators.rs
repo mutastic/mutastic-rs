@@ -8,6 +8,7 @@
 
 use super::*;
 use crate::arid::{ONLY_CHECKS_A_VALUE, ONLY_WRITES_OUTPUT};
+use crate::callrules::Rewrite;
 use ra_ap_syntax::ast::{HasArgList, RangeItem};
 
 /// Method names and their counterparts, by operator.
@@ -962,20 +963,63 @@ impl Finder<'_> {
         let (Some(receiver), Some(name_ref)) = (call.receiver(), call.name_ref()) else {
             return;
         };
+        // What a card's words name the call by: `.unwrap_or(8080)`.
+        let piece = plain_replacing(call.syntax(), &[(receiver.syntax().text_range(), "")]);
+        let name_range = name_ref.syntax().text_range();
         for rule in crate::callrules::loaded() {
             if !rule.methods.iter().any(|method| method == name) {
                 continue;
             }
-            match rule.to(name) {
-                None => self.omit_method(call, &receiver, rule.id, context),
-                Some(to) => self.swap_name(
-                    rule.id,
-                    call.syntax(),
-                    name_ref.syntax().text_range(),
-                    name,
-                    to,
-                    context,
-                ),
+            match &rule.rewrite {
+                Rewrite::Remove => self.omit_method(call, &receiver, rule.id, context),
+                Rewrite::Rename(_) => {
+                    if let Some(to) = rule.to(name) {
+                        self.swap_name(rule.id, call.syntax(), name_range, name, &to, context);
+                    }
+                }
+                Rewrite::KeepArgument => {
+                    let args: Vec<ast::Expr> = call
+                        .arg_list()
+                        .map(|list| list.args().collect())
+                        .unwrap_or_default();
+                    // Only a call of one argument has one to keep.
+                    if let [kept] = args.as_slice() {
+                        // The receiver is still worked out when it could do something, as the
+                        // Java edition's is.
+                        let after = if super::stronger::is_pure(&receiver) {
+                            receiver_text(kept)
+                        } else {
+                            format!(
+                                "{{ let _ = {}; {} }}",
+                                plain(receiver.syntax()),
+                                plain(kept.syntax())
+                            )
+                        };
+                        self.replaced(
+                            rule.id,
+                            call.syntax(),
+                            name_range,
+                            piece.clone(),
+                            after,
+                            context,
+                        );
+                    }
+                }
+                Rewrite::Unchecked => self.unchecked(rule.id, call, name, piece.clone(), context),
+                Rewrite::Call { .. } => {
+                    // From the name to the call's end: its type arguments go with its own.
+                    let rest = TextRange::new(name_range.start(), call.syntax().text_range().end());
+                    let to = rule.to(name).unwrap_or_default();
+                    let after = plain_replacing(call.syntax(), &[(rest, &to)]);
+                    self.replaced(
+                        rule.id,
+                        call.syntax(),
+                        name_range,
+                        piece.clone(),
+                        after,
+                        context,
+                    );
+                }
             }
         }
     }

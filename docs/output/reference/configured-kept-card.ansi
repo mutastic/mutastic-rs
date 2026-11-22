@@ -1,0 +1,15 @@
+ [41;30;1m ✗ MISSED [0m no test gives [1mport()[0m a value for [1m.unwrap_or()[0m to prefer to its fallback
+    [2m┌─[0m src/lib.rs:20
+    [2m│[0m
+ [2m19[0m [2m│[0m pub fn port(set: Option<u16>) -> u16 {
+ [2m20[0m [2m│[0m     set.unwrap_or(8080)
+    [2m│[0m         [1;31m^^^^^^^^^ .unwrap_or() always gives its fallback[0m
+ [2m21[0m [2m│[0m }
+    [2m│[0m
+    [2m=[0m mutant  [1;31m- [0mset.unwrap_or(8080)
+              [32m+ [0m8080
+    [2m=[0m [1;34m[1mnote[0m[0m: covered by tests::a_port_is_8080_unless_set (its 1 covering test still passes)
+    [2m=[0m [32m[1mhelp[0m[0m: add a test where the value is there, and assert it's the one used
+
+    [2mdone when [0m mutastic verify m294c8110 fixtures/configured [2mpasses[0m
+    [2mreproduce [0m mutastic run --only=m294c8110 fixtures/configured

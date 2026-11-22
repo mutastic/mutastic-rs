@@ -2014,7 +2014,8 @@ fn since_runs_the_changed_lines_mutants() {
 }
 
 /// `mutastic.yaml` chooses the operators, adds a rules file's, and skips what its rules cover, with
-/// their reasons; the rules file's operator says its own words on the card.
+/// their reasons; a rules file's operator says its own words on the card, whichever rewrite it
+/// asks for.
 #[test]
 fn mutastic_yaml_is_read_as_the_java_editions() {
     let copy = copy_of("configured", "configured");
@@ -2043,6 +2044,56 @@ fn mutastic_yaml_is_read_as_the_java_editions() {
             .contains("no test passes `clean()` text with spaces for `.trim()` to remove"),
         "{trim}"
     );
+    // Each of the other rewrites a rules file can ask for, missed in the function no test
+    // tells it apart in and caught in the one a test does: what it's applied as, and its words.
+    for (operator, missed, caught, headline) in [
+        (
+            "acme/always-fallback",
+            ("port", "set.unwrap_or(8080) -> 8080"),
+            ("retries", "set.unwrap_or(3) -> 3"),
+            "no test gives `port()` a value for `.unwrap_or()` to prefer to its fallback",
+        ),
+        (
+            "acme/no-limit",
+            (
+                "first_page",
+                "items.iter().copied().take(size) -> items.iter().copied().take(usize::MAX)",
+            ),
+            (
+                "top",
+                "scores.iter().copied().take(count) -> scores.iter().copied().take(usize::MAX)",
+            ),
+            "no test gives `first_page()` more items than `.take()` lets through",
+        ),
+        (
+            "acme/wrap-on-overflow",
+            (
+                "sum",
+                "amount.checked_add(other) -> Some(amount.wrapping_add(other))",
+            ),
+            (
+                "louder",
+                "volume.saturating_add(by) -> volume.wrapping_add(by)",
+            ),
+            "no test makes `.checked_add()` overflow in `sum()`",
+        ),
+    ] {
+        let of: Vec<&&Value> = mutants
+            .iter()
+            .filter(|e| e["operator"] == operator)
+            .collect();
+        assert_eq!(of.len(), 2, "{operator}: {jsonl}");
+        for (status, (function, applied)) in [("Survived", missed), ("Killed", caught)] {
+            let mutant = of
+                .iter()
+                .find(|e| e["location"]["method"] == function)
+                .unwrap_or_else(|| panic!("{operator} in {function}: {jsonl}"));
+            assert_eq!(mutant["status"], status, "{mutant}");
+            assert_eq!(mutant["mutation"]["applied"]["text"], applied, "{mutant}");
+        }
+        let rendered = of[0]["rendered"].as_str().unwrap();
+        assert!(rendered.contains(headline), "{rendered}");
+    }
     let generated: Vec<&&Value> = mutants
         .iter()
         .filter(|e| e["location"]["method"] == "checksum")

@@ -562,6 +562,16 @@ fn reference(work: &Path, shown: &mut BTreeMap<String, String>) {
         "{found}"
     );
     shown.insert("reference/configured-card".into(), found);
+    // A `keep argument` rewrite's card: the call's argument in its place.
+    let kept: BTreeSet<String> = listed
+        .lines()
+        .filter(|line| line.contains(" acme/always-fallback ") && line.contains(" port"))
+        .filter_map(|line| line.split_whitespace().next().map(str::to_string))
+        .collect();
+    assert_eq!(kept.len(), 1, "{listed}");
+    let found = card(&configured.stdout, &kept).expect("the keep argument rewrite's card");
+    assert!(plain(&found).contains("+ 8080"), "{found}");
+    shown.insert("reference/configured-kept-card".into(), found);
     // After the full runs above, so the last run is known.
     for (name, id) in [("missed", "mb2f8ae57"), ("caught", "m95f96847")] {
         let explained = ran(work, &["explain", id, "fixtures/pricing"]);
