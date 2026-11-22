@@ -2,7 +2,8 @@
 
 `tests/contract.rs` holds this edition to the editions' contract, which lives in the Java
 repository. [`source.json`](source.json) says where: the repository and the file in it. The commit
-the check reads it at is the newest pin in [`pins/`](pins).
+the check reads it at is the newest pin in [`pins/`](pins), the one furthest along that
+repository's main.
 
 When the commit was one line of one file, every pull request that moved it changed that line, so
 any two open together conflicted, and each merge sent the rest back to be pinned again. So each
@@ -21,14 +22,19 @@ scripts/pin-contract.sh take-operators-as-java 1f83d4d    # a commit, or a branc
 
 ```json
 {
-  "commit": "86480200c9c19ef7c49905e82255673def377770",
-  "date": "2026-11-20T10:30:52Z"
+  "commit": "2ac2b3b6e6b2ab44593e523d09770931a5fb70cc",
+  "date": "2026-11-22T09:04:22Z",
+  "position": 14
 }
 ```
 
-`commit` is the Java repository's commit, in full, and `date` is that commit's committer date in
-UTC, which is what orders the pins. Never edit another pull request's pin, and leave the older
-ones where they are: the newest wins, so they do nothing.
+`commit` is the Java repository's commit, in full. `position` is where it sits on that repository's
+main: the count of commits since the anchor [`source.json`](source.json) names, and what orders the
+pins, so the newest is the one furthest along. `date` is the commit's committer date in UTC, for
+reading, and to tell apart two pins at one position, as a pull request's head and a commit of main
+can be. A date can't order them by itself: the merge queue has landed commits on main with dates
+out of order. Never edit another pull request's pin, and leave the older ones where they are: the
+newest wins, so they do nothing.
 
 ## What the newest pin means for an open pull request
 
