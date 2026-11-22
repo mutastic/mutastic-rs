@@ -32,7 +32,7 @@ mutastic run --shard=2/4 --threshold=0
 mutastic run --from-shards=shares --threshold=70
 ```
 
-**Options:** [`--threshold=N`](#--threshold), [`--fail-on-new`](#--fail-on-new), [`--since[=REF]`](#--since), [`--only=ID`](#--only), [`--workers=N`](#--workers), [`--no-suggestions`](#--no-suggestions), [`--force-coverage`](#--force-coverage), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--report=KIND[:PATH]`](#--report), [`--shard=N/M`](#--shard), [`--from-shards=DIR`](#--from-shards), [`--format=FORMAT`](#--format), [`--vocabulary=WORDS`](#--vocabulary), [`--color=WHEN`](#--color), [`--hyperlinks=WHEN`](#--hyperlinks), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
+**Options:** [`--threshold=N`](#--threshold), [`--fail-on-new`](#--fail-on-new), [`--since[=REF]`](#--since), [`--only=ID`](#--only), [`--workers=N`](#--workers), [`--shard=N/M`](#--shard), [`--from-shards=DIR`](#--from-shards), [`--no-suggestions`](#--no-suggestions), [`--force-coverage`](#--force-coverage), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--report=KIND[:PATH]`](#--report), [`--format=FORMAT`](#--format), [`--vocabulary=WORDS`](#--vocabulary), [`--color=WHEN`](#--color), [`--hyperlinks=WHEN`](#--hyperlinks), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
 
 **Exit status:** 0 when the score reaches the threshold, 1 when it doesn't; with --fail-on-new, 0 when every mutant no test catches is in the baseline, 1 when one isn't; with --only, 0 when each mutant named is caught or skipped, as verify judges it, and 1 while one is still missed or not covered.
 
@@ -222,6 +222,22 @@ mutastic run --workers=2
 mutastic verify mb2f8ae57 --workers=2
 ```
 
+### `--shard`
+
+`--shard=N/M`, for [`run`](#run). Run only the Nth of M shares of the mutants, to split one run across machines. It keeps its results in shares/N-of-M in target/mutastic for --from-shards.
+
+```sh
+mutastic run --shard=2/4 --threshold=0
+```
+
+### `--from-shards`
+
+`--from-shards=DIR`, for [`run`](#run). Run no mutants: put together the results every share of a split run kept, found anywhere in DIR, as the whole run, with its reports and threshold.
+
+```sh
+mutastic run --from-shards=shares --threshold=70
+```
+
 ### `--no-suggestions`
 
 `--no-suggestions`, for [`explain`](#explain), [`next`](#next), [`run`](#run). Don't look for a test that catches each missed mutant, which runs the missed mutant's function outside the tests.
@@ -242,7 +258,7 @@ mutastic run --since --force-coverage
 
 ### `--operators`
 
-`--operators=OPERATORS`, for [`baseline`](#baseline), [`gate check`](#gate-check), [`gate open`](#gate-open), [`mutants`](#mutants), [`next`](#next), [`run`](#run). Which operators run: a set (defaults, stronger or extended), or operator ids split by commas, in place of mutastic.yaml's operators; defaults unless set.
+`--operators=OPERATORS`, for [`baseline`](#baseline), [`gate check`](#gate-check), [`gate open`](#gate-open), [`mutants`](#mutants), [`next`](#next), [`run`](#run). Which operators run: a set (defaults, stronger, extended or all), an operator's id or namespace, or any with - in front to leave it out, in place of mutastic.yaml's operators; defaults unless set.
 
 ```sh
 mutastic baseline --operators=stronger
@@ -270,22 +286,6 @@ mutastic run --unsafe=enclosing
 
 ```sh
 mutastic run --report=json
-```
-
-### `--shard`
-
-`--shard=N/M`, for [`run`](#run). Run only the Nth of M shares of the mutants, to split one run across machines. It keeps its results in shares/N-of-M in target/mutastic for --from-shards.
-
-```sh
-mutastic run --shard=2/4 --threshold=0
-```
-
-### `--from-shards`
-
-`--from-shards=DIR`, for [`run`](#run). Run no mutants: put together the results every share of a split run kept, found anywhere in DIR, as the whole run, with its reports and threshold.
-
-```sh
-mutastic run --from-shards=shares --threshold=70
 ```
 
 ### `--format`
@@ -438,6 +438,7 @@ mutastic verify mb2f8ae57 --edition=rust
 - `MUTASTIC_AGENT=1`: The agent format, for coding agents. Coding agents set it, so mutastic answers in the format they read best, with progress as lines. `MUTASTIC_FORMAT` still wins.
 - `MUTASTIC_VOCABULARY`: plain or classic, when --vocabulary isn't given. `classic` says killed and survived instead of caught and missed. The JSON report and the event stream always use the standard names. Any other value is refused.
 - `MUTASTIC_PILLS`: Labels: square (the default), rounded (for a Nerd Font) or off. How labels such as MISSED and PASS are drawn. `rounded` needs a terminal font with Nerd Font glyphs; `off` leaves out the coloured blocks and keeps the words. Any other value is refused.
+- `MUTASTIC_ARID=audit`: Run the mutants the arid filters skip, and say what happened. Adds an Arid audit row to the summary: how many of those mutants ran, and how many the tests caught.
 - `MUTASTIC_GATE_BUDGET`: Seconds a hooked gate check may take. 600 unless set: what the agents' plugins' Stop hook allows. The check waits for the count of the task's start only as long as this leaves, and hands over before it runs when its last run took longer.
 - `MUTASTIC_GATE_COUNT_WAIT`: Seconds gate check waits for the count of the task's start. 240 unless set. A count not done by then is left, and a pass says the check compared the test attributes in the source only.
 - `NO_COLOR`: No colour. Set to anything, it turns colour off, as it does for many tools.

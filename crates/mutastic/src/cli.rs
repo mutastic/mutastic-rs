@@ -419,11 +419,16 @@ fn set(parsed: &mut Parsed, name: &str, value: &str) -> Result<bool, String> {
             }
         }
         "operators" => {
+            // Given again, it adds, as `--report` does: `--operators=stronger --operators=-stream`.
+            let given = match parsed.operators_given.take() {
+                Some(earlier) => format!("{earlier},{value}"),
+                None => value.to_string(),
+            };
             // A name only a rules file has is checked once the rules files are read.
-            if let Ok(chosen) = operators(value) {
+            if let Ok(chosen) = operators(&given) {
                 parsed.operators = chosen;
             }
-            parsed.operators_given = Some(value.to_string());
+            parsed.operators_given = Some(given);
         }
         "unsafe" => {
             parsed.unsafe_mode = UnsafeMode::parse(value).ok_or_else(|| {
@@ -962,6 +967,7 @@ fn options(parsed: &Parsed, only: Vec<String>) -> Options {
         suggestions: false,
         shard: None,
         force_coverage: parsed.force_coverage,
+        audit_arid: std::env::var("MUTASTIC_ARID").is_ok_and(|value| value == "audit"),
     }
 }
 
@@ -2754,6 +2760,27 @@ mod tests {
             }
             assert!(check(&line("nonsense")).is_err(), "--{}", option.name);
         }
+    }
+
+    /// `--operators` given again adds to what it chose, as in the Java edition, and a list that
+    /// only leaves operators out leaves them out of the defaults.
+    #[test]
+    fn operators_given_again_add() {
+        let parsed = parse(
+            "run",
+            &words("--operators=stronger --operators=-mutastic/boundary"),
+        )
+        .unwrap();
+        assert_eq!(
+            parsed.operators_given.as_deref(),
+            Some("stronger,-mutastic/boundary")
+        );
+        assert!(!parsed.operators.contains(&crate::sites::BOUNDARY));
+        assert!(parsed.operators.len() > crate::sites::DEFAULTS.len() - 1);
+        let without = parse("run", &words("--operators=-mutastic/boundary")).unwrap();
+        let mut expected = crate::sites::DEFAULTS.to_vec();
+        expected.retain(|id| *id != crate::sites::BOUNDARY);
+        assert_eq!(without.operators, expected);
     }
 
     #[test]

@@ -351,11 +351,10 @@ slow run. The same run in a log, with `MUTASTIC_HEARTBEAT=6.5`, from its first f
  ❯  courier  src/lib.rs (8 mutants | 1 missed) 12.1s
    × postage() :11 > becomes >=
 mutants   [10/13] 81% · ✓ 8 caught · ✗ 1 missed · ○ 1 not covered · ⏱ 0 timed out · 18s · ~5s left
- ❯  courier  src/handover.rs (5 mutants | 1 missed | 2 not covered) 10.5s
+ ❯  courier  src/handover.rs (5 mutants | 1 missed | 1 not covered) 10.5s
    × hand_over() :5 signature is always false
    ○ hand_over() :7 no test reaches this line
-   ○ hand_over() :6 no test reaches this line
-ran       13 mutants in 22.7s · ✓ 9 caught · ✗ 2 missed · ○ 2 not covered · ⏱ 0 timed out
+ran       13 mutants in 22.7s · ✓ 9 caught · ✗ 2 missed · ○ 1 not covered · ⏱ 0 timed out
 checked   2 missed mutants in 1.5s · no test found to suggest
 ```
 

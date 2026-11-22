@@ -581,6 +581,11 @@ pub fn resolve_from(entries: &[String], from: &[String]) -> Result<Vec<&'static 
     use crate::sites;
     let rules = crate::callrules::loaded();
     let mut chosen: Vec<&'static str> = Vec::new();
+    // A list that only leaves operators out leaves them out of the defaults: `-stream`.
+    if entries.iter().all(|entry| entry.starts_with('-')) {
+        chosen.extend(sites::DEFAULTS.iter().copied());
+        chosen.extend(rules.iter().filter(|r| r.in_tier("defaults")).map(|r| r.id));
+    }
     for (index, entry) in entries.iter().enumerate() {
         let (remove, name) = match entry.strip_prefix('-') {
             Some(name) => (true, name),
@@ -723,7 +728,7 @@ mod tests {
             ("rules:\n  - drop: a\n", "mutastic.yaml line 2: a rule is `- skip: <pattern>` or `- mutate: <pattern>`, then `reason: …`"),
             ("operators:\n  stronger\n", "mutastic.yaml line 2: expected a list item, `- …`"),
             ("rules:\n  - mutate: a\n    arid: [mutastic:outptu]\n    reason: r\n", "mutastic.yaml line 3: mutastic:outptu isn't an arid rule. There's one called mutastic:output."),
-            ("rules:\n  - mutate: a\n    arid: [sleeps]\n    reason: r\n", "mutastic.yaml line 3: sleeps isn't an arid rule; the rules are mutastic:output, mutastic:null-checks, mutastic:thread-names, mutastic:keep-alive and mutastic:stack-sizes"),
+            ("rules:\n  - mutate: a\n    arid: [sleeps]\n    reason: r\n", "mutastic.yaml line 3: sleeps isn't an arid rule; the rules are mutastic:debug-representations, mutastic:output, mutastic:messages, mutastic:capacity, mutastic:wait-times, mutastic:waits, mutastic:null-checks, mutastic:thread-names, mutastic:keep-alive and mutastic:stack-sizes"),
             ("rules:\n  - skip: a\n    arid: [mutastic:output]\n    reason: r\n", "mutastic.yaml line 3: `arid:` goes on a `mutate:` rule: it says which arid skips to bring back, and a `skip:` rule skips everything it covers"),
             ("rules:\n  - mutate: a\n    arid: []\n    reason: r\n", "mutastic.yaml line 4: the rule `mutate: a` has an empty `arid:` list: name the rules to bring back, or leave `arid:` out to bring back every arid skip"),
         ] {

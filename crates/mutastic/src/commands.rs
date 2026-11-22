@@ -364,6 +364,30 @@ pub const OPTIONS: &[CliOption] = &[
         example: "--workers=2",
     },
     CliOption {
+        name: "shard",
+        value: "N/M",
+        kind: Kind::Value,
+        group: "Running",
+        choices: &[],
+        help: "Run only the Nth of M shares of the mutants, to split one run across machines. It \
+               keeps its results in shares/N-of-M in target/mutastic for --from-shards",
+        commands: &["run"],
+        environment: "",
+        example: "--shard=2/4 --threshold=0",
+    },
+    CliOption {
+        name: "from-shards",
+        value: "DIR",
+        kind: Kind::Value,
+        group: "Running",
+        choices: &[],
+        help: "Run no mutants: put together the results every share of a split run kept, found \
+               anywhere in DIR, as the whole run, with its reports and threshold",
+        commands: &["run"],
+        environment: "",
+        example: "--from-shards=shares --threshold=70",
+    },
+    CliOption {
         name: "no-suggestions",
         value: "",
         kind: Kind::Flag,
@@ -390,11 +414,12 @@ pub const OPTIONS: &[CliOption] = &[
     CliOption {
         name: "operators",
         value: "OPERATORS",
-        kind: Kind::Value,
+        kind: Kind::Repeated,
         group: "Running",
         choices: &[],
-        help: "Which operators run: a set (defaults, stronger or extended), or operator ids split \
-               by commas, in place of mutastic.yaml's operators; defaults unless set",
+        help: "Which operators run: a set (defaults, stronger, extended or all), an operator's id \
+               or namespace, or any with - in front to leave it out, in place of mutastic.yaml's \
+               operators; defaults unless set",
         commands: &["run", "mutants", "next", "baseline", "gate open", "gate check"],
         environment: "",
         example: "--operators=stronger",
@@ -424,30 +449,6 @@ pub const OPTIONS: &[CliOption] = &[
         commands: &["run"],
         environment: "",
         example: "--report=json",
-    },
-    CliOption {
-        name: "shard",
-        value: "N/M",
-        kind: Kind::Value,
-        group: "Running",
-        choices: &[],
-        help: "Run only the Nth of M shares of the mutants, to split one run across machines. It \
-               keeps its results in shares/N-of-M in target/mutastic for --from-shards",
-        commands: &["run"],
-        environment: "",
-        example: "--shard=2/4 --threshold=0",
-    },
-    CliOption {
-        name: "from-shards",
-        value: "DIR",
-        kind: Kind::Value,
-        group: "Running",
-        choices: &[],
-        help: "Run no mutants: put together the results every share of a split run kept, found \
-               anywhere in DIR, as the whole run, with its reports and threshold",
-        commands: &["run"],
-        environment: "",
-        example: "--from-shards=shares --threshold=70",
     },
     CliOption {
         name: "format",
@@ -651,6 +652,12 @@ pub const ENVIRONMENT: &[Entry] = &[
         detail: "How labels such as MISSED and PASS are drawn. `rounded` needs a terminal font with \
                  Nerd Font glyphs; `off` leaves out the coloured blocks and keeps the words. Any \
                  other value is refused.",
+    },
+    Entry {
+        name: "MUTASTIC_ARID=audit",
+        meaning: "Run the mutants the arid filters skip, and say what happened",
+        detail: "Adds an Arid audit row to the summary: how many of those mutants ran, and how \
+                 many the tests caught.",
     },
     Entry {
         name: "MUTASTIC_GATE_BUDGET",
