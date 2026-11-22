@@ -3591,6 +3591,155 @@ pub mod repayments {
     );
 }
 
+/// Code no test reaches gets an assertion to start its first test with, as the Java edition's
+/// does: `try:` under the Not covered list, and `start with:` in the agent format, each a call the
+/// probe made and the value the code gave, found where one of the function's mutants answers
+/// otherwise. Each is written into the test module it's worded for, and run: it compiles, passes,
+/// and catches the mutant it was found for. A function only the crate calls, one that takes text,
+/// and a mutant no small input tells from the code get none.
+#[test]
+fn code_no_test_reaches_gets_an_assertion_to_start_with() {
+    let copy = copy_of("unreached", "unreached");
+    let (_, human) = mutastic_in(&copy, &["run", "--report=none"]);
+    let section: Vec<&str> = human
+        .lines()
+        .skip_while(|line| !line.starts_with(" Not covered"))
+        .take_while(|line| !line.is_empty())
+        .collect();
+    assert_eq!(
+        section,
+        [
+            " Not covered (no test reaches these lines)",
+            "   ○ src/lib.rs:6-9 postage() (8 mutants)",
+            "   ○ src/lib.rs:14 too_heavy() (3 mutants)",
+            "   ○ src/lib.rs:20 zone() (3 mutants)",
+            "   ○ src/lib.rs:25 label() (1 mutant)",
+            "   ○ src/lib.rs:42 discount() (1 mutant)",
+            "     try: assert_eq!(super::postage(1001), 6);",
+        ],
+        "{human}"
+    );
+
+    let (_, agent) = mutastic_in(&copy, &["run", "--format=agent", "--report=none"]);
+    let listed: Vec<&str> = agent
+        .lines()
+        .skip_while(|line| !line.starts_with("not covered ("))
+        .filter(|line| !line.starts_with("  or propose"))
+        .take_while(|line| !line.starts_with("<<end"))
+        .collect();
+    // In a test module yet to be written, `super::` holds whatever the module imports; in
+    // `loyalty`'s, which has `use super::*;`, the call is written as its own tests write theirs.
+    let at_the_root = [
+        "assert_eq!(super::postage(1001), 6);",
+        "assert_eq!(super::postage(0), 4);",
+        "assert_eq!(super::postage(4), 4);",
+        "assert!(!super::too_heavy(30000));",
+        "assert!(super::too_heavy(30001));",
+    ];
+    let in_loyalty = ["assert_eq!(Card::new(2).discount(1), 1);"];
+    let mut expected = vec![
+        "not covered (no test reaches these lines; fix the missed mutants first):".to_string(),
+        "- src/lib.rs:6-9 postage() (8 mutants)".to_string(),
+        "- src/lib.rs:14 too_heavy() (3 mutants)".to_string(),
+        "- src/lib.rs:20 zone() (3 mutants)".to_string(),
+        "- src/lib.rs:25 label() (1 mutant)".to_string(),
+        "- src/lib.rs:42 discount() (1 mutant)".to_string(),
+    ];
+    expected.extend(
+        at_the_root
+            .iter()
+            .chain(&in_loyalty)
+            .map(|assertion| format!("  start with: {assertion}")),
+    );
+    assert_eq!(listed, expected, "{agent}");
+
+    // The events carry the call each was found by, as the schema has it, and no test to add:
+    // what puts a run's shares back together says `try:` from it.
+    let (_, jsonl) = mutastic_in(&copy, &["run", "--format=jsonl", "--report=none"]);
+    let before = events(&jsonl);
+    for event in &before {
+        let errors: Vec<String> = schema().iter_errors(event).map(|e| e.to_string()).collect();
+        assert!(errors.is_empty(), "{event}\n{}", errors.join("\n"));
+    }
+    let unreached: Vec<&Value> = before
+        .iter()
+        .filter(|e| e["reason"] == "mutant-finished" && e["location"]["method"] == "discount")
+        .filter(|e| e["status"] == "NoCoverage")
+        .collect();
+    assert_eq!(unreached.len(), 1, "{jsonl}");
+    assert_eq!(
+        unreached[0]["suggestion"],
+        serde_json::json!({
+            "call": "Card::new(2).discount(1)",
+            "parameters": ["order"],
+            "arguments": [1],
+            "receiver": [{"type": "Card", "arguments": [2], "parameters": ["points"]}],
+            "today": "1",
+            "withMutant": "0",
+        }),
+        "{jsonl}"
+    );
+    assert!(unreached[0]["suggestedTest"].is_null(), "{jsonl}");
+
+    // Each assertion, where it's worded for: a new test module at the root, and `loyalty`'s own.
+    let lib = copy.join("src/lib.rs");
+    let source = std::fs::read_to_string(&lib).unwrap();
+    let theirs = "        fn points_buy_a_discount() {";
+    assert!(source.contains(theirs), "{source}");
+    let started = source.replace(
+        theirs,
+        &format!(
+            "        fn starts_here() {{\n            {}\n        }}\n\n        #[test]\n{theirs}",
+            in_loyalty.join("\n            ")
+        ),
+    ) + &format!(
+        "\n#[cfg(test)]\nmod tests {{\n    #[test]\n    fn starts_here() {{\n        {}\n    }}\n}}\n",
+        at_the_root.join("\n        ")
+    );
+    std::fs::write(&lib, started).unwrap();
+    // Exit status 2 would be a test that doesn't compile, or fails as the code is: `mutastic_in`
+    // fails on it.
+    let (_, jsonl) = mutastic_in(&copy, &["run", "--format=jsonl", "--report=none"]);
+    let after = events(&jsonl);
+    let caught_by_the_start = |function: &str| {
+        after
+            .iter()
+            .filter(|e| e["reason"] == "mutant-finished" && e["location"]["method"] == function)
+            .filter(|e| {
+                e["status"] == "Killed"
+                    && e["caughtBy"]
+                        .as_str()
+                        .is_some_and(|test| test.ends_with("tests::starts_here"))
+            })
+            .count()
+    };
+    // Every mutant of `postage` but the one at its edge, which a parcel of exactly a kilo can't
+    // tell apart; both ways `too_heavy` can answer; and the line of `discount` no test reached.
+    assert_eq!(caught_by_the_start("postage"), 7, "{jsonl}");
+    assert_eq!(caught_by_the_start("too_heavy"), 3, "{jsonl}");
+    let reached: Vec<&Value> = after
+        .iter()
+        .filter(|e| e["reason"] == "mutant-finished" && e["location"]["method"] == "discount")
+        .filter(|e| e["mutation"]["applied"]["text"] == "order -> 0")
+        .collect();
+    assert_eq!(reached.len(), 1, "{jsonl}");
+    assert_eq!(reached[0]["status"], "Killed", "{jsonl}");
+    assert_eq!(
+        reached[0]["caughtBy"], "loyalty::tests::starts_here",
+        "{jsonl}"
+    );
+    // What had no assertion to start with is still not reached: nothing was guessed for it.
+    for unreached in ["zone", "label"] {
+        assert!(
+            after
+                .iter()
+                .filter(|e| e["location"]["method"] == unreached)
+                .all(|e| e["status"] == "NoCoverage" && e["suggestion"].is_null()),
+            "{jsonl}"
+        );
+    }
+}
+
 /// A closed stderr (`mutastic run … 2>&1 | head`) loses the progress, never a mutant's result: a
 /// run whose progress can't be written keeps every mutant it had, as one that can.
 #[test]

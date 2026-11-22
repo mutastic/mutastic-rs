@@ -1,0 +1,7 @@
+[33m[1m Not covered [0m[0m[2m(no test reaches these lines)[0m
+   [33m○[0m src/lib.rs:6-9 postage() [2m(8 mutants)[0m
+   [33m○[0m src/lib.rs:14 too_heavy() [2m(3 mutants)[0m
+   [33m○[0m src/lib.rs:20 zone() [2m(3 mutants)[0m
+   [33m○[0m src/lib.rs:25 label() [2m(1 mutant)[0m
+   [33m○[0m src/lib.rs:42 discount() [2m(1 mutant)[0m
+     [2mtry:[0m [32massert_eq!(super::postage(1001), 6);[0m

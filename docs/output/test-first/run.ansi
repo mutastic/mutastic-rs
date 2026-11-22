@@ -41,6 +41,7 @@
 
 [33m[1m Not covered [0m[0m[2m(no test reaches these lines)[0m
    [33m○[0m src/lib.rs:45 loyalty_credit() [2m(1 mutant)[0m
+     [2mtry:[0m [32massert_eq!(Pricing::new().loyalty_credit(0), 0);[0m
 
 [2m Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing[0m
 
@@ -50,8 +51,8 @@
  [2m Worst at[0m  Pricing::loyalty_credit() 2 ✗
  [2m    Build[0m  one build of every mutant, 2 rounds (check and build)
  [2mTest runs[0m  4[2m (16 without coverage selection)[0m
- [2m Start at[0m  01:27:47
- [2m Duration[0m  2.6s [2m(setup 1.1s, build 1.4s, coverage 12ms, mutants 60ms, checking 8ms)[0m
- [2m    Tests[0m  4 on rustc 1.94.0 · 4 workers
+ [2m Start at[0m  16:18:43
+ [2m Duration[0m  2.3s [2m(setup 847ms, build 1.2s, coverage 9ms, mutants 135ms, checking 5ms)[0m
+ [2m    Tests[0m  4 on rustc 1.100.0 · 4 workers
  [2m  Reports[0m  fixtures/pricing/target/mutastic/mutation.json[2m · [0mfixtures/pricing/target/mutastic/mutation.html
  [2m    Score[0m  [1;31m[1m40.0%[0m[0m  [41;30;1m FAIL [0m [1;31mBelow the threshold of 80: 2 missed, 1 not covered.[0m[2m  · 50.0% where tests reach[0m

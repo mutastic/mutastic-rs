@@ -51,7 +51,10 @@ The Rust edition's cards have the gap, the change, the inputs seen, the covering
 suggested test and the commands, as the Java edition's do. The suggested test is a `#[test] fn` for
 the module's `mod tests`, asserted with `assert_eq!` or `assert!`, and it's written for functions
 and methods a test can call with whole numbers alone: see
-[Suggested tests](concepts/suggested-tests.md). Code no test reaches gets no starting point yet.
+[Suggested tests](concepts/suggested-tests.md). Code no test reaches gets a starting point as the
+Java edition's does, `try:` under `Not covered` and `start with:` in the agent format: an
+`assert_eq!` or `assert!` line for that test module, for a function code outside the crate can
+call. The crate's own gets none, as its inputs are its callers' to give.
 
 ## What's different in the results
 
@@ -165,4 +168,3 @@ instead:
 |---|---|
 | Compiled plugins, and `filters:` in `mutastic.yaml` | A rules file, for call operators: [Configuration](reference/configuration.md#rules-files) |
 | `@DoNotMutate` | `mutastic ignore`, one mutant at a time: [Configuration](reference/configuration.md#ignoring-one-mutant) |
-| A suggested starting point for code no test reaches | The `Not covered` list, which names each function and its lines |

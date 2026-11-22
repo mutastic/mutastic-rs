@@ -515,6 +515,33 @@ impl<'a> View<'a> {
         each
     }
 
+    /// For a mutant no test reaches, the assertion to start its function's first test with, when
+    /// the probe found one. Only for a function code outside the crate can call: the crate's own
+    /// is given its inputs by its callers, and a test of it alone may test what can't happen.
+    fn starting_point(&self, result: &MutantResult) -> Option<String> {
+        let suggestion = result.suggestion.as_ref()?;
+        let function = &self.found.functions[self.mutant(result).function];
+        let callable = function.callable.as_ref()?;
+        (result.status == Status::NoCoverage && function.public)
+            .then(|| self.value(&suggest::starting_point(callable, suggestion)))
+    }
+
+    /// An assertion to start with for each call that reaches code no test does, in the order
+    /// found, at most `limit`, as the Java edition lists them.
+    fn starting_points(&self, limit: usize) -> Vec<String> {
+        let mut points: Vec<String> = Vec::new();
+        for point in self
+            .results
+            .iter()
+            .filter_map(|result| self.starting_point(result))
+        {
+            if points.len() < limit && !points.contains(&point) {
+                points.push(point);
+            }
+        }
+        points
+    }
+
     fn suggested_test(&self, result: &MutantResult, named: bool) -> Option<SuggestedTest> {
         if self.beyond_callers(result).is_some() {
             return None;
@@ -1665,6 +1692,9 @@ fn each_help(each: &[(&MutantResult, Option<SuggestedTest>)]) -> &'static str {
 const CHECK_TODAY: &str =
     "check today's value is the one you intend: the test pins what the code does now";
 
+/// How many assertions to start with the agent format lists, as the Java edition caps them.
+const STARTING_POINTS_SHOWN: usize = 10;
+
 /// How many functions the Not covered section lists, as the Java edition caps it.
 const NOT_COVERED_SHOWN: usize = 50;
 
@@ -1782,6 +1812,15 @@ fn not_covered(out: &mut String, view: &View, or_only_flaky: &str, style: Style)
                 "   … and {} more functions",
                 places.len() - NOT_COVERED_SHOWN
             ))
+        );
+    }
+    // As the Java edition: one assertion to start with, under the list.
+    for assertion in view.starting_points(1) {
+        let _ = writeln!(
+            out,
+            "     {} {}",
+            style.dim("try:"),
+            style.green(&assertion)
         );
     }
 }
@@ -2521,6 +2560,10 @@ fn agent(report: &Report, style: Style) -> String {
                 );
             }
         }
+        // As the Java edition's: an assertion to start each function's first test with.
+        for assertion in view.starting_points(STARTING_POINTS_SHOWN) {
+            let _ = writeln!(quoted, "  start with: {assertion}");
+        }
     }
     if !quoted.is_empty() {
         out.push_str(&untrusted::fence(&quoted));
@@ -3025,6 +3068,15 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
         if let Some(found) = found {
             event["suggestion"] = found;
         }
+    }
+    // A mutant no test reaches has no test to add, only the call its starting point was found
+    // by, as the Java edition writes it: what a share's events need to say `try:` again.
+    let callable = view.found.functions[mutant.function].callable.as_ref();
+    if let (Some(_), Some(found), Some(callable)) =
+        (view.starting_point(result), &result.suggestion, callable)
+    {
+        let call = suggest::starting_call(callable, found);
+        event["suggestion"] = suggestion(view, result, found, &call);
     }
     event["testsRun"] = json!(result.tests_run);
     event["durationMs"] = json!(result.took.as_millis() as u64);
