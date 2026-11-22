@@ -277,7 +277,7 @@
         },
         "caughtWith": {
           "type": "string",
-          "description": "What caught it failed with: in the Java edition the exception's class, `org.opentest4j.AssertionFailedError`; in Rust's the panic or the crash, `crash: SIGABRT`."
+          "description": "What caught it failed with: in the Java edition the exception's class, `org.opentest4j.AssertionFailedError`; in Rust's the panic or the crash, `crash: SIGABRT`. In both, `exit: 2` when the code the test ran ended the process with that status."
         },
         "caughtByAll": {
           "type": "array",
@@ -289,8 +289,8 @@
           "description": "The Rust edition only: why the mutant is near unsafe code, when it is (`called from unsafe code`, `in a module with unsafe code`, `in a function with an unsafe block`, `inside unsafe code`). It ran on its own, and a crash isn't counted as caught (`RuntimeError`)."
         },
         "failureOrigin": {
-          "enum": ["assertion", "test", "code", "unknown"],
-          "description": "Where the failure came from: `assertion` (a check failed), `test` (the test's own code threw), `code` (the code under test threw) or `unknown`."
+          "enum": ["assertion", "test", "code", "unknown", "exit"],
+          "description": "Where the failure came from: `assertion` (a check failed), `test` (the test's own code threw), `code` (the code under test threw), `unknown`, or `exit` (the code the test ran ended the JVM, with the status `caughtWith` gives)."
         },
         "unconfirmedCatchBy": {
           "$ref": "#/$defs/test",

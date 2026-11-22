@@ -532,6 +532,42 @@ fn a_binary_a_test_runs_as_a_process_is_mutated_there() {
     );
 }
 
+/// A test that calls what `main` calls, in the tests' own process, where a mutant makes it call
+/// `process::exit`. Status 2 fails `cargo test`, so the test that was running caught it, by the
+/// exit, not a crash; status 0 passes it, so it's no catch, and the tests after it decide. A loop
+/// that no longer ends still times out. The Java edition's `ExitingMainTest` is the same.
+#[test]
+fn an_exit_is_caught_by_the_test_that_ran_it_unless_its_status_is_zero() {
+    let dir = fixture("exits");
+    let (_, stdout) = mutastic(&["run", &dir, "--format=jsonl"]);
+    let finished = |description: &str| {
+        events(&stdout)
+            .into_iter()
+            .find(|e| {
+                e["reason"] == "mutant-finished" && e["mutation"]["description"] == description
+            })
+            .unwrap_or_else(|| panic!("no mutant-finished for {description}: {stdout}"))
+    };
+    let exits_2 = finished("`args.is_empty()` is always true");
+    assert_eq!(exits_2["status"], "Killed", "{exits_2}");
+    assert_eq!(exits_2["caughtBy"], "exits::tests::prints_the_discount");
+    assert_eq!(exits_2["caughtWith"], "exit: 2");
+    let exits_0 = finished("`args[0] == \"--help\"` is always true");
+    assert_eq!(exits_0["status"], "Survived", "{exits_0}");
+    assert!(exits_0.get("caughtBy").is_none(), "{exits_0}");
+    let hangs = finished("`total >= 10` is always true");
+    assert_eq!(hangs["status"], "Timeout", "{hangs}");
+
+    let id = exits_2["id"].as_str().unwrap();
+    let (_, explained) = mutastic(&["explain", id, &dir]);
+    assert!(
+        explained.contains(
+            "caught by exits::tests::prints_the_discount, by the process exiting with status 2"
+        ),
+        "{explained}"
+    );
+}
+
 /// Code only `main` runs, which no test calls: the not-covered line says it's reached only from
 /// `main`, and to move what it does into `run(args, out)`, test that, and leave `main` a one-line
 /// call. What it says is checked by doing it: moved into `run`, with a test of `run`, every mutant
@@ -1442,7 +1478,7 @@ fn an_ignore_holds_while_its_line_does() {
     assert_eq!(code, 0, "{out}");
     assert_eq!(
         out,
-        "mutastic: mb2f8ae57 is ignored: totals are tens\n  recorded in .mutastic/ignores.yaml: commit it, as a decision to review\n  to undo: mutastic ignore --remove mb2f8ae57 .\n"
+        "mutastic: mb2f8ae57 is ignored: totals are tens\n  recorded in .mutastic/ignores.yaml: commit it, as a decision to review\n  to undo: mutastic ignore --remove mb2f8ae57\n"
     );
     let file = std::fs::read_to_string(dir.join(".mutastic/ignores.yaml")).unwrap();
     assert!(
@@ -1493,7 +1529,7 @@ fn an_ignore_holds_while_its_line_does() {
         &["ignore", "mb2f8ae57", "--propose", "--reason=only tens"],
     );
     assert!(
-        out.contains("  to accept: mutastic ignore --accept mb2f8ae57 .\n"),
+        out.contains("  to accept: mutastic ignore --accept mb2f8ae57\n"),
         "{out}"
     );
     let (_, out) = mutastic_in(&dir, &["ignore", "--accept", "mb2f8ae57"]);
@@ -1504,7 +1540,7 @@ fn an_ignore_holds_while_its_line_does() {
     assert!(!dir.join(".mutastic/proposals.yaml").exists());
     let (_, out) = mutastic_in(&dir, &["ignore", "--remove", "mb2f8ae57"]);
     assert!(
-        out.contains("  to undo: mutastic ignore mb2f8ae57 '--reason=only tens' .\n"),
+        out.contains("  to undo: mutastic ignore mb2f8ae57 '--reason=only tens'\n"),
         "{out}"
     );
     let (code, out) = mutastic_in(&dir, &["ignore", "mb2f8ae57"]);
@@ -4824,5 +4860,56 @@ fn a_threads_name_and_stack_are_arid_and_its_work_still_runs() {
             .filter(|(line, ..)| [11, 22].contains(line))
             .all(|(_, status, _)| status == "Survived"),
         "{kept:?}"
+    );
+}
+
+/// `MUTASTIC_ARID=audit` runs the mutants the arid rules skip, out of the score and the counts, as
+/// the Java edition's does, and says where a test's own assertion catches one: there a rule may
+/// hide a contract, so it gives the `mutate:` rule that brings it back. Here only a test of a
+/// `Debug`'s text does; a sum underflowing in a sleep's time is caught by a panic, which says
+/// nothing; a capacity, an error's text and a sleep go unnoticed by tests that check what the code
+/// does.
+#[test]
+fn an_audit_runs_the_arid_mutants_and_says_where_a_test_checks_them() {
+    let dir = copy_of("arid", "audit");
+    let run = |audit: bool| {
+        let env: &[(&str, &str)] = if audit {
+            &[("MUTASTIC_ARID", "audit")]
+        } else {
+            &[]
+        };
+        let args = ["run", "--operators=extended", "--report=none"];
+        let (_, jsonl) =
+            mutastic_with_input_and_env(&dir, &[&args[..], &["--format=jsonl"]].concat(), "", env);
+        let (_, full) =
+            mutastic_with_input_and_env(&dir, &[&args[..], &["--format=full"]].concat(), "", env);
+        (events(&jsonl).pop().unwrap(), full)
+    };
+    let (plain, plain_full) = run(false);
+    let (audited, full) = run(true);
+    assert!(plain.get("aridAudit").is_none(), "{plain}");
+    assert!(!plain_full.contains("Arid audit"), "{plain_full}");
+    for counted in ["score", "killed", "survived", "ignored", "noCoverage"] {
+        assert_eq!(audited[counted], plain[counted], "{counted}: {audited}");
+    }
+    assert_eq!(
+        audited["aridAudit"],
+        serde_json::json!({
+            "ran": 20,
+            "caught": 3,
+            "caughtByAssertion": 2,
+            "missed": 17,
+            "notCovered": 0,
+            "checkedIn": ["<Order as fmt::Debug>::fmt()"],
+            "bringBack": "rules:\n  - mutate: <Order as fmt::Debug>::fmt\n    arid: [mutastic:debug-representations]\n    reason: <why a test should check it>\n",
+        })
+    );
+    assert!(
+        full.contains(
+            " Arid audit  20 ran anyway: 3 caught (2 by an assertion), 17 missed, 0 not covered; \
+             checked in <Order as fmt::Debug>::fmt()\n             a test checks what they do: to \
+             run them, add to mutastic.yaml\n               rules:\n"
+        ),
+        "{full}"
     );
 }

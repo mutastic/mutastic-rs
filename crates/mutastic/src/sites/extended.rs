@@ -8,8 +8,6 @@ use super::*;
 use ra_ap_syntax::ast::HasArgList;
 use ra_ap_syntax::TextSize;
 
-/// Functions whose body is arid to replace: constructors, and what only formats or hashes.
-const ARID_BODIES: &[&str] = &["new", "fmt", "hash"];
 /// `rust_decimal`'s steps that round or rescale a value.
 const DECIMAL_STEPS: &[&str] = &[
     "round_dp",
@@ -120,11 +118,7 @@ impl Finder<'_> {
         returns: &str,
         context: Context<'_>,
     ) {
-        let name = &self.found.functions[context.function].name;
-        if ARID_BODIES.contains(&name.as_str())
-            || trivial_getter(body)
-            || body.async_token().is_some()
-        {
+        if trivial_getter(body) || body.async_token().is_some() {
             return;
         }
         let values = if matches!(returns, "()" | "") {
