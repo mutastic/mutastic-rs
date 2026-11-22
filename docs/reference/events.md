@@ -133,10 +133,14 @@ for people and agents to read, and can change from one release to the next; the 
 [Schemas and stability](https://docs.mutastic.io/reference/schemas/) says exactly what counts as
 breaking.
 
-## Not there yet
+## Flaky tests and failures
 
 `flaky` names each test that failed, then passed when run again, or that caught mutants and then
 failed on its own, and `flakyEvidence` says what it reaches that varies, as the Java edition's do;
 the second kind's entry has `"failsAlone": true`. A Rust test fails with a panic, not a chain of
-exceptions, so each one's `failure` is empty and `outside` is `false`. The lists the Java edition
-fills that the Rust edition doesn't yet (`likelyFlaky`, `unrelatedCatches`) are there and empty.
+exceptions, so each one's `failure` is empty and `outside` is `false`. `unrelatedCatches` names
+each test that caught mutants in three or more functions, each time failing the same way in its
+own code, as the Java edition's does; its `failure` is what `caughtWith` says, `panic`. Where a
+catch failed is `failureOrigin`, read from the line the test's panic names: `assertion` for an
+`assert!` or `assert_eq!`, `test` for a panic in the test's own code, `code` for one in the code
+under test, and `unknown` when the line isn't the package's.
