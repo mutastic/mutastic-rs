@@ -439,6 +439,7 @@ mutastic verify mb2f8ae57 --edition=rust
 - `MUTASTIC_VOCABULARY`: plain or classic, when --vocabulary isn't given. `classic` says killed and survived instead of caught and missed. The JSON report and the event stream always use the standard names. Any other value is refused.
 - `MUTASTIC_PILLS`: Labels: square (the default), rounded (for a Nerd Font) or off. How labels such as MISSED and PASS are drawn. `rounded` needs a terminal font with Nerd Font glyphs; `off` leaves out the coloured blocks and keeps the words. Any other value is refused.
 - `MUTASTIC_ARID=audit`: Run the mutants the arid filters skip, and say what happened. Adds an Arid audit row to the summary: how many of those mutants ran, and how many the tests caught.
+- `MUTASTIC_GITHUB=off`: No GitHub Actions annotations or job summary. On GitHub Actions (`GITHUB_ACTIONS=true`), a full run annotates the line of each of its first ten misses and adds a summary to the job's page. `off` leaves them out.
 - `MUTASTIC_GATE_BUDGET`: Seconds a hooked gate check may take. 600 unless set: what the agents' plugins' Stop hook allows. The check waits for the count of the task's start only as long as this leaves, and hands over before it runs when its last run took longer.
 - `MUTASTIC_GATE_COUNT_WAIT`: Seconds gate check waits for the count of the task's start. 240 unless set. A count not done by then is left, and a pass says the check compared the test attributes in the source only.
 - `NO_COLOR`: No colour. Set to anything, it turns colour off, as it does for many tools.

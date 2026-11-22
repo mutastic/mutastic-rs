@@ -26,6 +26,9 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # The tests run mutastic many times over: none of those runs is this job's, so none annotates
+  # it or adds to its summary.
+  MUTASTIC_GITHUB: "off"
   # One worker and 16 shares took 2 to 5 hours a share; then two mutants at once and 14 shares,
   # 2 to 3 hours. With more mutants and more tests a share of 14 passed the 5 hours it is given
   # (20 and 21 Nov 2026: 417 of 548 mutants after 4h51m), and the runner's own limit is 6. So 28

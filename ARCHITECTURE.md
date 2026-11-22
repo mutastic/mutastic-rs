@@ -79,7 +79,7 @@ All the code is in `crates/mutastic/src`:
 | `engine` | A run: finds, builds, records coverage, runs each mutant, and decides its status |
 | `words` | What a card says: the gap, the change, the inputs seen and the help |
 | `suggest` | Suggested tests: candidate inputs, running the probes, and the test written out |
-| `report` | The formats: `full`, `concise`, `agent` and `jsonl`; `report/next.rs`, `mutastic next`'s queue, its order and `--top`, in each format |
+| `report` | The formats: `full`, `concise`, `agent` and `jsonl`; `report/next.rs`, `mutastic next`'s queue, its order and `--top`, in each format; `report/github.rs`, the annotations and job summary a run on GitHub Actions adds |
 | `nextrun` | What the last `mutastic next` left uncaught, and the hash of the code under test, its test code taken out, that says whether only those run again |
 | `shares` | A run split across machines: which share a mutant is in (`--shard`), a share's events, and the whole run put back together from them (`--from-shards`) |
 

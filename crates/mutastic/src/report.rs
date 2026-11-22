@@ -16,6 +16,7 @@ use crate::words::{self, Advice};
 
 pub mod audit;
 pub mod files;
+pub mod github;
 pub mod next;
 pub mod sarif;
 
