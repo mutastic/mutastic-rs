@@ -127,7 +127,9 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
   list before its own run, where Java waits for its count after: so a hooked check sets aside a
   run as long as the last check's when it works out how long the budget leaves for the wait.
 - **Skipped as arid:** a statement that only writes output, `println!`, `eprintln!`, `dbg!` or a
-  logger's macro, where the Java edition skips a call to a logger or `System.out`. And a statement
+  logger's macro, where the Java edition skips a call to a logger or `System.out`. A value a `let`
+  works out only for output macros to read, where the Java edition follows a value in the bytecode
+  to a logger, inline or through a local, by its uses on every path. And a statement
   that only checks a value it's given, `x.unwrap();` or `x.expect("..");`, where the Java edition
   skips a removed `Objects.requireNonNull(x);`.
   Both editions skip a sleep removed (`thread::sleep`, an awaited tokio `sleep`), the number that

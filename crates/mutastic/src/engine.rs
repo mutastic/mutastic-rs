@@ -1693,4 +1693,38 @@ mod tests {
             [output, None]
         );
     }
+
+    /// A value a `let` works out only for a log line comes back with `mutastic:output`, the rule it
+    /// belongs to, and with no list; another rule's list leaves it skipped.
+    #[test]
+    fn a_mutate_rule_takes_back_a_value_only_logged() {
+        let dir =
+            std::env::temp_dir().join(format!("mutastic-logged-rules-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let source =
+            "pub fn timed(a: i64, b: i64) {\n    let d = a - b;\n    log::info!(\"{d}\");\n}\n";
+        std::fs::write(dir.join("src/lib.rs"), source).unwrap();
+        let found = sites::find(&dir, "shop", &[PathBuf::from("src/lib.rs")], &[sites::MATH]);
+        std::fs::remove_dir_all(&dir).ok();
+        let rule = |arid: &[&str]| crate::config::Rule {
+            mutate: true,
+            target: "shop::timed".into(),
+            reason: "the log is what the operator reads".into(),
+            arid: arid.iter().map(|id| id.to_string()).collect(),
+        };
+        let skipped = |rules: &[crate::config::Rule]| {
+            let mut found = found.clone();
+            apply_rules(rules, "shop", &mut found);
+            found
+                .mutants
+                .iter()
+                .map(|m| m.skipped.clone())
+                .collect::<Vec<_>>()
+        };
+        let logged = || vec![Some(crate::arid::ONLY_FEEDS_A_LOG_LINE.to_string())];
+        assert_eq!(skipped(&[]), logged());
+        assert_eq!(skipped(&[rule(&[])]), [None]);
+        assert_eq!(skipped(&[rule(&["mutastic:output"])]), [None]);
+        assert_eq!(skipped(&[rule(&["mutastic:null-checks"])]), logged());
+    }
 }
