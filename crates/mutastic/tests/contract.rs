@@ -7,7 +7,8 @@
 //! compared with the contract. A difference the contract doesn't record fails, naming the item and
 //! what to do; so does a recorded one that has gone, so the list only shrinks for real.
 //!
-//! The contract is the one at the commit the newest pin in `contract/pins` names, fetched once and
+//! The contract is the one at the commit the newest pin in `contract/pins` names, the one furthest
+//! along the Java repository's main, fetched once and
 //! kept under the target directory: each pull request adds a pin of its own, so none conflicts
 //! with another's (`contract/README.md`). `MUTASTIC_CONTRACT` names a file to check against instead: a working copy
 //! while a change to the contract is being written, or mutastic main's, as the weekly drift job
@@ -64,37 +65,47 @@ fn pins() -> BTreeMap<String, String> {
         .collect()
 }
 
-/// The commit the contract is read at: the newest pin's, by the committer date each gives. A pin
-/// that isn't a full commit and a UTC date fails, as do two commits pinned at one date, naming
-/// the files.
+/// The commit the contract is read at: the newest pin's, by where each sits on the Java
+/// repository's main, the count of commits since the anchor `contract/source.json` names. A date
+/// can't order them: the merge queue has landed commits there with dates out of order. Two pins at
+/// one position are told apart by date, as a pull request's head and a commit of main can be. A
+/// pin that isn't a full commit, a UTC date and a position fails, as do two commits pinned at one
+/// position and date, naming the files.
 fn newest(pins: &BTreeMap<String, String>) -> Result<String, String> {
     let full_commit = Regex::new("^[0-9a-f]{40}$").unwrap();
     let utc_date = Regex::new(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$").unwrap();
-    let mut dated: BTreeMap<String, (String, String)> = BTreeMap::new();
+    let mut placed: BTreeMap<(u64, String), (String, String)> = BTreeMap::new();
     for (name, text) in pins {
         let pin: Value = serde_json::from_str(text)
             .map_err(|error| format!("contract/pins/{name} isn't JSON: {error}"))?;
         let commit = pin["commit"].as_str().unwrap_or_default();
         let date = pin["date"].as_str().unwrap_or_default();
+        let Some(position) = pin["position"].as_u64() else {
+            return Err(format!(
+                "contract/pins/{name} needs a position, the commits since the anchor on mutastic \
+                 main: scripts/pin-contract.sh writes one"
+            ));
+        };
         if !full_commit.is_match(commit) || !utc_date.is_match(date) {
             return Err(format!(
                 "contract/pins/{name} needs a commit of 40 hex digits and a date like \
                  2026-11-20T10:30:52Z: scripts/pin-contract.sh writes one"
             ));
         }
-        let apart = dated
-            .get(date)
+        let place = (position, date.to_string());
+        let apart = placed
+            .get(&place)
             .filter(|(_, earlier)| earlier != commit)
             .map(|(other, _)| other);
         if let Some(other) = apart {
             return Err(format!(
-                "contract/pins/{other} and contract/pins/{name} pin different commits at {date}: \
-                 one of the dates is wrong"
+                "contract/pins/{other} and contract/pins/{name} pin different commits at position \
+                 {position} and {date}: one of them is wrong"
             ));
         }
-        dated.insert(date.to_string(), (name.clone(), commit.to_string()));
+        placed.insert(place, (name.clone(), commit.to_string()));
     }
-    dated
+    placed
         .into_values()
         .next_back()
         .map(|(_, commit)| commit)
@@ -371,35 +382,55 @@ fn named(found: &mut Vec<Found>, surface: &str, contract: &[String], mine: &[Str
     }
 }
 
-fn pin(commit: char, date: &str) -> String {
+fn pin(commit: char, position: u64, date: &str) -> String {
     let commit = commit.to_string().repeat(40);
-    format!(r#"{{"commit": "{commit}", "date": "{date}"}}"#)
+    format!(r#"{{"commit": "{commit}", "date": "{date}", "position": {position}}}"#)
+}
+
+fn pin_files(pins: &[(&str, String)]) -> BTreeMap<String, String> {
+    pins.iter()
+        .map(|(name, text)| ((*name).to_string(), text.clone()))
+        .collect()
 }
 
 #[test]
-fn the_newest_pin_is_the_one_read_whatever_its_file_is_called() {
-    let pins = BTreeMap::from([
+fn the_newest_pin_is_the_furthest_along_main_whatever_its_file_or_date() {
+    // As the merge queue has landed them: the later commit of main with the earlier date.
+    let pins = pin_files(&[
         (
-            "a-later-change.json".to_string(),
-            pin('b', "2026-11-20T10:30:52Z"),
+            "a-earlier-on-main.json",
+            pin('a', 7, "2026-11-20T10:08:16Z"),
         ),
-        (
-            "z-an-earlier-one.json".to_string(),
-            pin('a', "2026-11-19T23:59:59Z"),
-        ),
+        ("z-later-on-main.json", pin('b', 8, "2026-11-20T08:53:38Z")),
     ]);
     assert_eq!(newest(&pins), Ok("b".repeat(40)));
 }
 
 #[test]
-fn a_pin_without_a_full_commit_and_a_utc_date_fails_by_name() {
+fn pins_at_one_position_are_told_apart_by_date() {
+    let pins = pin_files(&[
+        ("a-head.json", pin('a', 9, "2026-11-20T10:30:52Z")),
+        ("main.json", pin('b', 9, "2026-11-19T23:59:59Z")),
+    ]);
+    assert_eq!(newest(&pins), Ok("a".repeat(40)));
+}
+
+#[test]
+fn a_pin_without_a_full_commit_a_utc_date_and_a_position_fails_by_name() {
     for text in [
-        r#"{"commit": "8648020", "date": "2026-11-20T10:30:52Z"}"#.to_string(),
-        pin('a', "2026-11-20"),
-        pin('a', "2026-11-20T10:30:52+01:00"),
+        r#"{"commit": "8648020", "date": "2026-11-20T10:30:52Z", "position": 1}"#.to_string(),
+        pin('a', 1, "2026-11-20"),
+        pin('a', 1, "2026-11-20T10:30:52+01:00"),
+        format!(
+            r#"{{"commit": "{}", "date": "2026-11-20T10:30:52Z"}}"#,
+            "a".repeat(40)
+        ),
+        format!(
+            r#"{{"commit": "{}", "date": "2026-11-20T10:30:52Z", "position": -1}}"#,
+            "a".repeat(40)
+        ),
     ] {
-        let pins = BTreeMap::from([("short.json".to_string(), text)]);
-        let problem = newest(&pins).unwrap_err();
+        let problem = newest(&pin_files(&[("short.json", text)])).unwrap_err();
         assert!(
             problem.starts_with("contract/pins/short.json needs"),
             "{problem}"
@@ -409,24 +440,23 @@ fn a_pin_without_a_full_commit_and_a_utc_date_fails_by_name() {
 }
 
 #[test]
-fn two_commits_pinned_at_one_date_fail_and_one_commit_pinned_twice_passes() {
+fn two_commits_at_one_position_and_date_fail_and_one_commit_pinned_twice_passes() {
     let date = "2026-11-20T10:30:52Z";
-    let apart = BTreeMap::from([
-        ("one.json".to_string(), pin('a', date)),
-        ("two.json".to_string(), pin('b', date)),
+    let apart = pin_files(&[
+        ("one.json", pin('a', 3, date)),
+        ("two.json", pin('b', 3, date)),
     ]);
     let problem = newest(&apart).unwrap_err();
     assert!(
         problem.contains("one.json") && problem.contains("two.json"),
         "{problem}"
     );
-    let same = BTreeMap::from([
-        ("one.json".to_string(), pin('a', date)),
-        ("two.json".to_string(), pin('a', date)),
+    let same = pin_files(&[
+        ("one.json", pin('a', 3, date)),
+        ("two.json", pin('a', 3, date)),
     ]);
     assert_eq!(newest(&same), Ok("a".repeat(40)));
 }
-
 #[test]
 fn the_contract_names_this_edition_and_its_ids_are_one_each() {
     let editions = strings(&contract()["editions"]);
