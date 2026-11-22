@@ -62,6 +62,16 @@ An id mutastic doesn't have is an error that names the one meant, when it's clos
 explain` on a skipped mutant names its rule, links to its section of
 [Arid rules](https://docs.mutastic.io/reference/arid/) and prints the rule to copy.
 
+An editor can check the file as you write it: both editions' `mutastic.yaml` follow one [JSON
+Schema](https://docs.mutastic.io/schemas/mutastic-yaml/v1.json). With the YAML language server, a
+first line names it:
+
+```yaml
+# yaml-language-server: $schema=https://docs.mutastic.io/schemas/mutastic-yaml/v1.json
+```
+
+The schema takes `filters:`, which the Rust edition refuses until it has compiled plugins.
+
 ### In a workspace
 
 Each package uses the nearest `mutastic.yaml` at or above its own directory, however it's run:
@@ -143,6 +153,10 @@ by its method's name, and `owners` isn't checked. A rewrite that doesn't fit the
 doesn't compile, so the build withdraws it as unviable, at the cost of a build round. `descriptors`
 and `since` are the JVM's, and an error here; of the rewrites, only `remove` and `rename` are in the
 Rust edition yet.
+
+A rules file has its [JSON Schema](https://docs.mutastic.io/schemas/rules/v1.json) too, shared
+with the Java edition, for an editor to check it against: `# yaml-language-server:
+$schema=https://docs.mutastic.io/schemas/rules/v1.json` on its first line.
 
 ## What mutastic reads
 

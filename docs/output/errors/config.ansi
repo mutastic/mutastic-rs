@@ -1,1 +1,1 @@
-mutastic: mutastic.yaml line 1: expected extends:, rules:, plugins:, filters:, operators: or gate:, not rulez:. There's one called rules:.
+mutastic: mutastic.yaml line 1: rulez: isn't a section. There's one called rules:.

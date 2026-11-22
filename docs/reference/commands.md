@@ -437,6 +437,7 @@ mutastic verify mb2f8ae57 --edition=rust
 - `MUTASTIC_FORMAT`: The format when --format isn't given. For a machine or a CI job that always wants the same format, `concise` say. A format mutastic doesn't have is refused, as the option's is.
 - `MUTASTIC_AGENT=1`: The agent format, for coding agents. Coding agents set it, so mutastic answers in the format they read best, with progress as lines. `MUTASTIC_FORMAT` still wins.
 - `MUTASTIC_VOCABULARY`: plain or classic, when --vocabulary isn't given. `classic` says killed and survived instead of caught and missed. The JSON report and the event stream always use the standard names. Any other value is refused.
+- `MUTASTIC_PILLS`: Labels: square (the default), rounded (for a Nerd Font) or off. How labels such as MISSED and PASS are drawn. `rounded` needs a terminal font with Nerd Font glyphs; `off` leaves out the coloured blocks and keeps the words. Any other value is refused.
 - `MUTASTIC_ARID=audit`: Run the mutants the arid filters skip, and say what happened. Adds an Arid audit row to the summary: how many of those mutants ran, and how many the tests caught.
 - `MUTASTIC_GATE_BUDGET`: Seconds a hooked gate check may take. 600 unless set: what the agents' plugins' Stop hook allows. The check waits for the count of the task's start only as long as this leaves, and hands over before it runs when its last run took longer.
 - `MUTASTIC_GATE_COUNT_WAIT`: Seconds gate check waits for the count of the task's start. 240 unless set. A count not done by then is left, and a pass says the check compared the test attributes in the source only.
@@ -451,6 +452,7 @@ mutastic verify mb2f8ae57 --edition=rust
 - `CARGO`: The cargo mutastic runs. Cargo sets it for `cargo mutastic`; `cargo` on the `PATH` otherwise.
 - `RUSTC`: The rustc Cargo builds with, as for any Cargo build. The result names its version.
 - `MUTASTIC_VERSION`: In a Maven or Gradle project, the Java edition's release to use. Such as `0.5.0`, fetched if it isn't kept. Unset, from 1.0.0 it's the newest release of this mutastic's own major and minor version.
+- `MUTASTIC_INCREMENTAL`: 0 to build the mutants without Cargo's incremental compilation. 1 unless set: Cargo's `CARGO_INCREMENTAL` for the build mutastic makes with the mutants in, which keeps the next run's build quick. 0 saves the disk it takes.
 - `MUTASTIC_HOME`: Where the Java edition's releases are kept. `~/.mutastic` unless set.
 - `MUTASTIC_STDERR_TTY`: Whether stderr is a terminal, 1 or 0, for the Java edition. The JDK can't tell, so `mutastic` sets it when it runs the Java edition, unless it's set already.
 - `MUTASTIC_COLUMNS`: The terminal's width, for the Java edition. The JDK can't ask the terminal, so `mutastic` sets it when it runs the Java edition on a terminal, unless it's set already.
