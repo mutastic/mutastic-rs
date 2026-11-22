@@ -647,6 +647,12 @@ pub const ENVIRONMENT: &[Entry] = &[
                  and the event stream always use the standard names. Any other value is refused.",
     },
     Entry {
+        name: "MUTASTIC_ARID=audit",
+        meaning: "Run the mutants the arid filters skip, and say what happened",
+        detail: "Adds an Arid audit row to the summary: how many of those mutants ran, and how \
+                 many the tests caught.",
+    },
+    Entry {
         name: "MUTASTIC_GATE_BUDGET",
         meaning: "Seconds a hooked gate check may take",
         detail: "600 unless set: what the agents' plugins' Stop hook allows. The check waits for \

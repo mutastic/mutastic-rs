@@ -36,7 +36,9 @@ than a sign: tests that call the function but never look at its answer. The valu
 function of that kind most plausibly gets wrong: a check that answers the wrong way, a count of
 nothing, a search that finds nothing.
 
-A `fmt` function's `Ok(())` is left alone: what it writes is the result.
+A `fmt` function's `Ok(())` is a mutant: a `Display` that writes nothing is a gap a test can see. In
+a `Debug` impl it's skipped as arid, `arid: \`Debug::fmt\` is a debug representation`, as every
+mutant there is, as the Java edition skips `toString()`.
 
 With `extended`, it also makes `Default::default()` for a type that plainly derives or implements
 `Default`, and an `Err(..)` that the same function returns elsewhere, when it mentions nothing
@@ -215,8 +217,8 @@ impl std::fmt::Display for Pieces {
 ## Replace body
 
 `mutastic/replace-body`, in the `extended` set. A function's whole body becomes one value
-return value would give, or `{}` when it returns nothing. Not `new`, `fmt`, `hash`, or a getter that
-returns one field. It goes unnoticed when no test can tell the function from one that does nothing.
+return value would give, or `{}` when it returns nothing. Not a getter that returns one field. In a
+`Debug` or `Hash` impl it's made and skipped as arid, as everything there is. It goes unnoticed when no test can tell the function from one that does nothing.
 
 **The bug it stands for:** a function that's wrong from top to bottom, or does nothing, and nobody
 would know: not a slip in one line, but code no test depends on. It costs in the code everyone

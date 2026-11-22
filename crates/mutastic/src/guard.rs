@@ -207,6 +207,7 @@ mod tests {
             took: Duration::ZERO,
             inputs: BTreeMap::new(),
             suggestion: None,
+            by_assertion: false,
         }
     }
 
