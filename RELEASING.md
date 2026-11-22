@@ -28,6 +28,8 @@ day.
    - **The Java edition.** From 1.0.0, for a minor release (`X.Y.0`), the Java edition's `X.Y.0`
      is ready to publish beside this one (the Java repository's `RELEASING.md`). A patch needs
      nothing from it.
+   - **The contract's pins.** `scripts/pin-contract.sh prune` deletes all but the newest
+     ([contract/README.md](contract/README.md)).
 2. **The release commit,** `chore(release): version X.Y.Z`: the version in `Cargo.toml` (and
    `Cargo.lock`), the changelog's section for it, and the docs' kept outputs that print the
    version, written again with `MUTASTIC_DOCS_WRITE=1 cargo test --test docs`. Each entry since the
