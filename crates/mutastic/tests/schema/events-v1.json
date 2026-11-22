@@ -97,7 +97,7 @@
     },
     "test": {
       "type": "string",
-      "description": "A test, as its class and method: `com.example.PricingTest#bigOrdersGetTenPercentOff`."
+      "description": "A test, as the edition names it: in Java its class and method, `com.example.PricingTest#bigOrdersGetTenPercentOff`; in Rust its path in its target, `tests::small_orders_pay_full_price`, after the target's name for an integration test, `pricing::big_orders_get_ten_percent_off`."
     },
     "mutantId": {
       "type": "string",
@@ -251,7 +251,7 @@
         },
         "statusReason": {
           "type": "string",
-          "description": "Why it was skipped, kind first: `arid: trivial getter of name`. Only for a skipped mutant."
+          "description": "Why it has its status, kind first: for a skipped mutant, why it was skipped, `arid: trivial getter of name`; in the Rust edition also why a mutant is a runtime error, `crash: SIGSEGV inside unsafe code, which may be undefined behaviour`. Not for another status."
         },
         "skipKind": {
           "enum": ["generated", "equivalent", "unviable", "arid", "user", "twin"],
@@ -277,7 +277,7 @@
         },
         "caughtWith": {
           "type": "string",
-          "description": "What caught it failed with: in the Java edition the exception's class, `org.opentest4j.AssertionFailedError`; in Rust's the panic or the crash, `crash: SIGABRT`."
+          "description": "What caught it failed with: in the Java edition the exception's class, `org.opentest4j.AssertionFailedError`; in Rust's the panic or the crash, `crash: SIGABRT`. In both, `exit: 2` when the code the test ran ended the process with that status."
         },
         "caughtByAll": {
           "type": "array",
@@ -289,8 +289,8 @@
           "description": "The Rust edition only: why the mutant is near unsafe code, when it is (`called from unsafe code`, `in a module with unsafe code`, `in a function with an unsafe block`, `inside unsafe code`). It ran on its own, and a crash isn't counted as caught (`RuntimeError`)."
         },
         "failureOrigin": {
-          "enum": ["assertion", "test", "code", "unknown"],
-          "description": "Where the failure came from: `assertion` (a check failed), `test` (the test's own code threw), `code` (the code under test threw) or `unknown`."
+          "enum": ["assertion", "test", "code", "unknown", "exit"],
+          "description": "Where the failure came from: `assertion` (a check failed), `test` (the test's own code threw), `code` (the code under test threw), `unknown`, or `exit` (the code the test ran ended the JVM, with the status `caughtWith` gives)."
         },
         "unconfirmedCatchBy": {
           "$ref": "#/$defs/test",
@@ -518,7 +518,7 @@
         "test": { "$ref": "#/$defs/test" },
         "failure": {
           "type": "string",
-          "description": "The exception it threw each time, by class name."
+          "description": "What it failed with each time: in the Java edition the exception, by class name; in Rust's what `caughtWith` says, `panic`."
         },
         "mutants": {
           "type": "array",

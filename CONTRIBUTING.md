@@ -91,12 +91,14 @@ in the Java repository says how it works.
 - **The check** is `tests/contract.rs`. It runs the built binary on a copy of `fixtures/pricing`,
   reads `docs/commands.json`, and fails on any difference the contract doesn't record for `rust`,
   and on a recorded one that has gone ("now matches").
-- **The pin.** [`contract.json`](contract.json) names the Java repository's commit the check
-  reads, fetched once into the target directory. `MUTASTIC_CONTRACT=<file> cargo test --test
-  contract` checks against a working copy instead, while a contract change is being written.
+- **The pin.** The check reads the contract at a commit of the Java repository, fetched once into
+  the target directory: the newest pin in [`contract/pins`](contract/pins), one file to a pull
+  request, so no two conflict ([contract/README.md](contract/README.md)).
+  `MUTASTIC_CONTRACT=<file> cargo test --test contract` checks against a working copy instead,
+  while a contract change is being written.
 - **Adding an option, or closing a gap:** change the contract in a mutastic pull request first
-  (the option, or `rust` taken out of its pending entry), then move `contract.json`'s `commit` to
-  that merge commit in the pull request that changes mutastic-rs.
+  (the option, or `rust` taken out of its pending entry), then pin that merge commit in the pull
+  request that changes mutastic-rs: `scripts/pin-contract.sh <slug>` adds its pin.
 - **The weekly drift job** (`.github/workflows/contract-drift.yml`) runs the check against mutastic
   main, and fails visibly when the two have moved apart.
 - **A new edition** built on this one (Swift) starts from `tests/contract.rs` and its own port of

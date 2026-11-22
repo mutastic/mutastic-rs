@@ -517,6 +517,7 @@ impl Shares {
             fail_on_new: None,
             built: true,
             only: false,
+            audited: Vec::new(),
         }
     }
 
@@ -640,6 +641,7 @@ fn result_of(index: usize, event: &Value) -> Option<MutantResult> {
         covered_by: strings(&event["coveredBy"]),
         killed_by: text("caughtBy"),
         killed_with: text("caughtWith"),
+        failure_origin: text("failureOrigin"),
         false_catch_by: text("falseCatchBy"),
         tests_run: event["testsRun"].as_u64().unwrap_or(0) as usize,
         took: Duration::from_millis(event["durationMs"].as_u64().unwrap_or(0)),
@@ -653,6 +655,7 @@ fn result_of(index: usize, event: &Value) -> Option<MutantResult> {
             })
             .unwrap_or_default(),
         suggestion: suggestion_of(&event["suggestion"]),
+        by_assertion: false,
     })
 }
 

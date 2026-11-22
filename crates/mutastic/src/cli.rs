@@ -419,11 +419,16 @@ fn set(parsed: &mut Parsed, name: &str, value: &str) -> Result<bool, String> {
             }
         }
         "operators" => {
+            // Given again, it adds, as `--report` does: `--operators=stronger --operators=-stream`.
+            let given = match parsed.operators_given.take() {
+                Some(earlier) => format!("{earlier},{value}"),
+                None => value.to_string(),
+            };
             // A name only a rules file has is checked once the rules files are read.
-            if let Ok(chosen) = operators(value) {
+            if let Ok(chosen) = operators(&given) {
                 parsed.operators = chosen;
             }
-            parsed.operators_given = Some(value.to_string());
+            parsed.operators_given = Some(given);
         }
         "unsafe" => {
             parsed.unsafe_mode = UnsafeMode::parse(value).ok_or_else(|| {
@@ -568,6 +573,10 @@ fn arguments(command: &str, parsed: &Parsed) -> Result<(), Failure> {
     };
     if command == "gate" && !parsed.help {
         gate_action(parsed)?;
+    }
+    if command == "ignore" && parsed.propose && (parsed.accept || parsed.remove || parsed.prune) {
+        return Err(Code::OptionValue
+            .with("--propose records a proposal: not with --accept, --remove or --prune"));
     }
     if command == "run" {
         sharing(parsed)?;
@@ -956,6 +965,7 @@ fn options(parsed: &Parsed, only: Vec<String>) -> Options {
         suggestions: false,
         shard: None,
         force_coverage: parsed.force_coverage,
+        audit_arid: std::env::var("MUTASTIC_ARID").is_ok_and(|value| value == "audit"),
     }
 }
 
@@ -1568,13 +1578,16 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, Failure> {
         .map_or(".", String::as_str)
         .to_string();
     let here = std::path::Path::new(&dir);
+    // The directory goes after the words only when it isn't where mutastic runs, as in the Java
+    // edition.
+    let after = if crate::report::files::is_here(here) {
+        String::new()
+    } else {
+        format!(" {}", crate::report::shell_word(&dir))
+    };
     let command = |words: &[&str]| {
         let words: Vec<String> = words.iter().map(|word| shell(word)).collect();
-        format!(
-            "mutastic ignore {} {}",
-            words.join(" "),
-            crate::report::shell_word(&dir)
-        )
+        format!("mutastic ignore {}{after}", words.join(" "))
     };
     if parsed.accept {
         return accept(&id, here, &command);
@@ -1641,7 +1654,7 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, Failure> {
         stdout_line!(
             "mutastic: {id} is proposed for ignoring: {}\n  recorded in {}: it counts as missed until a person accepts it\n  to accept: {}\n  to withdraw: {}",
             untrusted::value(&reason),
-            ignores::PROPOSALS,
+            from_here(here, ignores::PROPOSALS),
             command(&["--accept", &id]),
             command(&["--remove", &id])
         );
@@ -1658,7 +1671,7 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, Failure> {
     stdout_line!(
         "mutastic: {id} is ignored: {}\n  recorded in {}: commit it, as a decision to review\n  to undo: {}",
         untrusted::value(&reason),
-        ignores::FILE,
+        from_here(here, ignores::FILE),
         command(&["--remove", &id])
     );
     Ok(ExitCode::SUCCESS)
@@ -1697,7 +1710,7 @@ fn accept(
     let Some(proposal) = proposals.iter().find(|entry| entry.id == id).cloned() else {
         stderr_line!(
             "mutastic: {id} isn't proposed in {}: nothing to accept",
-            ignores::PROPOSALS
+            from_here(here, ignores::PROPOSALS)
         );
         return Ok(ExitCode::FAILURE);
     };
@@ -1712,7 +1725,7 @@ fn accept(
     stdout_line!(
         "mutastic: {id} is ignored, as proposed: {}\n  recorded in {}: commit it, as a decision to review\n  to undo: {}",
         untrusted::value(&proposal.reason),
-        ignores::FILE,
+        from_here(here, ignores::FILE),
         command(&["--remove", id])
     );
     Ok(ExitCode::SUCCESS)
@@ -1743,7 +1756,7 @@ fn remove(
         ignores::write(here, &kept)?;
         stdout_line!(
             "mutastic: {id} is no longer ignored: it runs again\n  removed from {}\n  to undo: {}",
-            ignores::FILE,
+            from_here(here, ignores::FILE),
             again(removed, false)
         );
         return Ok(ExitCode::SUCCESS);
@@ -1754,16 +1767,22 @@ fn remove(
         ignores::propose(here, &left)?;
         stdout_line!(
             "mutastic: {id} is no longer proposed\n  removed from {}\n  to undo: {}",
-            ignores::PROPOSALS,
+            from_here(here, ignores::PROPOSALS),
             again(proposal, true)
         );
         return Ok(ExitCode::SUCCESS);
     }
     stderr_line!(
         "mutastic: {id} isn't ignored in {}: nothing to remove",
-        ignores::FILE
+        from_here(here, ignores::FILE)
     );
     Ok(ExitCode::FAILURE)
+}
+
+/// A file of `dir`'s, as the person would type it from where mutastic runs: `.mutastic/ignores.yaml`
+/// there, `fixtures/pricing/.mutastic/ignores.yaml` from above it.
+fn from_here(dir: &std::path::Path, file: &str) -> String {
+    crate::report::files::from_here(&dir.join(file))
 }
 
 /// `ignore --prune`: takes away every ignore whose line has changed since it was made.
@@ -1797,8 +1816,8 @@ fn prune(dir: &str) -> Result<ExitCode, Failure> {
         if stale.len() == 1 { "" } else { "s" },
         if stale.len() == 1 { "holds" } else { "hold" },
         ids.join(", "),
-        ignores::FILE,
-        ignores::FILE
+        from_here(here, ignores::FILE),
+        crate::report::shell_word(&from_here(here, ignores::FILE))
     );
     Ok(ExitCode::SUCCESS)
 }
@@ -2729,6 +2748,27 @@ mod tests {
         }
     }
 
+    /// `--operators` given again adds to what it chose, as in the Java edition, and a list that
+    /// only leaves operators out leaves them out of the defaults.
+    #[test]
+    fn operators_given_again_add() {
+        let parsed = parse(
+            "run",
+            &words("--operators=stronger --operators=-mutastic/boundary"),
+        )
+        .unwrap();
+        assert_eq!(
+            parsed.operators_given.as_deref(),
+            Some("stronger,-mutastic/boundary")
+        );
+        assert!(!parsed.operators.contains(&crate::sites::BOUNDARY));
+        assert!(parsed.operators.len() > crate::sites::DEFAULTS.len() - 1);
+        let without = parse("run", &words("--operators=-mutastic/boundary")).unwrap();
+        let mut expected = crate::sites::DEFAULTS.to_vec();
+        expected.retain(|id| *id != crate::sites::BOUNDARY);
+        assert_eq!(without.operators, expected);
+    }
+
     #[test]
     fn the_defaults_are_the_ones_declared() {
         let parsed = parse("run", &[]).unwrap();
@@ -2825,6 +2865,26 @@ mod tests {
                 .unwrap_or_else(|| panic!("{typed}: {refused}"));
             assert_eq!(check(&words(line)), Ok(()), "{typed}: {refused}");
             assert!(refused.lines().count() <= 3, "{typed}: {refused}");
+        }
+    }
+
+    /// A proposal is a decision of its own: not with --accept, --remove or --prune, as in the Java
+    /// edition.
+    #[test]
+    fn a_proposal_is_refused_with_another_decision() {
+        for typed in [
+            "ignore mb2f8ae57 --propose --accept",
+            "ignore mb2f8ae57 --propose --remove",
+            "ignore --propose --prune",
+        ] {
+            assert_eq!(
+                check(&words(typed)),
+                Err(
+                    "--propose records a proposal: not with --accept, --remove or --prune"
+                        .to_string()
+                ),
+                "{typed}"
+            );
         }
     }
 
