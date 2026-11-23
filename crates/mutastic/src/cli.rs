@@ -12,6 +12,7 @@ use crate::report::files::Kind;
 use crate::report::{self, Format, Style};
 use crate::shares::EVENTS;
 use crate::sites::UnsafeMode;
+use crate::test_times::{self, TestTimes};
 use crate::{
     baseline, commands, gate, gate_budget, gate_count, ignores, java, sites, testrun, untrusted,
     workspace, wrapper,
@@ -337,6 +338,8 @@ struct Parsed {
     top: usize,
     /// `--fail-on-new`: the run passes on the misses the baseline doesn't hold, not its score.
     fail_on_new: bool,
+    /// `mutants --estimate`: measure the tests first, and estimate what each set would take.
+    estimate: bool,
 }
 
 /// The command as it's declared: `gate open` for `gate` and its action. `None` for one that isn't,
@@ -393,6 +396,7 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, Failure> {
         from_shards: None,
         top: 1,
         fail_on_new: false,
+        estimate: false,
     };
     // The line as typed, the command first, for an error to give back with one word changed.
     let line: Vec<String> = std::iter::once(command.to_string())
@@ -523,6 +527,7 @@ fn set(parsed: &mut Parsed, name: &str, value: &str) -> Result<bool, String> {
         "remove" => parsed.remove = true,
         "prune" => parsed.prune = true,
         "fail-on-new" => parsed.fail_on_new = true,
+        "estimate" => parsed.estimate = true,
         "since" => parsed.since = Some(value.to_string()),
         "help" => parsed.help = true,
         "no-suggestions" => parsed.no_suggestions = true,
@@ -1109,6 +1114,12 @@ fn run(parsed: &Parsed) -> Result<ExitCode, Failure> {
     let mut report = engine::run(&project, &options, &|step| progress.step(step))?;
     report.share = share;
     progress.finished();
+    // Only a whole run of every test measured every site its mutants are at, as `mutants`
+    // estimates from them.
+    let whole = parsed.only.is_empty() && parsed.since.is_none() && parsed.shard.is_none();
+    if whole && parsed.exclude_tests.is_empty() && report.built {
+        keep_test_times(&report);
+    }
     report.streamed = progress.streamed();
     finish(parsed, report, format, folder.as_deref())
 }
@@ -2722,6 +2733,13 @@ fn caught(result: &engine::MutantResult, project: &workspace::Project) -> String
 fn mutants(parsed: &Parsed) -> Result<ExitCode, Failure> {
     let dir = parsed.positional.first().map_or(".", String::as_str);
     let project = workspace::read(dir)?;
+    let estimates = if parsed.estimate {
+        measured_estimates(parsed, &project)?
+    } else if parsed.operators_given.is_some() {
+        vec![recorded_estimate(parsed, &project)?]
+    } else {
+        Vec::new()
+    };
     let found = engine::find_with(&project, &parsed.operators, parsed.unsafe_mode);
     for mutant in &found.mutants {
         let function = &found.functions[mutant.function];
@@ -2742,6 +2760,9 @@ fn mutants(parsed: &Parsed) -> Result<ExitCode, Failure> {
                 .unwrap_or_default()
         );
     }
+    for estimate in &estimates {
+        stdout_line!("{estimate}");
+    }
     stdout_line!("{}", crate::progress::count(found.mutants.len(), "mutant"));
     if found.not_mutated_unsafe > 0 {
         stdout_line!(
@@ -2753,6 +2774,81 @@ fn mutants(parsed: &Parsed) -> Result<ExitCode, Failure> {
         stdout_line!("not built here: `{}` ({count})", untrusted::value(cfg));
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// Where a package's tests' times are kept: beside its last run's record.
+fn test_times_file(project: &workspace::Project) -> std::path::PathBuf {
+    project.mutastic_dir().join(test_times::FILE)
+}
+
+/// Keeps what a whole run's coverage pass measured, for `mutants --operators` to estimate from. An
+/// estimate is a convenience: a record that can't be written leaves the next one saying there's
+/// none, and the run goes on.
+fn keep_test_times(report: &engine::Report) {
+    let record = TestTimes {
+        kind: test_times::Kind::Run,
+        at: report::files::utc(report.started),
+        operators: test_times::joined(&report.operators),
+        code: test_times::code(&report.found),
+        base: report.found.mutants.iter().map(|m| m.id.clone()).collect(),
+        sites: report.measured.clone(),
+    };
+    let _ = record.write(&test_times_file(&report.project));
+}
+
+/// `mutants --operators=…`: what the set listed adds to the tests' time over the last run's, from
+/// its record, or why there's no estimate. Nothing is built or run.
+fn recorded_estimate(parsed: &Parsed, project: &workspace::Project) -> Result<String, Failure> {
+    let Some(record) = TestTimes::read(&test_times_file(project)) else {
+        return Ok(test_times::NO_RECORD.to_string());
+    };
+    // As a run would find them, with the project's ignores and rules: a skipped mutant costs
+    // nothing.
+    let (found, _) = engine::find_for_run(project, &options(parsed, Vec::new()))?;
+    let now = test_times::Now {
+        code: &test_times::code(&found),
+        configured: &test_times::joined(&parsed.run_operators),
+        mutants: &found.mutants,
+    };
+    Ok(record.against(&now, set_named))
+}
+
+/// `mutants --estimate`: one coverage pass with every mutant's site measured and no mutant run,
+/// kept as the record the next `mutants --operators` estimates from, then what each of the
+/// defaults, stronger and all would take.
+fn measured_estimates(
+    parsed: &Parsed,
+    project: &workspace::Project,
+) -> Result<Vec<String>, Failure> {
+    let started = std::time::SystemTime::now();
+    let progress = start(parsed, false);
+    progress.package(&project.package);
+    let under = |set: &str| -> Result<Options, Failure> {
+        let mut options = options(parsed, Vec::new());
+        options.operators = operators(set)?;
+        Ok(options)
+    };
+    let sites = engine::estimate(project, &under("all")?, &|step| progress.step(step))?;
+    progress.finished();
+    let mut configured = options(parsed, Vec::new());
+    configured.operators = parsed.run_operators.clone();
+    let (base, _) = engine::find_for_run(project, &configured)?;
+    let record = TestTimes {
+        kind: test_times::Kind::CoveragePass,
+        at: report::files::utc(started),
+        operators: test_times::joined(&parsed.run_operators),
+        code: test_times::code(&base),
+        base: base.mutants.iter().map(|m| m.id.clone()).collect(),
+        sites,
+    };
+    let _ = record.write(&test_times_file(project));
+    ["defaults", "stronger", "all"]
+        .into_iter()
+        .map(|set| {
+            let (found, _) = engine::find_for_run(project, &under(set)?)?;
+            Ok(record.whole_set(set, &found.mutants))
+        })
+        .collect()
 }
 
 /// `mutastic build [dir] --fraction=0.25`: writes the schema with that share of the mutants (every

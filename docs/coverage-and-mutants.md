@@ -384,8 +384,14 @@ mbf8a1505 src/lib.rs:17:11 mutastic/other-arithmetic - becomes / in pay
 m1127474d src/lib.rs:17:11 mutastic/other-arithmetic - becomes % in pay
 m2e132563 src/lib.rs:17:5 mutastic/keep-operand total - off becomes total in pay
 m4d187d19 src/lib.rs:17:5 mutastic/keep-operand total - off becomes off in pay
+no estimate: 9 of the 27 more mutants are in code the run of 23 Nov 2026 04:59 UTC didn't measure; add --estimate to measure it all
 37 mutants
 ```
+
+The line before the count estimates what the set adds to the tests' time, from the last run. That
+run's coverage pass measured only the code the defaults mutate, so some of the new mutants are in
+code it didn't time. `mutastic mutants fixtures/checkout --estimate` runs every test once, with no
+mutant in, and says what `defaults`, `stronger` and `all` would each take.
 
 With every test so far in, the defaults catch everything. `stronger` finds one more:
 

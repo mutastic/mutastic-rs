@@ -290,7 +290,7 @@ fn mutator_name(operator: &str) -> &str {
 }
 
 /// `2026-11-13T20:34:31Z`: a time in UTC, to the second.
-fn utc(time: std::time::SystemTime) -> String {
+pub(crate) fn utc(time: std::time::SystemTime) -> String {
     let seconds = time
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| since.as_secs());

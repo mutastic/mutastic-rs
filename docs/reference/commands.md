@@ -164,14 +164,14 @@ mutastic gate close
 
 `mutastic mutants [DIR]`
 
-List the mutants, without building or running anything. One line each: its id, place, operator, the change, and the function it's in. A mutant near unsafe code says why it's marked, and the last lines count what was left out. With --operators and --unsafe, it shows what those would add before a run.
+List the mutants, without building or running anything. One line each: its id, place, operator, the change, and the function it's in. A mutant near unsafe code says why it's marked, and the last lines count what was left out. With --operators and --unsafe, it shows what those would add before a run. With --operators and a recorded run, the line before the count estimates what the set adds to the tests' time; --estimate measures the tests first.
 
 ```sh
 mutastic mutants
 mutastic mutants fixtures/pricing --operators=stronger
 ```
 
-**Options:** [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--edition=EDITION`](#--edition).
+**Options:** [`--operators=OPERATORS`](#--operators), [`--estimate`](#--estimate), [`--unsafe=MODE`](#--unsafe), [`--edition=EDITION`](#--edition).
 
 **Exit status:** 0 once they're listed.
 
@@ -299,6 +299,14 @@ mutastic gate open --operators=stronger
 mutastic mutants --operators=stronger
 mutastic next --operators=stronger
 mutastic run --operators=stronger
+```
+
+### `--estimate`
+
+`--estimate`, for [`mutants`](#mutants). Run every test once, with no mutant in, and estimate what defaults, stronger and all would take.
+
+```sh
+mutastic mutants --estimate
 ```
 
 ### `--unsafe`

@@ -1,4 +1,5 @@
 md8834f6e src/lib.rs:535:25 mutastic/regex-constant r"^\d+$" becomes r"\d+$" in patterns
 mf7d51f60 src/lib.rs:535:25 mutastic/regex-constant r"^\d+$" becomes r"^\d+" in patterns
 mf617b484 src/lib.rs:535:25 mutastic/regex-constant r"^\d+$" becomes r"^\D+$" in patterns
+no estimate: no run is recorded here yet; run once to get estimates, or add --estimate
 3 mutants

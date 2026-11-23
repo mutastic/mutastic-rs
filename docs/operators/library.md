@@ -411,6 +411,7 @@ let re = Regex::new(r"^\d+$").unwrap();
 md8834f6e src/lib.rs:535:25 mutastic/regex-constant r"^\d+$" becomes r"\d+$" in patterns
 mf7d51f60 src/lib.rs:535:25 mutastic/regex-constant r"^\d+$" becomes r"^\d+" in patterns
 mf617b484 src/lib.rs:535:25 mutastic/regex-constant r"^\d+$" becomes r"^\D+$" in patterns
+no estimate: no run is recorded here yet; run once to get estimates, or add --estimate
 3 mutants
 ```
 
@@ -440,6 +441,7 @@ let price = Decimal(x as i64 * 137).round_dp(1);
 <!-- output: operators/library/remove-step -->
 ```text
 ma0a93565 src/lib.rs:536:41 bigdecimal/remove-step .round_dp(1) is left out in patterns
+no estimate: no run is recorded here yet; run once to get estimates, or add --estimate
 1 mutant
 ```
 
