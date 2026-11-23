@@ -364,6 +364,29 @@ pub const OPTIONS: &[CliOption] = &[
         example: "--workers=2",
     },
     CliOption {
+        name: "confirm-catches",
+        value: "",
+        kind: Kind::Flag,
+        group: "Running",
+        choices: &[],
+        help: "Run each catching test again on its own, to confirm the catch",
+        commands: &["run", "verify", "explain", "next", "baseline"],
+        environment: "",
+        example: "--confirm-catches",
+    },
+    CliOption {
+        name: "kill-matrix",
+        value: "",
+        kind: Kind::Flag,
+        group: "Running",
+        choices: &[],
+        help: "Run every test that reaches a caught mutant, to name each that catches it, not \
+               only the first: for measuring an order, slower",
+        commands: &["run"],
+        environment: "",
+        example: "--kill-matrix --format=jsonl",
+    },
+    CliOption {
         name: "shard",
         value: "N/M",
         kind: Kind::Value,
@@ -410,6 +433,19 @@ pub const OPTIONS: &[CliOption] = &[
         commands: &["run"],
         environment: "",
         example: "--since --force-coverage",
+    },
+    CliOption {
+        name: "exclude-tests",
+        value: "TEST",
+        kind: Kind::Repeated,
+        group: "Running",
+        choices: &[],
+        help: "A test to leave out of the run, by its name as a run shows it, or a module of \
+               tests by its path: one that can't run reliably here, with a race or a fixed port; \
+               the summary names it",
+        commands: &["run", "verify", "explain", "next", "baseline"],
+        environment: "",
+        example: "--exclude-tests=tests::small_orders_pay_full_price",
     },
     CliOption {
         name: "operators",
@@ -461,6 +497,17 @@ pub const OPTIONS: &[CliOption] = &[
         commands: &["run", "next", "explain"],
         environment: "MUTASTIC_FORMAT, MUTASTIC_AGENT",
         example: "--format=jsonl",
+    },
+    CliOption {
+        name: "each-mutant",
+        value: "",
+        kind: Kind::Flag,
+        group: "Output",
+        choices: &[],
+        help: "A card for every missed mutant, not one for the mutants of each line",
+        commands: &["run"],
+        environment: "",
+        example: "--each-mutant",
     },
     CliOption {
         name: "vocabulary",

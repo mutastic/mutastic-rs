@@ -115,6 +115,30 @@ impl Comparison {
     }
 }
 
+/// The hash of the code a run tested, `code`, when it left out the tests `left_out`
+/// (`--exclude-tests`): the tests that ran are part of what it ran, so a run with other tests is
+/// never "the same code", and a mutant only a test left out caught doesn't make that test look
+/// flaky. `code` itself with none left out.
+pub fn code_without(code: &str, left_out: &[String]) -> String {
+    if left_out.is_empty() {
+        return code.to_string();
+    }
+    let mut names: Vec<&str> = left_out.iter().map(String::as_str).collect();
+    names.sort_unstable();
+    names.dedup();
+    let mut hasher = Sha256::new();
+    hasher.update(code.as_bytes());
+    for name in names {
+        hasher.update([0u8]);
+        hasher.update(name.as_bytes());
+    }
+    hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
 /// Caught, by a test or a timeout: what a flip turns on.
 fn detected(status: Status) -> bool {
     matches!(status, Status::Killed | Status::Timeout)
@@ -391,6 +415,19 @@ mod tests {
                 vec!["m1".into(), "m2".into()]
             )])
         );
+    }
+
+    /// A run that left tests out isn't of the same code as one that ran them, or as one that
+    /// left out others; the same tests left out, in any order, are.
+    #[test]
+    fn a_run_without_some_tests_is_of_other_code() {
+        let out = |names: &[&str]| -> Vec<String> { names.iter().map(|n| n.to_string()).collect() };
+        assert_eq!(code_without("c", &[]), "c");
+        let without = code_without("c", &out(&["tests::races", "ports"]));
+        assert_ne!(without, "c");
+        assert_eq!(without, code_without("c", &out(&["ports", "tests::races"])));
+        assert_ne!(without, code_without("c", &out(&["ports"])));
+        assert_ne!(without, code_without("d", &out(&["tests::races", "ports"])));
     }
 
     #[test]

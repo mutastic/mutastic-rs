@@ -84,6 +84,12 @@ pub struct MutantResult {
     pub covered_by: Vec<String>,
     pub killed_by: Option<String>,
     pub killed_with: Option<String>,
+    /// With `--kill-matrix`, every covering test that catches it, `killed_by` first, then the
+    /// rest in the order they're listed; empty otherwise, and when no test did.
+    pub killed_by_all: Vec<String>,
+    /// With `--confirm-catches`, a test that failed against the mutant, then passed against it
+    /// when run again on its own: its catch didn't count, and the other covering tests decided.
+    pub unconfirmed: Option<String>,
     /// Where the catching test's failure came from: `assertion`, `test`, `code` or `unknown`
     /// ([`crate::origin`]).
     pub failure_origin: Option<String>,
@@ -174,6 +180,9 @@ pub struct Report {
     /// In an audit of the arid rules (`MUTASTIC_ARID=audit`), each arid mutant's result when run
     /// anyway, in the order found; none otherwise. Never in `results`, the counts or the score.
     pub audited: Vec<MutantResult>,
+    /// The tests the run was told to leave out (`--exclude-tests`), as given: the summary names
+    /// them.
+    pub left_out: Vec<String>,
 }
 
 impl Report {
@@ -242,9 +251,33 @@ pub struct Options {
     pub shard: Option<crate::shares::Shard>,
     /// `--force-coverage`: build and run the coverage pass even when no mutant is there to run.
     pub force_coverage: bool,
+    /// `--confirm-catches` and `--kill-matrix`: how a caught mutant's tests run.
+    pub catches: Catches,
+    /// `--exclude-tests`: tests the run leaves out, each a test's name as a run shows it or a
+    /// module of tests. What only they reach counts as not covered.
+    pub exclude_tests: Vec<String>,
     /// `MUTASTIC_ARID=audit`: run the mutants mutastic's arid rules skip anyway, and say what
     /// happened to them, out of the score.
     pub audit_arid: bool,
+}
+
+/// How a caught mutant's tests run, as the Java edition's `Catches`: each catch run once more to
+/// confirm it (`--confirm-catches`), and every covering test run, not only up to the first catch
+/// (`--kill-matrix`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Catches {
+    pub confirm: bool,
+    pub every: bool,
+}
+
+/// Whether `--exclude-tests` leaves a test out: one of `left_out` is its name as a run shows it
+/// (`pricing::tests::big_orders`), or a module above it (`pricing::tests`), which leaves out every
+/// test in it, as a class named to the Java edition leaves out its methods.
+pub fn leaves_out(left_out: &[String], test: &str) -> bool {
+    left_out.iter().any(|name| {
+        test.strip_prefix(name.as_str())
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with("::"))
+    })
 }
 
 /// The change a run was scoped to: what it's since, and the crate's lines and files it touched.
@@ -473,7 +506,11 @@ pub fn run(
         profile: &built.profile,
     });
     let cwd = project.copy_dir().join(&project.package_dir);
-    let listed = testrun::list(&built.binaries, &cwd).map_err(|error| Code::Other.with(error))?;
+    let mut listed =
+        testrun::list(&built.binaries, &cwd).map_err(|error| Code::Other.with(error))?;
+    // Left out before the coverage pass, so a test that can't run here never runs: what only it
+    // reaches is not covered.
+    listed.retain(|test| !leaves_out(&options.exclude_tests, &test.display));
     let setup = started.elapsed();
 
     let coverage_started = Instant::now();
@@ -523,6 +560,13 @@ pub fn run(
     let indexed: Vec<(usize, &Cost)> = order.iter().copied().zip(&costs).collect();
     // No more workers than mutants, as the Java edition starts them: `--only` on one is one.
     let workers = options.workers.min(order.len().max(1));
+    let suite = Suite {
+        built: &built,
+        tests: &tests,
+        reach: &reach,
+        cwd: &cwd,
+        catches: options.catches,
+    };
     let ran = testrun::parallel_on(&indexed, workers, |worker, &(mutant, cost)| {
         if cost.expected > Duration::ZERO {
             progress(Progress::MutantStarted {
@@ -537,7 +581,7 @@ pub fn run(
         files.started(&found, mutant);
         let result = Suggester::with_suggestion(
             suggester.as_ref(),
-            result(&found, mutant, first[mutant], &built, &tests, &reach, &cwd),
+            result(&found, mutant, first[mutant], &suite),
         );
         files.finished(
             (&found, project),
@@ -548,17 +592,7 @@ pub fn run(
         let audit = unskipped
             .as_ref()
             .filter(|_| audited.contains(&mutant))
-            .map(|unskipped| {
-                self::result(
-                    unskipped,
-                    mutant,
-                    first[mutant],
-                    &built,
-                    &tests,
-                    &reach,
-                    &cwd,
-                )
-            });
+            .map(|unskipped| self::result(unskipped, mutant, first[mutant], &suite));
         (result, audit)
     });
     let (mut results, audited): (Vec<MutantResult>, Vec<Option<MutantResult>>) =
@@ -578,6 +612,7 @@ pub fn run(
         reach: &reach,
         cwd: &cwd,
         workers: options.workers,
+        catches: options.catches,
     };
     let guarded = crate::guard::check(&mut results, &runs);
     let mut flaky = flaky;
@@ -655,6 +690,7 @@ pub fn run(
         built: true,
         only: !options.only.is_empty(),
         audited,
+        left_out: options.exclude_tests.clone(),
     })
 }
 
@@ -697,6 +733,8 @@ fn nothing_to_run(
                 covered_by: Vec::new(),
                 killed_by: None,
                 killed_with: None,
+                killed_by_all: Vec::new(),
+                unconfirmed: None,
                 failure_origin: None,
                 false_catch_by: None,
                 tests_run: 0,
@@ -745,6 +783,7 @@ fn nothing_to_run(
         built: false,
         only: !options.only.is_empty(),
         audited: Vec::new(),
+        left_out: options.exclude_tests.clone(),
     }
 }
 
@@ -1228,15 +1267,24 @@ fn timeout(baseline: Duration) -> Duration {
     (baseline * 5 + Duration::from_secs(1)).max(Duration::from_secs(10))
 }
 
-fn result(
-    found: &Crate,
-    index: usize,
-    site: u32,
-    built: &compile::Built,
-    tests: &[Test],
-    reach: &[Reach],
-    cwd: &std::path::Path,
-) -> MutantResult {
+/// What a mutant runs against: the build, the tests the coverage pass kept with what each reaches,
+/// where they run, and how a catch is taken.
+struct Suite<'a> {
+    built: &'a compile::Built,
+    tests: &'a [Test],
+    reach: &'a [Reach],
+    cwd: &'a std::path::Path,
+    catches: Catches,
+}
+
+fn result(found: &Crate, index: usize, site: u32, suite: &Suite) -> MutantResult {
+    let Suite {
+        built,
+        tests,
+        reach,
+        cwd,
+        catches,
+    } = *suite;
     let mutant = &found.mutants[index];
     let function = &found.functions[mutant.function];
     if let Some(reason) = &mutant.skipped {
@@ -1247,6 +1295,8 @@ fn result(
             covered_by: Vec::new(),
             killed_by: None,
             killed_with: None,
+            killed_by_all: Vec::new(),
+            unconfirmed: None,
             failure_origin: None,
             false_catch_by: None,
             tests_run: 0,
@@ -1274,6 +1324,8 @@ fn result(
         covered_by: covering.iter().map(|&t| tests[t].display.clone()).collect(),
         killed_by: None,
         killed_with: None,
+        killed_by_all: Vec::new(),
+        unconfirmed: None,
         failure_origin: None,
         false_catch_by: None,
         tests_run: 0,
@@ -1320,15 +1372,29 @@ fn result(
         )
     });
     let started = Instant::now();
-    for (baseline, binary, group) in groups {
+    let active = [("MUTASTIC_ACTIVE", mutant.ordinal.to_string())];
+    let named = |group: &[usize]| {
         let mut names: Vec<&str> = group.iter().map(|&t| tests[t].name.as_str()).collect();
         // Near unsafe code, one test at a time: a mutant that corrupts memory mustn't make a
         // different test fail and take the credit.
         if mutant.near_unsafe.is_some() {
             names.push("--test-threads=1");
         }
+        names
+    };
+    // Of a group's tests, those among `failures`, as they're listed, not as they finished: the
+    // threads finish in a different order each run.
+    let failing = |group: &[usize], failures: &[String]| -> Vec<&Test> {
+        group
+            .iter()
+            .map(|&t| &tests[t])
+            .filter(|test| failures.contains(&test.name))
+            .collect()
+    };
+    let mut groups = groups.into_iter();
+    for (baseline, binary, group) in groups.by_ref() {
+        let mut names = named(&group);
         let timeout = timeout(baseline);
-        let active = [("MUTASTIC_ACTIVE", mutant.ordinal.to_string())];
         let run =
             |names: &[&str]| testrun::run(&built.binaries[binary], cwd, names, &active, timeout);
         let mut outcome: Outcome = run(&names);
@@ -1378,30 +1444,87 @@ fn result(
             crashed(&mut result, mutant.near_unsafe, &outcome, &again);
             break;
         }
+        let failed = failing(&group, &outcome.failures);
+        // The first that failed catches it; with catches confirmed, the first whose failure
+        // repeats when it runs again on its own, and that run's output is its alone.
+        let mut first = 0;
+        let mut alone = None;
+        if catches.confirm && !failed.is_empty() {
+            match repeated(&run, &failed, &mut result.unconfirmed) {
+                Some((at, again)) => {
+                    first = at;
+                    alone = Some(again).filter(|again| again.failed.is_some());
+                }
+                // No catch repeated, and the group's other tests passed: the next group decides.
+                None => continue,
+            }
+        }
+        let output = alone
+            .as_ref()
+            .map_or(&outcome.stdout, |again| &again.stdout);
         result.status = Status::Killed;
-        result.by_assertion = testrun::assertion_failed(&outcome.stdout);
-        result.killed_with = Some(match testrun::language_panic(&outcome.stdout) {
+        result.by_assertion = testrun::assertion_failed(output);
+        result.killed_with = Some(match testrun::language_panic(output) {
             Some(message) => format!("panic: {message}"),
             None => "panic".into(),
         });
-        // Of the tests that failed, the first as they're listed, not the first to finish: the
-        // threads finish in a different order each run.
-        let catcher = group
-            .iter()
-            .find(|&&t| outcome.failures.contains(&tests[t].name))
-            .map(|&t| &tests[t]);
-        let failed = catcher.map(|test| &test.name).or(outcome.failed.as_ref());
+        let catcher = failed.get(first).copied();
+        let name = catcher.map(|test| &test.name).or(outcome.failed.as_ref());
         // A panic names its file from the package, or from the workspace above it.
         let roots: Vec<&std::path::Path> = cwd.ancestors().collect();
         result.failure_origin =
-            failed.map(|name| crate::origin::of(&outcome.stdout, name, &roots).to_string());
+            name.map(|name| crate::origin::of(output, name, &roots).to_string());
         result.killed_by = catcher
             .map(|test| test.display.clone())
             .or_else(|| outcome.failed.clone());
+        if catches.every {
+            result.killed_by_all = failed[first.min(failed.len())..]
+                .iter()
+                .map(|test| test.display.clone())
+                .collect();
+        }
         break;
+    }
+    // Every test that catches it, not only the first: the binaries after the one that caught it
+    // run too, until one doesn't finish. Only a test's catch is added to: a crash names none.
+    let by_a_test = result.status == Status::Killed && result.killed_by.is_some();
+    if catches.every && by_a_test {
+        if result.killed_by_all.is_empty() {
+            result.killed_by_all.extend(result.killed_by.clone());
+        }
+        for (baseline, binary, group) in groups {
+            let binary = &built.binaries[binary];
+            let outcome = testrun::run(binary, cwd, &named(&group), &active, timeout(baseline));
+            let failed = failing(&group, &outcome.failures);
+            if failed.is_empty() && !outcome.passed {
+                break;
+            }
+            result
+                .killed_by_all
+                .extend(failed.iter().map(|test| test.display.clone()));
+        }
     }
     result.took = started.elapsed();
     result
+}
+
+/// The first of `failed` whose failure repeats when it runs again on its own against the mutant
+/// (`--confirm-catches`): its place among them, and that run. A test that passes this time didn't
+/// catch the mutant: it's `unconfirmed`, the last such kept, as the Java edition keeps it, and the
+/// next one that failed is tried. A run that fails any other way, or runs out of time, confirms.
+fn repeated(
+    run: &impl Fn(&[&str]) -> Outcome,
+    failed: &[&Test],
+    unconfirmed: &mut Option<String>,
+) -> Option<(usize, Outcome)> {
+    for (at, test) in failed.iter().enumerate() {
+        let again = run(&[test.name.as_str()]);
+        if !again.passed {
+            return Some((at, again));
+        }
+        *unconfirmed = Some(test.display.clone());
+    }
+    None
 }
 
 /// The false-catch guard's runs ([`crate::guard`]), on the run's build and the tests the coverage
@@ -1417,6 +1540,7 @@ struct BuildRuns<'a> {
     reach: &'a [Reach],
     cwd: &'a std::path::Path,
     workers: usize,
+    catches: Catches,
 }
 
 impl BuildRuns<'_> {
@@ -1464,16 +1588,15 @@ impl crate::guard::Runs for BuildRuns<'_> {
             .map(|(test, reach)| (test.clone(), reach.clone()))
             .unzip();
         let mutants: Vec<usize> = indexes.iter().map(|&at| results[at].mutant).collect();
+        let suite = Suite {
+            built: self.built,
+            tests: &tests,
+            reach: &reach,
+            cwd: self.cwd,
+            catches: self.catches,
+        };
         testrun::parallel(&mutants, self.workers, |&mutant| {
-            let again = result(
-                self.found,
-                mutant,
-                self.first[mutant],
-                self.built,
-                &tests,
-                &reach,
-                self.cwd,
-            );
+            let again = result(self.found, mutant, self.first[mutant], &suite);
             Suggester::with_suggestion(self.suggester, again)
         })
     }
@@ -1654,6 +1777,24 @@ pub fn not_a_mutant(id: &str, package: &str, dir: &str, found: &Crate) -> Failur
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `--exclude-tests` takes a test by the name a run shows, or a module of tests, whole: never
+    /// part of a name.
+    #[test]
+    fn a_test_is_left_out_by_its_name_or_a_module_above_it() {
+        let left_out = [
+            "pricing::tests".to_string(),
+            "orders::rounds_up".to_string(),
+        ];
+        assert!(leaves_out(&left_out, "pricing::tests::big_orders"));
+        assert!(leaves_out(&left_out, "pricing::tests::edge::at_a_hundred"));
+        assert!(leaves_out(&left_out, "orders::rounds_up"));
+        assert!(!leaves_out(&left_out, "pricing::tests_of_shipping::free"));
+        assert!(!leaves_out(&left_out, "orders::rounds_up_twice"));
+        assert!(!leaves_out(&left_out, "orders::rounds_down"));
+        assert!(!leaves_out(&left_out, "tests::big_orders"));
+        assert!(!leaves_out(&[], "pricing::tests::big_orders"));
+    }
 
     #[test]
     fn covering_tests_are_listed_own_module_first_then_by_name() {
