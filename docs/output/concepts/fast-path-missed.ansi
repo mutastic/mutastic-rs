@@ -1,0 +1,17 @@
+ [41;30;1m ✗ MISSED [0m no test checks [1mread()[0m at [1mdigits.len() == 9[0m[2m · m67fc8fc1[0m
+   [2m┌─[0m src/lib.rs:7
+   [2m│[0m
+ [2m6[0m [2m│[0m pub fn read(digits: &str) -> u64 {
+ [2m7[0m [2m│[0m     if digits.len() > 9 {
+   [2m│[0m                     [1;31m^ > changed to >=[0m
+ [2m8[0m [2m│[0m         return read_carefully(digits);
+   [2m│[0m
+   [2m=[0m mutant  [1;31m- [0mif digits.len() > 9 {
+             [32m+ [0mif digits.len() >= 9 {
+   [2m=[0m also    [1;31m✗[0m no test needs [1mdigits.len() > 9[0m to be false in [1mread()[0m [2m· m323add87[0m
+             [32m+ [0mif true {
+   [2m=[0m [1;34m[1mnote[0m[0m: covered by tests::reads_a_few_digits, tests::reads_more_than_a_u32_holds, tests::reads_nine_digits, tests::refuses_more_than_a_u64_holds (all 4 covering tests still pass)
+   [2m=[0m [32m[1mhelp[0m[0m: test [1mread()[0m with [1mdigits.len() = 9[0m and assert the result
+
+   [2mdone when [0m mutastic verify m67fc8fc1,m323add87 fixtures/fastpath [2mpasses[0m
+   [2mreproduce [0m mutastic run --only=m67fc8fc1,m323add87 fixtures/fastpath
