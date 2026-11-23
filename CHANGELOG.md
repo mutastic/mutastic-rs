@@ -8,6 +8,306 @@ newest come first.
 What's merged since the last release waits in [`changes/`](changes/), one file for each entry,
 until the next release gathers it here.
 
+## 1.3.0 (2026-11-23)
+
+### Card changes
+
+- **A removed release's card says what to look at.** A removed `remove_file` or `remove_dir_all`
+  asks for a test that the path is gone, and a statement removed from a `Drop` impl's `drop` for a
+  test that lets a value go and checks what that changes. A removed `drop(x)` says that `x` still
+  goes at the end of its scope, so the mutant matters only where code after it takes the lock
+  again or waits on a thread that does. Each card's test is run against its mutant. The Java
+  edition's cards do the same for `close()`, a pool's `shutdown()`, a shutdown hook and
+  `clean()`. See [Calls](docs/operators/calls.md).
+- **Code no test reaches gets an assertion to start with.** Under `Not covered`, `try:` gives an
+  assertion for a function's first test, `assert_eq!(Pricing::new().loyalty_credit(0), 0);`, and
+  `--format=agent` lists up to ten as `start with:`, as the Java edition does. Each is found by
+  calling the function as it is and with one of its mutants in, so its value is what the code gave
+  and the test it starts catches that mutant. A function only the crate calls, or one a test
+  can't call with whole numbers alone, gets none. `mutant-finished` carries the call in
+  `suggestion`. See [Code no test reaches](docs/concepts/suggested-tests.md#code-no-test-reaches).
+
+### Scoring changes
+
+Expect your score to move, for these reasons, not because your tests changed:
+
+- **A call whose result is only checked is removed: `handle.join().unwrap();` is a mutant.** A
+  statement ending in `.unwrap()` or `.expect(..)` had no mutant and wasn't counted, so a test that
+  didn't wait for a thread, or never saw what `tx.send(v).unwrap();` sent, was never asked to. Now
+  the statement is removed, by `mutastic/remove-discarded-call`, as the Java edition removes
+  `thread.join();`. One that checks a value it's given, `x.unwrap();`, is counted and skipped as
+  arid, `arid: only checks the value is there`, as the Java edition skips a removed
+  `Objects.requireNonNull(x);`. New ids appear; none moves. See [Remove discarded
+  call](docs/operators/calls.md#remove-discarded-call).
+- **A thread's name, its stack size and how long a runtime's idle threads live are skipped as
+  arid.** None of them changes whether, when or how often work runs. A name given to
+  `thread::Builder`'s `name`, or to a tokio runtime builder's `thread_name` or `thread_name_fn`, is
+  `arid: only names a thread`; a stack size, `stack_size` or `thread_stack_size`, is `arid: only
+  sizes a thread's stack` while the source shows it stays above zero; and tokio's
+  `thread_keep_alive` is `arid: only sets how long idle threads live` on the same terms. The call
+  is known by the builder its chain starts at, so any other `.name(..)` is mutated as before. A
+  crate that reads names (`thread::current().name()`) keeps its name mutants. A spawn, a `join`
+  and `worker_threads` still run. Runs on code that sets threads up get fewer mutants, and scores
+  can go up; a `mutate:` rule brings them back. The Java edition skips them too, and a priority.
+- **Twins run once, and their place counts once.** Two mutants at one place that always do the
+  same now run as one: the other is skipped as `twin: same as <id>`, naming the one that runs, and
+  is out of the score. Two operators making the same code are twins, as a function that ends in
+  `n > 0` made `true` by `mutastic/return-value` and by `mutastic/remove-conditional` is; so are
+  the changes to a comparison of an unsigned value with 0 that agree for 0 and above, `n > 0` made
+  `n >= 0` and made `true`. No id changes, and each still works: `verify`, `run --only` and
+  `explain` run the one it's the same as, `mutastic ignore` records the decision for that one, and
+  an ignore of either holds for both. Runs have fewer mutants to build and run, and a score moves
+  a little where a place was counted twice. Events give a twin's `sameAs` and the skip kind
+  `twin`. The Java edition has twins too. See [Twins](docs/concepts/results.md#twins).
+- **A call stored and then only checked is removed: `let removed = remove_file(&p);
+  removed.unwrap();` is a mutant.** The check was skipped as arid, and the call that made the value
+  got no mutant at all, though `remove_file(&p).unwrap();` written in one statement has one. Now
+  both statements go, by `mutastic/remove-discarded-call`, when the check comes straight after and
+  nothing else uses the value. `x.unwrap();` on a value it's given stays skipped. New ids appear;
+  none moves. See [Remove discarded call](docs/operators/calls.md#remove-discarded-call).
+- **More of the arid cases are mutants, made and skipped, as in the Java edition.** A number
+  given to `with_capacity`, `with_capacity_and_hasher` or `reserve` had no mutant, and arithmetic
+  there, `Vec::with_capacity(n * 2)`, was counted; both are now skipped as `arid: only sizes a
+  collection's first allocation`. A sleep removed, `thread::sleep(d);` or `sleep(d).await;`, was
+  counted; it's `arid: only waits`, and the number or the sum that only sets how long it waits is
+  `arid: only sets how long to wait`. An `Err`'s, a `context`'s or an `expect`'s text, and every
+  mutant in a `Debug` or `Hash` impl, are made and skipped too, with the Java edition's ids. Each
+  is counted under `skipped`, audited by `MUTASTIC_ARID=audit` and brought back by a `mutate:`
+  rule. Scores on code that sizes collections or sleeps can go up.
+- **A `Display` impl is counted, and `new` has its body replaced.** A `fmt`'s `Ok(())`, and with
+  `extended` a `fmt`'s or a `hash`'s or a `new`'s body replaced, had no mutant. Outside a `Debug`
+  or `Hash` impl they're mutants now: what a `Display` writes is often what a person or a program
+  reads. New ids appear; none moves.
+- **A variable's first `0` or `1` is counted.** `let mut count = 0;` had no mutant; now its
+  changes run like any other number's, as the Java edition counts them since dropping
+  `mutastic:first-values`: a counter or a total that starts wrong is a wrong answer.
+- **A time that isn't a sleep's is counted.** A number in `Duration::from_secs(30)` had no mutant
+  wherever it was; now only one that goes into a sleep is skipped, so a timeout, a deadline or a
+  backoff is mutated, as the Java edition counts them. A runtime's keep-alive that the change
+  makes zero is counted too, as the keep-alive rule says. Scores on code with timeouts can go
+  down.
+- **A value a `let` works out only for a log line is skipped as arid.** In `let took =
+  start.elapsed().as_millis() - base; info!("took {took} ms");` the subtraction's mutants only
+  change what the log says, so they're now `arid: only feeds a log line`, part of
+  `mutastic:output`. Every read of the name has to be in an output macro (`println!`, `info!`,
+  `tracing::warn!` and the rest): an argument, `{took}` in the format string, or a tracing field.
+  A value read anywhere else stays counted: returned, compared, pushed, passed to a function,
+  `format!`, `write!` or `assert!`, read in a closure, or shadowed by another binding of the same
+  name. Inline arguments, `info!("{}", a - b)`, never had mutants. Code that logs timings gets
+  fewer mutants, and its score can go up; `arid: [mutastic:output]` on a `mutate:` rule brings
+  them back. The Java edition skips the same values, inline or through a local.
+- **A log level's check around only output is skipped as arid.** `if log_enabled!(Level::Debug)
+  { debug!(…); }`, and `tracing`'s `enabled!`, with no `else`: changing the check only decides
+  whether the line is written, so its mutants are `arid: only decides whether output is written`.
+  A body with anything but output macros in it keeps them counted. Runs on such code get fewer
+  mutants, and scores can go up; `arid: [mutastic:output]` brings them back.
+
+### Additions
+
+- **Bring back one arid rule: `arid:` on a `mutate:` rule.** `arid: [mutastic:output]` under a
+  `mutate:` rule takes back only that rule's skips in the code it covers; without it, every arid
+  skip, as before. An id mutastic doesn't have is refused, with the one meant when it's close.
+  The thread settings' skips have ids too: `mutastic:thread-names`, `mutastic:stack-sizes` and
+  `mutastic:keep-alive`.
+- **A skip says which arid rule made it, and how to undo it.** `explain` on a mutant an arid rule
+  skipped has an `arid` row: the rule's id, what it skips, a link to its docs and the
+  `mutastic.yaml` rule to copy that runs it. The HTML report says the same. Events carry the id as
+  `skipRule` (`mutant-finished`) and the row as `arid` (`mutant-explained`), and mutation.json as
+  `mutastic.skipRule`, as in the Java edition.
+- **The arid rules have the Java edition's ids.** A statement that only writes output is
+  `mutastic:output`, and a removed `x.unwrap();` that only checks the value is there is
+  `mutastic:null-checks`, as Java's `Objects.requireNonNull(x)` is. The editions' contract lists
+  every rule, and each has a section on the [Arid rules](https://docs.mutastic.io/reference/arid/)
+  page.
+- **`mutastic/boolean-constant`, in `stronger`: a flag set the other way.** A `true` or `false`
+  passed to a function, bound by a `let`, assigned, or given to a struct's field becomes the other,
+  where only a returned one did. One in a condition isn't changed. The Java edition has it too. See
+  [Boolean constant](docs/operators/arguments.md#boolean-constant).
+- **`library/plain-division`, in `stronger`: division that rounds towards zero.** `a.div_euclid(b)`
+  becomes `a / b` and `rem_euclid` becomes `%`, so a remainder that's wrong for negative numbers,
+  `-1 % 3` being `-1` where `rem_euclid` gives `2`, shows unless a test has one. A value the source
+  proves unsigned is skipped as equivalent. The Java edition has it too, for `Math.floorDiv` and
+  `floorMod`. See [Plain division](docs/operators/arithmetic.md#plain-division).
+- **`library/swap-ends`, in `stronger`: one end of a collection for the other.** `first` and
+  `last`, `front` and `back` (and their `_mut` forms), and a `BTreeMap`'s and a `BTreeSet`'s
+  `first_key_value` and `last_key_value`, `first_entry` and `last_entry`, and `pop_first` and
+  `pop_last` swap. It finds the newest taken where the oldest was meant, which tests with one
+  element can't see. An iterator's `last` is left alone, as it has no `first`. The Java edition has
+  it too, for `getFirst` and `getLast` and a `Deque`'s and a sorted collection's ends. See [Swap
+  ends](docs/operators/library.md#swap-ends).
+- **The summary says when the machine slept during the run.** Duration counts the time the
+  machine was awake, so a run a Mac slept through for four minutes said 15.4s. When the clock ran
+  at least 5 seconds and a tenth of its time more, a line under Duration says `The machine slept
+  for 3m49s during the run, which Duration leaves out.`, and `run-finished` has it as `sleptMs`,
+  else 0. The Java edition says it too. See [When the machine
+  sleeps](docs/concepts/output.md#when-the-machine-sleeps).
+- **Code only `main` runs says so, and what to do.** A binary's `main` no test reaches read as not
+  covered, like any other function. Its line in the Not covered list now says it's reached only
+  from `main()`, and to move what it does into `run(args, out)`, which returns the exit code, test
+  `run`, and leave `main()` a one-line call to it; a `main` whose mutants are all on one line gets
+  no such advice. The Java edition says the same. See [Code reached only from
+  main](docs/concepts/results.md#code-reached-only-from-main).
+- **More of what a suggestion is found by, in events.** `suggestion` names the constant or field
+  the call is at the edge of (`named`) and the receiver's parameters, and `explain`'s site says
+  which of its function's sites it is (`site.ordinal`), as in the Java edition. `mutant-finished`'s
+  keys come in the Java edition's order.
+- **Events say where a catch failed, and which tests catch everything alike.** `mutant-finished`
+  and mutation.json have `failureOrigin`, as in the Java edition: `assertion` when an `assert!`
+  failed, `test` when the test's own code panicked, `code` when the code under test did. A test
+  that caught mutants in three or more functions, each time with a panic in its own code, gets a
+  note under the summary and in the agent format, and `run-finished`'s `unrelatedCatches` names
+  it, where the list was always empty: it may be flaky, or call a lot of code.
+- **`MUTASTIC_ARID=audit`: see whether the arid rules hide anything.** Set it, and a run runs the
+  mutants mutastic's arid rules skip as well, out of the score and the counts, and the summary has
+  an `Arid audit` row: how many ran, how many the tests caught, how many of those by a test's own
+  assertion, and where. A catch by an assertion means a test checks what the arid code does, so the
+  row gives the `mutastic.yaml` rule that brings that rule's mutants back there. `run-finished`
+  has it as `aridAudit`. The Java edition has it too.
+- **`MUTASTIC_PILLS` draws labels as you like them.** `rounded` gives `MISSED` and `PASS` round
+  ends, for a terminal with a Nerd Font; `off` leaves out the coloured block and keeps the words in
+  their colour; `square`, as before, unless set. Any other value is refused. The Java edition has
+  it too.
+- **Four of the Java edition's options for a run: `--confirm-catches`, `--kill-matrix`,
+  `--exclude-tests` and `--each-mutant`.** `--confirm-catches` runs each catching test again on its
+  own against the mutant: a catch that doesn't repeat doesn't count, the other covering tests
+  decide, and the test is named as likely flaky (`unconfirmedCatchBy` in the events, and
+  `catch-not-repeated` in `run-finished`'s `likelyFlaky`). `--kill-matrix` runs every test that
+  reaches a caught mutant and names each that catches it, as `caughtByAll` in the events and
+  `killedBy` in `mutation.json`. `--exclude-tests=TEST` leaves out a test, by its name as a run
+  shows it, or a module of tests by its path: the summary's `Left out` row names it, what only it
+  reaches is not covered, and a flaky test's line now offers it. `--each-mutant` gives every missed
+  mutant a card of its own, and lists code no test reaches by line. `verify`, `explain`, `next` and
+  `baseline` take `--confirm-catches` and `--exclude-tests` too. See
+  [How a run works](docs/concepts/how-a-run-works.md) and
+  [Troubleshooting](docs/troubleshooting.md#a-test-is-flaky).
+- **Annotations and a job summary on GitHub Actions.** Where `GITHUB_ACTIONS=true`, `mutastic run`
+  now annotates the line of each of its first ten misses, ranked as the agent format ranks them,
+  so a pull request's changed files show them, and adds a Markdown summary to the job's page
+  (`$GITHUB_STEP_SUMMARY`): the verdict, the score, the counts and the first misses with where they
+  are. It needs no token or permission, and the annotations go to stderr, so a format's own output
+  is untouched. `MUTASTIC_GITHUB=off` turns both off. The Java edition does the same. See [On
+  GitHub Actions](docs/reference/reports.md#on-github-actions).
+- **A rules file can ask for the Java edition's other rewrites.** Beside `remove` and `rename`, an
+  operator's `rewrite:` takes `keep argument` (`set.unwrap_or(8080)` becomes `8080`), `unchecked
+  arithmetic` (`a.checked_add(b)` becomes `Some(a.wrapping_add(b))`, and a `saturating_` method the
+  `wrapping_` one) and `call name(TYPES) with A, B` (`call take(usize) with usize::MAX`), whose
+  arguments are constants and whose types are for the reader. `omit last argument` stays an error,
+  now with its reason: it calls a shorter overload, and Rust has none. See
+  [Rewrites](docs/reference/configuration.md#rewrites).
+- **Your own output calls, as a `mutastic.yaml` rule.** `- output: crate::audit::record` with a
+  `reason:` names a function or a macro of your own that only writes output, an audit log or a
+  metric (`metrics::counter`), and a statement that calls it is skipped as `mutastic:output`:
+  `arid: only calls audit::record (<reason>)`. The path in the code may be shorter after a `use`.
+  A `mutate:` rule brings them back, and none are output until a rule says so. As in the Java
+  edition.
+- **A way past a test that fails on its own: `exclude-tests:` in `mutastic.yaml`, each with a
+  reason.** A test that fails with no mutant in still stops the run, and its message now ends in
+  the way past it: list it under `exclude-tests:` with a `reason:`, or give `--exclude-tests` for
+  one run. The summary's `Left out` row names each test with its reason, the Score row ends in
+  `· 1 test left out`, and `run-finished` lists them as `testsLeftOut`. A left-out test can only
+  make the score fall: what only it reaches is not covered. The agent format never offers it, and
+  `mutastic gate` holds a task that adds one, as a task that took a test away. See
+  [Configuration](docs/reference/configuration.md#leaving-a-test-out).
+- **A case that catches a mutant is named by its row.** `verify` and `explain` say `caught by
+  rstest_tests::discounts::case_2_at_the_edge (case #[case::at_the_edge(100, 10)])`, the rstest
+  `#[case]` or test-case `#[test_case]` row as written, and the `mutant-finished` event has
+  `caughtCase`, with the `fn` the row is written in, its place in this run and the row. A case that
+  fails with no mutant in is named with its row too. The number in a case's name moves when a row
+  is added above it; the row says which one it is (`docs/concepts/results.md`).
+- **`mutastic mutants` says what a set of operators would add to a run's time, before it's run.**
+  With `--operators`, the line before the count estimates it from the last whole run: `estimate: 24
+  more mutants than defaults, up to 64ms more of tests, from the run of 23 Nov 2026 04:58 UTC`, the
+  time of the tests that reach each new mutant's code. It says why when there's no estimate: no run
+  recorded, the code changed since, a run under other operators than the project's, or new mutants
+  in code that run didn't measure. `--estimate` runs every test once, with no mutant in, and
+  estimates what `defaults`, `stronger` and `all` would each take, keeping what it measured for the
+  next `mutants --operators`. A whole run and `--estimate` keep the times in
+  `target/mutastic/test-times.tsv`. See [Coverage and mutants](docs/coverage-and-mutants.md).
+
+### Changes
+
+- **Five failures have the Java edition's codes, and two of them now stop the run.** A package
+  whose tests are all `#[ignore]`d, and one whose tests pass and reach none of the code with
+  mutants, used to finish with every mutant not covered and exit 1: a 0% that measures nothing.
+  Each now stops the run with exit 2 and says why, as `no-tests` and `nothing-covered`; a package
+  with no tests at all still finishes, and says `Found no tests`. A test that ends its process
+  before any mutant, by `process::exit` or a crash, is `tests-stopped` and named with how it ended,
+  `(it exited with status 3)`; one that runs out of time is `tests-timed-out`; both were
+  `red-baseline`. A file mutastic can't read or write is `disk`, not `other`, and its message ends
+  in what to do about a full disk, a directory that isn't writable or a file where a directory
+  goes. See [Errors](docs/reference/errors.md).
+- **A test that fails with no mutant in, or caught mutants and fails on its own, exits 3, as in
+  the Java edition.** It exited 2, as a usage error does; a script that checks for 2 there now
+  sees 3. There's a way past it, leaving the test out with a reason, so it's told apart from a
+  mistake in the command. Every other failure still exits 2 until 2.0.
+
+### Fixes
+
+- **A file one mutant's tests leave in the temporary directory can't change the next mutant's
+  result.** Tests shared the system's temporary directory, so a mutant that removes a
+  `remove_file` left its file there, and a test of another mutant that removes the write could
+  read that file and pass: missed in one run, caught in the next. Each test process now gets an
+  empty temporary directory of its own, as `TMPDIR` (and `TMP` and `TEMP` on Windows), deleted
+  when it ends. Nothing is left in yours either. The Java edition empties its worker's temporary
+  directory between mutants the same way. See [How a run
+  works](docs/concepts/how-a-run-works.md#each-mutant-against-the-tests-that-reach-it).
+- **A thread started and not waited for says which test catches it.** A missed `thread::spawn(..)`
+  or `thread::Builder`'s `spawn` said only that no test checked what the statement does. Its card
+  now says no test waits for the thread and checks what it did, and to join its handle or wait on a
+  channel its closure sends to first. A scoped thread's `spawn` keeps the card any statement gets,
+  as its scope waits for it. The Java edition's cards name the test the same way for threads,
+  pools, interrupts, locks and daemon flags.
+- **A count of one reads as one.** The gate's pass said the tests `catch 1 of the 1 mutant`; it
+  now says they `catch the only mutant`, `catch all 6 mutants` when they catch every one, and
+  `catch 4 of the 6 mutants` otherwise. `1 of the baseline's mutants is caught now`, from a run
+  and from `baseline --prune`, and `removed 1 ignore that no longer holds`, from `ignore
+  --prune`, take their verb from the count too, as the Java edition's do.
+- **A test stopped for time takes the processes it started with it.** A mutant that made a test
+  run past its time stopped the test process, and left whatever it had started running: a build,
+  a server, a `sleep`. They went on taking memory and cores from the next mutants' tests, and on
+  a small machine could take it down. Those processes are now stopped too, as the Java edition
+  does.
+- **An error reads as the Java edition's, and ends in the one command to run.** A mistyped
+  command or option with nothing close ends in `mutastic --help` or `mutastic run --help`, without
+  a `Usage:` line. A value that isn't one of an option's says `--format takes full, …, not xyz`,
+  or with a close one `--format has no value agnt`; `--workers=0` and `--tries=0` say the range
+  and what they got. A missing value, id or reason ends in your line with a `<…>` to fill in, where
+  `--format=FORMAT` was taken by an agent as a command to run as it was. An id one slip from a
+  mutant's ends in your line corrected, not in `mutastic mutants`, and `gate` with a close action
+  in `mutastic gate open`. A script or an agent reads one message in both editions.
+- **`--operators` given twice adds, as in the Java edition.** `--operators=stronger
+  --operators=-stream` runs `stronger` without the `stream` operators, where the second replaced
+  the first. A list that only leaves operators out, `--operators=-mutastic/boundary`, leaves them
+  out of the defaults, where it ran no operator at all. `run --help` lists `--shard` and
+  `--from-shards` after `--workers`, in the editions' shared order.
+- **A test whose code exits is named, and an exit isn't a crash.** A mutant that made code a test
+  ran call `process::exit(2)` read as caught only because the test process crashed (`crash: an
+  abnormal exit`), with no test named. It's now caught by the test that was running, by the exit:
+  the card says `caught by …, by the process exiting with status 2`, and the event has `caughtWith:
+  "exit: 2"`. Status 0, which `cargo test` reads as a pass, is no catch: the tests that never ran
+  after it now run without it, and decide. The Java edition does the same for `System.exit`. See
+  [When the code a test runs exits](docs/concepts/results.md#when-the-code-a-test-runs-exits).
+- **`ignore` names its files from where you are, and drops a `.` from its undo.** From above the
+  package, `recorded in fixtures/pricing/.mutastic/ignores.yaml`, where it said
+  `.mutastic/ignores.yaml`; in the package, `to undo: mutastic ignore --remove mb2f8ae57`, without
+  a ` .`. `ignore --prune` on another directory names that directory's file to `git checkout`, and
+  `--propose` with `--accept`, `--remove` or `--prune` is refused, as in the Java edition.
+- **A mistake in `mutastic.yaml` or `.mutastic/ignores.yaml` is told as the Java edition tells
+  it.** A section mutastic doesn't have says `colour: isn't a section`, with the one meant when
+  it's close, where it listed every section first; `operators: stronger` on one line says the list
+  goes a line under it, and shows it; `- skp:` says there's a rule called `skip:`. In the ignores,
+  a line with no colon gives an example, `reason: only logs`, an entry with a key close to the
+  missing `reason:` says so, and `ignore --accept` or `--remove` of an id one slip from a recorded
+  one names it, with the command. `MUTASTIC_INCREMENTAL` is in the help, and the configuration
+  page says how an editor checks `mutastic.yaml` and rules files against their JSON Schemas.
+- **The summary, `explain`, the brief card and SARIF read as the Java edition's.** The Mutants row
+  ends in every mutant in brackets, after the skipped count, where the total came first and left
+  the skipped out; `Left out`, the code not mutated, comes after Reports. A brief card shows the
+  mutated line alone. `explain`'s operator row says what the operator does, as its docs section
+  opens, where it repeated the change, and its rows wrap at 100 columns. A run of one mutant says
+  1 worker, not 4. SARIF's rules have the operator's explanation, its first sentence as the short
+  description, and `informationUri` is the docs.
+
 ## 1.2.1 (2026-11-18)
 
 ### Fixes
