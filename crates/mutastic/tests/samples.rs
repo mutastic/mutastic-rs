@@ -2091,7 +2091,13 @@ fn mutastic_yaml_is_read_as_the_java_editions() {
             assert_eq!(mutant["status"], status, "{mutant}");
             assert_eq!(mutant["mutation"]["applied"]["text"], applied, "{mutant}");
         }
-        let rendered = of[0]["rendered"].as_str().unwrap();
+        // The missed one's card, whichever of the two finished first: the events go out as the
+        // workers finish, and only a missed mutant has a card.
+        let rendered = of
+            .iter()
+            .find(|e| e["status"] == "Survived")
+            .and_then(|e| e["rendered"].as_str())
+            .unwrap_or_else(|| panic!("{operator}'s missed mutant has a card: {jsonl}"));
         assert!(rendered.contains(headline), "{rendered}");
     }
     let generated: Vec<&&Value> = mutants
