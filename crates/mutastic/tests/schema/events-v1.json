@@ -284,6 +284,17 @@
           "items": { "$ref": "#/$defs/test" },
           "description": "Every covering test that catches it, in the order they ran, the first being `caughtBy`: only with `--kill-matrix`, and only when one did."
         },
+        "caughtCase": {
+          "type": "object",
+          "description": "The case that caught it, when the test that did is one case of a table of them: as evidence of this run, as its index moves when a case is added before it. Java names a parameterized, repeated or dynamic test by its method (`caughtBy`), and this is the invocation that failed; Rust names each case as libtest lists it (`caughtBy`), and this is the `#[case]` or `#[test_case]` row it runs.",
+          "required": ["test", "index", "name"],
+          "additionalProperties": false,
+          "properties": {
+            "test": { "type": "string", "description": "The test the case belongs to, the method or `fn` it's written as: in Java `caughtBy`, in Rust `caughtBy` without its last segment, `rstest_tests::subtracts`." },
+            "index": { "type": "integer", "minimum": 1, "description": "Its position among its test's cases in this run, from 1: JUnit's invocation number, rstest's `case_2`, test-case's `test_case_2`." },
+            "name": { "type": "string", "description": "What it's called: in Java its display name, `[2] 2, 3, 5` by default; in Rust its row as written, `#[case(2, 3, 5)]`." }
+          }
+        },
         "nearUnsafe": {
           "type": "string",
           "description": "The Rust edition only: why the mutant is near unsafe code, when it is (`called from unsafe code`, `in a module with unsafe code`, `in a function with an unsafe block`, `inside unsafe code`). It ran on its own, and a crash isn't counted as caught (`RuntimeError`)."

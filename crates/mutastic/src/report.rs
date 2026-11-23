@@ -382,6 +382,13 @@ struct View<'a> {
 }
 
 impl<'a> View<'a> {
+    /// ` (case #[case(30, 0, 30)])`, the row the test that caught `result` is, when it's one.
+    fn case_said(&self, result: &MutantResult) -> String {
+        crate::cases::caught(self.project, result)
+            .map(|case| case.said())
+            .unwrap_or_default()
+    }
+
     fn of(report: &'a Report, shown: bool) -> View<'a> {
         View {
             found: &report.found,
@@ -1984,9 +1991,10 @@ fn fate(view: &View, result: &MutantResult, style: Style) -> String {
     let reason = untrusted::value(result.reason.as_deref().unwrap_or_default());
     match result.status {
         Status::Killed => detected(format!(
-            "{id} is {} by {}",
+            "{id} is {} by {}{}",
             words.detected(),
-            untrusted::value(result.killed_by.as_deref().unwrap_or("a test"))
+            untrusted::value(result.killed_by.as_deref().unwrap_or("a test")),
+            view.case_said(result)
         )),
         Status::Timeout => detected(format!(
             "{id} is {}: its tests stopped finishing in time",
@@ -2729,9 +2737,10 @@ fn agent_fates(view: &View, words: Vocabulary) -> String {
             let id = &view.mutant(result).id;
             let fate = match result.status {
                 Status::Killed => format!(
-                    "is {} by {}",
+                    "is {} by {}{}",
                     words.detected(),
-                    untrusted::value(result.killed_by.as_deref().unwrap_or("a test"))
+                    untrusted::value(result.killed_by.as_deref().unwrap_or("a test")),
+                    view.case_said(result)
                 ),
                 Status::Timeout => {
                     format!(
@@ -3203,6 +3212,9 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
     if let Some(failure) = &result.killed_with {
         event["caughtWith"] = json!(failure);
     }
+    if let Some(case) = crate::cases::caught(view.project, result) {
+        event["caughtCase"] = json!({"test": case.test, "index": case.index, "name": case.name});
+    }
     if !result.killed_by_all.is_empty() {
         event["caughtByAll"] = json!(result.killed_by_all);
     }
@@ -3423,8 +3435,9 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
                 GREEN,
             ),
             format!(
-                "caught by {}{}",
+                "caught by {}{}{}",
                 untrusted::value(result.killed_by.as_deref().unwrap_or("a test")),
+                view.case_said(result),
                 match result.killed_with.as_deref() {
                     Some(how) if how.starts_with("crash") => {
                         format!(", by a crash ({})", untrusted::value(how))

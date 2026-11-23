@@ -1262,6 +1262,7 @@ fn coverage(
                         command
                     },
                     seeded,
+                    case: crate::cases::of(project, &test.display),
                 }
             })
             .collect();
