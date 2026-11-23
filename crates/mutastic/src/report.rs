@@ -2512,23 +2512,32 @@ fn on_new_misses(report: &Report, judged: &crate::baseline::FailOnNew, style: St
 /// "not mutated: unsafe (3), …": the code left alone around unsafe, and how to include it; then
 /// "not built here: `cfg(windows)` (2)", the code this build doesn't have.
 fn not_mutated(report: &Report) -> Vec<String> {
-    let mut lines = Vec::new();
+    not_mutated_unsafe(report)
+        .into_iter()
+        .chain(not_built(report))
+        .collect()
+}
+
+/// "not mutated: unsafe (3), …", in mutastic's own words alone.
+fn not_mutated_unsafe(report: &Report) -> Option<String> {
     let count = report.found.not_mutated_unsafe;
-    if count > 0 {
-        lines.push(format!(
+    (count > 0).then(|| {
+        format!(
             "not mutated: unsafe ({count}), in or around unsafe blocks; --unsafe=enclosing or --unsafe=all includes them"
-        ));
-    }
-    if !report.found.not_built.is_empty() {
-        let by_cfg: Vec<String> = report
-            .found
-            .not_built
-            .iter()
-            .map(|(cfg, count)| format!("`{}` ({count})", untrusted::value(cfg)))
-            .collect();
-        lines.push(format!("not built here: {}", by_cfg.join(", ")));
-    }
-    lines
+        )
+    })
+}
+
+/// "not built here: `cfg(windows)` (2)": it quotes the project's cfgs, whose values are free text
+/// (`target_os = "…"`), so an agent reads it inside the fence.
+fn not_built(report: &Report) -> Option<String> {
+    let by_cfg: Vec<String> = report
+        .found
+        .not_built
+        .iter()
+        .map(|(cfg, count)| format!("`{}` ({count})", untrusted::value(cfg)))
+        .collect();
+    (!by_cfg.is_empty()).then(|| format!("not built here: {}", by_cfg.join(", ")))
 }
 
 fn agent(report: &Report, style: Style) -> String {
@@ -2636,7 +2645,7 @@ fn agent(report: &Report, style: Style) -> String {
     if report.count(Status::Survived) + report.count(Status::NoCoverage) >= 2 {
         let _ = writeln!(out, "tasks: {}", tasks(&view.command("verify", "<id>")));
     }
-    for line in not_mutated(report) {
+    if let Some(line) = not_mutated_unsafe(report) {
         let _ = writeln!(out, "{line}");
     }
     let ranked = ranked(&view, view.entries());
@@ -2721,6 +2730,11 @@ fn agent(report: &Report, style: Style) -> String {
         for assertion in view.starting_points(STARTING_POINTS_SHOWN) {
             let _ = writeln!(quoted, "  start with: {assertion}");
         }
+    }
+    // The code this build doesn't have, by its cfg: the project's text, so in the fence, which
+    // opens for it alone when nothing was missed.
+    if let Some(line) = not_built(report) {
+        let _ = writeln!(quoted, "\n{line}");
     }
     if !quoted.is_empty() {
         out.push_str(&untrusted::fence(&quoted));

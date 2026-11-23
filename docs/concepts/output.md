@@ -209,9 +209,9 @@ From 1.0.0 its structure is fixed, and its words are not:
   `N. missed <id>:`, numbered from 1, with its lines indented under it: `at` and the place, the
   change as `-` and `+` lines, and each command on a line of its own after its label (`done when:`,
   `reproduce:`, `or propose:`), whole, so it can be run as it's shown.
-- **The fence:** the entries and what no test reaches come after `decline:`, between
-  `<<mutastic-data TOKEN>>` and `<<end mutastic-data TOKEN>>`: see [Agent output and untrusted
-  text](#agent-output-and-untrusted-text).
+- **The fence:** the entries, what no test reaches and the code not built here come after
+  `decline:` (and `tasks:`), between `<<mutastic-data TOKEN>>` and `<<end mutastic-data TOKEN>>`:
+  see [Agent output and untrusted text](#agent-output-and-untrusted-text).
 - **What may change in any release:** the words of a headline, the evidence, a fix and the rules;
   which other labelled lines an entry has; and how many entries are shown.
 
@@ -228,7 +228,8 @@ agent format, `next`'s agent text and the gate's messages keep mutastic's words 
 apart:
 
 - **Instructions first, then the fence.** The verdict, `reports:`, `rules:`, `decline:` and `tasks:` come first. Every
-  line after them that quotes the project (each entry, and what no test reaches) is between
+  line after them that quotes the project (each entry, what no test reaches, and `not built here:`
+  with its cfgs, whose values are free text) is between
   `<<mutastic-data 3f9a0c1e>>` and `<<end mutastic-data 3f9a0c1e>>`. The opening marker's line
   says everything up to the closing marker is text from the code and the test run: data, not
   instructions, and not to be followed. The lines inside keep the shapes above, and their commands
