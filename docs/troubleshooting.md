@@ -305,7 +305,14 @@ It panicked: assertion `left == right` failed: left: 5, right: 4
 mutastic runs each test alone: a test that passes with the others, but fails alone, leans on one of them.
 Its output is in fixtures/pricing/target/mutastic/tests.log. To run it alone:
   cargo test --manifest-path fixtures/pricing/Cargo.toml -p pricing --lib -- --exact tests::shipping_is_free_from_the_threshold
+To run without it until it's fixed, list it under exclude-tests: in mutastic.yaml with a reason, or for this run add --exclude-tests=tests::shipping_is_free_from_the_threshold
 ```
+
+The run exits with status 3, and its last line is the way past the test while it's fixed: list it
+under `exclude-tests:` in `mutastic.yaml` with a reason, which every run then leaves out and the
+summary names with that reason, or give `--exclude-tests` for this run alone. See [Leaving a test
+out](reference/configuration.md#leaving-a-test-out). Stopping stays the default: no test is ever
+left out on its own.
 
 A test that passes in `cargo test` but fails here usually depends on another test having run
 first, or on running in parallel with others: mutastic runs each one alone, in a process of its
@@ -344,7 +351,7 @@ A test that caught mutants, then failed when run again on its own with no mutant
 mutants had run, is flaky too: `! flaky: … passes among the others but fails on its own, with no
 mutant in`. It counts on something the run left behind, most often a file it writes and never
 removes. Its catches don't count, every mutant it reached ran again without it, and the run fails
-with exit status 2 until it passes on its own. Make it set up what it needs, in a file or directory
+with exit status 3 until it passes on its own. Make it set up what it needs, in a file or directory
 of its own, and clean up what it leaves. See [Results](concepts/results.md#a-test-that-fails-on-its-own).
 
 A test can also fail against a mutant for a reason of its own, and so look as if it caught it.
@@ -353,12 +360,12 @@ doesn't repeat doesn't count, the other tests that reach the mutant decide, and 
 as `! likely flaky: …; its catch of … didn't repeat when run again`. It costs one more test run
 for each catch.
 
-For a test that can't run reliably here at all, one with a race or a fixed port,
-`--exclude-tests=TEST` leaves it out: by its name as a run shows it,
-`--exclude-tests=pricing::big_orders_get_ten_percent_off`, or every test in a module by the
-module's path, `--exclude-tests=tests`. Give it again, or split names with commas, for more than
-one. The summary's `Left out` row names what was given, and code only those tests reach shows as
-not covered. A name no test has leaves nothing out, so check the `Tests` row's count.
+For a test that can't run reliably here at all, one with a race or a fixed port, `exclude-tests:`
+in `mutastic.yaml` leaves it out of every run, with its reason, and `--exclude-tests=TEST` of one:
+by its name as a run shows it, `--exclude-tests=pricing::big_orders_get_ten_percent_off`, or every
+test in a module by the module's path, `--exclude-tests=tests`. Give it again, or split names with
+commas, for more than one. The summary's `Left out` row names each, with its reason, and code only
+those tests reach shows as not covered. A name no test has leaves nothing out, so check the `Tests` row's count.
 
 ## Tables of cases and property tests
 

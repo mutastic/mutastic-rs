@@ -3071,7 +3071,8 @@ fn a_flaky_test_is_left_out_and_one_that_always_fails_stops_the_run() {
     )
     .unwrap();
     let (code, out) = mutastic_in(&dir, &["run", "--report=none"]);
-    assert_eq!(code, 2, "{out}");
+    // Exit 3, as in the Java edition: there's a way past it, so it isn't a usage error's 2.
+    assert_eq!(code, 3, "{out}");
     assert!(
         out.contains(&format!(
             "mutastic: {test} fails without any mutant, so mutastic can't judge one.\n\
@@ -3080,13 +3081,44 @@ fn a_flaky_test_is_left_out_and_one_that_always_fails_stops_the_run() {
         "{out}"
     );
     let rerun = "cargo test -p raffle --test raffle -- --exact a_draw_is_a_place_in_the_raffle";
+    // Stopping stays the default, and the way past it leaves the test out by name, with a reason,
+    // before where its output is: the command that runs it alone stays last, to copy.
     assert!(
         out.contains(&format!(
-            "Its output is in target/mutastic/tests.log. To run it alone:\n  {rerun}\n"
+            "To run without it until it's fixed, list it under exclude-tests: in mutastic.yaml \
+             with a reason, or for this run add --exclude-tests={test}\n\
+             Its output is in target/mutastic/tests.log. To run it alone:\n  {rerun}\n"
         )),
         "{out}"
     );
     assert!(!out.contains("ignore"), "{out}");
+    // An agent is never offered it: whether to leave a test out is the person's call.
+    let (code, agent) = mutastic_in(&dir, &["run", "--report=none", "--format=agent"]);
+    assert_eq!(code, 3, "{agent}");
+    assert!(!agent.contains("--exclude-tests"), "{agent}");
+    assert!(
+        agent.contains(
+            "Find out whether the change or the test is wrong. Don't leave the test out yourself: \
+             tell the person, or propose leaving it out under exclude-tests: in mutastic.yaml \
+             with its reason, for them to decide."
+        ),
+        "{agent}"
+    );
+    assert!(agent.contains("\"exitCode\":3"), "{agent}");
+    // The way past it holds: left out with its reason, the run goes on.
+    std::fs::write(
+        dir.join("mutastic.yaml"),
+        format!("exclude-tests:\n  - test: {test}\n    reason: fails every time, until issue 12\n"),
+    )
+    .unwrap();
+    let (code, out) = mutastic_in(&dir, &["run", "--report=none"]);
+    assert_ne!(code, 3, "{out}");
+    assert!(
+        out.contains(&format!(
+            "Left out  {test}: fails every time, until issue 12\n"
+        )),
+        "{out}"
+    );
     let log = std::fs::read_to_string(dir.join("target/mutastic/tests.log")).unwrap();
     assert!(log.contains("fails every time"), "{log}");
 }
@@ -3105,7 +3137,7 @@ fn a_false_catch_is_found_and_the_mutants_it_reached_run_again() {
     let fee_mutant = "m2d2460c0";
 
     let (code, agent) = mutastic_in(&dir, &["run", "--format=agent", "--report=none"]);
-    assert_eq!(code, 2, "{agent}");
+    assert_eq!(code, 3, "{agent}");
     assert!(
         agent.starts_with(
             "mutastic: FAIL (a test that caught mutants fails on its own, with no mutant in) · score 33.3% (threshold 80; 50.0% where tests reach) · 6 missed, 6 not covered, 6 caught of 18 mutants (2 more skipped)\n"
@@ -3114,10 +3146,11 @@ fn a_false_catch_is_found_and_the_mutants_it_reached_run_again() {
     );
     assert!(
         agent.contains(&format!(
-            "flaky: {broken} passes among the others but fails on its own, with no mutant in (run again after the mutants, it failed): it counts on something another test or the run sets up or leaves behind. It's left out, so its catches don't count: the mutants it reached ran again without it, and the run can't pass until it passes on its own. Make it set up what it needs and clean up what it leaves, or run without it with `--exclude-tests={broken}`. Never remove, disable or loosen it to get a run through\n"
+            "flaky: {broken} passes among the others but fails on its own, with no mutant in (run again after the mutants, it failed): it counts on something another test or the run sets up or leaves behind. It's left out, so its catches don't count: the mutants it reached ran again without it, and the run can't pass until it passes on its own. Make it set up what it needs and clean up what it leaves. If it can't be made to pass on its own now, don't leave it out yourself: tell the person, or propose leaving it out under `exclude-tests:` in mutastic.yaml with its reason, for them to decide. Never remove, disable or loosen it to get a run through\n"
         )),
         "{agent}"
     );
+    assert!(!agent.contains("--exclude-tests"), "{agent}");
     assert!(
         agent.contains(&format!(
             "   covered by: ledger::a_fee_is_never_negative; all still pass with the change ({broken} failed against it, but fails on its own with no mutant in too: that catch doesn't count)\n"
@@ -3132,7 +3165,7 @@ fn a_false_catch_is_found_and_the_mutants_it_reached_run_again() {
     // What the cards claim, checked against the run itself: the test did catch the mutant first,
     // the mutant then ran again without it, and the other covering test missed it.
     let (code, jsonl) = mutastic_in(&dir, &["run", "--format=jsonl", "--report=none"]);
-    assert_eq!(code, 2, "{jsonl}");
+    assert_eq!(code, 3, "{jsonl}");
     let found = events(&jsonl);
     let validator = schema();
     for event in &found {
@@ -3180,7 +3213,7 @@ fn a_false_catch_is_found_and_the_mutants_it_reached_run_again() {
     );
 
     let (code, full) = mutastic_in(&dir, &["run", "--format=full", "--report=none"]);
-    assert_eq!(code, 2, "{full}");
+    assert_eq!(code, 3, "{full}");
     assert!(
         full.contains(&format!(
             " ! flaky: {broken} passes among the others but fails on its own, with no mutant in (run again after the mutants, it failed); its catches don't count, the mutants it reached ran again without it, and the run can't pass until it passes on its own\n"
@@ -3194,7 +3227,7 @@ fn a_false_catch_is_found_and_the_mutants_it_reached_run_again() {
 
     // `verify` checks its catches too: a mutant only a broken test caught isn't proved caught.
     let (code, verify) = mutastic_in(&dir, &["verify", fee_mutant]);
-    assert_eq!(code, 2, "{verify}");
+    assert_eq!(code, 3, "{verify}");
     assert!(
         verify.starts_with(&format!("mutastic: {fee_mutant} is still missed\n")),
         "{verify}"
@@ -3218,6 +3251,38 @@ fn a_false_catch_is_found_and_the_mutants_it_reached_run_again() {
         "{left_out}"
     );
     assert!(!left_out.contains("flaky"), "{left_out}");
+
+    // Left out in mutastic.yaml, with its reason: the summary names it with the reason, the Score
+    // row says a test is left out, and run-finished has it, with the command line's after it.
+    std::fs::write(
+        dir.join("mutastic.yaml"),
+        format!(
+            "exclude-tests:\n  - test: {broken}\n    reason: keeps a file it never cleans up\n"
+        ),
+    )
+    .unwrap();
+    let (code, full) = mutastic_in(&dir, &["run", "--report=none", "--exclude-tests=pricing"]);
+    assert_eq!(code, 1, "{full}");
+    assert!(
+        full.contains(&format!(
+            "Left out  {broken}: keeps a file it never cleans up\n            pricing (--exclude-tests)\n"
+        )),
+        "{full}"
+    );
+    assert!(
+        full.contains("  · 50.0% where tests reach  · 2 tests left out\n"),
+        "{full}"
+    );
+    let (_, jsonl) = mutastic_in(&dir, &["run", "--format=jsonl", "--report=none"]);
+    let found = events(&jsonl);
+    for event in &found {
+        assert!(validator.is_valid(event), "{event}");
+    }
+    assert_eq!(
+        found.last().unwrap()["testsLeftOut"],
+        serde_json::json!([{"test": broken, "reason": "keeps a file it never cleans up"}])
+    );
+    std::fs::remove_file(dir.join("mutastic.yaml")).unwrap();
 
     // The gate checks its catches too: a change whose mutants only a broken test catches isn't
     // done.
@@ -3255,6 +3320,20 @@ fn a_false_catch_is_found_and_the_mutants_it_reached_run_again() {
     );
     assert!(
         check.contains(&format!("flaky: {broken} passes among the others")),
+        "{check}"
+    );
+    // Leaving the broken test out itself takes a test away: the gate holds the task.
+    std::fs::write(
+        dir.join("mutastic.yaml"),
+        format!("exclude-tests:\n  - test: {broken}\n    reason: it's in the way\n"),
+    )
+    .unwrap();
+    let (code, check) = mutastic_in(&dir, &["gate", "check"]);
+    assert_eq!(code, 1, "{check}");
+    assert!(
+        check.starts_with(&format!(
+            "mutastic gate: the task left out {broken} under exclude-tests: in mutastic.yaml itself, which takes a test away, and leaving a test out is a person's call. Take it back out of the list and leave the test in place: find out whether the change or the test is wrong, then tell the person, or propose leaving it out, for them to decide"
+        )),
         "{check}"
     );
 }
@@ -3459,7 +3538,8 @@ fn a_run_takes_the_java_editions_options_for_catches_tests_and_cards() {
         "   ○ src/lib.rs:34-37 shipping() (5 mutants)\n".to_string(),
         "   Mutants  ✓ 5 caught · ✗ 1 missed · ○ 5 not covered (11)\n".to_string(),
         "     Tests  2 on rustc ".to_string(),
-        format!("  Left out  {flaky}, tests (--exclude-tests)\n"),
+        format!("  Left out  {flaky} (--exclude-tests)\n            tests (--exclude-tests)\n"),
+        "  · 2 tests left out\n".to_string(),
     ] {
         assert!(full.contains(&said), "no {said:?} in:\n{full}");
     }
@@ -3478,6 +3558,11 @@ fn a_run_takes_the_java_editions_options_for_catches_tests_and_cards() {
     );
     let without_more = finished(&jsonl);
     assert_eq!(without_more.last().unwrap()["tests"], 3, "{jsonl}");
+    // Given on the command line, a test left out has no reason.
+    assert_eq!(
+        without_more.last().unwrap()["testsLeftOut"],
+        serde_json::json!([{"test": "more", "reason": null}, {"test": "test", "reason": null}])
+    );
     assert_eq!(
         mutant(&without_more, edge)["coveredBy"],
         serde_json::json!([

@@ -262,7 +262,7 @@ without it: the other tests that reach the mutant decide whether it's caught or 
 does, it's not covered. The mutant keeps its id, and its card says which test's catch didn't count
 (`… failed against it, but fails on its own with no mutant in too: that catch doesn't count`).
 
-The run doesn't pass while such a test is there, whatever the score, and exits with status 2, as
+The run doesn't pass while such a test is there, whatever the score, and exits with status 3, as
 for a test that fails with no mutant in. `verify` and `gate check` check their catches the same
 way, so neither passes on a false catch. The output names the test as flaky, as one that `passes
 among the others but fails on its own`, and says the run can't pass until it does. In
@@ -360,4 +360,5 @@ See [`mutastic verify`](../reference/commands.md#verify) for the command itself.
 |---|---|
 | 0 | The run passed, or every mutant `verify` named is caught, skipped, or crashed where a crash proves nothing |
 | 1 | The score is under the threshold, or a mutant `verify` named is missed or not covered |
-| 2 | mutastic couldn't run: not a Cargo package, a test that fails with no mutant in, a build that fails for a reason no mutant explains; or a test that caught mutants fails on its own, with no mutant in, so its catches can't be trusted |
+| 2 | mutastic couldn't run: not a Cargo package, a build that fails for a reason no mutant explains, a mistake in the command |
+| 3 | A test fails with no mutant in, so the run stops; or a test that caught mutants fails on its own, with no mutant in, so its catches can't be trusted. Leaving it out with a reason, under `exclude-tests:` in `mutastic.yaml`, is the way past it |

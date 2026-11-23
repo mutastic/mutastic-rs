@@ -44,11 +44,11 @@ the code. See [Troubleshooting](troubleshooting.md#a-workspace).
   mutants have run, and the run doesn't pass. The coverage pass already runs each test in a process
   of its own, so a Rust test that needs another test to set it up stops the run there, before any
   mutant; what's left to find afterwards is what the mutants' runs left behind, such as a file. The
-  run exits with status 2, as for a test that fails with no mutant in, where the Java edition exits
-  with 3.
+  run exits with status 3, as for a test that fails with no mutant in, as in the Java edition.
 - **`--exclude-tests=TEST`** takes a test by its name as a run shows it, or a module of tests by
   its path, which leaves out every test in it, where the Java edition takes a test class by its
-  name or full name. A flaky test's line offers it with the test's name.
+  name or full name, or one method of it. `mutastic.yaml`'s `exclude-tests:` takes the same names.
+  The stop for a test that fails with no mutant in offers it with the test's name.
 - **`--confirm-catches` and `--kill-matrix`** work on test binaries. A binary's covering tests run
   together against a mutant, so every one of them that fails is known at once: confirming runs
   each of those again on its own until one repeats, and the kill matrix lists them in the order
@@ -117,12 +117,12 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
   propose the mutant unreachable. A test of it alone on that value could test what can't happen.
 - **A run compared with the last** works as in the Java edition. A mutant that crashed where a
   crash proves nothing is out of the score, as a skipped one is, so a change to or from one isn't
-  counted against the test that caught it. A run with tests left out (`--exclude-tests`) counts as
-  other code than one that ran them.
+  counted against the test that caught it. A run with tests left out (`exclude-tests:` or
+  `--exclude-tests`) counts as other code than one that ran them.
 - **`--each-mutant`** gives every missed mutant its own card, as in the Java edition. The Rust
   edition's `full` format has no limit on the cards it shows for a file, so there's no `… and 3
   more missed mutants in this file` line for it to lift.
-- **The summary's `Left out` row** names the tests `--exclude-tests` left out, as the Java
+- **The summary's `Left out` row** names each test left out, with its reason, as the Java
   edition's does, then the code the Rust edition doesn't mutate, on lines of its own under it.
 - **Report files** are `mutation.json` and `mutation.html` in `target/mutastic`; there's no
   `mutations.xml`, whose consumers key on JVM mutator names.

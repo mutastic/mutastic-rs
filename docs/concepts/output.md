@@ -279,7 +279,7 @@ it finishes, and a `progress` event every 30 seconds; then `run-finished`. See
 {"schema":"mutastic.events/v1","edition":"rust","reason":"phase-finished","phase":"mutants","durationMs":66}
 {"schema":"mutastic.events/v1","edition":"rust","reason":"phase-started","phase":"checking"}
 {"schema":"mutastic.events/v1","edition":"rust","reason":"phase-finished","phase":"checking","durationMs":9}
-{"schema":"mutastic.events/v1","edition":"rust","reason":"run-finished","toolchain":{"name":"rustc","version":"1.99.1"},"mutants":11,"killed":10,"survived":1,"timeout":0,"noCoverage":0,"ignored":0,"runtimeError":0,"notMutated":{"unsafe":0,"cfg":0},"score":90.9,"threshold":80,"passed":true,"coveredScore":90.9,"tests":3,"workers":1,"workersStarted":1,"coverageMs":11,"flaky":[],"flakyEvidence":[],"likelyFlaky":[],"unrelatedCatches":[],"reports":["target/mutastic/mutation.json","target/mutastic/mutation.html"],"staleIgnores":[],"build":{"rounds":2,"unviable":0,"setupMs":101},"durationMs":212,"sleptMs":0}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"run-finished","toolchain":{"name":"rustc","version":"1.99.1"},"mutants":11,"killed":10,"survived":1,"timeout":0,"noCoverage":0,"ignored":0,"runtimeError":0,"notMutated":{"unsafe":0,"cfg":0},"score":90.9,"threshold":80,"passed":true,"coveredScore":90.9,"tests":3,"workers":1,"workersStarted":1,"coverageMs":11,"flaky":[],"flakyEvidence":[],"testsLeftOut":[],"likelyFlaky":[],"unrelatedCatches":[],"reports":["target/mutastic/mutation.json","target/mutastic/mutation.html"],"staleIgnores":[],"build":{"rounds":2,"unviable":0,"setupMs":101},"durationMs":212,"sleptMs":0}
 ```
 
 ## When the machine sleeps

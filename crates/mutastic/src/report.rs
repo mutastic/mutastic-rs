@@ -934,11 +934,11 @@ pub fn failing_alone(report: &Report) -> String {
 
 /// A test that caught mutants, then failed on its own with no mutant in, run again after them: it
 /// passed among the others, so it counts on what something else sets up or leaves behind. The Java
-/// edition's words, with the test's name where it gives `--exclude-tests` the class.
+/// edition's words. Never the way past it, leaving it out: that's the person's call, so the agent
+/// tells them, or proposes it.
 fn failing_alone_line(flaky: &crate::flaky::Flaky) -> String {
     format!(
-        "flaky: {} passes among the others but fails on its own, with no mutant in (run again after the mutants, it failed): it counts on something another test or the run sets up or leaves behind. It's left out, so its catches don't count: the mutants it reached ran again without it, and the run can't pass until it passes on its own. Make it set up what it needs and clean up what it leaves, or run without it with `--exclude-tests={}`. Never remove, disable or loosen it to get a run through\n",
-        untrusted::value(&flaky.test),
+        "flaky: {} passes among the others but fails on its own, with no mutant in (run again after the mutants, it failed): it counts on something another test or the run sets up or leaves behind. It's left out, so its catches don't count: the mutants it reached ran again without it, and the run can't pass until it passes on its own. Make it set up what it needs and clean up what it leaves. If it can't be made to pass on its own now, don't leave it out yourself: tell the person, or propose leaving it out under `exclude-tests:` in mutastic.yaml with its reason, for them to decide. Never remove, disable or loosen it to get a run through\n",
         untrusted::value(&flaky.test)
     )
 }
@@ -2140,17 +2140,23 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
             .collect();
         rows.push(("Reports", files.join(&style.dim(" · "))));
     }
-    // What the run left out, after the reports: the tests `--exclude-tests` leaves out, as the
-    // Java edition names them, then the code this edition doesn't mutate.
-    let tests = (!report.left_out.is_empty()).then(|| {
-        format!(
+    // What the run left out, after the reports: each test left out on a line of its own, as the
+    // Java edition names them, mutastic.yaml's with their reasons, then the code this edition
+    // doesn't mutate.
+    let tests = report.left_out.iter().map(|test| match &test.reason {
+        Some(reason) => format!(
+            "{}: {}",
+            untrusted::value(&test.test),
+            untrusted::value(reason)
+        ),
+        None => format!(
             "{}{}",
-            names(&report.left_out),
+            untrusted::value(&test.test),
             style.dim(" (--exclude-tests)")
-        )
+        ),
     });
     let code = not_mutated(report).into_iter().map(|line| style.dim(&line));
-    for (index, line) in tests.into_iter().chain(code).enumerate() {
+    for (index, line) in tests.chain(code).enumerate() {
         rows.push((if index == 0 { "Left out" } else { "" }, line));
     }
     // A run of mutants asked for by id has a fate for each, not a score.
@@ -2354,15 +2360,26 @@ fn score_row(report: &Report, style: Style) -> String {
         String::new()
     };
     format!(
-        "{}  {}{}{covered}",
+        "{}  {}{}{covered}{}",
         if report.passed() {
             style.green(&style.bold(&score))
         } else {
             style.red(&style.bold(&score))
         },
         verdict(report, style),
-        delta(report, style)
+        delta(report, style),
+        tests_left_out(report, style)
     )
+}
+
+/// `  · 2 tests left out`, when the run left tests out: what only they reach can only count as
+/// not covered, so the score can only fall, and a score over fewer tests says so where it's read.
+fn tests_left_out(report: &Report, style: Style) -> String {
+    match report.left_out.len() {
+        0 => String::new(),
+        1 => style.dim("  · 1 test left out"),
+        count => style.dim(&format!("  · {count} tests left out")),
+    }
 }
 
 /// `  ▲ 2.0 vs last run (same code)`, when there was a last run to compare with, as the Java
@@ -2986,6 +3003,12 @@ fn jsonl(report: &Report) -> String {
             evidence["outside"] = json!(false);
             evidence
         })
+        .collect::<Vec<_>>());
+    // mutastic.yaml's with their reasons, then the command line's, with none.
+    finished["testsLeftOut"] = json!(report
+        .left_out
+        .iter()
+        .map(|test| json!({ "test": test.test, "reason": test.reason }))
         .collect::<Vec<_>>());
     // Under other operators, nothing was compared: the event has no comparison, as with no last run.
     if let Some(found) = report

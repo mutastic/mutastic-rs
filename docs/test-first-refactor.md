@@ -41,6 +41,7 @@ It panicked: assertion `left == right` failed: left: 5, right: 10
 mutastic runs each test alone: a test that passes with the others, but fails alone, leans on one of them.
 Its output is in fixtures/pricing/target/mutastic/tests.log. To run it alone:
   cargo test --manifest-path fixtures/pricing/Cargo.toml -p pricing --lib -- --exact tests::loyal_customers_get_ten_off_from_100
+To run without it until it's fixed, list it under exclude-tests: in mutastic.yaml with a reason, or for this run add --exclude-tests=tests::loyal_customers_get_ten_off_from_100
 ```
 
 The least code that passes is a second `if`, above the first, as the higher tier wins. In place of
@@ -164,6 +165,7 @@ It panicked: assertion `left == right` failed: left: 10, right: 20
 mutastic runs each test alone: a test that passes with the others, but fails alone, leans on one of them.
 Its output is in fixtures/pricing/target/mutastic/tests.log. To run it alone:
   cargo test --manifest-path fixtures/pricing/Cargo.toml -p pricing --lib -- --exact tests::loyal_customers_get_twenty_off_from_250
+To run without it until it's fixed, list it under exclude-tests: in mutastic.yaml with a reason, or for this run add --exclude-tests=tests::loyal_customers_get_twenty_off_from_250
 ```
 
 A third `if`, above the others:
