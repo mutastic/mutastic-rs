@@ -707,6 +707,13 @@ pub const ENVIRONMENT: &[Entry] = &[
                  many the tests caught.",
     },
     Entry {
+        name: "MUTASTIC_GITHUB=off",
+        meaning: "No GitHub Actions annotations or job summary",
+        detail: "On GitHub Actions (`GITHUB_ACTIONS=true`), a full run annotates the line of each \
+                 of its first ten misses and adds a summary to the job's page. `off` leaves them \
+                 out.",
+    },
+    Entry {
         name: "MUTASTIC_GATE_BUDGET",
         meaning: "Seconds a hooked gate check may take",
         detail: "600 unless set: what the agents' plugins' Stop hook allows. The check waits for \

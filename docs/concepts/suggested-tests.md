@@ -60,6 +60,43 @@ functions, and code near unsafe code get none: a guess would be worse than nothi
 function that answers the same call two ways, because it reads the clock, a random number or state
 another call changed. Each call is made twice, and any difference means no suggestion.
 
+## Code no test reaches
+
+A missed mutant's test starts from the tests that reach it. Code no test reaches has none, so it
+gets a starting point instead: under `Not covered`, `try:` and an assertion to start a function's
+first test with (`start with:` in `--format=agent`, one for each call found, up to ten). It's found
+the same way, by calling the function as it is and with one of its mutants in, so the value it
+asserts is what the code gave, and the test it starts catches that mutant.
+
+<!-- from: fixtures/unreached/src/lib.rs -->
+```rust
+/// What a parcel costs to send: 4 up to a kilo, then 2 more for each kilo started.
+pub fn postage(grams: u32) -> u32 {
+    if grams <= 1000 {
+        return 4;
+    }
+    4 + grams.div_ceil(1000) * 2 - 2
+}
+```
+
+<!-- output: concepts/starting-point -->
+```text
+ Not covered (no test reaches these lines)
+   ○ src/lib.rs:6-9 postage() (8 mutants)
+   ○ src/lib.rs:14 too_heavy() (3 mutants)
+   ○ src/lib.rs:20 zone() (3 mutants)
+   ○ src/lib.rs:25 label() (1 mutant)
+   ○ src/lib.rs:42 discount() (1 mutant)
+     try: assert_eq!(super::postage(1001), 6);
+```
+
+The assertion is written for the test module beside the function, as a suggested test is: with
+`super::` here, where the crate's root has no test module yet. `zone()` and `label()` get none.
+`zone()` is the crate's own, so only its callers give it inputs, and a test of it alone might
+test what can't happen; `label()` takes text, which mutastic doesn't make up. And where no input
+tried reaches the line, or none tells the code from its mutant, there's nothing to say: no
+assertion is better than one that's guessed.
+
 ## Where it goes
 
 The test goes in the test module beside the function, `mod tests` with `use super::*;` as `cargo

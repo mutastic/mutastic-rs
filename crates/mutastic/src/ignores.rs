@@ -87,7 +87,7 @@ pub fn proposed(dir: &Path) -> Result<Vec<Entry>, Failure> {
 
 /// Writes the ignores: a file it can't write is the system's error.
 pub fn write(dir: &Path, entries: &[Entry]) -> Result<(), Failure> {
-    write_file(&dir.join(FILE), entries, HEADER).map_err(|error| Code::Other.with(error))
+    write_file(&dir.join(FILE), entries, HEADER).map_err(crate::failure::disk)
 }
 
 /// Writes the proposals; with none waiting, there's no file, and nothing to commit.
@@ -96,11 +96,11 @@ pub fn propose(dir: &Path, entries: &[Entry]) -> Result<(), Failure> {
     if entries.is_empty() {
         if file.exists() {
             std::fs::remove_file(&file)
-                .map_err(|error| Code::Other.with(format!("{PROPOSALS}: {error}")))?;
+                .map_err(|error| crate::failure::disk(format!("{PROPOSALS}: {error}")))?;
         }
         return Ok(());
     }
-    write_file(&file, entries, PROPOSALS_HEADER).map_err(|error| Code::Other.with(error))
+    write_file(&file, entries, PROPOSALS_HEADER).map_err(crate::failure::disk)
 }
 
 fn read_file(file: &PathBuf, name: &str) -> Result<Vec<Entry>, String> {
