@@ -59,7 +59,10 @@ The Rust edition's cards have the gap, the change, the inputs seen, the covering
 suggested test and the commands, as the Java edition's do. The suggested test is a `#[test] fn` for
 the module's `mod tests`, asserted with `assert_eq!` or `assert!`, and it's written for functions
 and methods a test can call with whole numbers alone: see
-[Suggested tests](concepts/suggested-tests.md). Code no test reaches gets no starting point yet.
+[Suggested tests](concepts/suggested-tests.md). Code no test reaches gets a starting point as the
+Java edition's does, `try:` under `Not covered` and `start with:` in the agent format: an
+`assert_eq!` or `assert!` line for that test module, for a function code outside the crate can
+call. The crate's own gets none, as its inputs are its callers' to give.
 
 ## What's different in the results
 
@@ -130,7 +133,9 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
 - **`mutastic.yaml` and rules files** are the Java edition's, with Rust paths for classes
   (`shop::generated::**`) and Rust types as owners. A rules file's operator matches a call by its
   method's name, since mutastic reads source without types; a rewrite that doesn't fit doesn't
-  compile, and is withdrawn. See [Configuration](reference/configuration.md).
+  compile, and is withdrawn. The rewrites are the Java edition's, but for `omit last argument`,
+  which calls a shorter overload: a Rust method has one count of arguments. See
+  [Configuration](reference/configuration.md#rewrites).
 - **The gate** is the Java edition's, so the coding agents' plugins run it unchanged. A test it
   counts is one the test binaries list, each `#[case]` and test-case row a test of its own, and one
   turned off is `#[ignore]`, where Java counts `@Test` and `@Disabled` in the source. `gate open`
@@ -179,4 +184,3 @@ instead:
 |---|---|
 | Compiled plugins, and `filters:` in `mutastic.yaml` | A rules file, for call operators: [Configuration](reference/configuration.md#rules-files) |
 | `@DoNotMutate` | `mutastic ignore`, one mutant at a time: [Configuration](reference/configuration.md#ignoring-one-mutant) |
-| A suggested starting point for code no test reaches | The `Not covered` list, which names each function and its lines |
