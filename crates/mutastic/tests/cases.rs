@@ -112,6 +112,21 @@ fn cases_are_selected_by_their_exact_names() {
         edge["caughtBy"],
         "rstest_tests::discounts::case_2_at_the_edge"
     );
+    // The row it is, as evidence: the fn it's written as, its place and the row as written.
+    assert_eq!(
+        edge["caughtCase"],
+        serde_json::json!({
+            "test": "rstest_tests::discounts",
+            "index": 2,
+            "name": "#[case::at_the_edge(100, 10)]"
+        })
+    );
+    // A test that's no row names none.
+    let by_a_property = mutants
+        .iter()
+        .find(|m| m["caughtBy"] == "prop_tests::adding_zero_keeps_it")
+        .unwrap();
+    assert!(by_a_property.get("caughtCase").is_none(), "{by_a_property}");
 
     // A red case: the command offered runs it, and only it.
     edit(
@@ -121,6 +136,12 @@ fn cases_are_selected_by_their_exact_names() {
     );
     let (code, out) = mutastic(&dir, &["run", "."]);
     assert_eq!(code, 2, "{out}");
+    assert!(
+        out.contains(
+            "rstest_tests::adds::case_1 (case #[case(100, 0, 99)]) fails without any mutant"
+        ),
+        "{out}"
+    );
     let command = out
         .lines()
         .map(str::trim)
@@ -167,7 +188,11 @@ fn a_red_case_fixed_is_not_gone() {
     );
     let (code, out) = mutastic(&dir, &["gate", "check"]);
     assert_eq!(code, 1, "{out}");
-    assert!(out.contains("\nhalving::halves::case_1\n"), "{out}");
+    // Named with its row, as written.
+    assert!(
+        out.contains("\nhalving::halves::case_1 (case #[case(4, 2)])\n"),
+        "{out}"
+    );
     edit(&lib, "let _ = x;\n    0\n", "x / 2\n");
     let (code, out) = mutastic(&dir, &["gate", "check"]);
     assert!(!out.contains("gone now"), "{out}");
@@ -185,7 +210,10 @@ fn a_red_case_fixed_is_not_gone() {
     );
     let (code, out) = mutastic(&dir, &["gate", "check"]);
     assert_eq!(code, 1, "{out}");
-    assert!(out.contains("\nrows::thirds::test_case_1_nine\n"), "{out}");
+    assert!(
+        out.contains("\nrows::thirds::test_case_1_nine (case #[test_case(9, 3 ; \"nine\")])\n"),
+        "{out}"
+    );
     edit(&lib, "let _ = x;\n    0\n", "x / 3\n");
     let (code, out) = mutastic(&dir, &["gate", "check"]);
     assert!(!out.contains("gone now"), "{out}");
@@ -456,6 +484,52 @@ fn a_caught_return_has_no_missed_note() {
     );
     assert!(!out.contains("none fails"), "{out}");
     assert!(out.contains("= note: inputs seen: total = 100\n"), "{out}");
+}
+
+/// `verify` and `explain` name the row that caught a mutant after its test: an rstest case, and a
+/// test-case row in an integration test, whose name a run gives with its target's.
+#[test]
+fn the_row_that_caught_is_named() {
+    let dir = copy("rows");
+    let (_, listed) = mutastic(&dir, &["mutants", "."]);
+    let id = |change: &str| {
+        listed
+            .lines()
+            .find(|line| line.contains(change))
+            .and_then(|line| line.split_whitespace().next())
+            .unwrap()
+            .to_string()
+    };
+    let edge = id("returns 0 instead in discount");
+    let (code, out) = mutastic(&dir, &["explain", &edge, "."]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains(
+            "[✓ CAUGHT] caught by rstest_tests::discounts::case_2_at_the_edge (case \
+             #[case::at_the_edge(100, 10)])"
+        ),
+        "{out}"
+    );
+    // Only test-case's rows left to catch it.
+    let multiply = id("returns 0 instead in multiply");
+    let (code, out) = mutastic(
+        &dir,
+        &[
+            "verify",
+            &multiply,
+            ".",
+            "--exclude-tests=rstest_tests",
+            "--exclude-tests=prop_tests",
+        ],
+    );
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains(&format!(
+            "mutastic: {multiply} is caught by rows::multiplies::test_case_1_one_by_one (case \
+             #[test_case(1, 1, 1 ; \"one by one\")])\n"
+        )),
+        "{out}"
+    );
 }
 
 /// Where several cases catch a mutant, as cases written alike do, the one named is the same in

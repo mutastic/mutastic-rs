@@ -30,8 +30,10 @@ the code. See [Troubleshooting](troubleshooting.md#a-workspace).
   `tests/pricing.rs`, where the Java edition writes `PricingTest#smallOrdersPayFullPrice`.
 - **A case is a test.** Each rstest `#[case]`, test-case row and `#[values]` cell is a test of its
   own, as libtest lists it, `rstest_tests::discounts::case_2_at_the_edge`, where the Java edition
-  counts a parameterized method as one test. See [Tables of cases and property
-  tests](troubleshooting.md#tables-of-cases-and-property-tests).
+  counts a parameterized method as one test. Where a case catches a mutant, both name it after the
+  test, `caughtCase` in the events: here it's the row as written, `#[case(30, 0, 30)]`, where the
+  Java edition gives JUnit's display name, `[2] 2, 3, 5`, after the method. See [Tables of cases
+  and property tests](troubleshooting.md#tables-of-cases-and-property-tests).
 - **A test that fails with no mutant in** runs again on its own, in both: one that then passes is
   flaky, left out of the run and reported, and one that fails every time stops the run. What a
   flaky test reaches that varies is read from source: calls such as `SystemTime::now`,

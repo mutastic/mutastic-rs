@@ -1496,11 +1496,11 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, Failure> {
                 "mutastic: {} is the same as {}, which {}",
                 mutant.id,
                 report.found.mutants[runs.mutant].id,
-                fate(runs)
+                fate(runs, &report.project)
             );
         } else if only.contains(&mutant.id) {
             settled &= result.status.settled();
-            stdout_line!("mutastic: {} {}", mutant.id, fate(result));
+            stdout_line!("mutastic: {} {}", mutant.id, fate(result, &report.project));
         }
     }
     if !report.failing_alone().is_empty() {
@@ -1515,9 +1515,9 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, Failure> {
 }
 
 /// What `verify` says of a mutant after its id: caught, missed, or what became of it instead.
-fn fate(result: &engine::MutantResult) -> String {
+fn fate(result: &engine::MutantResult, project: &workspace::Project) -> String {
     match result.status {
-            Status::Killed => caught(result),
+            Status::Killed => caught(result, project),
             Status::Timeout => "is caught by a timeout".to_string(),
             Status::Survived => "is still missed".to_string(),
             Status::NoCoverage => "isn't reached by any test".to_string(),
@@ -2521,10 +2521,10 @@ fn red_verdict(
             crate::since::git(here, &["grep", "-q", "-w", &name, &state.base, "--", "."]).is_some()
         })
         .collect();
-    let named: Vec<String> = listed
-        .split(", ")
+    let named: Vec<String> = crate::flaky::listed(listed)
+        .into_iter()
         .map(|test| {
-            let name = test.trim_end_matches(" (it timed out)");
+            let name = test.split(' ').next().unwrap_or(test);
             let there = if before.iter().any(|was| was.as_str() == name) {
                 " (there when the task started)"
             } else {
@@ -2567,7 +2567,7 @@ fn ids_shown(ids: &[String]) -> String {
         .join(", ")
 }
 
-fn caught(result: &engine::MutantResult) -> String {
+fn caught(result: &engine::MutantResult, project: &workspace::Project) -> String {
     let how = result.killed_with.as_deref().unwrap_or("panic");
     if let Some(crash) = how.strip_prefix("crash: ") {
         return format!(
@@ -2575,7 +2575,13 @@ fn caught(result: &engine::MutantResult) -> String {
             untrusted::value(crash)
         );
     }
-    let test = untrusted::value(result.killed_by.as_deref().unwrap_or("a test"));
+    let test = format!(
+        "{}{}",
+        untrusted::value(result.killed_by.as_deref().unwrap_or("a test")),
+        crate::cases::caught(project, result)
+            .map(|case| case.said())
+            .unwrap_or_default()
+    );
     match how.strip_prefix("panic: ") {
         Some(message) => format!(
             "is caught by {test}, through a panic: {}",

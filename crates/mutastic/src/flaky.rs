@@ -262,6 +262,8 @@ pub struct Red {
     pub rerun: String,
     /// A property test that drew its cases from the seed mutastic sets: its command sets it too.
     pub seeded: bool,
+    /// The row of a table the test is, when it's one: named after it.
+    pub case: Option<crate::cases::Case>,
 }
 
 /// How many failing tests are named with how they failed, and given a command.
@@ -274,10 +276,15 @@ pub fn failed_message(failing: &[Red], log: &Path) -> String {
     let named: Vec<String> = failing
         .iter()
         .map(|red| {
+            let case = red
+                .case
+                .as_ref()
+                .map(|case| case.said())
+                .unwrap_or_default();
             if red.timed_out {
-                format!("{} (it timed out)", red.display)
+                format!("{}{case} (it timed out)", red.display)
             } else {
-                red.display.clone()
+                format!("{}{case}", red.display)
             }
         })
         .collect();
@@ -351,14 +358,44 @@ pub fn failing_tests(error: &str) -> Option<(Vec<String>, String)> {
         .lines()
         .find_map(|line| line.split_once(" output is in ")?.1.split_once(". To run "))
         .map(|(log, _)| log)?;
-    let names = list
-        .split(", ")
-        .map(|test| test.trim_end_matches(" (it timed out)").to_string())
+    let names = listed(list)
+        .into_iter()
+        .map(|entry| entry.split(' ').next().unwrap_or(entry).to_string())
         .collect();
     Some((
         names,
         format!("the tests fail without any mutant: {list}; their output is in {log}"),
     ))
+}
+
+/// Each test a list of them names, with what follows it in brackets: `a::b (case #[case(1, 2)]) (it
+/// timed out)` and `c` from `a::b (case #[case(1, 2)]) (it timed out), c`. A bracket may hold
+/// commas and brackets of its own; the name before it, up to its first space, holds neither.
+pub fn listed(list: &str) -> Vec<&str> {
+    let mut entries = Vec::new();
+    let mut rest = list;
+    while !rest.is_empty() {
+        let start = rest;
+        let end = rest.find([' ', ',']).unwrap_or(rest.len());
+        rest = &rest[end..];
+        while let Some(inside) = rest.strip_prefix(" (") {
+            let mut depth = 1;
+            let close = inside.char_indices().find_map(|(at, c)| {
+                depth += match c {
+                    '(' => 1,
+                    ')' => -1,
+                    _ => 0,
+                };
+                (depth == 0).then_some(at)
+            });
+            rest = close.map_or("", |at| &inside[at + 1..]);
+        }
+        entries.push(&start[..start.len() - rest.len()]);
+        rest = rest
+            .strip_prefix(", ")
+            .unwrap_or(rest.get(1..).unwrap_or(""));
+    }
+    entries
 }
 
 /// The panic in a test's output, on one line: `thread 't' panicked at src/lib.rs:3:5:` is followed
@@ -406,6 +443,7 @@ mod tests {
             panic: panic.map(str::to_string),
             rerun: format!("cargo test -p red --lib -- --exact {display}"),
             seeded: false,
+            case: None,
         };
         let log = Path::new("target/mutastic/tests.log");
         let message = failed_message(
@@ -440,6 +478,23 @@ mod tests {
         );
         assert_eq!(failing_tests(&one).unwrap().0, ["t"]);
         assert_eq!(failing_tests("couldn't build"), None);
+        // A row is named after its test, and read back past its commas and brackets.
+        let row = Red {
+            case: Some(crate::cases::Case {
+                test: "t::adds".into(),
+                index: 2,
+                name: "#[case((1, 2), 3)]".into(),
+            }),
+            ..red("t::adds::case_2", true, None)
+        };
+        let rows = failed_message(&[row, red("c", false, None)], log);
+        assert!(
+            rows.starts_with(
+                "t::adds::case_2 (case #[case((1, 2), 3)]) (it timed out), c fail without any mutant"
+            ),
+            "{rows}"
+        );
+        assert_eq!(failing_tests(&rows).unwrap().0, ["t::adds::case_2", "c"]);
         // A property test's command sets the seed its cases came from, and a note says so.
         let property = Red {
             rerun: "PROPTEST_RNG_SEED=0 cargo test -p red --lib -- --exact p".into(),
