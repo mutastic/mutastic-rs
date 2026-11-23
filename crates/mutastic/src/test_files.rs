@@ -4,6 +4,7 @@
 //! its target's crate root, as the compiler does. `mutation.json` keys its tests by file, as the
 //! Java edition's are, and an HTML report shows each test where it is.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use ra_ap_syntax::ast::{self, HasModuleItem, HasName};
@@ -22,115 +23,188 @@ pub struct Place {
 
 /// Where the test a run shows as `display` is, or `None` when no target of the package holds it.
 /// A library's tests are named by their path in it; any other target's by its name, then the path.
+/// For one test; [`Places`] finds many, reading each file once.
 pub fn place(project: &Project, display: &str) -> Option<Place> {
-    let library = project
-        .targets
-        .iter()
-        .filter(|target| target.lib)
-        .map(|target| (target.root.as_path(), display));
-    let others = project
-        .targets
-        .iter()
-        .filter(|target| !target.lib)
-        .filter_map(|target| {
-            let path = display.strip_prefix(&target.name)?.strip_prefix("::")?;
-            Some((target.root.as_path(), path))
-        });
-    let found: Vec<Place> = library
-        .chain(others)
-        .filter_map(|(root, path)| find(&project.workspace, root, path))
-        .collect();
-    // Where its function is declared, before a module that only holds it.
-    found
-        .iter()
-        .find(|place| place.at.is_some())
-        .or_else(|| found.first())
-        .cloned()
+    Places::new(project).place(display)
 }
 
-/// `path` (`tests::small_orders_pay_full_price`) from the crate root `root`: each module in turn,
-/// inline or in its own file, then the function in the last.
-fn find(workspace: &Path, root: &Path, path: &str) -> Option<Place> {
-    let (modules, name) = path.rsplit_once("::").unwrap_or(("", path));
-    let mut file = root.to_path_buf();
-    let mut text = std::fs::read_to_string(workspace.join(&file)).ok()?;
-    // The directory a `mod name;` here is looked for in, and the inline modules it's within.
-    let mut dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
-    let mut inline: Vec<String> = Vec::new();
-    for module in modules.split("::").filter(|module| !module.is_empty()) {
-        let tree = SourceFile::parse(&text, Edition::CURRENT).tree();
-        let declared = within(&tree, &inline)?
-            .into_iter()
-            .filter_map(|item| match item {
-                ast::Item::Module(declared) => Some(declared),
-                _ => None,
-            })
-            .find(|declared| declared.name().is_some_and(|n| n.text() == module))?;
-        if declared.item_list().is_some() {
-            inline.push(module.to_string());
-            continue;
+/// Where a package's tests are, each file read and indexed once however many tests it holds: a
+/// report places every test that covers a mutant, thousands in a big suite, and reading and
+/// parsing a file again for each of its tests made writing it quadratic.
+pub struct Places<'a> {
+    project: &'a Project,
+    files: std::cell::RefCell<HashMap<PathBuf, Option<std::rc::Rc<Indexed>>>>,
+}
+
+/// What a file declares, by the inline modules it's within (`tests`, or `` for the file itself):
+/// each function's name with the line and column of it, and each module with where it's written.
+#[derive(Default)]
+struct Indexed {
+    functions: HashMap<(String, String), (usize, usize)>,
+    modules: HashMap<(String, String), Declared>,
+}
+
+/// A `mod name` a file declares: inline, with its items, or in a file of its own, with the path
+/// its `#[path]` names.
+enum Declared {
+    Inline,
+    File(Option<String>),
+}
+
+impl<'a> Places<'a> {
+    pub fn new(project: &'a Project) -> Places<'a> {
+        Places {
+            project,
+            files: std::cell::RefCell::default(),
         }
-        let mut base = dir.clone();
-        base.extend(&inline);
-        let next = match crate::sites::path_attribute(&declared) {
-            Some(path) => base.join(path),
-            None => {
-                let flat = base.join(format!("{module}.rs"));
-                let nested = base.join(module).join("mod.rs");
-                if workspace.join(&flat).exists() || !workspace.join(&nested).exists() {
-                    flat
-                } else {
-                    nested
+    }
+
+    /// Where the test a run shows as `display` is, as [`place`] says.
+    pub fn place(&self, display: &str) -> Option<Place> {
+        let library = self
+            .project
+            .targets
+            .iter()
+            .filter(|target| target.lib)
+            .map(|target| (target.root.as_path(), display));
+        let others = self
+            .project
+            .targets
+            .iter()
+            .filter(|target| !target.lib)
+            .filter_map(|target| {
+                let path = display.strip_prefix(&target.name)?.strip_prefix("::")?;
+                Some((target.root.as_path(), path))
+            });
+        let found: Vec<Place> = library
+            .chain(others)
+            .filter_map(|(root, path)| self.find(root, path))
+            .collect();
+        // Where its function is declared, before a module that only holds it.
+        found
+            .iter()
+            .find(|place| place.at.is_some())
+            .or_else(|| found.first())
+            .cloned()
+    }
+
+    /// `path` (`tests::small_orders_pay_full_price`) from the crate root `root`: each module in
+    /// turn, inline or in its own file, then the function in the last.
+    fn find(&self, root: &Path, path: &str) -> Option<Place> {
+        let workspace = &self.project.workspace;
+        let (modules, name) = path.rsplit_once("::").unwrap_or(("", path));
+        let mut file = root.to_path_buf();
+        let mut indexed = self.indexed(&file)?;
+        // The directory a `mod name;` here is looked for in, and the inline modules it's within.
+        let mut dir = file.parent().map(Path::to_path_buf).unwrap_or_default();
+        let mut inline: Vec<String> = Vec::new();
+        for module in modules.split("::").filter(|module| !module.is_empty()) {
+            let declared = indexed
+                .modules
+                .get(&(inline.join("::"), module.to_string()))?;
+            let written = match declared {
+                Declared::Inline => {
+                    inline.push(module.to_string());
+                    continue;
                 }
-            }
-        };
-        text = std::fs::read_to_string(workspace.join(&next)).ok()?;
-        dir = if next.file_name().is_some_and(|name| name == "mod.rs") {
-            next.parent().map(Path::to_path_buf).unwrap_or_default()
-        } else {
-            next.with_extension("")
-        };
-        file = next;
-        inline.clear();
+                Declared::File(written) => written,
+            };
+            let mut base = dir.clone();
+            base.extend(&inline);
+            let next = match written {
+                Some(path) => base.join(path),
+                None => {
+                    let flat = base.join(format!("{module}.rs"));
+                    let nested = base.join(module).join("mod.rs");
+                    if workspace.join(&flat).exists() || !workspace.join(&nested).exists() {
+                        flat
+                    } else {
+                        nested
+                    }
+                }
+            };
+            indexed = self.indexed(&next)?;
+            dir = if next.file_name().is_some_and(|name| name == "mod.rs") {
+                next.parent().map(Path::to_path_buf).unwrap_or_default()
+            } else {
+                next.with_extension("")
+            };
+            file = next;
+            inline.clear();
+        }
+        let at = indexed
+            .functions
+            .get(&(inline.join("::"), name.to_string()))
+            .copied();
+        Some(Place { file, at })
     }
-    let tree = SourceFile::parse(&text, Edition::CURRENT).tree();
-    let at = within(&tree, &inline)?
-        .into_iter()
-        .find_map(|item| match item {
-            ast::Item::Fn(function) => {
-                let named = function.name().filter(|n| n.text() == name)?;
-                Some(line_and_column(
-                    &text,
-                    usize::from(named.syntax().text_range().start()),
-                ))
-            }
-            _ => None,
-        });
-    Some(Place { file, at })
+
+    /// The file at `file`, relative to the workspace, read and indexed the first time it's asked
+    /// for; `None` when it can't be read.
+    fn indexed(&self, file: &Path) -> Option<std::rc::Rc<Indexed>> {
+        if let Some(known) = self.files.borrow().get(file) {
+            return known.clone();
+        }
+        let indexed = std::fs::read_to_string(self.project.workspace.join(file))
+            .ok()
+            .map(|text| std::rc::Rc::new(index(&text)));
+        self.files
+            .borrow_mut()
+            .insert(file.to_path_buf(), indexed.clone());
+        indexed
+    }
 }
 
-/// The items of the inline module `inline` names in `tree`, or of the file itself.
-fn within(tree: &SourceFile, inline: &[String]) -> Option<Vec<ast::Item>> {
-    let mut items: Vec<ast::Item> = tree.items().collect();
-    for name in inline {
-        let module = items.into_iter().find_map(|item| match item {
-            ast::Item::Module(module)
-                if module.name().is_some_and(|n| n.text() == name.as_str()) =>
-            {
-                Some(module)
-            }
-            _ => None,
-        })?;
-        items = module.item_list()?.items().collect();
-    }
-    Some(items)
-}
-
-/// The 1-based line and column (in characters) of a byte offset.
-fn line_and_column(text: &str, offset: usize) -> (usize, usize) {
+/// Every function and module `text` declares, at any depth of inline modules; the first of a name
+/// in a module, as a search from the top finds it.
+fn index(text: &str) -> Indexed {
+    let tree = SourceFile::parse(text, Edition::CURRENT).tree();
     let starts = crate::sites::line_starts(text);
-    let line = crate::sites::line_of(&starts, offset);
-    (line, text[starts[line - 1]..offset].chars().count() + 1)
+    let mut indexed = Indexed::default();
+    let mut todo: Vec<(String, Vec<ast::Item>)> = vec![(String::new(), tree.items().collect())];
+    while let Some((within, items)) = todo.pop() {
+        for item in items {
+            match item {
+                ast::Item::Fn(function) => {
+                    if let Some(name) = function.name() {
+                        let offset = usize::from(name.syntax().text_range().start());
+                        let line = crate::sites::line_of(&starts, offset);
+                        let column = text[starts[line - 1]..offset].chars().count() + 1;
+                        indexed
+                            .functions
+                            .entry((within.clone(), name.text().to_string()))
+                            .or_insert((line, column));
+                    }
+                }
+                ast::Item::Module(module) => {
+                    let Some(name) = module.name().map(|name| name.text().to_string()) else {
+                        continue;
+                    };
+                    let key = (within.clone(), name.clone());
+                    if indexed.modules.contains_key(&key) {
+                        continue;
+                    }
+                    match module.item_list() {
+                        Some(list) => {
+                            indexed.modules.insert(key, Declared::Inline);
+                            let inner = if within.is_empty() {
+                                name
+                            } else {
+                                format!("{within}::{name}")
+                            };
+                            todo.push((inner, list.items().collect()));
+                        }
+                        None => {
+                            let written = crate::sites::path_attribute(&module);
+                            indexed.modules.insert(key, Declared::File(written));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    indexed
 }
 
 #[cfg(test)]

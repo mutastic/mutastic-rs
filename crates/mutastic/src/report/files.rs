@@ -478,9 +478,10 @@ fn test_files(report: &Report) -> Value {
         .flat_map(|result| &result.covered_by)
         .collect();
     let mut by_file: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    let places = crate::test_files::Places::new(&report.project);
     for id in tests {
         let mut test = json!({ "id": id, "name": id.rsplit("::").next().unwrap_or(id) });
-        let file = match crate::test_files::place(&report.project, id) {
+        let file = match places.place(id) {
             Some(place) => {
                 if let Some((line, column)) = place.at {
                     test["location"] = json!({ "start": { "line": line, "column": column } });

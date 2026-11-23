@@ -51,8 +51,8 @@
  [2m Worst at[0m  Pricing::loyalty_credit() 2 ✗
  [2m    Build[0m  one build of every mutant, 2 rounds (check and build)
  [2mTest runs[0m  4[2m (16 without coverage selection)[0m
- [2m Start at[0m  16:18:43
- [2m Duration[0m  2.3s [2m(setup 847ms, build 1.2s, coverage 9ms, mutants 135ms, checking 5ms)[0m
- [2m    Tests[0m  4 on rustc 1.100.0 · 4 workers
+ [2m Start at[0m  18:54:27
+ [2m Duration[0m  448ms [2m(setup 29ms, build 373ms, coverage 3ms, mutants 20ms, checking 2ms, reports 1ms)[0m
+ [2m    Tests[0m  4 on rustc 1.99.1 · 4 workers
  [2m  Reports[0m  fixtures/pricing/target/mutastic/mutation.json[2m · [0mfixtures/pricing/target/mutastic/mutation.html
  [2m    Score[0m  [1;31m[1m40.0%[0m[0m  [41;30;1m FAIL [0m [1;31mBelow the threshold of 80: 2 missed, 1 not covered.[0m[2m  · 50.0% where tests reach[0m

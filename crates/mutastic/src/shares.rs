@@ -492,6 +492,7 @@ impl Shares {
             coverage,
             mutants: took.saturating_sub(setup + coverage),
             checking: None,
+            reporting: None,
             streamed: false,
             took,
             // The shares' sleep is theirs: put together, the run only reads them.

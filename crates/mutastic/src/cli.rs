@@ -1193,6 +1193,7 @@ fn finish(
     report.fail_on_new = judged_on_new(parsed);
     // Only a full run writes reports: a run of some mutants would leave out the rest.
     if parsed.only.is_empty() && (kept || parsed.reports.is_some()) {
+        let writing = std::time::Instant::now();
         let reports = parsed.reports.clone().unwrap_or_else(|| {
             report::files::DEFAULT
                 .iter()
@@ -1214,6 +1215,11 @@ fn finish(
             report.pages =
                 Some(report::files::write_pages(&report, &html).map_err(crate::failure::disk)?);
         }
+        // The run isn't over until its reports are written: with thousands of tests that took
+        // longer than the mutants did, and the Duration row said only the rest.
+        let reporting = writing.elapsed();
+        report.reporting = Some(reporting);
+        report.took += reporting;
     }
     // A share's events, kept for `--from-shards`: as `--format=jsonl` writes them, whatever the
     // format shown.

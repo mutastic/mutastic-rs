@@ -2,8 +2,8 @@
  [2m Worst at[0m  digits() 6 ✗
  [2m    Build[0m  one build of every mutant, 2 rounds (check and build)
  [2mTest runs[0m  27[2m (27 without coverage selection)[0m
- [2m Start at[0m  03:00:23
- [2m Duration[0m  13.2s [2m(setup 547ms, build 2.2s, coverage 6ms, mutants 10.3s, checking 6ms)[0m
- [2m    Tests[0m  1 on rustc 1.94.0 · 5 workers
+ [2m Start at[0m  18:54:27
+ [2m Duration[0m  10.2s [2m(setup 27ms, build 23ms, coverage 2ms, mutants 10.1s, checking 2ms, reports 3ms)[0m
+ [2m    Tests[0m  1 on rustc 1.99.1 · 5 workers
  [2m  Reports[0m  fixtures/loops/target/mutastic/mutation.json[2m · [0mfixtures/loops/target/mutastic/mutation.html
  [2m    Score[0m  [1;31m[1m77.8%[0m[0m  [41;30;1m FAIL [0m [1;31mBelow the threshold of 80: 6 missed, 0 not covered.[0m

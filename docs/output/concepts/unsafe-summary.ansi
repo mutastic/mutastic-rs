@@ -3,9 +3,9 @@
  [2m  Crashes[0m  [2m1 caught only because the test process crashed, not by a test's check[0m
  [2m    Build[0m  one build of every mutant, 2 rounds (check and build)
  [2mTest runs[0m  13[2m (78 without coverage selection)[0m
- [2m Start at[0m  03:40:34
- [2m Duration[0m  2.7s [2m(setup 1.6s, build 805ms, coverage 11ms, mutants 202ms, checking 21ms)[0m
- [2m    Tests[0m  6 on rustc 1.94.0 · 4 workers
+ [2m Start at[0m  18:54:26
+ [2m Duration[0m  514ms [2m(setup 26ms, build 420ms, coverage 5ms, mutants 30ms, checking 9ms, reports 3ms)[0m
+ [2m    Tests[0m  6 on rustc 1.99.1 · 4 workers
  [2m  Reports[0m  fixtures/unsafety/target/mutastic/mutation.json[2m · [0mfixtures/unsafety/target/mutastic/mutation.html
  [2m Left out[0m  [2mnot mutated: unsafe (4), in or around unsafe blocks; --unsafe=enclosing or --unsafe=all includes them[0m
  [2m    Score[0m  [1;31m[1m38.5%[0m[0m  [41;30;1m FAIL [0m [1;31mBelow the threshold of 80: 6 missed, 2 not covered.[0m[2m  · 45.5% where tests reach[0m
