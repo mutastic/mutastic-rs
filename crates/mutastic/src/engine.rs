@@ -663,7 +663,10 @@ pub fn run(
     progress(Progress::Checked {
         missed,
         took: checking_took,
-        found: results.iter().filter(|r| r.suggestion.is_some()).count(),
+        found: results
+            .iter()
+            .filter(|r| r.status == Status::Survived && r.suggestion.is_some())
+            .count(),
     });
     // As the Java edition's summary has it: the time after the mutants, when there was a miss to
     // say it about.
@@ -1670,9 +1673,11 @@ impl<'a> Suggester<'a> {
         })
     }
 
-    /// A test that would catch `result`'s mutant, when it's missed and its function has a probe.
+    /// A test that would catch `result`'s mutant, when it's missed and its function has a probe;
+    /// and for a mutant no test reaches, the call to start its function's first test with, found
+    /// the same way, as the Java edition finds a starting point.
     fn suggest(&self, result: &MutantResult) -> Option<crate::suggest::Suggestion> {
-        if result.status != Status::Survived {
+        if !matches!(result.status, Status::Survived | Status::NoCoverage) {
             return None;
         }
         let found = self.found;
@@ -1681,6 +1686,10 @@ impl<'a> Suggester<'a> {
             return None;
         }
         let function = &found.functions[mutant.function];
+        // No starting point is offered for the crate's own function, so none is looked for.
+        if result.status == Status::NoCoverage && !function.public {
+            return None;
+        }
         let callable = function.callable.as_ref()?;
         let name = callable.probe_name(function.ordinal);
         let &binary = self.probes.get(&name)?;
