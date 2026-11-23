@@ -121,9 +121,10 @@ fn failed(args: &[String], failure: &Failure) -> ExitCode {
     ExitCode::from(exit)
 }
 
-/// The tests failing without any mutant, `message`, ending in the way past them, as the Java
-/// edition says it: for a person, leaving them out with a reason, or for this run; for an agent,
-/// never that, which is the person's call, but finding out what's wrong and telling them.
+/// The tests failing without any mutant, `message`, with the way past them before where their
+/// output is, as the Java edition says it, so the commands that run them alone stay last, to copy:
+/// for a person, leaving them out with a reason, or for this run; for an agent, never that, which
+/// is the person's call, but finding out what's wrong and telling them.
 fn way_past(message: &str, agent: bool) -> String {
     let Some((names, _)) = crate::flaky::failing_tests(message) else {
         return message.to_string();
@@ -143,7 +144,14 @@ fn way_past(message: &str, agent: bool) -> String {
             names.join(",")
         )
     };
-    format!("{message}\n{line}")
+    let output = ["\nIts output is in ", "\nTheir output is in "]
+        .iter()
+        .filter_map(|said| message.rfind(said))
+        .max();
+    match output {
+        Some(at) => format!("{}\n{line}{}", &message[..at], &message[at..]),
+        None => format!("{message}\n{line}"),
+    }
 }
 
 /// What an agent is told of tests failing without any mutant, in place of the way past them.

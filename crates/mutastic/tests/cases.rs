@@ -120,7 +120,7 @@ fn cases_are_selected_by_their_exact_names() {
         "#[case(100, 0, 99)]",
     );
     let (code, out) = mutastic(&dir, &["run", "."]);
-    assert_eq!(code, 2, "{out}");
+    assert_eq!(code, 3, "{out}");
     let command = out
         .lines()
         .map(str::trim)
@@ -339,8 +339,8 @@ fn proptest_runs_are_deterministic() {
     let runs: Vec<(i32, Vec<String>)> = (0..3)
         .map(|_| {
             let (code, stdout) = mutastic(&dir, &["run", ".", "--format=jsonl"]);
-            assert!(code == 1 || code == 2, "{stdout}");
-            let said = if code == 2 {
+            assert!(code == 1 || code == 3, "{stdout}");
+            let said = if code == 3 {
                 stdout
                     .lines()
                     .filter(|line| !line.starts_with('{'))
@@ -356,7 +356,7 @@ fn proptest_runs_are_deterministic() {
     assert_eq!(runs[1], runs[2]);
     // Red with the seed mutastic sets: the command it offers sets the seed too, and says why.
     let (code, said) = &runs[0];
-    assert_eq!(*code, 2, "seed 0 draws a case it fails: {said:?}");
+    assert_eq!(*code, 3, "seed 0 draws a case it fails: {said:?}");
     assert!(
         said.iter().any(|line| line
             == "  PROPTEST_RNG_SEED=0 cargo test -p cases --lib -- --exact rare::discounts_stay_small"),
@@ -396,7 +396,7 @@ fn a_property_failing_at_random_catches_nothing() {
     let mut seen = Vec::new();
     for _ in 0..3 {
         let (code, stdout) = mutastic(&dir, &["run", ".", "--format=jsonl"]);
-        assert!(code == 1 || code == 2, "{stdout}");
+        assert!(code == 1 || code == 3, "{stdout}");
         let mut tripled: Vec<String> = finished(&stdout)
             .iter()
             .filter(|m| m["coveredBy"] == serde_json::json!(["tripling::triples_stay_small"]))

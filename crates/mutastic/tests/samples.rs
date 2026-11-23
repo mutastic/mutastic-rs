@@ -3024,12 +3024,13 @@ fn a_flaky_test_is_left_out_and_one_that_always_fails_stops_the_run() {
         "{out}"
     );
     let rerun = "cargo test -p raffle --test raffle -- --exact a_draw_is_a_place_in_the_raffle";
-    // Stopping stays the default, and the way past it leaves the test out by name, with a reason.
+    // Stopping stays the default, and the way past it leaves the test out by name, with a reason,
+    // before where its output is: the command that runs it alone stays last, to copy.
     assert!(
         out.contains(&format!(
-            "Its output is in target/mutastic/tests.log. To run it alone:\n  {rerun}\n\
-             To run without it until it's fixed, list it under exclude-tests: in mutastic.yaml \
-             with a reason, or for this run add --exclude-tests={test}\n"
+            "To run without it until it's fixed, list it under exclude-tests: in mutastic.yaml \
+             with a reason, or for this run add --exclude-tests={test}\n\
+             Its output is in target/mutastic/tests.log. To run it alone:\n  {rerun}\n"
         )),
         "{out}"
     );

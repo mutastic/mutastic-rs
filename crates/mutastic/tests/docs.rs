@@ -856,14 +856,18 @@ fn red_and_broken(work: &Path, shown: &mut BTreeMap<String, String>) {
     assert_eq!(red.code, 3, "{}", red.stderr);
     let said = stopped_with(&red.stderr);
     assert!(said.contains("left: 5, right: 4"), "{said}");
-    let mut lines = said.lines();
-    let rerun = lines
-        .by_ref()
-        .skip_while(|line| !line.ends_with("To run it alone:"))
-        .nth(1)
+    // The command that runs it alone is last, to copy; the way past it comes before where its
+    // output is.
+    let rerun = said.lines().last().unwrap().trim();
+    assert!(rerun.starts_with("cargo test"), "{said}");
+    // The way past it, the option its line offers, runs without the test.
+    let offered = said
+        .lines()
+        .find(|line| line.starts_with("To run without it until it's fixed"))
+        .unwrap()
+        .rsplit(' ')
+        .next()
         .unwrap();
-    // The way past it, the option its last line offers, runs without the test.
-    let offered = lines.next().unwrap().rsplit(' ').next().unwrap();
     assert_eq!(
         offered,
         "--exclude-tests=tests::shipping_is_free_from_the_threshold"
