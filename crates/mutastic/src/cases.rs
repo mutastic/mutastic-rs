@@ -134,6 +134,7 @@ mod tests {
             workspace,
             target: PathBuf::new(),
             package: "shop".into(),
+            version: "0.1.0".into(),
             package_dir: PathBuf::new(),
             roots: vec!["src/lib.rs".into()],
             targets: vec![

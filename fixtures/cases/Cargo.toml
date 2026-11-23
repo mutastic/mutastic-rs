@@ -6,7 +6,7 @@ publish = false
 
 [dependencies]
 
-# The one fixture with dependencies: the frameworks whose tests it holds. Cargo.lock pins them, so
+# A fixture with dependencies: the frameworks whose tests it holds. Cargo.lock pins them, so
 # every run builds and seeds the same versions.
 [dev-dependencies]
 proptest = { version = "1", default-features = false, features = ["std"] }

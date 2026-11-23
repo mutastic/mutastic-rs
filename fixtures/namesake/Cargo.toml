@@ -1,0 +1,14 @@
+[package]
+# The name of a crate on crates.io, which its own dev-dependency pulls from there: as itoa's and
+# serde_json's do, through criterion and trybuild. `-p itoa` is then ambiguous to Cargo, so
+# mutastic names the package by its spec.
+name = "itoa"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+
+# Cargo.lock pins it, so every run builds the same version.
+[dev-dependencies]
+itoa_registry = { package = "itoa", version = "1" }
