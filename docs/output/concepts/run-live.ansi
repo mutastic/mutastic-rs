@@ -1,8 +1,8 @@
-mutastic 1.2.1 · reading the Cargo package…
+mutastic 1.3.0 · reading the Cargo package…
 building  13 mutants in one build · 1 worker
-built     13 mutants in 1.6s · 2 rounds (check and build), none withdrawn
-coverage  1 test on rustc 1.94.0 in 1.5s · 13 mutants
+built     13 mutants in 1.2s · 2 rounds (check and build), none withdrawn
+coverage  1 test on rustc 1.100.0 in 1.5s · 13 mutants
  [1;31m❯[0m [46;30;1m courier [0m src/lib.rs [2m([0m[2m8 mutants[0m[2m | [0m[1;31m1 missed[0m[2m)[0m [2m12.1s[0m
    [1;31m×[0m postage() [2m:11[0m [1m>[0m becomes [1m>=[0m
-[32m⠙[0m [1mmutants[0m   [32m━━━━━━━━━━━━━━━━[0m[2m────[0m  81% · 10/13 · [32m✓ 8 caught[0m · [1;31m✗ 1 missed[0m · ○ 1 · [33m⏱ 0[0m · 21s · ~5s left
+[32m⠋[0m [1mmutants[0m   [32m━━━━━━━━━━━━━━━━[0m[2m────[0m  81% · 10/13 · [32m✓ 8 caught[0m · [1;31m✗ 1 missed[0m · ○ 1 · [33m⏱ 0[0m · 21s · ~5s left
    1 [2m[00:00:07][0m [1;33mSLOW [0m src/handover.rs:5 [1mhand_over()[0m [1msignature[0m is always true
