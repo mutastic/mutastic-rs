@@ -2048,6 +2048,17 @@ fn duration_row(
     }
 }
 
+/// Each report file from where mutastic runs, linked to the file itself: a terminal guessing a link
+/// from the text alone opened `/target/mutastic/mutation.html`. A path is the project's text, so
+/// what can't be seen in it is [`untrusted::escape`]d; never cut, as it's a file to open.
+fn reports_row(written: &[std::path::PathBuf], style: Style) -> String {
+    let files: Vec<String> = written
+        .iter()
+        .map(|file| style.link(file, &untrusted::escape(&files::from_here(file))))
+        .collect();
+    files.join(&style.dim(" · "))
+}
+
 fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
     let mut rows = vec![
         ("Files", files_row(report, style)),
@@ -2131,14 +2142,7 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
         },
     ));
     if !report.written.is_empty() {
-        // From where mutastic runs, linked to the file itself: a terminal guessing a link from
-        // the text alone opened `/target/mutastic/mutation.html`.
-        let files: Vec<String> = report
-            .written
-            .iter()
-            .map(|file| style.link(file, &files::from_here(file)))
-            .collect();
-        rows.push(("Reports", files.join(&style.dim(" · "))));
+        rows.push(("Reports", reports_row(&report.written, style)));
     }
     // What the run left out, after the reports: each test left out on a line of its own, as the
     // Java edition names them, mutastic.yaml's with their reasons, then the code this edition
@@ -3863,6 +3867,20 @@ mod tests {
             "verify \x1b]8;;file:///work/target/mutastic/mutation-mutants/m855c8e3c.html\x1b\\\
              m855c8e3c\x1b]8;;\x1b\\ · xm855c8e3c m0000000a \x1b]8;;file:///m855c8e3c\x1b\\a\
              \x1b]8;;\x1b\\"
+        );
+    }
+
+    /// A report's path is the project's text: an ANSI escape in it is shown, not run, and the path
+    /// is whole. The Java edition's `HumanTextTest` is the same.
+    #[test]
+    fn a_reports_path_shows_what_cant_be_seen() {
+        let long = "x".repeat(untrusted::LONGEST);
+        let file = std::path::PathBuf::from(format!("/work/a\x1b[2Jb/{long}.json"));
+        let other = std::path::PathBuf::from("/work/target/mutastic/mutation.html");
+
+        assert_eq!(
+            reports_row(&[file, other], Style::default()),
+            format!("/work/a\\x1b[2Jb/{long}.json · /work/target/mutastic/mutation.html")
         );
     }
 

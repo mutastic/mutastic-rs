@@ -3,8 +3,9 @@
 Besides what it prints, a run writes its results as files, for tools and for reading later, as the
 Java edition does: a report viewer to browse every mutant beside its code, a dashboard or a badge
 that tracks the score from run to run, a CI step that keeps the report with the build. Every run writes them except a run of some mutants (`--only`, and so `verify`
-and `explain`), which says nothing about the rest. The summary's `Reports` line lists the files it
-wrote, as `run-finished`'s `reports` does.
+and `explain`), which says nothing about the rest: given `--report` as well, `--only` says on
+stderr that it leaves the report out. The summary's `Reports` line lists the files it wrote, as
+`run-finished`'s `reports` does.
 
 ## Formats
 

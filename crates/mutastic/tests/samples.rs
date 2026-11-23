@@ -40,6 +40,22 @@ fn mutastic(args: &[&str]) -> (i32, String) {
     (output.status.code().unwrap_or(-1), stdout)
 }
 
+/// [`mutastic`], with stderr too.
+fn mutastic_err(args: &[&str]) -> (i32, String, String) {
+    let output = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+        .args(args)
+        .env_remove("MUTASTIC_FORMAT")
+        .env_remove("MUTASTIC_AGENT")
+        .env("NO_COLOR", "1")
+        .output()
+        .unwrap();
+    (
+        output.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
 fn events(stdout: &str) -> Vec<Value> {
     stdout
         .lines()
@@ -1399,10 +1415,23 @@ fn a_run_of_mutants_by_id_is_judged_on_each_ones_fate() {
     assert!(!human.contains("Score"), "{human}");
     assert!(!human.contains("Next:"), "{human}");
 
-    let (_, jsonl) = mutastic(&[&missed[..], &["--format=jsonl"]].concat());
+    // A report asked for by name isn't written by a run of some mutants, and a note says so.
+    let asked = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("only-reports.json");
+    let _ = std::fs::remove_file(&asked);
+    let report = format!("--report=json:{}", asked.display());
+    let (code, jsonl, stderr) = mutastic_err(&[&missed[..], &["--format=jsonl", &report]].concat());
+    assert_eq!(code, 1, "{stderr}");
     let finished = events(&jsonl).pop().unwrap();
     assert_eq!(finished["passed"], false, "{finished}");
     assert_eq!(finished["only"], "mb2f8ae57", "{finished}");
+    assert!(
+        stderr.ends_with(&format!("{}\n", mutastic::cli::REPORTS_LEFT_OUT)),
+        "{stderr}"
+    );
+    assert!(!asked.exists(), "{}", asked.display());
+    let (_, _, none) =
+        mutastic_err(&[&missed[..], &["--format=concise", "--report=none"]].concat());
+    assert!(!none.contains("note:"), "{none}");
 
     let (_, agent) = mutastic(&[&missed[..], &["--format=agent"]].concat());
     assert!(
