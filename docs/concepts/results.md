@@ -259,7 +259,7 @@ without it: the other tests that reach the mutant decide whether it's caught or 
 does, it's not covered. The mutant keeps its id, and its card says which test's catch didn't count
 (`… failed against it, but fails on its own with no mutant in too: that catch doesn't count`).
 
-The run doesn't pass while such a test is there, whatever the score, and exits with status 2, as
+The run doesn't pass while such a test is there, whatever the score, and exits with status 3, as
 for a test that fails with no mutant in. `verify` and `gate check` check their catches the same
 way, so neither passes on a false catch. The output names the test as flaky, as one that `passes
 among the others but fails on its own`, and says the run can't pass until it does. In
@@ -332,6 +332,79 @@ The one that runs is the first of them in `defaults`, then `stronger`, then `ext
 order `mutastic mutants` lists them. A run whose operators leave it out runs the twin as it would
 any mutant.
 
+## A check that only picks between a fast way and a safe way
+
+Some code has two ways to the same answer: a fast one that only works on some inputs, and a safe
+one that works on all of them. A check picks which to take, such as `if digits.len() > 9` in front
+of a careful path. Change that check so it sends more inputs down the safe way (`>` becoming `>=`,
+or the check made always true) and the answer stays the same, because the safe way gives it too.
+Every test passes, and the mutant is missed.
+
+<!-- from: fixtures/fastpath/src/lib.rs -->
+```rust
+pub fn read(digits: &str) -> u64 {
+    if digits.len() > 9 {
+        return read_carefully(digits);
+    }
+    let mut value: u32 = 0;
+    for digit in digits.bytes() {
+        value = value * 10 + u32::from(digit - b'0');
+    }
+    u64::from(value)
+}
+```
+
+Nine digits always fit in a `u32`, so the fast way reads them exactly; past nine it hands over to
+`read_carefully`, which reads in a `u64` and panics rather than overflow. The tests read 1, 3, 9,
+11 and 20 digits, and both of the check's mutants get past every one:
+
+<!-- output: concepts/fast-path-missed -->
+```text
+  ✗ MISSED  no test checks read() at digits.len() == 9 · m67fc8fc1
+   ┌─ src/lib.rs:7
+   │
+ 6 │ pub fn read(digits: &str) -> u64 {
+ 7 │     if digits.len() > 9 {
+   │                     ^ > changed to >=
+ 8 │         return read_carefully(digits);
+   │
+   = mutant  - if digits.len() > 9 {
+             + if digits.len() >= 9 {
+   = also    ✗ no test needs digits.len() > 9 to be false in read() · m323add87
+             + if true {
+   = note: covered by tests::reads_a_few_digits, tests::reads_more_than_a_u32_holds, tests::reads_nine_digits, tests::refuses_more_than_a_u64_holds (all 4 covering tests still pass)
+   = help: test read() with digits.len() = 9 and assert the result
+
+   done when  mutastic verify m67fc8fc1,m323add87 fixtures/fastpath passes
+   reproduce  mutastic run --only=m67fc8fc1,m323add87 fixtures/fastpath
+```
+
+The card asks for a test at exactly 9 digits, and there's one already: it passes either way. When
+the test a card asks for is there and still passes, look for this shape.
+
+mutastic doesn't skip these on its own. To skip one it would have to know that the two ways agree
+on every input the mutant sends to the other way, and that's the question it can't decide. A wrong
+guess would hide a real bug: if the fast way were wrong at 9 digits, the `>=` mutant is the one
+that would find it. So the mutant runs, and you decide.
+
+If the two ways really do agree there, record it as equivalent, saying why:
+
+```sh
+mutastic ignore m67fc8fc1 --as=equivalent --reason="Differs only when the fast way and the safe way read 9 digits differently. That can't happen because any 9 digits fit in a u32, so both read them exactly." fixtures/fastpath
+```
+
+<!-- output: concepts/fast-path-ignore -->
+```text
+mutastic: m67fc8fc1 is ignored: Differs only when the fast way and the safe way read 9 digits differently. That can't happen because any 9 digits fit in a u32, so both read them exactly.
+  recorded in fixtures/fastpath/.mutastic/ignores.yaml: commit it, as a decision to review
+  to undo: mutastic ignore --remove m67fc8fc1 fixtures/fastpath
+```
+
+If taking the fast way is a promise worth keeping, because it's what makes the code fast, make it
+something a test can see instead, such as a count of the times the safe way ran, and test that a
+short input never takes it. That test catches both mutants, and the next change that sends short
+input the slow way.
+
 ## What `verify` says
 
 `mutastic verify` runs only the mutants named, and passes when each is settled. One line each says
@@ -357,4 +430,5 @@ See [`mutastic verify`](../reference/commands.md#verify) for the command itself.
 |---|---|
 | 0 | The run passed, or every mutant `verify` named is caught, skipped, or crashed where a crash proves nothing |
 | 1 | The score is under the threshold, or a mutant `verify` named is missed or not covered |
-| 2 | mutastic couldn't run: not a Cargo package, a test that fails with no mutant in, a build that fails for a reason no mutant explains; or a test that caught mutants fails on its own, with no mutant in, so its catches can't be trusted |
+| 2 | mutastic couldn't run: not a Cargo package, a build that fails for a reason no mutant explains, a mistake in the command |
+| 3 | A test fails with no mutant in, so the run stops; or a test that caught mutants fails on its own, with no mutant in, so its catches can't be trusted. Leaving it out with a reason, under `exclude-tests:` in `mutastic.yaml`, is the way past it |

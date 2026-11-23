@@ -38,6 +38,9 @@ pub struct State {
     /// The baseline's mutants when it opened, kept since git may not see `.mutastic/`: `None` in a
     /// file an older gate wrote, which has only the start commit's.
     pub baselined: Option<BTreeSet<String>>,
+    /// The tests mutastic.yaml's `exclude-tests:` left out when it opened: one added since is the
+    /// task's, and a test taken away. `None` in a file an older gate wrote.
+    pub excluded: Option<BTreeSet<String>>,
     pub shape: Shape,
     pub blocks: usize,
     /// The working tree when the gate last sent the agent back: empty when it hasn't since it last
@@ -73,6 +76,7 @@ impl State {
                 "base" => state.base = value,
                 "ignored" => state.ignored = ids(&value),
                 "baselined" => state.baselined = Some(ids(&value)),
+                "excluded" => state.excluded = Some(ids(&value)),
                 "stopped" => state.stopped = Some(ids(&value)),
                 "tests" => state.shape.tests = value.parse().unwrap_or(0),
                 "disabled" => state.shape.disabled = value.parse().unwrap_or(0),
@@ -119,6 +123,12 @@ impl State {
             lines.push(format!(
                 "baselined={}",
                 baselined.iter().cloned().collect::<Vec<_>>().join(",")
+            ));
+        }
+        if let Some(excluded) = &self.excluded {
+            lines.push(format!(
+                "excluded={}",
+                excluded.iter().cloned().collect::<Vec<_>>().join(",")
             ));
         }
         if let Some(stopped) = &self.stopped {
@@ -737,6 +747,7 @@ mod tests {
             base: "0123abcd".into(),
             ignored: ["m1".to_string(), "m2".to_string()].into(),
             baselined: Some(["m3".to_string()].into()),
+            excluded: Some(["tests::races".to_string()].into()),
             shape: Shape {
                 tests: 5,
                 disabled: 1,

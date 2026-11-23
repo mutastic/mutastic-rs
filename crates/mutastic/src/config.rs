@@ -148,6 +148,27 @@ pub struct Configuration {
     pub gate_operators: Vec<String>,
     /// Where each of `gate_operators` is written.
     pub gate_operators_from: Vec<String>,
+    /// The tests `exclude-tests:` leaves out of every run, each with its reason.
+    pub exclude_tests: Vec<ExcludedTest>,
+}
+
+/// A test `exclude-tests:` leaves out: a test that fails here on its own, until it's fixed, by
+/// its name as `--exclude-tests` takes it, and why.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExcludedTest {
+    pub test: String,
+    pub reason: String,
+}
+
+/// Two entries for one test are one: the first file to name it gives the reason.
+fn joined_tests(first: Vec<ExcludedTest>, then: Vec<ExcludedTest>) -> Vec<ExcludedTest> {
+    let mut both = first;
+    for each in then {
+        if !both.iter().any(|kept| kept.test == each.test) {
+            both.push(each);
+        }
+    }
+    both
 }
 
 impl Configuration {
@@ -224,6 +245,7 @@ impl Configuration {
         let (plugins, plugins_from) = plugins.into_iter().map(|Named(p, f)| (p, f)).unzip();
         Configuration {
             rules: joined(self.rules, parent.rules),
+            exclude_tests: joined_tests(self.exclude_tests, parent.exclude_tests),
             plugins,
             plugins_from,
             operators_from: if self.operators.is_empty() {
@@ -353,6 +375,8 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
     // Under `gate:`, whether its `operators:` has been read.
     let mut gate_key = false;
     let mut pending: Option<Pending> = None;
+    // The test under `exclude-tests:` being read, and its reason once read.
+    let mut pending_test: Option<(String, Option<String>)> = None;
     let mut last = 0;
     for (index, raw) in text.lines().enumerate() {
         let error = |what: &str| format!("{shown} line {}: {what}", index + 1);
@@ -364,6 +388,11 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
         if !line.starts_with(' ') {
             if let Some(rule) = pending.take() {
                 config.rules.push(rule.done().map_err(|what| error(&what))?);
+            }
+            if let Some(test) = pending_test.take() {
+                config
+                    .exclude_tests
+                    .push(test_done(test).map_err(|what| error(&what))?);
             }
             if let Some(path) = line.trim().strip_prefix("extends:") {
                 if extends.is_some() {
@@ -385,6 +414,7 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
                 "plugins:" => "plugins",
                 "filters:" => "filters",
                 "operators:" => "operators",
+                "exclude-tests:" => "exclude-tests",
                 "gate:" => "gate",
                 key if key.starts_with("gate:") => return Err(error(GATE_SHAPE)),
                 line => return Err(error(&not_a_section(line))),
@@ -440,6 +470,28 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
             });
             continue;
         }
+        if section == "exclude-tests" {
+            if let Some((test, reason)) = pending_test.as_mut() {
+                if let Some(why) = item.strip_prefix("reason:") {
+                    if reason.is_some() {
+                        return Err(error(&format!("the test `{test}` has one `reason:`")));
+                    }
+                    *reason = Some(value(why));
+                    continue;
+                }
+            }
+            let test = listed(item)
+                .and_then(|listed| listed.strip_prefix("test:").map(value))
+                .filter(|test| !test.is_empty())
+                .ok_or_else(|| error(TEST_SHAPE))?;
+            if let Some(done) = pending_test.take() {
+                config
+                    .exclude_tests
+                    .push(test_done(done).map_err(|what| error(&what))?);
+            }
+            pending_test = Some((test, None));
+            continue;
+        }
         if section == "gate" {
             if item == "operators:" && !gate_key {
                 gate_key = true;
@@ -478,10 +530,30 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
                 .map_err(|what| format!("{shown} line {last}: {what}"))?,
         );
     }
+    if let Some(test) = pending_test.take() {
+        config
+            .exclude_tests
+            .push(test_done(test).map_err(|what| format!("{shown} line {last}: {what}"))?);
+    }
     Ok(Written {
         own: config,
         extends,
     })
+}
+
+/// What an entry under `exclude-tests:` is, as an error says it.
+const TEST_SHAPE: &str = "a test to leave out is `- test: <name>`, then `reason: …`";
+
+/// A test to leave out, once it has its reason: a test left out says why, in the summary, so one
+/// without a reason is an error.
+fn test_done((test, reason): (String, Option<String>)) -> Result<ExcludedTest, String> {
+    match reason.filter(|reason| !reason.is_empty()) {
+        Some(reason) => Ok(ExcludedTest { test, reason }),
+        None => Err(format!(
+            "the test `{test}` needs a `reason:` under it: why it's left out, which the summary \
+             shows"
+        )),
+    }
 }
 
 /// A rule being read: its verb and pattern, and what's under it so far.
@@ -689,7 +761,7 @@ fn not_a_section(line: &str) -> String {
         Some(close) => format!("{key} isn't a section. There's one called {close}:."),
         None => format!(
             "{key} isn't a section; the sections are extends:, rules:, plugins:, filters:, \
-             operators: and gate:"
+             operators:, exclude-tests: and gate:"
         ),
     }
 }
@@ -701,6 +773,7 @@ const SECTIONS: &[&str] = &[
     "plugins",
     "filters",
     "operators",
+    "exclude-tests",
     "gate",
 ];
 
@@ -784,7 +857,7 @@ mod tests {
     fn what_it_doesnt_understand_is_an_error_that_names_the_line() {
         for (text, error) in [
             ("rule:\n", "mutastic.yaml line 1: rule: isn't a section. There's one called rules:."),
-            ("colour:\n", "mutastic.yaml line 1: colour: isn't a section; the sections are extends:, rules:, plugins:, filters:, operators: and gate:"),
+            ("colour:\n", "mutastic.yaml line 1: colour: isn't a section; the sections are extends:, rules:, plugins:, filters:, operators:, exclude-tests: and gate:"),
             ("operators: [stronger]\n", "mutastic.yaml line 1: operators: takes a list, an item a line under it:\n  operators:\n    - stronger"),
             ("rules:\n  - skp: a\n", "mutastic.yaml line 2: skp: isn't a rule. There's one called skip:."),
             ("extends: a.yaml\nextends: b.yaml\n", "mutastic.yaml line 2: a file extends one other file, once"),
@@ -798,6 +871,14 @@ mod tests {
             ("rules:\n  - mutate: a\n    arid: [mutastic:outptu]\n    reason: r\n", "mutastic.yaml line 3: mutastic:outptu isn't an arid rule. There's one called mutastic:output."),
             ("rules:\n  - mutate: a\n    arid: [sleeps]\n    reason: r\n", "mutastic.yaml line 3: sleeps isn't an arid rule; the rules are mutastic:debug-representations, mutastic:output, mutastic:messages, mutastic:capacity, mutastic:wait-times, mutastic:waits, mutastic:null-checks, mutastic:thread-names, mutastic:keep-alive and mutastic:stack-sizes"),
             ("rules:\n  - skip: a\n    arid: [mutastic:output]\n    reason: r\n", "mutastic.yaml line 3: `arid:` goes on a `mutate:` rule: it says which arid skips to bring back, and a `skip:` rule skips everything it covers"),
+            ("exclude-tests:\n  - test: tests::races\n", "mutastic.yaml line 2: the test `tests::races` needs a `reason:` under it: why it's left out, which the summary shows"),
+            ("exclude-tests:\n  - test: a\n    reason: ''\noperators:\n  - stronger\n", "mutastic.yaml line 4: the test `a` needs a `reason:` under it: why it's left out, which the summary shows"),
+            ("exclude-tests:\n  - test: a\n  - test: b\n    reason: r\n", "mutastic.yaml line 3: the test `a` needs a `reason:` under it: why it's left out, which the summary shows"),
+            ("exclude-tests:\n  - test: a\n    reason: r\n    reason: s\n", "mutastic.yaml line 4: the test `a` has one `reason:`"),
+            ("exclude-tests:\n  - tests::races\n", "mutastic.yaml line 2: a test to leave out is `- test: <name>`, then `reason: …`"),
+            ("exclude-tests:\n  reason: r\n", "mutastic.yaml line 2: a test to leave out is `- test: <name>`, then `reason: …`"),
+            ("exclude-tests: [a]\n", "mutastic.yaml line 1: exclude-tests: takes a list, an item a line under it:\n  exclude-tests:\n    - a"),
+            ("exclude-test:\n", "mutastic.yaml line 1: exclude-test: isn't a section. There's one called exclude-tests:."),
             ("rules:\n  - mutate: a\n    arid: []\n    reason: r\n", "mutastic.yaml line 4: the rule `mutate: a` has an empty `arid:` list: name the rules to bring back, or leave `arid:` out to bring back every arid skip"),
         ] {
             assert_eq!(parse(text).unwrap_err(), error);
@@ -849,11 +930,35 @@ mod tests {
         dir
     }
 
+    /// `exclude-tests:` leaves tests out of every run, each with the reason the summary shows.
+    #[test]
+    fn a_test_is_left_out_with_its_reason() {
+        let config = parse(
+            "exclude-tests:\n  - test: checkout::tests::pays_once\n    reason: shares port 8080 # #412\n\
+             \x20 - test: 'tests'\n    reason: \"a race\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            config.exclude_tests,
+            [
+                ExcludedTest {
+                    test: "checkout::tests::pays_once".into(),
+                    reason: "shares port 8080".into(),
+                },
+                ExcludedTest {
+                    test: "tests".into(),
+                    reason: "a race".into(),
+                },
+            ]
+        );
+    }
+
     #[test]
     fn a_file_adds_what_it_extends_after_its_own() {
         let top =
             "rules:\n  - skip: shop::**\n    reason: top\n  - skip: a::**\n    reason: both\n\
-                   plugins:\n  - rules/top.yaml\noperators:\n  - stronger\n";
+                   plugins:\n  - rules/top.yaml\noperators:\n  - stronger\n\
+                   exclude-tests:\n  - test: tests::races\n    reason: top's\n  - test: tests::ports\n    reason: top\n";
         let dir = written(
             "extends",
             &[
@@ -861,7 +966,8 @@ mod tests {
                 (
                     "shop/mutastic.yaml",
                     "extends: ../mutastic.yaml\nrules:\n  - skip: shop::legacy::**\n    reason: own\n\
-                     \x20 - skip: a::**\n    reason: both\nplugins:\n  - rules/shop.yaml\n  - ../rules/top.yaml\n",
+                     \x20 - skip: a::**\n    reason: both\nplugins:\n  - rules/shop.yaml\n  - ../rules/top.yaml\n\
+                     exclude-tests:\n  - test: tests::races\n    reason: shop's\n",
                 ),
                 (
                     "billing/mutastic.yaml",
@@ -877,6 +983,16 @@ mod tests {
             [dir.join("shop/rules/shop.yaml"), dir.join("rules/top.yaml")]
         );
         assert_eq!(shop.operators, ["stronger"]);
+        let left_out: Vec<(&str, &str)> = shop
+            .exclude_tests
+            .iter()
+            .map(|test| (test.test.as_str(), test.reason.as_str()))
+            .collect();
+        assert_eq!(
+            left_out,
+            [("tests::races", "shop's"), ("tests::ports", "top")],
+            "the file's own reason is the one kept"
+        );
         let billing = Configuration::read(&dir.join("billing")).unwrap();
         assert_eq!(billing.operators, ["defaults"]);
         assert_eq!(billing.rules.len(), 2);

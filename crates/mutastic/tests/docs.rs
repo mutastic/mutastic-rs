@@ -106,6 +106,7 @@ const BUILT: &[&str] = &[
     "suggestions",
     "unreached",
     "ranking",
+    "fastpath",
 ];
 
 fn root() -> PathBuf {
@@ -869,10 +870,33 @@ fn red_and_broken(work: &Path, shown: &mut BTreeMap<String, String>) {
     )
     .unwrap();
     let red = mutastic(work, &["run", "fixtures/pricing"]);
-    assert_eq!(red.code, 2, "{}", red.stderr);
+    assert_eq!(red.code, 3, "{}", red.stderr);
     let said = stopped_with(&red.stderr);
     assert!(said.contains("left: 5, right: 4"), "{said}");
-    let rerun = said.lines().last().unwrap();
+    // The command that runs it alone is last, to copy; the way past it comes before where its
+    // output is.
+    let rerun = said.lines().last().unwrap().trim();
+    assert!(rerun.starts_with("cargo test"), "{said}");
+    // The way past it, the option its line offers, runs without the test.
+    let offered = said
+        .lines()
+        .find(|line| line.starts_with("To run without it until it's fixed"))
+        .unwrap()
+        .rsplit(' ')
+        .next()
+        .unwrap();
+    assert_eq!(
+        offered,
+        "--exclude-tests=tests::shipping_is_free_from_the_threshold"
+    );
+    let past = mutastic(work, &["run", "fixtures/pricing", "--report=none", offered]);
+    assert!(past.code < 2, "{}{}", past.stdout, past.stderr);
+    assert!(
+        plain(&past.stdout)
+            .contains("tests::shipping_is_free_from_the_threshold (--exclude-tests)"),
+        "{}",
+        past.stdout
+    );
     let alone = pasted(work, rerun);
     let out = String::from_utf8_lossy(&alone.stdout);
     assert!(
@@ -979,6 +1003,73 @@ fn starts(work: &Path, output: &str, label: &str) -> String {
         verify.stdout, verify.stderr
     );
     assertion
+}
+
+/// The page that shows a check that only picks between a fast way and a safe way, under `docs`.
+const FAST_PATH_PAGE: &str = "concepts/results.md";
+
+/// The reason that page records the check's `>=` mutant with, word for word.
+const FAST_PATH_REASON: &str = "Differs only when the fast way and the safe way read 9 digits \
+     differently. That can't happen because any 9 digits fit in a u32, so both read them exactly.";
+
+/// The fastpath fixture: a check that only picks between a fast way and a safe way. Its two
+/// mutants, `>` made `>=` and the check made always true, are the run's only misses, on one card
+/// as a person sees it; then the first is recorded as equivalent, as the page says to.
+fn fast_path(work: &Path, shown: &mut BTreeMap<String, String>) {
+    let run = ran(work, &["run", "fixtures/fastpath", "--report=none"]);
+    let found = found_in(work, "fastpath");
+    let boundary = ids_in(&found, "read", "mutastic/boundary");
+    let always_true = found
+        .mutants
+        .iter()
+        .filter(|m| m.operator == "mutastic/remove-conditional" && m.replacement == "true")
+        .map(|m| m.id.clone());
+    let guard: BTreeSet<String> = boundary.iter().cloned().chain(always_true).collect();
+    assert_eq!(guard.len(), 2, "the check's two mutants: {guard:?}");
+    let card = card(&run.stdout, &boundary).expect("the check's boundary is missed");
+    let done = plain(&card)
+        .lines()
+        .find_map(|line| {
+            line.trim_start()
+                .strip_prefix("done when")
+                .map(str::to_string)
+        })
+        .unwrap();
+    let named: BTreeSet<String> = done
+        .split_whitespace()
+        .nth(2)
+        .unwrap()
+        .split(',')
+        .map(str::to_string)
+        .collect();
+    assert_eq!(named, guard, "the card is the check's two mutants");
+    assert!(
+        plain(&run.stdout).contains("✗ 2 missed (14)"),
+        "only the check's mutants are missed: {}",
+        run.stdout
+    );
+    shown.insert("concepts/fast-path-missed".into(), card);
+
+    let id = boundary.first().unwrap();
+    let text = std::fs::read_to_string(docs().join(FAST_PATH_PAGE)).unwrap();
+    let command = format!(
+        "mutastic ignore {id} --as=equivalent --reason=\"{FAST_PATH_REASON}\" fixtures/fastpath"
+    );
+    assert!(
+        text.contains(&format!("{command}\n")),
+        "{FAST_PATH_PAGE}: {command}"
+    );
+    let reason = format!("--reason={FAST_PATH_REASON}");
+    let ignore = [
+        "ignore",
+        id,
+        "--as=equivalent",
+        &reason,
+        "fixtures/fastpath",
+    ];
+    let ignored = ran(work, &ignore);
+    assert_eq!(ignored.code, 0, "{}{}", ignored.stdout, ignored.stderr);
+    shown.insert("concepts/fast-path-ignore".into(), ignored.stdout);
 }
 
 /// `next` on the ranking fixture, from a first pass: the head of the queue for a person, the same
@@ -1121,7 +1212,7 @@ fn commit(work: &Path) {
 /// names `test`.
 fn red(work: &Path, test: &str) -> String {
     let red = mutastic(work, &["run", "fixtures/pricing"]);
-    assert_eq!(red.code, 2, "{}{}", red.stdout, red.stderr);
+    assert_eq!(red.code, 3, "{}{}", red.stdout, red.stderr);
     let message = stopped_with(&red.stderr);
     assert!(plain(&message).contains(test), "{}", red.stderr);
     message
@@ -1787,6 +1878,11 @@ fn the_docs_show_what_troubleshooting_prints() {
 #[test]
 fn the_docs_show_what_suggestions_print() {
     section("suggested", &["suggestions", "unreached"], suggested);
+}
+
+#[test]
+fn the_docs_show_what_a_fast_path_check_prints() {
+    section("fast-path", &["fastpath"], fast_path);
 }
 
 #[test]

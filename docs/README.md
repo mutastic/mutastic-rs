@@ -26,7 +26,7 @@ page stands alone and links to the others by relative path.
   happens to a mutant that doesn't compile, one run split across CI jobs, and CI that fails only
   on new misses.
 - [Results and the score](concepts/results.md): caught, missed, timed out, not covered, skipped,
-  and the crashes that prove nothing.
+  the crashes that prove nothing, and a check that only picks between a fast way and a safe way.
 - [Unsafe code](concepts/unsafe.md): what's left alone, what's marked, and when to reach for Miri.
 - [Profiles](concepts/profiles.md): why overflow checks and debug assertions are always on.
 - [Mutant ids](concepts/ids.md): what an id is made of, and what keeps it stable.
