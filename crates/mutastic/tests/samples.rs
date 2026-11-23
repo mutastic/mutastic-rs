@@ -1461,6 +1461,22 @@ fn mutastic_in(dir: &Path, args: &[&str]) -> (i32, String) {
     )
 }
 
+/// The agent format names the report files the run wrote right after the verdict, as the summary's
+/// Reports row does, so an agent doesn't run again to get one; with `--report=none`, no line.
+#[test]
+fn the_agent_format_names_the_reports_written() {
+    let dir = copy_of("pricing", "agent-reports");
+    let (_, out) = mutastic_in(&dir, &["run", ".", "--format=agent"]);
+    assert_eq!(
+        out.lines().nth(1),
+        Some("reports: target/mutastic/mutation.json · target/mutastic/mutation.html"),
+        "{out}"
+    );
+    let (_, none) = mutastic_in(&dir, &["run", ".", "--format=agent", "--report=none"]);
+    assert!(none.starts_with("mutastic: PASS · "), "{none}");
+    assert!(!none.contains("reports:"), "{none}");
+}
+
 /// `ignore` records a decision, which skips the mutant while its line is as it was, says how to
 /// undo each step, and goes stale when the line changes; a proposal waits for a person.
 #[test]
