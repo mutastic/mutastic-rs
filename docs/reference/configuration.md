@@ -33,6 +33,7 @@ operators:
 | `rules:` | Code to skip, each `- skip: <pattern>` with a `reason:` under it. Its mutants are skipped as ``user: <reason> (rule `skip: <pattern>`)``, out of the score; `- mutate: <pattern>` takes back arid skips, and `- output: <pattern>` names your own output calls, both below |
 | `plugins:` | Rules files of call operators, by their path from the directory of the file that names them |
 | `operators:` | Which operators run, as `--operators` chooses, which replaces this for one run: a set (`defaults`, `stronger`, `extended`, `all`), a namespace (`stream`) or an operator's id, or one of those after `-` to leave it out |
+| `exclude-tests:` | Tests every run leaves out, each `- test: <name>` with a `reason:` under it: see [Leaving a test out](#leaving-a-test-out) |
 | `gate:` | What the gate holds an agent's task to: `operators:` under it, a list as `operators:` takes, chooses the gate's operators in its place, and `gate open --operators` replaces it. See [Which operators](../test-first-agent.md#which-operators) |
 | `filters:` | A compiled plugin's filters: the Rust edition has no compiled plugins yet, so naming one is an error |
 
@@ -90,6 +91,30 @@ first line names it:
 ```
 
 The schema takes `filters:`, which the Rust edition refuses until it has compiled plugins.
+
+### Leaving a test out
+
+A test that fails on its own, with no mutant in, stops the run: mutastic can't tell a mutant it
+catches from one it would fail on anyway. Fix it if you can. Until then, `exclude-tests:` leaves it
+out of every run, with the reason a reviewer reads:
+
+```yaml
+exclude-tests:
+  - test: tests::shipping_is_free_from_the_threshold
+    reason: expects the old threshold until the pricing change lands
+```
+
+A test is named as `--exclude-tests` takes it: by its name as a run shows it, or a module of tests
+by its path, which leaves out every test in it. A test without a `reason:` is an error. The
+summary's `Left out` row names each test with its reason, the Score row ends in `· 1 test left
+out`, and `run-finished` lists them as `testsLeftOut`. A left-out test can't make a mutant look
+caught: what only it reaches counts as not covered, so the score can only fall. A run with other
+tests left out is other code than one that ran them, never compared as the same. `--exclude-tests`
+adds to the file's tests for one run. With `extends:`, the file's own come first, then the other
+file's, and a test named in both keeps this file's reason.
+
+Leaving a test out is a person's call: an agent's output never offers it, and `mutastic gate`
+holds a task that adds one as a task that took a test away.
 
 ### In a workspace
 

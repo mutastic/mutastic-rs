@@ -599,7 +599,7 @@
       "group": "Running",
       "value": "TEST",
       "choices": [],
-      "help": "A test to leave out of the run, by its name as a run shows it, or a module of tests by its path: one that can't run reliably here, with a race or a fixed port; the summary names it",
+      "help": "A test to leave out of the run, by its name as a run shows it, or a module of tests by its path: one that can't run reliably here, with a race or a fixed port; the summary names it. mutastic.yaml's exclude-tests: leaves one out of every run, with its reason",
       "commands": [
         "baseline",
         "explain",
@@ -1346,7 +1346,12 @@
     },
     {
       "name": "2",
-      "meaning": "mutastic couldn't run: an unknown option, a word the command doesn't take, not a Cargo package, a workspace's root, a test that fails with no mutant in, an id that isn't a mutant of the package, shares --from-shards can't put together as one run, --fail-on-new with no baseline, or no task open for gate check; or, for run and verify, a test that caught mutants fails on its own, with no mutant in",
+      "meaning": "mutastic couldn't run: an unknown option, a word the command doesn't take, not a Cargo package, a workspace's root, an id that isn't a mutant of the package, shares --from-shards can't put together as one run, --fail-on-new with no baseline, or no task open for gate check",
+      "detail": ""
+    },
+    {
+      "name": "3",
+      "meaning": "The tests fail without any mutant: a test fails with no mutant in, so the run stops; or, for run and verify, a test that caught mutants fails on its own, with no mutant in. Its message offers the way past it: leaving the test out, with a reason, under exclude-tests: in mutastic.yaml",
       "detail": ""
     }
   ]

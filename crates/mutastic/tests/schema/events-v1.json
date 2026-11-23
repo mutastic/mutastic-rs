@@ -633,6 +633,19 @@
           "items": { "$ref": "#/$defs/test" },
           "description": "Tests that failed when first run and passed when run again: left out of every mutant's run."
         },
+        "testsLeftOut": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["test", "reason"],
+            "additionalProperties": false,
+            "properties": {
+              "test": { "type": "string", "minLength": 1, "description": "The test as it was given: in Java a class by its name or full name, or `PricingTest#bigOrders`; in Rust a test's name or a module of tests by its path." },
+              "reason": { "type": ["string", "null"], "description": "Why, from its `reason:` under mutastic.yaml's `exclude-tests:`; null for one `--exclude-tests` added for this run." }
+            }
+          },
+          "description": "The tests the run was told to leave out, none of which ran: mutastic.yaml's `exclude-tests:`, then those `--exclude-tests` added, each once. A run with other tests left out is other code to compare with, never the same code."
+        },
         "flakyEvidence": {
           "type": "array",
           "items": { "$ref": "#/$defs/flakyEvidence" },

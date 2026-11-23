@@ -51,7 +51,7 @@ This is the pricing fixture's whole stream:
 {"schema":"mutastic.events/v1","edition":"rust","reason":"phase-finished","phase":"mutants","durationMs":66}
 {"schema":"mutastic.events/v1","edition":"rust","reason":"phase-started","phase":"checking"}
 {"schema":"mutastic.events/v1","edition":"rust","reason":"phase-finished","phase":"checking","durationMs":9}
-{"schema":"mutastic.events/v1","edition":"rust","reason":"run-finished","toolchain":{"name":"rustc","version":"1.99.1"},"mutants":11,"killed":10,"survived":1,"timeout":0,"noCoverage":0,"ignored":0,"runtimeError":0,"notMutated":{"unsafe":0,"cfg":0},"score":90.9,"threshold":80,"passed":true,"coveredScore":90.9,"tests":3,"workers":1,"workersStarted":1,"coverageMs":11,"flaky":[],"flakyEvidence":[],"likelyFlaky":[],"unrelatedCatches":[],"reports":["target/mutastic/mutation.json","target/mutastic/mutation.html"],"staleIgnores":[],"build":{"rounds":2,"unviable":0,"setupMs":101},"durationMs":212}
+{"schema":"mutastic.events/v1","edition":"rust","reason":"run-finished","toolchain":{"name":"rustc","version":"1.99.1"},"mutants":11,"killed":10,"survived":1,"timeout":0,"noCoverage":0,"ignored":0,"runtimeError":0,"notMutated":{"unsafe":0,"cfg":0},"score":90.9,"threshold":80,"passed":true,"coveredScore":90.9,"tests":3,"workers":1,"workersStarted":1,"coverageMs":11,"flaky":[],"flakyEvidence":[],"testsLeftOut":[],"likelyFlaky":[],"unrelatedCatches":[],"reports":["target/mutastic/mutation.json","target/mutastic/mutation.html"],"staleIgnores":[],"build":{"rounds":2,"unviable":0,"setupMs":101},"durationMs":212}
 ```
 
 Read what you know and let the rest pass: ignore a field you don't know, and an event whose `reason`
@@ -60,7 +60,8 @@ a field, an event or a value.
 
 ## When mutastic can't run
 
-When mutastic can't run, it says why on stderr and exits 2. In `--format=jsonl` and
+When mutastic can't run, it says why on stderr and exits 2, or 3 when the tests fail without any
+mutant. In `--format=jsonl` and
 `--format=agent`, the same error is the last line on stdout too, as a `run-failed` event, so a tool
 that reads stdout alone isn't left with nothing. This is `mutastic run fixtures/pricing
 --formt=agent`'s:
@@ -144,3 +145,7 @@ own code, as the Java edition's does; its `failure` is what `caughtWith` says, `
 catch failed is `failureOrigin`, read from the line the test's panic names: `assertion` for an
 `assert!` or `assert_eq!`, `test` for a panic in the test's own code, `code` for one in the code
 under test, and `unknown` when the line isn't the package's.
+
+`testsLeftOut` names each test the run was told to leave out, as the Java edition's does:
+`mutastic.yaml`'s `exclude-tests:`, each with its `reason`, then those `--exclude-tests` added, each
+with a `reason` of `null`. It's `[]` when none is left out.
