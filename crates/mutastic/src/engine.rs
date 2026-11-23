@@ -508,6 +508,15 @@ pub fn run(
     let cwd = project.copy_dir().join(&project.package_dir);
     let mut listed =
         testrun::list(&built.binaries, &cwd).map_err(|error| Code::Other.with(error))?;
+    if listed.is_empty() {
+        let ignored = testrun::Names::of(&built.binaries, &cwd)
+            .map_err(|error| Code::Other.with(error))?
+            .ignored
+            .len();
+        if ignored > 0 {
+            return Err(no_tests_ran(project, ignored));
+        }
+    }
     // Left out before the coverage pass, so a test that can't run here never runs: what only it
     // reaches is not covered.
     listed.retain(|test| !leaves_out(&options.exclude_tests, &test.display));
@@ -537,6 +546,19 @@ pub fn run(
         .filter(|(index, _)| !covered.flaky.contains(index))
         .map(|(_, kept)| kept)
         .unzip();
+    // Only a run of every mutant: tests that reach none of some of them can be the honest answer.
+    let whole = options.only.is_empty()
+        && options.since.is_none()
+        && options.shard.is_none_or(|shard| shard.of == 1);
+    let with_mutants: BTreeSet<usize> = live
+        .iter()
+        .filter(|mutant| !built.unviable.contains_key(mutant))
+        .map(|&mutant| found.mutants[mutant].function)
+        .collect();
+    let recorded_nothing = reach.iter().all(|reached| reached.hits.is_empty());
+    if whole && !tests.is_empty() && !with_mutants.is_empty() && recorded_nothing {
+        return Err(nothing_covered(project, tests.len(), with_mutants.len()));
+    }
     let coverage_took = coverage_started.elapsed();
     let rustc = rustc_version();
     let order: Vec<usize> = selected.iter().copied().collect();
@@ -1012,7 +1034,9 @@ fn coverage(
     progress: &(dyn Fn(Progress) + Sync),
 ) -> Result<Covered, Failure> {
     let dir = project.mutastic_dir().join("coverage");
-    std::fs::create_dir_all(&dir).map_err(|error| Code::Other.with(error.to_string()))?;
+    std::fs::create_dir_all(&dir).map_err(|error| {
+        crate::failure::disk(format!("couldn't make {}: {error}", dir.display()))
+    })?;
     let cwd = project.copy_dir().join(&project.package_dir);
     let cover = |index: usize, test: &Test| {
         let file: PathBuf = dir.join(format!("{index}.cov"));
@@ -1075,7 +1099,9 @@ fn coverage(
                 )
             })
             .collect();
-        std::fs::write(&log, output).map_err(|error| Code::Other.with(error.to_string()))?;
+        std::fs::write(&log, output).map_err(|error| {
+            crate::failure::disk(format!("couldn't write {}: {error}", log.display()))
+        })?;
         let named: Vec<crate::flaky::Red> = failing
             .iter()
             .map(|&index| {
@@ -1087,6 +1113,7 @@ fn coverage(
                 crate::flaky::Red {
                     display: test.display.clone(),
                     timed_out: outcome.timed_out,
+                    stopped: crate::flaky::stopped(outcome),
                     panic: crate::flaky::panic_message(&output),
                     rerun: if seeded {
                         format!("PROPTEST_RNG_SEED={} {command}", testrun::PROPTEST_SEED)
@@ -1100,10 +1127,12 @@ fn coverage(
         // From where the person is, as they'd open it.
         let here = std::env::current_dir().unwrap_or_else(|_| project.workspace.clone());
         let shown = crate::report::files::shown(&here, &log);
-        return Err(Code::RedBaseline.with(crate::flaky::failed_message(
-            &named,
-            std::path::Path::new(&shown),
-        )));
+        return Err(
+            crate::flaky::code(&named).with(crate::flaky::failed_message(
+                &named,
+                std::path::Path::new(&shown),
+            )),
+        );
     }
     let reach = reached
         .into_iter()
@@ -1113,6 +1142,49 @@ fn coverage(
         })
         .collect();
     Ok(Covered { reach, flaky })
+}
+
+/// The package has tests, and every one is `#[ignore]`d, so none ran: as the Java edition stops a
+/// run whose module has test classes none of which ran. Scored, that would be every mutant not
+/// covered, a 0% that reads as tests that don't reach the code. A package with no tests at all
+/// isn't an error: its mutants are not covered, and the summary says so.
+fn no_tests_ran(project: &Project, ignored: usize) -> Failure {
+    Code::NoTests.with(format!(
+        "no test ran in {}, so there's nothing to judge a mutant by. mutastic runs the tests `cargo \
+         test` runs, and {}: take the #[ignore] off one that calls this code, or write one",
+        project.package,
+        if ignored == 1 {
+            "its only test is #[ignore]d".to_string()
+        } else {
+            format!("all {ignored} of its tests are #[ignore]d")
+        }
+    ))
+}
+
+/// The tests ran and passed, and the coverage pass recorded none of the code with mutants, in a
+/// run of every mutant: as the Java edition stops such a run, since scored it would be every
+/// mutant not covered, which measures nothing.
+fn nothing_covered(project: &Project, tests: usize, functions: usize) -> Failure {
+    Code::NothingCovered.with(format!(
+        "{} ran and passed in {}, but {} the {}, so a score would measure nothing: every mutant \
+         would read as reached by no test. Write a #[test] that calls this code",
+        if tests == 1 {
+            "1 test".to_string()
+        } else {
+            format!("{tests} tests")
+        },
+        project.package,
+        if tests == 1 {
+            "it reached none of"
+        } else {
+            "none of them reached any of"
+        },
+        if functions == 1 {
+            "only function with mutants".to_string()
+        } else {
+            format!("{functions} functions with mutants")
+        }
+    ))
 }
 
 /// The command that runs one test alone, as Cargo runs it: its target, then its exact name.

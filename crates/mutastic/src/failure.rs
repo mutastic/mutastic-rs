@@ -32,10 +32,20 @@ pub enum Code {
     BuildFailed,
     CopyBuildFailed,
     RedBaseline,
+    /// A test ended its test process with no mutant in: an exit its code called, or a crash.
+    TestsStopped,
+    /// A test ran past the coverage pass's limit with no mutant in.
+    TestsTimedOut,
+    /// The package has tests, and none of them runs.
+    NoTests,
+    /// The tests ran and passed, and reached none of the code with mutants.
+    NothingCovered,
     JavaEdition,
     ProcMacro,
-    /// Anything else: an error mutastic has no entry for yet, usually one the system gave (a disk
-    /// that's full, a file it can't read).
+    /// A file mutastic reads or writes couldn't be: a full disk, a directory that isn't writable, a
+    /// file where it keeps a directory.
+    Disk,
+    /// Anything else: an error mutastic has no entry for yet.
     Other,
     /// A bug in mutastic itself: it panicked.
     Internal,
@@ -64,8 +74,13 @@ impl Code {
         Code::BuildFailed,
         Code::CopyBuildFailed,
         Code::RedBaseline,
+        Code::TestsStopped,
+        Code::TestsTimedOut,
+        Code::NoTests,
+        Code::NothingCovered,
         Code::JavaEdition,
         Code::ProcMacro,
+        Code::Disk,
         Code::Other,
         Code::Internal,
     ];
@@ -93,8 +108,13 @@ impl Code {
             Code::BuildFailed => "build-failed",
             Code::CopyBuildFailed => "copy-build-failed",
             Code::RedBaseline => "red-baseline",
+            Code::TestsStopped => "tests-stopped",
+            Code::TestsTimedOut => "tests-timed-out",
+            Code::NoTests => "no-tests",
+            Code::NothingCovered => "nothing-covered",
             Code::JavaEdition => "java-edition",
             Code::ProcMacro => "proc-macro",
+            Code::Disk => "disk",
             Code::Other => "other",
             Code::Internal => "internal",
         }
@@ -171,6 +191,37 @@ impl Failure {
 impl std::fmt::Display for Failure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.message)
+    }
+}
+
+/// A file mutastic reads or writes couldn't be, in `said`'s words, which name the file and give the
+/// system's reason: `couldn't make target/mutastic: Not a directory (os error 20)`. As the Java
+/// edition's `Disk`, what to do about the commonest reasons follows: they're the machine's, not the
+/// run's.
+pub fn disk(said: impl Into<String>) -> Failure {
+    let said = said.into();
+    let advice = disk_advice(&said);
+    Code::Disk.with(format!("{said}{advice}"))
+}
+
+/// What to do about a full disk, a place that can't be written to, or a file where a directory
+/// goes, by the system's words for each, on Unix and on Windows; nothing for any other reason.
+fn disk_advice(reason: &str) -> &'static str {
+    let reason = reason.to_lowercase();
+    let says = |any: &[&str]| any.iter().any(|words| reason.contains(words));
+    if says(&["no space left", "not enough space"]) {
+        ". The disk is full: free some space, and run mutastic again"
+    } else if says(&[
+        "permission denied",
+        "read-only file system",
+        "access is denied",
+    ]) {
+        ". mutastic keeps its work in the package's target directory, and its decisions in \
+         .mutastic: both need to be writable"
+    } else if says(&["not a directory", "file exists", "already exists"]) {
+        ". A file is where mutastic keeps a directory: move it, and run mutastic again"
+    } else {
+        ""
     }
 }
 
@@ -302,6 +353,33 @@ mod tests {
         let event = event(&Code::Internal.with(said), ".", 2);
         assert_eq!(event["code"], "internal");
         assert_eq!(event["help"], json!([]));
+    }
+
+    #[test]
+    fn a_file_failure_is_the_disks_with_what_to_do_about_it() {
+        let full =
+            disk("couldn't write target/mutastic/tests.log: No space left on device (os error 28)");
+        assert_eq!(full.code, Code::Disk);
+        assert_eq!(
+            full.message,
+            "couldn't write target/mutastic/tests.log: No space left on device (os error 28). The \
+             disk is full: free some space, and run mutastic again"
+        );
+        assert!(disk("couldn't make target/mutastic: Permission denied (os error 13)")
+            .message
+            .ends_with(". mutastic keeps its work in the package's target directory, and its decisions in .mutastic: both need to be writable"));
+        assert!(
+            disk("couldn't make target/mutastic: Not a directory (os error 20)")
+                .message
+                .ends_with(
+                    ". A file is where mutastic keeps a directory: move it, and run mutastic again"
+                )
+        );
+        let other = disk("couldn't read shares: Input/output error (os error 5)");
+        assert_eq!(
+            other.message,
+            "couldn't read shares: Input/output error (os error 5)"
+        );
     }
 
     #[test]

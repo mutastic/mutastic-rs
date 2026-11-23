@@ -183,3 +183,22 @@ what's missed:
           sarif_file: target/mutastic/mutation.sarif
           category: mutastic
 ```
+
+## On GitHub Actions
+
+A pull request's reviewer reads its changed files, not a job's log. So on GitHub Actions, where
+`GITHUB_ACTIONS=true`, `mutastic run` also annotates the line of each of its first ten misses,
+ranked as the [agent format](../concepts/output.md) ranks them, so the pull request's changed
+files show them, and adds a summary to the job's page: the verdict, the score, the counts, and the
+first misses with where they are. It needs no token or permission, and no option.
+
+Each annotation is a warning, titled `mutastic: missed mb2f8ae57`, whose message is the card's
+headline, `` no test checks `discount()` at `total == 100` ``. mutastic writes them on stderr, so
+`--format=jsonl` stays as it is. The summary is Markdown, added to the file `GITHUB_STEP_SUMMARY`
+names, after whatever other steps wrote there: a heading such as `mutastic: PASS · score 90.9%
+(threshold 80)`, a table of the caught, missed, not covered and timed out, and a table of the first
+misses, each with its id, its file and line, and what no test checks. With `--fail-on-new`, the
+heading gives the new misses in place of the threshold. Paths are relative to the git repository
+the workspace is in, as in `mutation.sarif`.
+
+`MUTASTIC_GITHUB=off` leaves both out. The Java edition does the same.

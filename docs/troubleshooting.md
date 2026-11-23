@@ -324,6 +324,13 @@ A package with no tests has nothing to catch a mutant: every one is not covered,
 `#[test]` functions in the package's library, binaries and `tests/`. Doc tests don't count; see
 [Doc tests](#doc-tests).
 
+A package whose tests are all `#[ignore]`d is another matter: it has tests, and none ran. mutastic
+stops with `no test ran in …`, and says how many are `#[ignore]`d. So is one whose tests all pass
+and reach none of the code with mutants, in a run of every mutant: `… ran and passed in …, but none
+of them reached any of the … functions with mutants`. In both a score would be 0% and say nothing,
+so there is none: see [`no-tests`](reference/errors.md#no-tests) and
+[`nothing-covered`](reference/errors.md#nothing-covered).
+
 ## A test is flaky
 
 A test that failed, then passed when run again, is left out of the run: `! flaky: … failed, then

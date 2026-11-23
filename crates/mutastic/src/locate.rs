@@ -51,7 +51,7 @@ pub fn resolve(given: &str, line: &Line) -> Result<Located, Failure> {
     let cwd = std::env::current_dir()
         .and_then(std::fs::canonicalize)
         .map_err(|error| {
-            Code::Other.with(format!("couldn't read the current directory: {error}"))
+            crate::failure::disk(format!("couldn't read the current directory: {error}"))
         })?;
     let unchanged = Ok(Located {
         dir: given.to_string(),
@@ -61,7 +61,7 @@ pub fn resolve(given: &str, line: &Line) -> Result<Located, Failure> {
         return missing(given, line, &cwd);
     }
     let here = std::fs::canonicalize(given)
-        .map_err(|error| Code::Other.with(format!("{given}: {error}")))?;
+        .map_err(|error| crate::failure::disk(format!("{given}: {error}")))?;
     if !any_above(&here, &[CARGO_BUILD]) {
         // Only `--edition=rust` brings a Java build here: Cargo says what it makes of it.
         return if any_above(&here, JVM_BUILDS) {

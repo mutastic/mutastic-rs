@@ -5224,3 +5224,179 @@ fn an_audit_runs_the_arid_mutants_and_says_where_a_test_checks_them() {
         "{full}"
     );
 }
+
+/// The failures the Java edition has a code for, each provoked on the pricing fixture and read
+/// from its `run-failed` event: tests that are all `#[ignore]`d (`no-tests`), tests that pass and
+/// reach none of the code with mutants (`nothing-covered`, in a run of every mutant only), a test
+/// that ends its process (`tests-stopped`), and a file where mutastic keeps a directory (`disk`).
+#[test]
+fn a_run_that_cant_measure_says_which_kind_of_failure_it_is() {
+    let dir = copy_of("pricing", "error-codes");
+    let failed = |args: &[&str], env: &[(&str, &str)]| {
+        let (code, out) = mutastic_with_input_and_env(
+            &dir,
+            &[args, &["--format=jsonl"]].concat(),
+            "",
+            &[&[("MUTASTIC_PROGRESS", "none")], env].concat(),
+        );
+        let event = events(&out).pop().unwrap();
+        assert!(schema().is_valid(&event), "{event}");
+        assert_eq!(event["reason"], "run-failed", "{event}");
+        assert_eq!(event["exitCode"], 2, "{event}");
+        assert_eq!(code, 2, "{event}");
+        (
+            event["code"].as_str().unwrap().to_string(),
+            event["rendered"].as_str().unwrap().to_string(),
+        )
+    };
+    let unit_tests = dir.join("src/lib.rs");
+    let integration_tests = dir.join("tests/pricing.rs");
+    let ignored = |file: &Path| {
+        let text = std::fs::read_to_string(file).unwrap();
+        std::fs::write(file, text.replace("#[test]\n", "#[test]\n#[ignore]\n")).unwrap();
+    };
+
+    ignored(&unit_tests);
+    ignored(&integration_tests);
+    assert_eq!(
+        failed(&["run", "--report=none"], &[]),
+        (
+            "no-tests".to_string(),
+            "mutastic: no test ran in pricing, so there's nothing to judge a mutant by. mutastic \
+             runs the tests `cargo test` runs, and all 3 of its tests are #[ignore]d: take the \
+             #[ignore] off one that calls this code, or write one\n"
+                .to_string()
+        )
+    );
+
+    std::fs::write(
+        &integration_tests,
+        "#[test]\nfn sums() {\n    assert_eq!(1 + 1, 2);\n}\n",
+    )
+    .unwrap();
+    assert_eq!(
+        failed(&["run", "--report=none"], &[]),
+        (
+            "nothing-covered".to_string(),
+            "mutastic: 1 test ran and passed in pricing, but it reached none of the 2 functions \
+             with mutants, so a score would measure nothing: every mutant would read as reached \
+             by no test. Write a #[test] that calls this code\n"
+                .to_string()
+        )
+    );
+    // A run of some mutants is let through: there, tests that reach none of them can be the
+    // honest answer.
+    let (code, out) = mutastic_in(&dir, &["verify", "mb2f8ae57"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("mutastic: mb2f8ae57 isn't reached by any test"),
+        "{out}"
+    );
+
+    std::fs::write(
+        &integration_tests,
+        "#[test]\nfn leaves() {\n    std::process::exit(3);\n}\n",
+    )
+    .unwrap();
+    assert_eq!(
+        failed(&["run", "--report=none"], &[]),
+        (
+            "tests-stopped".to_string(),
+            "mutastic: pricing::leaves (it exited with status 3) fails without any mutant, so \
+             mutastic can't judge one.\n\
+             mutastic runs each test alone: a test that passes with the others, but fails alone, \
+             leans on one of them.\n\
+             Its output is in target/mutastic/tests.log. To run it alone:\n  \
+             cargo test -p pricing --test pricing -- --exact leaves\n"
+                .to_string()
+        )
+    );
+
+    // A file where the work directory goes, in a target directory of this test's own: the
+    // fixture's, with its build, stays as it is.
+    let blocked = dir.join("target").join("blocked");
+    std::fs::create_dir_all(&blocked).unwrap();
+    std::fs::write(blocked.join("mutastic"), "").unwrap();
+    let (code, said) = failed(
+        &["run", "--report=none"],
+        &[("CARGO_TARGET_DIR", blocked.to_str().unwrap())],
+    );
+    assert_eq!(code, "disk");
+    assert!(
+        said.starts_with("mutastic: couldn't make ") && said.contains("blocked"),
+        "{said}"
+    );
+    if cfg!(unix) {
+        assert!(
+            said.ends_with(
+                ". A file is where mutastic keeps a directory: move it, and run mutastic again\n"
+            ),
+            "{said}"
+        );
+    }
+}
+
+/// On GitHub Actions (`GITHUB_ACTIONS=true`) a full run annotates the line of each of its first
+/// misses, on stderr so a format's own output is untouched, and adds a summary to the job's page,
+/// after whatever another step wrote there; elsewhere, or with `MUTASTIC_GITHUB=off`, it does
+/// neither. As the Java edition's `GitHubActionsTest`.
+#[test]
+fn a_run_on_github_actions_annotates_its_misses_and_summarises_the_job() {
+    let dir = copy_of("pricing", "github");
+    // In the build's directory, which a copy keeps from the process before: so not there yet.
+    let summary = dir.join("target").join("summary.md");
+    let _ = std::fs::remove_file(&summary);
+    let run = |format: &str, env: &[(&str, &str)]| {
+        let output = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+            .args(["run", "--report=none", format])
+            .current_dir(&dir)
+            .env_remove("MUTASTIC_FORMAT")
+            .env_remove("MUTASTIC_AGENT")
+            .env_remove("MUTASTIC_GITHUB")
+            .env_remove("GITHUB_ACTIONS")
+            .env("GITHUB_STEP_SUMMARY", &summary)
+            .env("MUTASTIC_PROGRESS", "none")
+            .env("NO_COLOR", "1")
+            .envs(env.iter().copied())
+            .output()
+            .unwrap();
+        (
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        )
+    };
+
+    let (_, off) = run(
+        "--format=concise",
+        &[("GITHUB_ACTIONS", "true"), ("MUTASTIC_GITHUB", "off")],
+    );
+    let (_, elsewhere) = run("--format=concise", &[]);
+    assert!(!off.contains("::warning"), "{off}");
+    assert!(!elsewhere.contains("::warning"), "{elsewhere}");
+    assert!(!summary.exists(), "a summary was written with it off");
+
+    std::fs::write(&summary, "another step's\n").unwrap();
+    let (out, err) = run("--format=jsonl", &[("GITHUB_ACTIONS", "true")]);
+    assert_eq!(
+        err,
+        "::warning file=src/lib.rs,line=26,title=mutastic%3A missed mb2f8ae57::no test checks \
+         `discount()` at `total == 100`\n"
+    );
+    assert!(!out.contains("::warning"), "{out}");
+    assert_eq!(
+        std::fs::read_to_string(&summary).unwrap(),
+        "another step's\n\
+         ### mutastic: PASS · score 90.9% (threshold 80)\n\
+         \n\
+         | Caught | Missed | Not covered | Timed out |\n\
+         |---|---|---|---|\n\
+         | 10 | 1 | 0 | 0 |\n\
+         \n\
+         **Missed, most worth a test first**\n\
+         \n\
+         | Mutant | Where | No test checks |\n\
+         |---|---|---|\n\
+         | `mb2f8ae57` | `src/lib.rs:26` | no test checks `discount()` at `total == 100` |\n\
+         \n"
+    );
+}

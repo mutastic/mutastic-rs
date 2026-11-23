@@ -186,8 +186,8 @@ pub fn read(dir: &str) -> Result<Project, Failure> {
         return Err(Code::NoDirectory.with(format!("there's no directory {dir}")));
     }
     let metadata = Metadata::read(dir)?;
-    let here =
-        std::fs::canonicalize(dir).map_err(|error| Code::Other.with(format!("{dir}: {error}")))?;
+    let here = std::fs::canonicalize(dir)
+        .map_err(|error| crate::failure::disk(format!("{dir}: {error}")))?;
     let package = metadata.package(&here).cloned().ok_or_else(|| {
         crate::locate::not_a_package(dir, &here, &metadata, &crate::locate::Line::new("run", &[]))
     })?;
@@ -310,7 +310,7 @@ pub const PROPTEST_SAVED: &str = "proptest-regressions";
 /// Brings the copy up to date with the workspace, writing only what changed, with `overrides` in
 /// place of the originals.
 pub fn sync(project: &Project, overrides: &Overrides) -> Result<(), Failure> {
-    hold(&project.mutastic_dir()).map_err(|error| Code::Other.with(error))?;
+    hold(&project.mutastic_dir()).map_err(crate::failure::disk)?;
     let copy = project.copy_dir();
     let mut kept = std::collections::BTreeSet::new();
     copy_tree(
@@ -321,16 +321,19 @@ pub fn sync(project: &Project, overrides: &Overrides) -> Result<(), Failure> {
         overrides,
         &mut kept,
     )
-    .map_err(|error| Code::Other.with(format!("couldn't copy the workspace: {error}")))?;
+    .map_err(|error| crate::failure::disk(format!("couldn't copy the workspace: {error}")))?;
     remove_stale(&copy, Path::new(""), &kept).ok();
     // The copy is its own workspace root, so Cargo doesn't look above it.
     let manifest = copy.join("Cargo.toml");
     let text = std::fs::read_to_string(&manifest).unwrap_or_default();
     if !text.lines().any(|line| line.trim() == "[workspace]") {
-        write_if_changed(&manifest, &format!("{text}\n[workspace]\n"))
-            .map_err(|error| Code::Other.with(error.to_string()))?;
+        write_if_changed(&manifest, &format!("{text}\n[workspace]\n")).map_err(|error| {
+            crate::failure::disk(format!("couldn't write {}: {error}", manifest.display()))
+        })?;
     }
-    stand_alone(&copy, project, &kept).map_err(|error| Code::Other.with(error.to_string()))
+    stand_alone(&copy, project, &kept).map_err(|error| {
+        crate::failure::disk(format!("couldn't write in {}: {error}", copy.display()))
+    })
 }
 
 /// Gives each package in the copy that the workspace excludes an empty `[workspace]`, as the copy's
