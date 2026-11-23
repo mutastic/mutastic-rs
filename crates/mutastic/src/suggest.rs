@@ -357,11 +357,11 @@ pub fn test(
     named: Option<&Named>,
     edge: Option<&Edge>,
 ) -> SuggestedTest {
-    let (place, module, prefix, existing) = match &callable.tests {
+    let prefix = prefix(callable);
+    let (place, module, existing) = match &callable.tests {
         Some(tests) => {
             let module = joined(&callable.scope, &tests.name);
-            let prefix = if tests.glob { "" } else { "super::" };
-            (format!("mod {module}"), module, prefix, tests.text.as_str())
+            (format!("mod {module}"), module, tests.text.as_str())
         }
         None => {
             let inside = if callable.file_scope {
@@ -372,7 +372,6 @@ pub fn test(
             (
                 format!("a new #[cfg(test)] mod tests in {inside}"),
                 joined(&callable.scope, "tests"),
-                "super::",
                 "",
             )
         }
@@ -399,11 +398,7 @@ pub fn test(
         "{note}today {} · with {with} {}",
         suggestion.today, suggestion.mutated
     );
-    let assertion = match suggestion.today.as_str() {
-        "true" => format!("assert!({call});"),
-        "false" => format!("assert!(!{call});"),
-        today => format!("assert_eq!({call}, {today});"),
-    };
+    let assertion = assertion(&call, &suggestion.today);
     SuggestedTest {
         place,
         module,
@@ -423,6 +418,39 @@ pub fn test(
         today: suggestion.today.clone(),
         mutated: suggestion.mutated.clone(),
     }
+}
+
+/// What a test in the function's test module writes before the function's name: nothing where the
+/// module imports its parent's items (`use super::*;`), else `super::`, which also holds in a test
+/// module yet to be written, whatever it imports.
+fn prefix(callable: &Callable) -> &'static str {
+    match &callable.tests {
+        Some(tests) if tests.glob => "",
+        _ => "super::",
+    }
+}
+
+/// `assert_eq!(late_fee(8), 7);`, or `assert!` for a `bool`: `today` is what the call gave.
+fn assertion(call: &str, today: &str) -> String {
+    match today {
+        "true" => format!("assert!({call});"),
+        "false" => format!("assert!(!{call});"),
+        today => format!("assert_eq!({call}, {today});"),
+    }
+}
+
+/// For a function no test reaches, the assertion to start its first test with, as it reads in the
+/// test module beside it: the call the probe made, and what the code gave. As the Java edition's
+/// starting point, it's found where one of the function's mutants answers otherwise, so the test
+/// it starts catches that one too.
+pub fn starting_point(callable: &Callable, suggestion: &Suggestion) -> String {
+    assertion(&starting_call(callable, suggestion), &suggestion.today)
+}
+
+/// The call a starting point asserts on, `Pricing::new().loyalty_credit(0)`.
+pub fn starting_call(callable: &Callable, suggestion: &Suggestion) -> String {
+    let values: Vec<String> = suggestion.values.iter().map(i128::to_string).collect();
+    callable.call(&values, prefix(callable))
 }
 
 /// A receiver made as a covering test makes it, declared as that test does, `let delivery =

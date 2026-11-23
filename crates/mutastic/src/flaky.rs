@@ -9,6 +9,7 @@ use std::path::Path;
 use ra_ap_syntax::ast::{self, HasAttrs, HasName};
 use ra_ap_syntax::{AstNode, Edition, SourceFile, SyntaxKind, SyntaxNode};
 
+use crate::failure::Code;
 use crate::sites::Crate;
 
 /// How many times a test that failed the coverage pass runs again on its own before it counts as
@@ -257,6 +258,9 @@ fn varying_fields(found: &Crate, path: &str, code: &SyntaxNode) -> BTreeSet<Stri
 pub struct Red {
     pub display: String,
     pub timed_out: bool,
+    /// How its test process ended, when the test didn't fail in it but stopped it: `exited with
+    /// status 2`, for code it ran that called `process::exit`, or `was stopped by SIGABRT`.
+    pub stopped: Option<String>,
     /// The panic's message, on one line: `assertion `left == right` failed: left: 3, right: 4`.
     pub panic: Option<String>,
     pub rerun: String,
@@ -264,6 +268,40 @@ pub struct Red {
     pub seeded: bool,
     /// The row of a table the test is, when it's one: named after it.
     pub case: Option<crate::cases::Case>,
+}
+
+/// How a test process that a test stopped ended, as [`Red::stopped`] says it: by an exit its code
+/// called, by a signal, or some other way. None for a test that failed in it, or ran out of time.
+pub fn stopped(outcome: &crate::testrun::Outcome) -> Option<String> {
+    if outcome.passed || outcome.timed_out {
+        return None;
+    }
+    if let Some(status) = outcome.exited {
+        return Some(format!("exited with status {status}"));
+    }
+    if let Some(signal) = outcome.signal {
+        return Some(format!(
+            "was stopped by {}",
+            crate::testrun::signal_name(signal)
+        ));
+    }
+    (outcome.failure.as_deref() == Some("crash")).then(|| "crashed".to_string())
+}
+
+/// The kind of failure tests that fail with no mutant in are, as the Java edition names them: a
+/// red baseline when any of them failed as a test fails; when none did, `tests-stopped` if one
+/// ended its test process, by an exit or a crash, and `tests-timed-out` if all ran out of time.
+pub fn code(failing: &[Red]) -> Code {
+    if failing
+        .iter()
+        .any(|red| !red.timed_out && red.stopped.is_none())
+    {
+        Code::RedBaseline
+    } else if failing.iter().any(|red| red.stopped.is_some()) {
+        Code::TestsStopped
+    } else {
+        Code::TestsTimedOut
+    }
 }
 
 /// How many failing tests are named with how they failed, and given a command.
@@ -283,6 +321,8 @@ pub fn failed_message(failing: &[Red], log: &Path) -> String {
                 .unwrap_or_default();
             if red.timed_out {
                 format!("{}{case} (it timed out)", red.display)
+            } else if let Some(how) = &red.stopped {
+                format!("{}{case} (it {how})", red.display)
             } else {
                 format!("{}{case}", red.display)
             }
@@ -440,6 +480,7 @@ mod tests {
         let red = |display: &str, timed_out: bool, panic: Option<&str>| Red {
             display: display.into(),
             timed_out,
+            stopped: None,
             panic: panic.map(str::to_string),
             rerun: format!("cargo test -p red --lib -- --exact {display}"),
             seeded: false,
@@ -515,6 +556,69 @@ mod tests {
             "{seeded}"
         );
         assert_eq!(failing_tests(&seeded).unwrap().0, ["p"]);
+    }
+
+    /// A test that ends its test process, or runs out of time, is its own kind of failure only
+    /// when no test failed as a test does; the gate reads each one's name back all the same.
+    #[test]
+    fn tests_that_stop_or_time_out_are_named_as_their_own_kind_of_failure() {
+        let red = |display: &str, timed_out: bool, stopped: Option<&str>| Red {
+            display: display.into(),
+            timed_out,
+            stopped: stopped.map(str::to_string),
+            panic: None,
+            rerun: format!("cargo test -p red --lib -- --exact {display}"),
+            seeded: false,
+        };
+        let failed = red("a", false, None);
+        let timed_out = red("b", true, None);
+        let exited = red("c", false, Some("exited with status 3"));
+        assert_eq!(code(std::slice::from_ref(&failed)), Code::RedBaseline);
+        assert_eq!(code(std::slice::from_ref(&timed_out)), Code::TestsTimedOut);
+        assert_eq!(code(std::slice::from_ref(&exited)), Code::TestsStopped);
+        assert_eq!(
+            code(&[timed_out.clone(), exited.clone()]),
+            Code::TestsStopped
+        );
+        let all = [failed, timed_out, exited];
+        assert_eq!(code(&all), Code::RedBaseline);
+        let message = failed_message(&all, Path::new("target/mutastic/tests.log"));
+        assert!(
+            message.starts_with(
+                "a, b (it timed out), c (it exited with status 3) fail without any mutant, so \
+                 mutastic can't judge one.\n"
+            ),
+            "{message}"
+        );
+        assert_eq!(failing_tests(&message).unwrap().0, ["a", "b", "c"]);
+
+        let outcome = |exited: Option<i32>, signal: Option<i32>| crate::testrun::Outcome {
+            passed: false,
+            failure: Some("crash".into()),
+            exited,
+            signal,
+            ..crate::testrun::Outcome::passed()
+        };
+        assert_eq!(
+            stopped(&outcome(Some(3), None)).as_deref(),
+            Some("exited with status 3")
+        );
+        assert_eq!(
+            stopped(&outcome(None, Some(6))).as_deref(),
+            Some("was stopped by SIGABRT")
+        );
+        assert_eq!(stopped(&outcome(None, None)).as_deref(), Some("crashed"));
+        let panicked = crate::testrun::Outcome {
+            failure: Some("panic".into()),
+            ..outcome(None, None)
+        };
+        assert_eq!(stopped(&panicked), None);
+        let out_of_time = crate::testrun::Outcome {
+            timed_out: true,
+            ..outcome(None, Some(9))
+        };
+        assert_eq!(stopped(&out_of_time), None);
+        assert_eq!(stopped(&crate::testrun::Outcome::passed()), None);
     }
 
     #[test]

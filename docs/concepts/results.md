@@ -289,7 +289,8 @@ When some code is out of every test's reach, the summary also gives the score of
 do reach (`where tests reach` beside the score, and `coveredScore` in the event stream): how well the tests
 check what they run, apart from what they don't. The threshold is always on the whole score. The
 code no test reaches is listed once per function, with the lines its mutants are on, since one test
-that calls the function reaches them all.
+that calls the function reaches them all, and where mutastic finds one, `try:` gives an assertion
+to start it with: see [Code no test reaches](suggested-tests.md#code-no-test-reaches).
 
 ## Skipped mutants
 
@@ -304,7 +305,7 @@ A skipped mutant's reason starts with its kind, and the summary counts them by k
 | Kind | Means | Example |
 |---|---|---|
 | `unviable:` | It doesn't compile | `unviable: doesn't compile (E0308: mismatched types)` |
-| `arid:` | Code whose change no test should have to notice | `arid: only writes output`, for a `println!` or `log::warn!` statement removed; `arid: only feeds a log line`, for a `let` that only output macros read; `arid: only checks the value is there`, for an `x.unwrap();` statement removed; `arid: only names a thread`, for a `thread::Builder`'s name; `arid: only sizes a collection's first allocation`, for a number given to `Vec::with_capacity`; [each rule](https://docs.mutastic.io/reference/arid/) |
+| `arid:` | Code whose change no test should have to notice | `arid: only writes output`, for a `println!` or `log::warn!` statement removed; `arid: only feeds a log line`, for a `let` that only output macros read; `arid: only decides whether output is written`, for `if log_enabled!(Level::Debug)` around nothing but output; `arid: only calls audit::record (<reason>)`, for a call an [`output:` rule](../reference/configuration.md) names; `arid: only checks the value is there`, for an `x.unwrap();` statement removed; `arid: only names a thread`, for a `thread::Builder`'s name; `arid: only sizes a collection's first allocation`, for a number given to `Vec::with_capacity`; [each rule](https://docs.mutastic.io/reference/arid/) |
 | `equivalent:` | No test can tell it from the code | a `?` that only passes on a formatter's error |
 | `user:` | The project's own decision, in `mutastic.yaml` or `.mutastic/ignores.yaml` | ``user: written by a code generator (rule `skip: shop::generated::**`)`` |
 | `twin:` | It always does what another mutant at its place does, and that one runs for it ([Twins](#twins)) | `twin: same as m2e329a72`, for `n < 10`, which `is_small` returns, made `true` by `mutastic/remove-conditional`: the same code `mutastic/return-value` makes |

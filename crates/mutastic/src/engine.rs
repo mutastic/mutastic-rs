@@ -508,6 +508,15 @@ pub fn run(
     let cwd = project.copy_dir().join(&project.package_dir);
     let mut listed =
         testrun::list(&built.binaries, &cwd).map_err(|error| Code::Other.with(error))?;
+    if listed.is_empty() {
+        let ignored = testrun::Names::of(&built.binaries, &cwd)
+            .map_err(|error| Code::Other.with(error))?
+            .ignored
+            .len();
+        if ignored > 0 {
+            return Err(no_tests_ran(project, ignored));
+        }
+    }
     // Left out before the coverage pass, so a test that can't run here never runs: what only it
     // reaches is not covered.
     listed.retain(|test| !leaves_out(&options.exclude_tests, &test.display));
@@ -537,6 +546,19 @@ pub fn run(
         .filter(|(index, _)| !covered.flaky.contains(index))
         .map(|(_, kept)| kept)
         .unzip();
+    // Only a run of every mutant: tests that reach none of some of them can be the honest answer.
+    let whole = options.only.is_empty()
+        && options.since.is_none()
+        && options.shard.is_none_or(|shard| shard.of == 1);
+    let with_mutants: BTreeSet<usize> = live
+        .iter()
+        .filter(|mutant| !built.unviable.contains_key(mutant))
+        .map(|&mutant| found.mutants[mutant].function)
+        .collect();
+    let recorded_nothing = reach.iter().all(|reached| reached.hits.is_empty());
+    if whole && !tests.is_empty() && !with_mutants.is_empty() && recorded_nothing {
+        return Err(nothing_covered(project, tests.len(), with_mutants.len()));
+    }
     let coverage_took = coverage_started.elapsed();
     let rustc = rustc_version();
     let order: Vec<usize> = selected.iter().copied().collect();
@@ -641,7 +663,10 @@ pub fn run(
     progress(Progress::Checked {
         missed,
         took: checking_took,
-        found: results.iter().filter(|r| r.suggestion.is_some()).count(),
+        found: results
+            .iter()
+            .filter(|r| r.status == Status::Survived && r.suggestion.is_some())
+            .count(),
     });
     // As the Java edition's summary has it: the time after the mutants, when there was a miss to
     // say it about.
@@ -870,6 +895,7 @@ fn apply_ignores(project: &Project, found: &mut Crate) -> Result<Vec<String>, Fa
 /// function by its path in the crate, as `generated::checksum`, `crate::generated::checksum` or,
 /// with the crate's name, `shop::generated::checksum`.
 fn apply_rules(rules: &[crate::config::Rule], crate_name: &str, found: &mut Crate) {
+    own_output(rules, found);
     for index in 0..found.mutants.len() {
         let path = &found.functions[found.mutants[index].function].path;
         let named = [
@@ -878,7 +904,7 @@ fn apply_rules(rules: &[crate::config::Rule], crate_name: &str, found: &mut Crat
             format!("{crate_name}::{path}"),
         ];
         let covers = |rule: &&crate::config::Rule| named.iter().any(|path| rule.covers(path));
-        let skip = rules.iter().filter(|rule| !rule.mutate).find(covers);
+        let skip = rules.iter().filter(|rule| rule.skips()).find(covers);
         let mutant = &mut found.mutants[index];
         if let Some(reason) = mutant.skipped.as_deref() {
             if rules
@@ -892,6 +918,44 @@ fn apply_rules(rules: &[crate::config::Rule], crate_name: &str, found: &mut Crat
         if let (Some(rule), None) = (skip, &mutant.skipped) {
             mutant.skipped = Some(rule.skip_reason());
         }
+    }
+}
+
+/// A statement removed whose call an `output:` rule names, `audit::record(&order);` or
+/// `metrics::counter!("orders").increment(1);`, skipped as arid with the rule's reason, as an
+/// output macro's is with mutastic's own.
+fn own_output(rules: &[crate::config::Rule], found: &mut Crate) {
+    if !rules.iter().any(|rule| rule.output) {
+        return;
+    }
+    for mutant in &mut found.mutants {
+        if mutant.operator != sites::REMOVE_VOID_CALL || mutant.skipped.is_some() {
+            continue;
+        }
+        let Some(file) = found.files.iter().find(|file| file.path == mutant.file) else {
+            continue;
+        };
+        let path = called_path(file.text.get(mutant.site.clone()).unwrap_or_default());
+        if let Some(rule) = rules.iter().find(|rule| rule.names_call(path)) {
+            mutant.skipped = Some(rule.output_reason(path));
+        }
+    }
+}
+
+/// The path a statement starts by calling, `audit::record` of `audit::record(&order);` and
+/// `metrics::counter` of `metrics::counter!("orders").increment(1);`: empty when it starts with
+/// anything else, a method called on a value or an assignment.
+fn called_path(statement: &str) -> &str {
+    let statement = statement.trim_start();
+    let end = statement
+        .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == ':'))
+        .unwrap_or(statement.len());
+    let path = statement[..end].trim_end_matches(':');
+    let rest = statement[end..].trim_start();
+    if rest.starts_with('(') || rest.starts_with('!') {
+        path
+    } else {
+        ""
     }
 }
 
@@ -1012,7 +1076,9 @@ fn coverage(
     progress: &(dyn Fn(Progress) + Sync),
 ) -> Result<Covered, Failure> {
     let dir = project.mutastic_dir().join("coverage");
-    std::fs::create_dir_all(&dir).map_err(|error| Code::Other.with(error.to_string()))?;
+    std::fs::create_dir_all(&dir).map_err(|error| {
+        crate::failure::disk(format!("couldn't make {}: {error}", dir.display()))
+    })?;
     let cwd = project.copy_dir().join(&project.package_dir);
     let cover = |index: usize, test: &Test| {
         let file: PathBuf = dir.join(format!("{index}.cov"));
@@ -1075,7 +1141,9 @@ fn coverage(
                 )
             })
             .collect();
-        std::fs::write(&log, output).map_err(|error| Code::Other.with(error.to_string()))?;
+        std::fs::write(&log, output).map_err(|error| {
+            crate::failure::disk(format!("couldn't write {}: {error}", log.display()))
+        })?;
         let named: Vec<crate::flaky::Red> = failing
             .iter()
             .map(|&index| {
@@ -1087,6 +1155,7 @@ fn coverage(
                 crate::flaky::Red {
                     display: test.display.clone(),
                     timed_out: outcome.timed_out,
+                    stopped: crate::flaky::stopped(outcome),
                     panic: crate::flaky::panic_message(&output),
                     rerun: if seeded {
                         format!("PROPTEST_RNG_SEED={} {command}", testrun::PROPTEST_SEED)
@@ -1101,10 +1170,12 @@ fn coverage(
         // From where the person is, as they'd open it.
         let here = std::env::current_dir().unwrap_or_else(|_| project.workspace.clone());
         let shown = crate::report::files::shown(&here, &log);
-        return Err(Code::RedBaseline.with(crate::flaky::failed_message(
-            &named,
-            std::path::Path::new(&shown),
-        )));
+        return Err(
+            crate::flaky::code(&named).with(crate::flaky::failed_message(
+                &named,
+                std::path::Path::new(&shown),
+            )),
+        );
     }
     let reach = reached
         .into_iter()
@@ -1114,6 +1185,49 @@ fn coverage(
         })
         .collect();
     Ok(Covered { reach, flaky })
+}
+
+/// The package has tests, and every one is `#[ignore]`d, so none ran: as the Java edition stops a
+/// run whose module has test classes none of which ran. Scored, that would be every mutant not
+/// covered, a 0% that reads as tests that don't reach the code. A package with no tests at all
+/// isn't an error: its mutants are not covered, and the summary says so.
+fn no_tests_ran(project: &Project, ignored: usize) -> Failure {
+    Code::NoTests.with(format!(
+        "no test ran in {}, so there's nothing to judge a mutant by. mutastic runs the tests `cargo \
+         test` runs, and {}: take the #[ignore] off one that calls this code, or write one",
+        project.package,
+        if ignored == 1 {
+            "its only test is #[ignore]d".to_string()
+        } else {
+            format!("all {ignored} of its tests are #[ignore]d")
+        }
+    ))
+}
+
+/// The tests ran and passed, and the coverage pass recorded none of the code with mutants, in a
+/// run of every mutant: as the Java edition stops such a run, since scored it would be every
+/// mutant not covered, which measures nothing.
+fn nothing_covered(project: &Project, tests: usize, functions: usize) -> Failure {
+    Code::NothingCovered.with(format!(
+        "{} ran and passed in {}, but {} the {}, so a score would measure nothing: every mutant \
+         would read as reached by no test. Write a #[test] that calls this code",
+        if tests == 1 {
+            "1 test".to_string()
+        } else {
+            format!("{tests} tests")
+        },
+        project.package,
+        if tests == 1 {
+            "it reached none of"
+        } else {
+            "none of them reached any of"
+        },
+        if functions == 1 {
+            "only function with mutants".to_string()
+        } else {
+            format!("{functions} functions with mutants")
+        }
+    ))
 }
 
 /// The command that runs one test alone, as Cargo runs it: its target, then its exact name.
@@ -1599,9 +1713,11 @@ impl<'a> Suggester<'a> {
         })
     }
 
-    /// A test that would catch `result`'s mutant, when it's missed and its function has a probe.
+    /// A test that would catch `result`'s mutant, when it's missed and its function has a probe;
+    /// and for a mutant no test reaches, the call to start its function's first test with, found
+    /// the same way, as the Java edition finds a starting point.
     fn suggest(&self, result: &MutantResult) -> Option<crate::suggest::Suggestion> {
-        if result.status != Status::Survived {
+        if !matches!(result.status, Status::Survived | Status::NoCoverage) {
             return None;
         }
         let found = self.found;
@@ -1610,6 +1726,10 @@ impl<'a> Suggester<'a> {
             return None;
         }
         let function = &found.functions[mutant.function];
+        // No starting point is offered for the crate's own function, so none is looked for.
+        if result.status == Status::NoCoverage && !function.public {
+            return None;
+        }
         let callable = function.callable.as_ref()?;
         let name = callable.probe_name(function.ordinal);
         let &binary = self.probes.get(&name)?;
@@ -1800,7 +1920,7 @@ mod tests {
             mutate,
             target: target.into(),
             reason: "the log is what the operator reads".into(),
-            arid: Vec::new(),
+            ..crate::config::Rule::default()
         };
         let only = |target: &str, id: &str| crate::config::Rule {
             arid: vec![id.to_string()],
@@ -1855,6 +1975,7 @@ mod tests {
             target: "shop::timed".into(),
             reason: "the log is what the operator reads".into(),
             arid: arid.iter().map(|id| id.to_string()).collect(),
+            ..crate::config::Rule::default()
         };
         let skipped = |rules: &[crate::config::Rule]| {
             let mut found = found.clone();
@@ -1870,5 +1991,62 @@ mod tests {
         assert_eq!(skipped(&[rule(&[])]), [None]);
         assert_eq!(skipped(&[rule(&["mutastic:output"])]), [None]);
         assert_eq!(skipped(&[rule(&["mutastic:null-checks"])]), logged());
+    }
+
+    /// An `output:` rule makes the statements that call what it names arid, with its reason, by
+    /// the path as written; other calls stay counted, and a `mutate:` rule takes them back.
+    #[test]
+    fn an_output_rule_skips_the_calls_it_names() {
+        let dir = std::env::temp_dir().join(format!("mutastic-own-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let source = "mod audit { pub fn record(_b: i32) {} pub fn keep(_b: i32) {} }\n\
+                      use audit::record;\n\
+                      pub fn told(b: i32) {\n\
+                      audit::record(b);\n\
+                      record(b + 1);\n\
+                      crate::audit::record(b);\n\
+                      audit::keep(b);\n\
+                      }\n";
+        std::fs::write(dir.join("src/lib.rs"), source).unwrap();
+        let found = sites::find(
+            &dir,
+            "shop",
+            &[PathBuf::from("src/lib.rs")],
+            &[sites::REMOVE_VOID_CALL],
+        );
+        std::fs::remove_dir_all(&dir).ok();
+        let own = crate::config::Rule {
+            output: true,
+            target: "crate::audit::record".into(),
+            reason: "the audit trail".into(),
+            ..crate::config::Rule::default()
+        };
+        let skipped = |rules: &[crate::config::Rule]| {
+            let mut found = found.clone();
+            apply_rules(rules, "shop", &mut found);
+            found
+                .mutants
+                .iter()
+                .map(|m| m.skipped.clone().unwrap_or_default())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            skipped(std::slice::from_ref(&own)),
+            [
+                "arid: only calls audit::record (the audit trail)",
+                "arid: only calls record (the audit trail)",
+                "arid: only calls crate::audit::record (the audit trail)",
+                "",
+            ]
+        );
+        assert_eq!(skipped(&[]), ["", "", "", ""]);
+        let kept = crate::config::Rule {
+            mutate: true,
+            target: "told".into(),
+            reason: "the audit is checked".into(),
+            arid: vec!["mutastic:output".into()],
+            ..crate::config::Rule::default()
+        };
+        assert_eq!(skipped(&[own, kept]), ["", "", "", ""]);
     }
 }

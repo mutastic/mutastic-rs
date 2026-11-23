@@ -21,6 +21,7 @@ rules:
     reason: written by a code generator
 plugins:
   - rules/trims.yaml
+  - rules/rewrites.yaml
 operators:
   - defaults
   - -mutastic/return-value
@@ -29,7 +30,7 @@ operators:
 | Key | What it does |
 |---|---|
 | `extends:` | Another `mutastic.yaml` this one adds to, by its path from this file's directory: see [In a workspace](#in-a-workspace) |
-| `rules:` | Code to skip, each `- skip: <pattern>` with a `reason:` under it. Its mutants are skipped as ``user: <reason> (rule `skip: <pattern>`)``, out of the score |
+| `rules:` | Code to skip, each `- skip: <pattern>` with a `reason:` under it. Its mutants are skipped as ``user: <reason> (rule `skip: <pattern>`)``, out of the score; `- mutate: <pattern>` takes back arid skips, and `- output: <pattern>` names your own output calls, both below |
 | `plugins:` | Rules files of call operators, by their path from the directory of the file that names them |
 | `operators:` | Which operators run, as `--operators` chooses, which replaces this for one run: a set (`defaults`, `stronger`, `extended`, `all`), a namespace (`stream`) or an operator's id, or one of those after `-` to leave it out |
 | `gate:` | What the gate holds an agent's task to: `operators:` under it, a list as `operators:` takes, chooses the gate's operators in its place, and `gate open --operators` replaces it. See [Which operators](../test-first-agent.md#which-operators) |
@@ -57,6 +58,24 @@ rules:
     arid: [mutastic:output]
     reason: the audit log is what the auditor reads
 ```
+
+An `output:` rule names a function or a macro of your own that only writes output: the wrapper
+your team logs through, an audit log, a metric no test reads. mutastic knows the common output
+macros, not those, and without a rule each of their calls is a mutant only a test of the log would
+catch:
+
+```yaml
+rules:
+  - output: crate::audit::record
+    reason: the audit trail, which ops read and tests don't
+```
+
+A statement that calls it is skipped under `mutastic:output`, as `arid: only calls audit::record
+(the audit trail, which ops read and tests don't)`. The path in the code may be shorter than the
+rule's, `audit::record` or `record` after a `use`: its segments are matched against the end of the
+rule's. A `mutate:` rule takes the skip back like any other of `mutastic:output`, and nothing is
+output until a rule says so, since some teams test their metrics. The Java edition's rule names
+methods, `com.acme.AuditLog#*`.
 
 An id mutastic doesn't have is an error that names the one meant, when it's close. `mutastic
 explain` on a skipped mutant names its rule, links to its section of
@@ -121,8 +140,8 @@ operator:
 | `tier` | `defaults` (unless it says), `stronger` or `extended` |
 | `owners` | The types it's for, as Rust names them: `str`, `String` |
 | `methods` | The method names it matches |
-| `rewrite` | `remove`, so `name.trim()` becomes `name`, or `rename a->b, c->d` |
-| `changed` | What the line now does, beside the caret. `{name}` is the method called, `{to}` what a rename calls instead |
+| `rewrite` | What the call becomes: [see below](#rewrites) |
+| `changed` | What the line now does, beside the caret. `{name}` is the method called, `{to}` what's called instead |
 | `headline` | A missed mutant's headline. `{method}` is the function the call is in |
 | `help` | The test to write, with the same placeholders |
 
@@ -148,11 +167,80 @@ words:
    reproduce  mutastic run --only=m06d09770 fixtures/configured
 ```
 
+### Rewrites
+
+| Rewrite | Does | For example |
+|---|---|---|
+| `remove` | Drops the call and its arguments, and keeps what it was called on as the result | `name.trim().len()` becomes `name.len()` |
+| `rename a->b, c->d` | Calls another method with the same arguments; each `a->b` is one mutant | `rename trim_start->trim_end` |
+| `keep argument` | What the call was given goes on in its place. Only for a call of one argument: any other gets no mutant | `set.unwrap_or(8080)` becomes `8080` |
+| `unchecked arithmetic` | Makes a `checked_` method the `wrapping_` one, in `Some`, and a `saturating_` method the `wrapping_` one: it wraps around instead of stopping. A method of another name gets no mutant | `a.checked_add(b)` becomes `Some(a.wrapping_add(b))` |
+| `call name(TYPES) with A, B` | Drops the arguments and calls another method on the same value, with these. `TYPES` are the method's parameter types, for whoever reads the file: mutastic doesn't check them | `call take(usize) with usize::MAX` |
+
+A `call` rewrite's arguments are numbers (`0`, `-1`, `0.5`), `true`, `false`, `None`, a constant by
+its path (`usize::MAX`) or a call of no arguments (`String::new()`); leave out `with` to call the
+method with none. In the words, `{to}` is what's called instead: a rename's other method, the
+`wrapping_` method, or a `call` rewrite's `take(usize::MAX)`.
+
+This rules file asks for the other three, each on a call the fixture makes:
+
+<!-- from: fixtures/configured/rules/rewrites.yaml -->
+```yaml
+- id: acme/always-fallback
+  explanation: A call that gives a fallback for a value that may be missing gives the fallback every time. It goes unnoticed when no test has the value there.
+  owners: Option
+  methods: unwrap_or
+  rewrite: keep argument
+  changed: `.{name}()` always gives its fallback
+  headline: no test gives {method} a value for `.{name}()` to prefer to its fallback
+  help: add a test where the value is there, and assert it's the one used
+
+- id: acme/no-limit
+  explanation: A limit on how many items an iterator gives is lifted. It goes unnoticed when no test has more items than the limit.
+  owners: Iterator
+  methods: take
+  rewrite: call take(usize) with usize::MAX
+  changed: `.{name}()` changed to `.{to}`
+  headline: no test gives {method} more items than `.{name}()` lets through
+  help: add a test with more items than the limit, and assert how many come back
+
+- id: acme/wrap-on-overflow
+  explanation: A checked or saturating operation wraps around instead. It goes unnoticed when no test has a result too big for its type.
+  owners: u8, u32
+  methods: checked_add, saturating_add
+  rewrite: unchecked arithmetic
+  changed: `.{name}()` changed to `.{to}()`, which wraps around
+  headline: no test makes `.{name}()` overflow in {method}
+  help: add a test whose result doesn't fit its type, and assert what comes back
+```
+
+A test that never sets a port can't tell the fallback from the port set:
+
+<!-- output: reference/configured-kept-card -->
+```text
+  ✗ MISSED  no test gives port() a value for .unwrap_or() to prefer to its fallback
+    ┌─ src/lib.rs:20
+    │
+ 19 │ pub fn port(set: Option<u16>) -> u16 {
+ 20 │     set.unwrap_or(8080)
+    │         ^^^^^^^^^ .unwrap_or() always gives its fallback
+ 21 │ }
+    │
+    = mutant  - set.unwrap_or(8080)
+              + 8080
+    = note: covered by tests::a_port_is_8080_unless_set (its 1 covering test still passes)
+    = help: add a test where the value is there, and assert it's the one used
+
+    done when  mutastic verify m294c8110 fixtures/configured passes
+    reproduce  mutastic run --only=m294c8110 fixtures/configured
+```
+
 What differs from the Java edition: mutastic reads source without types, so a rule matches a call
 by its method's name, and `owners` isn't checked. A rewrite that doesn't fit the receiver's type
 doesn't compile, so the build withdraws it as unviable, at the cost of a build round. `descriptors`
-and `since` are the JVM's, and an error here; of the rewrites, only `remove` and `rename` are in the
-Rust edition yet.
+and `since` are the JVM's, and an error here, and so is `omit last argument`, which calls a
+method's shorter overload: a Rust method has one count of arguments. A `call` rewrite's types are
+Rust's, and read but not checked, where the Java edition finds the method by the JVM's.
 
 A rules file has its [JSON Schema](https://docs.mutastic.io/schemas/rules/v1.json) too, shared
 with the Java edition, for an editor to check it against: `# yaml-language-server:
