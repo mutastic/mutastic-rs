@@ -67,7 +67,10 @@ table is written:
   `rstest_tests::discounts::case_2_at_the_edge`. A card says which case caught a mutant, or reached
   it and let it through, and the gate counts each case, so taking a row away is taking a test away.
   The number in a name is the row's place, so name your cases, `#[case::at_the_edge(100, 10)]`, and
-  a row put in above doesn't rename the others.
+  a row put in above doesn't rename the others. `verify` and `explain` show the row as written
+  after the test that caught a mutant, `rstest_tests::discounts::case_2_at_the_edge (case
+  #[case::at_the_edge(100, 10)])`, as does a test that fails with no mutant in, and the
+  `mutant-finished` event has it as `caughtCase`.
 - **A loop over rows in one `#[test]` is one test,** however many rows it has, and a card can't say
   which row failed. Put the row in the assertion's message,
   `assert_eq!(subtract(a, b), difference, "subtract({a}, {b})")`, so the test's own output does.
