@@ -123,7 +123,7 @@ fn writing() -> bool {
 /// mutastic's own workspace, kept from run to run so builds there stay warm, and this test
 /// process's alone while it runs.
 fn scratch(name: &str) -> PathBuf {
-    common::slot(&std::env::temp_dir().join("mutastic-rs-docs"), name).0
+    common::slot(&common::scratch().join("mutastic-rs-docs"), name).0
 }
 
 /// Where a section's fixtures are copied to run, as `fixtures/<name>`, so commands print what a

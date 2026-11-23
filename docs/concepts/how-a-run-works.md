@@ -168,7 +168,21 @@ One that changed result points at the test that caught it, in whichever run it w
 test is named as `! likely flaky: …`, with the mutants whose results it changed. With anything
 changed, a different result is just the change at work, and nothing is named. A mutant that's
 skipped, or that crashed where a crash proves nothing, is out of the score in either run, so a
-change to or from one isn't counted.
+change to or from one isn't counted. A run that leaves tests out with `--exclude-tests` isn't the
+same code as one that ran them: what only those tests caught is no sign that they're flaky.
+
+`--confirm-catches` finds the same kind of test within one run. Each test that fails against a
+mutant runs again, on its own against that mutant. If it passes this time, its catch doesn't count:
+the other tests that reach the mutant decide, the mutant's card says the test `failed once, then
+passed: flaky`, and the test is named as `! likely flaky: …; its catch of … didn't repeat when run
+again`. In `--format=jsonl` the mutant's event names it as `unconfirmedCatchBy`, and
+`run-finished`'s `likelyFlaky` gives `catch-not-repeated` as the reason.
+
+`--kill-matrix` names every test that catches each mutant, not only the first: a run stops a
+mutant's tests at the first test binary with a failure, and with it the binaries after that one
+run too. Each caught mutant's event then has `caughtByAll`, the test `caughtBy` names first, and
+`mutation.json`'s `killedBy` lists them all. It's for measuring which tests catch what, and
+slower.
 
 A run of mutants asked for by id (`--only`) is judged on each one, as `verify` judges it, not on a
 score: it passes when each is caught, skipped, or crashed where a crash proves nothing, whatever

@@ -257,6 +257,12 @@ struct Parsed {
     no_suggestions: bool,
     /// `--force-coverage`: the build and the coverage pass run even with no mutant to run.
     force_coverage: bool,
+    /// `--confirm-catches` and `--kill-matrix`: how a caught mutant's tests run.
+    catches: engine::Catches,
+    /// `--exclude-tests`: the tests the run leaves out, as given.
+    exclude_tests: Vec<String>,
+    /// `--each-mutant`: a card for every missed mutant, not one for each line's.
+    each_mutant: bool,
     /// `--shard`: the share of the mutants this run runs.
     shard: Option<crate::shares::Shard>,
     /// `--from-shards`: the directory of the shares this run is made of.
@@ -313,6 +319,9 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, Failure> {
         tries: 3,
         no_suggestions: false,
         force_coverage: false,
+        catches: engine::Catches::default(),
+        exclude_tests: Vec::new(),
+        each_mutant: false,
         shard: None,
         from_shards: None,
         top: 1,
@@ -451,6 +460,17 @@ fn set(parsed: &mut Parsed, name: &str, value: &str) -> Result<bool, String> {
         "help" => parsed.help = true,
         "no-suggestions" => parsed.no_suggestions = true,
         "force-coverage" => parsed.force_coverage = true,
+        "confirm-catches" => parsed.catches.confirm = true,
+        "kill-matrix" => parsed.catches.every = true,
+        "each-mutant" => parsed.each_mutant = true,
+        // `--exclude-tests=tests::races,ports`: split at commas, as the Java edition takes them.
+        "exclude-tests" => parsed.exclude_tests.extend(
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(str::to_string),
+        ),
         "from-shards" => parsed.from_shards = Some(value.to_string()),
         "hook" => {
             if value != "claude" {
@@ -946,6 +966,7 @@ fn style(parsed: &Parsed, terminal: bool) -> Style {
         links,
         words,
         labels,
+        each_mutant: parsed.each_mutant,
     }
 }
 
@@ -971,6 +992,8 @@ fn options(parsed: &Parsed, only: Vec<String>) -> Options {
         suggestions: false,
         shard: None,
         force_coverage: parsed.force_coverage,
+        catches: parsed.catches,
+        exclude_tests: parsed.exclude_tests.clone(),
         audit_arid: std::env::var("MUTASTIC_ARID").is_ok_and(|value| value == "audit"),
     }
 }
@@ -1396,7 +1419,8 @@ fn recorded(
     report: &engine::Report,
     folder: &std::path::Path,
 ) -> Result<Option<crate::record::Comparison>, Failure> {
-    let code = crate::shares::code(&report.project)?;
+    let code =
+        crate::record::code_without(&crate::shares::code(&report.project)?, &report.left_out);
     let record = crate::record::RunRecord::of(report, &code, &crate::record::tool());
     let records = crate::records::RunRecords::new(folder);
     // When the last run used other operators, it's said so instead.

@@ -46,14 +46,18 @@
         "--since",
         "--only",
         "--workers",
+        "--confirm-catches",
+        "--kill-matrix",
         "--shard",
         "--from-shards",
         "--no-suggestions",
         "--force-coverage",
+        "--exclude-tests",
         "--operators",
         "--unsafe",
         "--report",
         "--format",
+        "--each-mutant",
         "--vocabulary",
         "--color",
         "--hyperlinks",
@@ -85,6 +89,8 @@
       ],
       "options": [
         "--workers",
+        "--confirm-catches",
+        "--exclude-tests",
         "--progress",
         "--edition"
       ]
@@ -109,7 +115,9 @@
       ],
       "options": [
         "--workers",
+        "--confirm-catches",
         "--no-suggestions",
+        "--exclude-tests",
         "--format",
         "--vocabulary",
         "--color",
@@ -183,7 +191,9 @@
       "options": [
         "--since",
         "--workers",
+        "--confirm-catches",
         "--no-suggestions",
+        "--exclude-tests",
         "--operators",
         "--unsafe",
         "--format",
@@ -215,6 +225,8 @@
       ],
       "options": [
         "--workers",
+        "--confirm-catches",
+        "--exclude-tests",
         "--operators",
         "--unsafe",
         "--progress",
@@ -437,6 +449,64 @@
       }
     },
     {
+      "name": "--confirm-catches",
+      "synopsis": "--confirm-catches",
+      "kind": "flag",
+      "group": "Running",
+      "value": "",
+      "choices": [],
+      "help": "Run each catching test again on its own, to confirm the catch",
+      "commands": [
+        "baseline",
+        "explain",
+        "next",
+        "run",
+        "verify"
+      ],
+      "environment": "",
+      "examples": {
+        "baseline": {
+          "commandLine": "mutastic baseline --confirm-catches",
+          "cargo": "cargo mutastic baseline --confirm-catches"
+        },
+        "explain": {
+          "commandLine": "mutastic explain mb2f8ae57 --confirm-catches",
+          "cargo": "cargo mutastic explain mb2f8ae57 --confirm-catches"
+        },
+        "next": {
+          "commandLine": "mutastic next --confirm-catches",
+          "cargo": "cargo mutastic next --confirm-catches"
+        },
+        "run": {
+          "commandLine": "mutastic run --confirm-catches",
+          "cargo": "cargo mutastic run --confirm-catches"
+        },
+        "verify": {
+          "commandLine": "mutastic verify mb2f8ae57 --confirm-catches",
+          "cargo": "cargo mutastic verify mb2f8ae57 --confirm-catches"
+        }
+      }
+    },
+    {
+      "name": "--kill-matrix",
+      "synopsis": "--kill-matrix",
+      "kind": "flag",
+      "group": "Running",
+      "value": "",
+      "choices": [],
+      "help": "Run every test that reaches a caught mutant, to name each that catches it, not only the first: for measuring an order, slower",
+      "commands": [
+        "run"
+      ],
+      "environment": "",
+      "examples": {
+        "run": {
+          "commandLine": "mutastic run --kill-matrix --format=jsonl",
+          "cargo": "cargo mutastic run --kill-matrix --format=jsonl"
+        }
+      }
+    },
+    {
       "name": "--shard",
       "synopsis": "--shard=N/M",
       "kind": "value",
@@ -519,6 +589,45 @@
         "run": {
           "commandLine": "mutastic run --since --force-coverage",
           "cargo": "cargo mutastic run --since --force-coverage"
+        }
+      }
+    },
+    {
+      "name": "--exclude-tests",
+      "synopsis": "--exclude-tests=TEST",
+      "kind": "repeated",
+      "group": "Running",
+      "value": "TEST",
+      "choices": [],
+      "help": "A test to leave out of the run, by its name as a run shows it, or a module of tests by its path: one that can't run reliably here, with a race or a fixed port; the summary names it",
+      "commands": [
+        "baseline",
+        "explain",
+        "next",
+        "run",
+        "verify"
+      ],
+      "environment": "",
+      "examples": {
+        "baseline": {
+          "commandLine": "mutastic baseline --exclude-tests=tests::small_orders_pay_full_price",
+          "cargo": "cargo mutastic baseline --exclude-tests=tests::small_orders_pay_full_price"
+        },
+        "explain": {
+          "commandLine": "mutastic explain mb2f8ae57 --exclude-tests=tests::small_orders_pay_full_price",
+          "cargo": "cargo mutastic explain mb2f8ae57 --exclude-tests=tests::small_orders_pay_full_price"
+        },
+        "next": {
+          "commandLine": "mutastic next --exclude-tests=tests::small_orders_pay_full_price",
+          "cargo": "cargo mutastic next --exclude-tests=tests::small_orders_pay_full_price"
+        },
+        "run": {
+          "commandLine": "mutastic run --exclude-tests=tests::small_orders_pay_full_price",
+          "cargo": "cargo mutastic run --exclude-tests=tests::small_orders_pay_full_price"
+        },
+        "verify": {
+          "commandLine": "mutastic verify mb2f8ae57 --exclude-tests=tests::small_orders_pay_full_price",
+          "cargo": "cargo mutastic verify mb2f8ae57 --exclude-tests=tests::small_orders_pay_full_price"
         }
       }
     },
@@ -661,6 +770,25 @@
         "run": {
           "commandLine": "mutastic run --format=jsonl",
           "cargo": "cargo mutastic run --format=jsonl"
+        }
+      }
+    },
+    {
+      "name": "--each-mutant",
+      "synopsis": "--each-mutant",
+      "kind": "flag",
+      "group": "Output",
+      "value": "",
+      "choices": [],
+      "help": "A card for every missed mutant, not one for the mutants of each line",
+      "commands": [
+        "run"
+      ],
+      "environment": "",
+      "examples": {
+        "run": {
+          "commandLine": "mutastic run --each-mutant",
+          "cargo": "cargo mutastic run --each-mutant"
         }
       }
     },

@@ -96,3 +96,16 @@ fn past_one_a_core_a_slot_waits_for_one_to_be_let_go() {
     };
     assert_eq!(waiting.join().unwrap(), (base.join(last), true));
 }
+
+/// A run of mutastic on itself gives each test process an empty temporary directory, so it names
+/// where the fixtures' copies are kept; without a name, or with an empty one, they're in the
+/// temporary directory.
+#[test]
+fn the_slots_are_kept_where_the_variable_says_or_in_the_temporary_directory() {
+    assert_eq!(
+        common::scratch_from(Some("/var/kept".into())),
+        Path::new("/var/kept")
+    );
+    assert_eq!(common::scratch_from(Some("".into())), std::env::temp_dir());
+    assert_eq!(common::scratch_from(None), std::env::temp_dir());
+}

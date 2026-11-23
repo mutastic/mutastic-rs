@@ -347,6 +347,19 @@ removes. Its catches don't count, every mutant it reached ran again without it, 
 with exit status 2 until it passes on its own. Make it set up what it needs, in a file or directory
 of its own, and clean up what it leaves. See [Results](concepts/results.md#a-test-that-fails-on-its-own).
 
+A test can also fail against a mutant for a reason of its own, and so look as if it caught it.
+`--confirm-catches` runs each catching test again, on its own against the same mutant: a catch that
+doesn't repeat doesn't count, the other tests that reach the mutant decide, and the test is named
+as `! likely flaky: …; its catch of … didn't repeat when run again`. It costs one more test run
+for each catch.
+
+For a test that can't run reliably here at all, one with a race or a fixed port,
+`--exclude-tests=TEST` leaves it out: by its name as a run shows it,
+`--exclude-tests=pricing::big_orders_get_ten_percent_off`, or every test in a module by the
+module's path, `--exclude-tests=tests`. Give it again, or split names with commas, for more than
+one. The summary's `Left out` row names what was given, and code only those tests reach shows as
+not covered. A name no test has leaves nothing out, so check the `Tests` row's count.
+
 ## Tables of cases and property tests
 
 **Each case is a test of its own.** An rstest `#[case]`, a test-case row and each cell of a

@@ -520,6 +520,7 @@ impl Shares {
             built: true,
             only: false,
             audited: Vec::new(),
+            left_out: options.exclude_tests.clone(),
         }
     }
 
@@ -643,6 +644,8 @@ fn result_of(index: usize, event: &Value) -> Option<MutantResult> {
         covered_by: strings(&event["coveredBy"]),
         killed_by: text("caughtBy"),
         killed_with: text("caughtWith"),
+        killed_by_all: strings(&event["caughtByAll"]),
+        unconfirmed: text("unconfirmedCatchBy"),
         failure_origin: text("failureOrigin"),
         false_catch_by: text("falseCatchBy"),
         tests_run: event["testsRun"].as_u64().unwrap_or(0) as usize,
