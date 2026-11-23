@@ -853,10 +853,29 @@ fn red_and_broken(work: &Path, shown: &mut BTreeMap<String, String>) {
     )
     .unwrap();
     let red = mutastic(work, &["run", "fixtures/pricing"]);
-    assert_eq!(red.code, 2, "{}", red.stderr);
+    assert_eq!(red.code, 3, "{}", red.stderr);
     let said = stopped_with(&red.stderr);
     assert!(said.contains("left: 5, right: 4"), "{said}");
-    let rerun = said.lines().last().unwrap();
+    let mut lines = said.lines();
+    let rerun = lines
+        .by_ref()
+        .skip_while(|line| !line.ends_with("To run it alone:"))
+        .nth(1)
+        .unwrap();
+    // The way past it, the option its last line offers, runs without the test.
+    let offered = lines.next().unwrap().rsplit(' ').next().unwrap();
+    assert_eq!(
+        offered,
+        "--exclude-tests=tests::shipping_is_free_from_the_threshold"
+    );
+    let past = mutastic(work, &["run", "fixtures/pricing", "--report=none", offered]);
+    assert!(past.code < 2, "{}{}", past.stdout, past.stderr);
+    assert!(
+        plain(&past.stdout)
+            .contains("tests::shipping_is_free_from_the_threshold (--exclude-tests)"),
+        "{}",
+        past.stdout
+    );
     let alone = pasted(work, rerun);
     let out = String::from_utf8_lossy(&alone.stdout);
     assert!(
@@ -1041,7 +1060,7 @@ fn commit(work: &Path) {
 /// names `test`.
 fn red(work: &Path, test: &str) -> String {
     let red = mutastic(work, &["run", "fixtures/pricing"]);
-    assert_eq!(red.code, 2, "{}{}", red.stdout, red.stderr);
+    assert_eq!(red.code, 3, "{}{}", red.stdout, red.stderr);
     let message = stopped_with(&red.stderr);
     assert!(plain(&message).contains(test), "{}", red.stderr);
     message

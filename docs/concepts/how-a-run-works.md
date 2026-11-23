@@ -168,8 +168,8 @@ One that changed result points at the test that caught it, in whichever run it w
 test is named as `! likely flaky: …`, with the mutants whose results it changed. With anything
 changed, a different result is just the change at work, and nothing is named. A mutant that's
 skipped, or that crashed where a crash proves nothing, is out of the score in either run, so a
-change to or from one isn't counted. A run that leaves tests out with `--exclude-tests` isn't the
-same code as one that ran them: what only those tests caught is no sign that they're flaky.
+change to or from one isn't counted. A run that leaves tests out, with `exclude-tests:` or
+`--exclude-tests`, isn't the same code as one that ran them: what only those tests caught is no sign that they're flaky.
 
 `--confirm-catches` finds the same kind of test within one run. Each test that fails against a
 mutant runs again, on its own against that mutant. If it passes this time, its catch doesn't count:

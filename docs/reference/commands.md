@@ -278,7 +278,7 @@ mutastic run --since --force-coverage
 
 ### `--exclude-tests`
 
-`--exclude-tests=TEST`, for [`baseline`](#baseline), [`explain`](#explain), [`next`](#next), [`run`](#run), [`verify`](#verify). A test to leave out of the run, by its name as a run shows it, or a module of tests by its path: one that can't run reliably here, with a race or a fixed port; the summary names it.
+`--exclude-tests=TEST`, for [`baseline`](#baseline), [`explain`](#explain), [`next`](#next), [`run`](#run), [`verify`](#verify). A test to leave out of the run, by its name as a run shows it, or a module of tests by its path: one that can't run reliably here, with a race or a fixed port; the summary names it. mutastic.yaml's exclude-tests: leaves one out of every run, with its reason.
 
 ```sh
 mutastic baseline --exclude-tests=tests::small_orders_pay_full_price
@@ -505,4 +505,5 @@ mutastic verify mb2f8ae57 --edition=rust
 
 - **0**: The score reaches the threshold, or with --fail-on-new no miss is new; for verify, each mutant named is caught, skipped, or crashed where a crash proves nothing; for gate check, the task is done; for next, nothing missed is left but what's proposed for ignoring.
 - **1**: The score is below the threshold, or with --fail-on-new a miss is new; for verify, a mutant named is still missed or not covered; for gate check, the task isn't done; for ignore --accept or --remove, the mutant isn't proposed or ignored; for next, something is queued; for baseline, there's one already, or none to prune.
-- **2**: mutastic couldn't run: an unknown option, a word the command doesn't take, not a Cargo package, a workspace's root, a test that fails with no mutant in, an id that isn't a mutant of the package, shares --from-shards can't put together as one run, --fail-on-new with no baseline, or no task open for gate check; or, for run and verify, a test that caught mutants fails on its own, with no mutant in.
+- **2**: mutastic couldn't run: an unknown option, a word the command doesn't take, not a Cargo package, a workspace's root, an id that isn't a mutant of the package, shares --from-shards can't put together as one run, --fail-on-new with no baseline, or no task open for gate check.
+- **3**: The tests fail without any mutant: a test fails with no mutant in, so the run stops; or, for run and verify, a test that caught mutants fails on its own, with no mutant in. Its message offers the way past it: leaving the test out, with a reason, under exclude-tests: in mutastic.yaml.

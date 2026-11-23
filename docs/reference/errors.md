@@ -2,7 +2,7 @@
 
 When mutastic can't run, it says why on stderr, as `mutastic: ` and one sentence naming what's
 wrong in your words, then where it looked, and last the command to run, with your own values. It
-exits 2. In `--format=agent` and `--format=jsonl`, the same error is the last line on stdout, as the
+exits 2, or 3 when the tests fail without any mutant. In `--format=agent` and `--format=jsonl`, the same error is the last line on stdout, as the
 [`run-failed` event](events.md#when-mutastic-cant-run), with a `code` for its kind: each kind has an
 entry here, under its code. Each output below is a kept copy of a real run, and each command an
 error gives as one to run as it is, is run by the docs test, and gets past the error.
@@ -12,11 +12,12 @@ A refusal that does nothing, such as `ignore --remove` for a mutant that isn't i
 
 ## Exit codes, and the Java edition's
 
-Both editions exit 0 when the run passes and 1 when it doesn't. The Rust edition exits 2 for every
-error on this page. The Java edition exits 2 for most of them, 3 when a test fails before any
-mutant, and 4 for a bug in mutastic itself. The Rust edition keeps 2 for both until its 2.0, so a
-script that wraps `mutastic` should treat any status above 1 as "couldn't run", and read the event's
-`code` for which. See [Differences from the Java edition](../differences-from-java.md).
+Both editions exit 0 when the run passes and 1 when it doesn't, 2 for most errors on this page,
+and 3 when a test fails before any mutant (`red-baseline`), or caught mutants and then fails on its
+own: there's a way past those, leaving the test out with a reason, so they're told apart from a
+mistake in the command. The Java edition exits 4 for a bug in mutastic itself, where the Rust
+edition keeps 2 until its 2.0, so a script that wraps `mutastic` should treat any status above 1 as
+"couldn't run", and read the event's `code` for which. See [Differences from the Java edition](../differences-from-java.md).
 
 ## The same error in the Java edition
 
@@ -301,8 +302,9 @@ message has the copy's first error, to report.
 
 ## `red-baseline`
 
-A test fails with no mutant in, every time it runs: how it failed, where its output is, and the
-`cargo test` that runs it alone. See [A test fails before any
+A test fails with no mutant in, every time it runs: how it failed, where its output is, the
+`cargo test` that runs it alone, and the way past it, leaving it out with a reason under
+`exclude-tests:` in `mutastic.yaml`. It exits 3, as in the Java edition. See [A test fails before any
 mutant](../troubleshooting.md#a-test-fails-before-any-mutant).
 
 ## `java-edition`

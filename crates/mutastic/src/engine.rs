@@ -180,9 +180,44 @@ pub struct Report {
     /// In an audit of the arid rules (`MUTASTIC_ARID=audit`), each arid mutant's result when run
     /// anyway, in the order found; none otherwise. Never in `results`, the counts or the score.
     pub audited: Vec<MutantResult>,
-    /// The tests the run was told to leave out (`--exclude-tests`), as given: the summary names
-    /// them.
-    pub left_out: Vec<String>,
+    /// The tests the run was told to leave out, mutastic.yaml's `exclude-tests:` then
+    /// `--exclude-tests`, as given: the summary names them, each with its reason.
+    pub left_out: Vec<LeftOut>,
+}
+
+/// A test a run leaves out, by its name as given, and why: the reason under mutastic.yaml's
+/// `exclude-tests:`, or none for one `--exclude-tests` adds for one run.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LeftOut {
+    pub test: String,
+    pub reason: Option<String>,
+}
+
+impl LeftOut {
+    /// mutastic.yaml's tests, then each of the command line's not among them.
+    pub fn listed(configured: &[crate::config::ExcludedTest], given: &[String]) -> Vec<LeftOut> {
+        let mut all: Vec<LeftOut> = configured
+            .iter()
+            .map(|test| LeftOut {
+                test: test.test.clone(),
+                reason: Some(test.reason.clone()),
+            })
+            .collect();
+        for test in given {
+            if !all.iter().any(|kept| &kept.test == test) {
+                all.push(LeftOut {
+                    test: test.clone(),
+                    reason: None,
+                });
+            }
+        }
+        all
+    }
+
+    /// Each test's name, in order.
+    pub fn names(left_out: &[LeftOut]) -> Vec<String> {
+        left_out.iter().map(|test| test.test.clone()).collect()
+    }
 }
 
 impl Report {
@@ -253,9 +288,10 @@ pub struct Options {
     pub force_coverage: bool,
     /// `--confirm-catches` and `--kill-matrix`: how a caught mutant's tests run.
     pub catches: Catches,
-    /// `--exclude-tests`: tests the run leaves out, each a test's name as a run shows it or a
-    /// module of tests. What only they reach counts as not covered.
-    pub exclude_tests: Vec<String>,
+    /// mutastic.yaml's `exclude-tests:` and `--exclude-tests`: tests the run leaves out, each a
+    /// test's name as a run shows it or a module of tests. What only they reach counts as not
+    /// covered.
+    pub exclude_tests: Vec<LeftOut>,
     /// `MUTASTIC_ARID=audit`: run the mutants mutastic's arid rules skip anyway, and say what
     /// happened to them, out of the score.
     pub audit_arid: bool,
@@ -273,9 +309,9 @@ pub struct Catches {
 /// Whether `--exclude-tests` leaves a test out: one of `left_out` is its name as a run shows it
 /// (`pricing::tests::big_orders`), or a module above it (`pricing::tests`), which leaves out every
 /// test in it, as a class named to the Java edition leaves out its methods.
-pub fn leaves_out(left_out: &[String], test: &str) -> bool {
+pub fn leaves_out(left_out: &[LeftOut], test: &str) -> bool {
     left_out.iter().any(|name| {
-        test.strip_prefix(name.as_str())
+        test.strip_prefix(name.test.as_str())
             .is_some_and(|rest| rest.is_empty() || rest.starts_with("::"))
     })
 }
@@ -1743,10 +1779,23 @@ mod tests {
     /// part of a name.
     #[test]
     fn a_test_is_left_out_by_its_name_or_a_module_above_it() {
-        let left_out = [
-            "pricing::tests".to_string(),
-            "orders::rounds_up".to_string(),
-        ];
+        let left_out = LeftOut::listed(
+            &[crate::config::ExcludedTest {
+                test: "pricing::tests".to_string(),
+                reason: "shares a port".to_string(),
+            }],
+            &[
+                "orders::rounds_up".to_string(),
+                "pricing::tests".to_string(),
+            ],
+        );
+        assert_eq!(
+            LeftOut::names(&left_out),
+            ["pricing::tests", "orders::rounds_up"],
+            "the file's reason is kept for a test given twice"
+        );
+        assert_eq!(left_out[0].reason.as_deref(), Some("shares a port"));
+        assert_eq!(left_out[1].reason, None);
         assert!(leaves_out(&left_out, "pricing::tests::big_orders"));
         assert!(leaves_out(&left_out, "pricing::tests::edge::at_a_hundred"));
         assert!(leaves_out(&left_out, "orders::rounds_up"));

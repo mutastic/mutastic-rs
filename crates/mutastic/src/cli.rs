@@ -48,9 +48,13 @@ pub fn main(args: Vec<OsString>) -> ExitCode {
     }
 }
 
-/// The status mutastic exits with when it couldn't run: 2 for every failure until 2.0, when it
-/// moves to the Java edition's 2, 3 and 4 (decision 2).
+/// The status mutastic exits with when it couldn't run: 2 for every failure but the tests failing
+/// without any mutant until 2.0, when it moves to the Java edition's 2 and 4 (decision 2).
 const FAILED: u8 = 2;
+
+/// The status for tests that fail without any mutant, or a test that fails on its own, as the
+/// Java edition has it: told apart from a usage error, as there's a way past it.
+const TESTS_FAIL: u8 = 3;
 
 /// A panic is a bug in mutastic: it ends as any failure does, said on stderr and, in the agent and
 /// jsonl formats, as a `run-failed` event with code `internal` (decision 2), not as Rust's own
@@ -95,6 +99,13 @@ fn joined(args: Vec<String>) -> Vec<String> {
 /// mutastic couldn't run: why, on stderr; and in the agent and jsonl formats, the same as the
 /// stream's last event, `run-failed`, on stdout, which is all a tool reading the stream reads.
 fn failed(args: &[String], failure: &Failure) -> ExitCode {
+    let mut failure = failure.clone();
+    let exit = if failure.code == Code::RedBaseline {
+        failure.message = way_past(&failure.message, agent_format(args));
+        TESTS_FAIL
+    } else {
+        FAILED
+    };
     // A build's or a test's output comes with it: escaped, a line at a time. Its logs are named
     // as typed from here, and linked, after the escaping, which would undo the links.
     stderr_line!(
@@ -104,10 +115,55 @@ fn failed(args: &[String], failure: &Failure) -> ExitCode {
     if streams_events(args) {
         stdout_line!(
             "{}",
-            crate::failure::event(failure, &directory_typed(args), FAILED)
+            crate::failure::event(&failure, &directory_typed(args), exit)
         );
     }
-    ExitCode::from(FAILED)
+    ExitCode::from(exit)
+}
+
+/// The tests failing without any mutant, `message`, ending in the way past them, as the Java
+/// edition says it: for a person, leaving them out with a reason, or for this run; for an agent,
+/// never that, which is the person's call, but finding out what's wrong and telling them.
+fn way_past(message: &str, agent: bool) -> String {
+    let Some((names, _)) = crate::flaky::failing_tests(message) else {
+        return message.to_string();
+    };
+    let line = if agent {
+        AGENT_WAY_PAST.to_string()
+    } else if names.len() == 1 {
+        format!(
+            "To run without it until it's fixed, list it under exclude-tests: in mutastic.yaml \
+             with a reason, or for this run add --exclude-tests={}",
+            names[0]
+        )
+    } else {
+        format!(
+            "To run without them until they're fixed, list them under exclude-tests: in \
+             mutastic.yaml with a reason, or for this run add --exclude-tests={}",
+            names.join(",")
+        )
+    };
+    format!("{message}\n{line}")
+}
+
+/// What an agent is told of tests failing without any mutant, in place of the way past them.
+const AGENT_WAY_PAST: &str = "Find out whether the change or the test is wrong. Don't leave the \
+     test out yourself: tell the person, or propose leaving it out under exclude-tests: in \
+     mutastic.yaml with its reason, for them to decide.";
+
+/// Whether the output is the agent format, as [`streams_events`] reads it from the line alone.
+fn agent_format(args: &[String]) -> bool {
+    let given = args
+        .iter()
+        .rev()
+        .find_map(|arg| arg.strip_prefix("--format="))
+        .filter(|format| Format::parse(format).is_some())
+        .map(str::to_string)
+        .or_else(|| std::env::var("MUTASTIC_FORMAT").ok());
+    match given.as_deref() {
+        Some(format) => format == "agent",
+        None => std::env::var_os("MUTASTIC_AGENT").is_some_and(|v| v == "1"),
+    }
 }
 
 /// Plain text, with file links when `--hyperlinks` (the last one given) or the terminal says so, as
@@ -261,6 +317,8 @@ struct Parsed {
     catches: engine::Catches,
     /// `--exclude-tests`: the tests the run leaves out, as given.
     exclude_tests: Vec<String>,
+    /// mutastic.yaml's `exclude-tests:`: the tests every run leaves out, each with its reason.
+    configured_tests: Vec<crate::config::ExcludedTest>,
     /// `--each-mutant`: a card for every missed mutant, not one for each line's.
     each_mutant: bool,
     /// `--shard`: the share of the mutants this run runs.
@@ -321,6 +379,7 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, Failure> {
         force_coverage: false,
         catches: engine::Catches::default(),
         exclude_tests: Vec::new(),
+        configured_tests: Vec::new(),
         each_mutant: false,
         shard: None,
         from_shards: None,
@@ -729,6 +788,7 @@ fn configure(command: &str, parsed: &mut Parsed) -> Result<(), Failure> {
     }
     parsed.gate_configured = config.gate_operators;
     parsed.gate_configured_from = config.gate_operators_from;
+    parsed.configured_tests = config.exclude_tests;
     match &parsed.operators_given {
         Some(given) => {
             parsed.operators = operators(given)?;
@@ -993,7 +1053,7 @@ fn options(parsed: &Parsed, only: Vec<String>) -> Options {
         shard: None,
         force_coverage: parsed.force_coverage,
         catches: parsed.catches,
-        exclude_tests: parsed.exclude_tests.clone(),
+        exclude_tests: engine::LeftOut::listed(&parsed.configured_tests, &parsed.exclude_tests),
         audit_arid: std::env::var("MUTASTIC_ARID").is_ok_and(|value| value == "audit"),
     }
 }
@@ -1171,7 +1231,7 @@ fn finish(
     }
     if !report.failing_alone().is_empty() {
         // A test fails on the code with no mutant in, as one that fails before any mutant does.
-        return Ok(ExitCode::from(2));
+        return Ok(ExitCode::from(TESTS_FAIL));
     }
     Ok(if report.passed() {
         ExitCode::SUCCESS
@@ -1422,8 +1482,10 @@ fn recorded(
     report: &engine::Report,
     folder: &std::path::Path,
 ) -> Result<Option<crate::record::Comparison>, Failure> {
-    let code =
-        crate::record::code_without(&crate::shares::code(&report.project)?, &report.left_out);
+    let code = crate::record::code_without(
+        &crate::shares::code(&report.project)?,
+        &engine::LeftOut::names(&report.left_out),
+    );
     let record = crate::record::RunRecord::of(report, &code, &crate::record::tool());
     let records = crate::records::RunRecords::new(folder);
     // When the last run used other operators, it's said so instead.
@@ -1505,7 +1567,7 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, Failure> {
     }
     if !report.failing_alone().is_empty() {
         stdout_text!("{}", report::failing_alone(&report));
-        return Ok(ExitCode::from(2));
+        return Ok(ExitCode::from(TESTS_FAIL));
     }
     Ok(if settled {
         ExitCode::SUCCESS
@@ -2060,6 +2122,7 @@ fn gate_open(
         base: base.clone(),
         ignored: ignored_ids(here)?,
         baselined: Some(baseline::ids(here)),
+        excluded: Some(configured_names(parsed)),
         shape: gate::Shape::of(here),
         uncounted: if counting.is_empty() {
             "the count couldn't start".into()
@@ -2326,6 +2389,17 @@ fn gate_verdict(
             ids_shown(&added)
         )));
     }
+    // A test the task left out under `exclude-tests:` itself is a test taken away: leaving one out
+    // is a person's call. A file an older gate wrote kept no list, and nothing is compared.
+    if let Some(opened) = &state.excluded {
+        let added: Vec<String> = configured_names(parsed)
+            .difference(opened)
+            .cloned()
+            .collect();
+        if !added.is_empty() {
+            return Ok(gate::Verdict::block(self_excluded(&added)));
+        }
+    }
     // Compared with the baseline when the gate opened, not the start commit's: where git ignores
     // `.mutastic/`, the commit has none, and every older entry would look like the task's.
     let opened = state
@@ -2560,6 +2634,26 @@ fn red_verdict(
 
 /// Ids from a file the project keeps (ignores, a baseline), as a message names them: each
 /// [`untrusted::value`]d, since nothing but mutastic checks what's in them.
+/// The tests mutastic.yaml's `exclude-tests:` leaves out, by name.
+fn configured_names(parsed: &Parsed) -> std::collections::BTreeSet<String> {
+    parsed
+        .configured_tests
+        .iter()
+        .map(|test| test.test.clone())
+        .collect()
+}
+
+/// What the gate says of tests the task left out under `exclude-tests:` itself.
+fn self_excluded(added: &[String]) -> String {
+    let one = added.len() == 1;
+    format!(
+        "mutastic gate: the task left out {} under exclude-tests: in mutastic.yaml itself, which takes {} away, and leaving a test out is a person's call. Take {} back out of the list and leave the test in place: find out whether the change or the test is wrong, then tell the person, or propose leaving it out, for them to decide",
+        ids_shown(added),
+        if one { "a test" } else { "tests" },
+        if one { "it" } else { "them" }
+    )
+}
+
 fn ids_shown(ids: &[String]) -> String {
     ids.iter()
         .map(|id| untrusted::value(id))
