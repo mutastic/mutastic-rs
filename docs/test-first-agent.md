@@ -111,6 +111,7 @@ mutastic run fixtures/pricing --since=HEAD --format=agent
 <!-- output: test-first-agent/run -->
 ```text
 mutastic: FAIL · score 40.0% (threshold 80; 50.0% where tests reach) · 2 missed, 1 not covered, 2 caught of 5 mutants
+reports: fixtures/pricing/target/mutastic/mutation.json · fixtures/pricing/target/mutastic/mutation.html
 rules: add or change tests only; never change production code to make a mutant go away: tell the person; a fix counts when `mutastic verify <id> fixtures/pricing` passes
 decline: if a mutant's case can't happen in practice, or the change is one no caller can see, don't contrive a test: propose ignoring it, for a person to accept, as the kind it is (equivalent, unreachable, telemetry, deprecated or accepted-risk), with the reason in two sentences: the one case where it differs, and why that can't happen (`mutastic ignore <id> --propose --as=<equivalent|unreachable|…> --reason="Differs only when <case>. That can't happen because <why>." fixtures/pricing`)
 tasks: first make a task list with one item per mutant, grouped by file; then take them one at a time: write its test, run `mutastic verify <id> fixtures/pricing`, and mark it done before starting the next

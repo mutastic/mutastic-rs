@@ -2535,7 +2535,7 @@ fn agent(report: &Report, style: Style) -> String {
     let words = style.words;
     let view = View::of(report, true).one_to_a_mutant(style.each_mutant);
     if report.only && !report.results.is_empty() {
-        return agent_fates(&view, words);
+        return agent_fates(&view, words) + &agent_reports(report);
     }
     let mut out = String::new();
     let missed = report.count(Status::Survived);
@@ -2599,6 +2599,7 @@ fn agent(report: &Report, style: Style) -> String {
             found.sameness()
         );
     }
+    out.push_str(&agent_reports(report));
     for (test, mutants) in likely_flaky(report) {
         let _ = writeln!(
             out,
@@ -2725,6 +2726,22 @@ fn agent(report: &Report, style: Style) -> String {
         out.push_str(&untrusted::fence(&quoted));
     }
     out
+}
+
+/// `reports: target/mutastic/mutation.json · target/mutastic/mutation.html`: the files the run
+/// wrote, as the summary's Reports row names them, each from where mutastic runs with what can't be
+/// seen escaped, as the Java edition says it. An agent that isn't told of them runs again to get
+/// one. Nothing when none was written (`--report=none`).
+fn agent_reports(report: &Report) -> String {
+    if report.written.is_empty() {
+        return String::new();
+    }
+    let files: Vec<String> = report
+        .written
+        .iter()
+        .map(|file| untrusted::escape(&files::from_here(file)))
+        .collect();
+    format!("reports: {}\n", files.join(" · "))
 }
 
 /// A run of mutants asked for by id, for an agent: each one's fate is the verdict, not a score,
