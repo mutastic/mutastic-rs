@@ -30,7 +30,7 @@ operators:
 | Key | What it does |
 |---|---|
 | `extends:` | Another `mutastic.yaml` this one adds to, by its path from this file's directory: see [In a workspace](#in-a-workspace) |
-| `rules:` | Code to skip, each `- skip: <pattern>` with a `reason:` under it. Its mutants are skipped as ``user: <reason> (rule `skip: <pattern>`)``, out of the score |
+| `rules:` | Code to skip, each `- skip: <pattern>` with a `reason:` under it. Its mutants are skipped as ``user: <reason> (rule `skip: <pattern>`)``, out of the score; `- mutate: <pattern>` takes back arid skips, and `- output: <pattern>` names your own output calls, both below |
 | `plugins:` | Rules files of call operators, by their path from the directory of the file that names them |
 | `operators:` | Which operators run, as `--operators` chooses, which replaces this for one run: a set (`defaults`, `stronger`, `extended`, `all`), a namespace (`stream`) or an operator's id, or one of those after `-` to leave it out |
 | `gate:` | What the gate holds an agent's task to: `operators:` under it, a list as `operators:` takes, chooses the gate's operators in its place, and `gate open --operators` replaces it. See [Which operators](../test-first-agent.md#which-operators) |
@@ -58,6 +58,24 @@ rules:
     arid: [mutastic:output]
     reason: the audit log is what the auditor reads
 ```
+
+An `output:` rule names a function or a macro of your own that only writes output: the wrapper
+your team logs through, an audit log, a metric no test reads. mutastic knows the common output
+macros, not those, and without a rule each of their calls is a mutant only a test of the log would
+catch:
+
+```yaml
+rules:
+  - output: crate::audit::record
+    reason: the audit trail, which ops read and tests don't
+```
+
+A statement that calls it is skipped under `mutastic:output`, as `arid: only calls audit::record
+(the audit trail, which ops read and tests don't)`. The path in the code may be shorter than the
+rule's, `audit::record` or `record` after a `use`: its segments are matched against the end of the
+rule's. A `mutate:` rule takes the skip back like any other of `mutastic:output`, and nothing is
+output until a rule says so, since some teams test their metrics. The Java edition's rule names
+methods, `com.acme.AuditLog#*`.
 
 An id mutastic doesn't have is an error that names the one meant, when it's close. `mutastic
 explain` on a skipped mutant names its rule, links to its section of

@@ -895,6 +895,7 @@ fn apply_ignores(project: &Project, found: &mut Crate) -> Result<Vec<String>, Fa
 /// function by its path in the crate, as `generated::checksum`, `crate::generated::checksum` or,
 /// with the crate's name, `shop::generated::checksum`.
 fn apply_rules(rules: &[crate::config::Rule], crate_name: &str, found: &mut Crate) {
+    own_output(rules, found);
     for index in 0..found.mutants.len() {
         let path = &found.functions[found.mutants[index].function].path;
         let named = [
@@ -903,7 +904,7 @@ fn apply_rules(rules: &[crate::config::Rule], crate_name: &str, found: &mut Crat
             format!("{crate_name}::{path}"),
         ];
         let covers = |rule: &&crate::config::Rule| named.iter().any(|path| rule.covers(path));
-        let skip = rules.iter().filter(|rule| !rule.mutate).find(covers);
+        let skip = rules.iter().filter(|rule| rule.skips()).find(covers);
         let mutant = &mut found.mutants[index];
         if let Some(reason) = mutant.skipped.as_deref() {
             if rules
@@ -917,6 +918,44 @@ fn apply_rules(rules: &[crate::config::Rule], crate_name: &str, found: &mut Crat
         if let (Some(rule), None) = (skip, &mutant.skipped) {
             mutant.skipped = Some(rule.skip_reason());
         }
+    }
+}
+
+/// A statement removed whose call an `output:` rule names, `audit::record(&order);` or
+/// `metrics::counter!("orders").increment(1);`, skipped as arid with the rule's reason, as an
+/// output macro's is with mutastic's own.
+fn own_output(rules: &[crate::config::Rule], found: &mut Crate) {
+    if !rules.iter().any(|rule| rule.output) {
+        return;
+    }
+    for mutant in &mut found.mutants {
+        if mutant.operator != sites::REMOVE_VOID_CALL || mutant.skipped.is_some() {
+            continue;
+        }
+        let Some(file) = found.files.iter().find(|file| file.path == mutant.file) else {
+            continue;
+        };
+        let path = called_path(file.text.get(mutant.site.clone()).unwrap_or_default());
+        if let Some(rule) = rules.iter().find(|rule| rule.names_call(path)) {
+            mutant.skipped = Some(rule.output_reason(path));
+        }
+    }
+}
+
+/// The path a statement starts by calling, `audit::record` of `audit::record(&order);` and
+/// `metrics::counter` of `metrics::counter!("orders").increment(1);`: empty when it starts with
+/// anything else, a method called on a value or an assignment.
+fn called_path(statement: &str) -> &str {
+    let statement = statement.trim_start();
+    let end = statement
+        .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == ':'))
+        .unwrap_or(statement.len());
+    let path = statement[..end].trim_end_matches(':');
+    let rest = statement[end..].trim_start();
+    if rest.starts_with('(') || rest.starts_with('!') {
+        path
+    } else {
+        ""
     }
 }
 
@@ -1880,7 +1919,7 @@ mod tests {
             mutate,
             target: target.into(),
             reason: "the log is what the operator reads".into(),
-            arid: Vec::new(),
+            ..crate::config::Rule::default()
         };
         let only = |target: &str, id: &str| crate::config::Rule {
             arid: vec![id.to_string()],
@@ -1935,6 +1974,7 @@ mod tests {
             target: "shop::timed".into(),
             reason: "the log is what the operator reads".into(),
             arid: arid.iter().map(|id| id.to_string()).collect(),
+            ..crate::config::Rule::default()
         };
         let skipped = |rules: &[crate::config::Rule]| {
             let mut found = found.clone();
@@ -1950,5 +1990,62 @@ mod tests {
         assert_eq!(skipped(&[rule(&[])]), [None]);
         assert_eq!(skipped(&[rule(&["mutastic:output"])]), [None]);
         assert_eq!(skipped(&[rule(&["mutastic:null-checks"])]), logged());
+    }
+
+    /// An `output:` rule makes the statements that call what it names arid, with its reason, by
+    /// the path as written; other calls stay counted, and a `mutate:` rule takes them back.
+    #[test]
+    fn an_output_rule_skips_the_calls_it_names() {
+        let dir = std::env::temp_dir().join(format!("mutastic-own-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let source = "mod audit { pub fn record(_b: i32) {} pub fn keep(_b: i32) {} }\n\
+                      use audit::record;\n\
+                      pub fn told(b: i32) {\n\
+                      audit::record(b);\n\
+                      record(b + 1);\n\
+                      crate::audit::record(b);\n\
+                      audit::keep(b);\n\
+                      }\n";
+        std::fs::write(dir.join("src/lib.rs"), source).unwrap();
+        let found = sites::find(
+            &dir,
+            "shop",
+            &[PathBuf::from("src/lib.rs")],
+            &[sites::REMOVE_VOID_CALL],
+        );
+        std::fs::remove_dir_all(&dir).ok();
+        let own = crate::config::Rule {
+            output: true,
+            target: "crate::audit::record".into(),
+            reason: "the audit trail".into(),
+            ..crate::config::Rule::default()
+        };
+        let skipped = |rules: &[crate::config::Rule]| {
+            let mut found = found.clone();
+            apply_rules(rules, "shop", &mut found);
+            found
+                .mutants
+                .iter()
+                .map(|m| m.skipped.clone().unwrap_or_default())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            skipped(std::slice::from_ref(&own)),
+            [
+                "arid: only calls audit::record (the audit trail)",
+                "arid: only calls record (the audit trail)",
+                "arid: only calls crate::audit::record (the audit trail)",
+                "",
+            ]
+        );
+        assert_eq!(skipped(&[]), ["", "", "", ""]);
+        let kept = crate::config::Rule {
+            mutate: true,
+            target: "told".into(),
+            reason: "the audit is checked".into(),
+            arid: vec!["mutastic:output".into()],
+            ..crate::config::Rule::default()
+        };
+        assert_eq!(skipped(&[own, kept]), ["", "", "", ""]);
     }
 }
