@@ -569,6 +569,7 @@ mod tests {
             panic: None,
             rerun: format!("cargo test -p red --lib -- --exact {display}"),
             seeded: false,
+            case: None,
         };
         let failed = red("a", false, None);
         let timed_out = red("b", true, None);
