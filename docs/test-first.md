@@ -120,6 +120,7 @@ mutastic run fixtures/pricing --since=HEAD
 
  Not covered (no test reaches these lines)
    ○ src/lib.rs:45 loyalty_credit() (1 mutant)
+     try: assert_eq!(Pricing::new().loyalty_credit(0), 0);
 
  Next: mutastic verify <id> fixtures/pricing · mutastic run --only=<id> fixtures/pricing · mutastic explain <id> fixtures/pricing
 
@@ -138,7 +139,7 @@ mutastic run fixtures/pricing --since=HEAD
 
 The one test is at 50, so nothing checks the edge at 30, nothing checks an order below it, and no
 test reaches the last `0` at all: the code ran ahead of its tests. The card suggests a test for
-each.
+each, and `try:` an assertion that reaches the last line, which the card's test below 30 does too.
 
 ## Write the card's tests
 

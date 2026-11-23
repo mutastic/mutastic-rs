@@ -104,6 +104,7 @@ const BUILT: &[&str] = &[
     "platforms",
     "configured",
     "suggestions",
+    "unreached",
     "ranking",
 ];
 
@@ -562,6 +563,16 @@ fn reference(work: &Path, shown: &mut BTreeMap<String, String>) {
         "{found}"
     );
     shown.insert("reference/configured-card".into(), found);
+    // A `keep argument` rewrite's card: the call's argument in its place.
+    let kept: BTreeSet<String> = listed
+        .lines()
+        .filter(|line| line.contains(" acme/always-fallback ") && line.contains(" port"))
+        .filter_map(|line| line.split_whitespace().next().map(str::to_string))
+        .collect();
+    assert_eq!(kept.len(), 1, "{listed}");
+    let found = card(&configured.stdout, &kept).expect("the keep argument rewrite's card");
+    assert!(plain(&found).contains("+ 8080"), "{found}");
+    shown.insert("reference/configured-kept-card".into(), found);
     // After the full runs above, so the last run is known.
     for (name, id) in [("missed", "mb2f8ae57"), ("caught", "m95f96847")] {
         let explained = ran(work, &["explain", id, "fixtures/pricing"]);
@@ -922,6 +933,70 @@ fn suggested(work: &Path, shown: &mut BTreeMap<String, String>) {
         "{card}"
     );
     shown.insert("concepts/suggested-test".into(), card);
+    // Code no test reaches: the list, and under it the assertion to start with. Each one the
+    // unreached fixture is offered is written into it and run by `samples.rs`, which holds them
+    // to these words.
+    let unreached = ran(work, &["run", "fixtures/unreached", "--report=none"]);
+    let listed: Vec<&str> = unreached
+        .stdout
+        .lines()
+        .skip_while(|line| !plain(line).starts_with(" Not covered"))
+        .take_while(|line| !plain(line).is_empty())
+        .collect();
+    assert_eq!(
+        plain(listed.last().copied().unwrap_or_default()),
+        "     try: assert_eq!(super::postage(1001), 6);",
+        "{}",
+        unreached.stdout
+    );
+    shown.insert("concepts/starting-point".into(), listed.join("\n") + "\n");
+}
+
+/// The assertion a run of the pricing fixture offers to start with, after `label` (`try:` or
+/// `start with:`), holds: as a test in the fixture's `tests` module it compiles and passes, and
+/// `verify` finds the mutants of the line no test reached, which the run lists, caught.
+fn starts(work: &Path, output: &str, label: &str) -> String {
+    let text = plain(output);
+    let assertion = text
+        .lines()
+        .find_map(|line| line.trim_start().strip_prefix(label))
+        .unwrap_or_else(|| panic!("no `{label}` in:\n{text}"))
+        .trim()
+        .to_string();
+    let place = text
+        .lines()
+        .skip_while(|line| {
+            !line.to_lowercase().starts_with("not covered (") && !line.starts_with(" Not covered")
+        })
+        .nth(1)
+        .and_then(|line| {
+            line.split_whitespace()
+                .find(|word| word.starts_with("src/"))
+        })
+        .unwrap_or_else(|| panic!("no place no test reaches in:\n{text}"))
+        .to_string();
+    let listed = plain(&ran(work, &["mutants", "fixtures/pricing"]).stdout);
+    let ids: Vec<&str> = listed
+        .lines()
+        .filter(|line| line.contains(&format!(" {place}:")))
+        .filter_map(|line| line.split_whitespace().next())
+        .collect();
+    assert!(!ids.is_empty(), "{place}: {listed}");
+    let lib = work.join("fixtures/pricing/src/lib.rs");
+    let source = std::fs::read_to_string(&lib).unwrap();
+    let step = (
+        "added to".to_string(),
+        format!("#[test]\nfn starts_here() {{\n    {assertion}\n}}\n"),
+    );
+    test_first_step(&lib, &step);
+    let verify = mutastic(work, &["verify", &ids.join(","), "fixtures/pricing"]);
+    std::fs::write(&lib, source).unwrap();
+    assert_eq!(
+        verify.code, 0,
+        "{assertion} doesn't catch {ids:?}: {}{}",
+        verify.stdout, verify.stderr
+    );
+    assertion
 }
 
 /// `next` on the ranking fixture, from a first pass: the head of the queue for a person, the same
@@ -1124,6 +1199,7 @@ fn test_first(work: &Path, shown: &mut BTreeMap<String, String>) {
 
     test_first_step(&lib, &steps[2]);
     let (run, ids) = missed(work, "test-first.md");
+    starts(work, &run.stdout, "try:");
     shown.insert("test-first/run".into(), run.stdout);
 
     test_first_step(&lib, &steps[3]);
@@ -1249,6 +1325,7 @@ fn test_first_agent(work: &Path, shown: &mut BTreeMap<String, String>) {
         &["run", "fixtures/pricing", "--since=HEAD", "--format=agent"],
     );
     assert_eq!(run.code, 1, "{}", run.stdout);
+    starts(work, &run.stdout, "start with:");
     shown.insert("test-first-agent/run".into(), run.stdout);
 
     test_first_step(&lib, &steps[3]);
@@ -1727,7 +1804,7 @@ fn the_docs_show_what_troubleshooting_prints() {
 
 #[test]
 fn the_docs_show_what_suggestions_print() {
-    section("suggested", &["suggestions"], suggested);
+    section("suggested", &["suggestions", "unreached"], suggested);
 }
 
 #[test]

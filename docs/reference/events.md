@@ -110,7 +110,7 @@ A run split across CI jobs writes what the Java edition's does, so `--from-shard
 whole run together from the shares' events: `run-started`'s `share` says which share a run is
 (`number`, `of`, the mutastic `version` and a hash of the `code`, every Rust file and Cargo manifest
 in the workspace); a missed mutant with a suggested test carries the call it was found by, whole,
-in `suggestion`; and `run-finished` says how many `workers` ran side by side and how long the
+in `suggestion`, and so does a mutant no test reaches with an assertion to start with; and `run-finished` says how many `workers` ran side by side and how long the
 coverage pass took, `coverageMs`. `workersStarted` is the same as `workers`, as a Rust worker is a
 thread, never stopped and started again. See
 [One run across CI jobs](../concepts/how-a-run-works.md#one-run-across-ci-jobs).

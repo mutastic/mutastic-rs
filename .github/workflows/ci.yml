@@ -25,6 +25,9 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # The tests run mutastic many times over: none of those runs is this job's, so none annotates
+  # it or adds to its summary.
+  MUTASTIC_GITHUB: "off"
 
 # A pull request's new push cancels the run for its last one, which no one will read. Every other
 # run has a group of its own, so a run of the merge queue or main is never cancelled, nor kept
