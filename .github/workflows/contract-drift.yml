@@ -14,6 +14,9 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  # The tests run mutastic many times over: none of those runs is this job's, so none annotates
+  # it or adds to its summary.
+  MUTASTIC_GITHUB: "off"
 
 jobs:
   drift:

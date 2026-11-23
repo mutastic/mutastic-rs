@@ -5335,3 +5335,68 @@ fn a_run_that_cant_measure_says_which_kind_of_failure_it_is() {
         );
     }
 }
+
+/// On GitHub Actions (`GITHUB_ACTIONS=true`) a full run annotates the line of each of its first
+/// misses, on stderr so a format's own output is untouched, and adds a summary to the job's page,
+/// after whatever another step wrote there; elsewhere, or with `MUTASTIC_GITHUB=off`, it does
+/// neither. As the Java edition's `GitHubActionsTest`.
+#[test]
+fn a_run_on_github_actions_annotates_its_misses_and_summarises_the_job() {
+    let dir = copy_of("pricing", "github");
+    // In the build's directory, which a copy keeps from the process before: so not there yet.
+    let summary = dir.join("target").join("summary.md");
+    let _ = std::fs::remove_file(&summary);
+    let run = |format: &str, env: &[(&str, &str)]| {
+        let output = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+            .args(["run", "--report=none", format])
+            .current_dir(&dir)
+            .env_remove("MUTASTIC_FORMAT")
+            .env_remove("MUTASTIC_AGENT")
+            .env_remove("MUTASTIC_GITHUB")
+            .env_remove("GITHUB_ACTIONS")
+            .env("GITHUB_STEP_SUMMARY", &summary)
+            .env("MUTASTIC_PROGRESS", "none")
+            .env("NO_COLOR", "1")
+            .envs(env.iter().copied())
+            .output()
+            .unwrap();
+        (
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        )
+    };
+
+    let (_, off) = run(
+        "--format=concise",
+        &[("GITHUB_ACTIONS", "true"), ("MUTASTIC_GITHUB", "off")],
+    );
+    let (_, elsewhere) = run("--format=concise", &[]);
+    assert!(!off.contains("::warning"), "{off}");
+    assert!(!elsewhere.contains("::warning"), "{elsewhere}");
+    assert!(!summary.exists(), "a summary was written with it off");
+
+    std::fs::write(&summary, "another step's\n").unwrap();
+    let (out, err) = run("--format=jsonl", &[("GITHUB_ACTIONS", "true")]);
+    assert_eq!(
+        err,
+        "::warning file=src/lib.rs,line=26,title=mutastic%3A missed mb2f8ae57::no test checks \
+         `discount()` at `total == 100`\n"
+    );
+    assert!(!out.contains("::warning"), "{out}");
+    assert_eq!(
+        std::fs::read_to_string(&summary).unwrap(),
+        "another step's\n\
+         ### mutastic: PASS · score 90.9% (threshold 80)\n\
+         \n\
+         | Caught | Missed | Not covered | Timed out |\n\
+         |---|---|---|---|\n\
+         | 10 | 1 | 0 | 0 |\n\
+         \n\
+         **Missed, most worth a test first**\n\
+         \n\
+         | Mutant | Where | No test checks |\n\
+         |---|---|---|\n\
+         | `mb2f8ae57` | `src/lib.rs:26` | no test checks `discount()` at `total == 100` |\n\
+         \n"
+    );
+}

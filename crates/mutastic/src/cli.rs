@@ -1164,6 +1164,7 @@ fn finish(
             style(parsed, std::io::stdout().is_terminal())
         )
     );
+    to_github(&report)?;
     if format != Format::Jsonl && parsed.only.is_empty() && report.scope.is_none() {
         baseline_note(&report, &parsed.operators_chosen);
     }
@@ -1176,6 +1177,34 @@ fn finish(
     } else {
         ExitCode::FAILURE
     })
+}
+
+/// On GitHub Actions, an annotation on each of the first misses, on stderr so a format's own output
+/// stays as it is, and the job's summary, added to the file other steps write to as well: see
+/// [`report::github`].
+fn to_github(report: &engine::Report) -> Result<(), Failure> {
+    use std::io::Write as _;
+    let variable = |name: &str| std::env::var(name).ok();
+    if !report::github::on(variable) {
+        return Ok(());
+    }
+    for annotation in report::github::annotations(report) {
+        stderr_line!("{annotation}");
+    }
+    let Some(file) = report::github::summary_file(variable) else {
+        return Ok(());
+    };
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&file)
+        .and_then(|mut summary| writeln!(summary, "{}", report::github::summary(report)))
+        .map_err(|error| {
+            Code::Other.with(format!(
+                "couldn't write the job summary to {}: {error}",
+                file.display()
+            ))
+        })
 }
 
 /// A baseline is pruned only under the operators it was taken under: a mutant only those make
