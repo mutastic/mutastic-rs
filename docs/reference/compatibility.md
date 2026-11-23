@@ -56,12 +56,13 @@ runs Java 1.2.3 once that's out, unless `MUTASTIC_VERSION` names another: see [O
 ## Files mutastic keeps for itself
 
 Some files are mutastic's own, kept between runs in `target/mutastic`: the run record
-(`last-run.tsv` and `last-runs/`), what `next` ran last (`next.tsv`), and the gate's
-`gate.properties`. Their names stay, and `gate close` deletes the gate's file, but what's in them
-is private to each edition: the Rust and Java editions write them differently, and either may
-change them in any release. Read a run's results from `mutation.json` or the events instead. The
-files in `.mutastic/` (`ignores.yaml`, `proposals.yaml`, `baseline.yaml`) are yours to commit, and
-both editions read and write them the same way.
+(`last-run.tsv` and `last-runs/`), the tests' times `mutants` estimates from (`test-times.tsv`),
+what `next` ran last (`next.tsv`), and the gate's `gate.properties`. Their names stay, and `gate
+close` deletes the gate's file, but what's in them is private to each edition: the Rust and Java
+editions write them differently, and either may change them in any release. Read a run's results
+from `mutation.json` or the events instead. The files in `.mutastic/` (`ignores.yaml`,
+`proposals.yaml`, `baseline.yaml`) are yours to commit, and both editions read and write them the
+same way.
 
 ## What's experimental
 

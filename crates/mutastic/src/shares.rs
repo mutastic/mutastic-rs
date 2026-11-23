@@ -519,6 +519,8 @@ impl Shares {
             only: false,
             audited: Vec::new(),
             left_out: options.exclude_tests.clone(),
+            // The shares measured their own sites: put together, no coverage pass ran here.
+            measured: BTreeMap::new(),
         }
     }
 

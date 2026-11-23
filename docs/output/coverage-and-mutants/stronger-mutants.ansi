@@ -35,4 +35,5 @@ mbf8a1505 src/lib.rs:17:11 mutastic/other-arithmetic - becomes / in pay
 m1127474d src/lib.rs:17:11 mutastic/other-arithmetic - becomes % in pay
 m2e132563 src/lib.rs:17:5 mutastic/keep-operand total - off becomes total in pay
 m4d187d19 src/lib.rs:17:5 mutastic/keep-operand total - off becomes off in pay
+no estimate: 9 of the 27 more mutants are in code the run of 23 Nov 2026 04:59 UTC didn't measure; add --estimate to measure it all
 37 mutants

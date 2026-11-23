@@ -183,6 +183,9 @@ pub struct Report {
     /// The tests the run was told to leave out (`--exclude-tests`), as given: the summary names
     /// them.
     pub left_out: Vec<String>,
+    /// Each site the coverage pass measured, with the time of the tests that reach it, flaky tests
+    /// left out: what `test-times.tsv` keeps. Empty when nothing was built.
+    pub measured: BTreeMap<String, Duration>,
 }
 
 impl Report {
@@ -528,19 +531,12 @@ pub fn run(
             )
         })
         .collect();
-    // A flaky test left in would fail at random against mutants too, and its failures would count
-    // as catches it never made.
-    let (tests, reach): (Vec<Test>, Vec<Reach>) = listed
-        .into_iter()
-        .zip(covered.reach)
-        .enumerate()
-        .filter(|(index, _)| !covered.flaky.contains(index))
-        .map(|(_, kept)| kept)
-        .unzip();
+    let (tests, reach) = steady(listed, covered);
     let coverage_took = coverage_started.elapsed();
     let rustc = rustc_version();
     let order: Vec<usize> = selected.iter().copied().collect();
     let first = first_at_site(&found, &built_set, &built);
+    let sites_measured = measured(&found, &built_set, &built, &tests, &reach, false);
     let costs: Vec<Cost> = order
         .iter()
         .map(|&mutant| cost(&found, mutant, first[mutant], &built, &tests, &reach))
@@ -691,7 +687,73 @@ pub fn run(
         only: !options.only.is_empty(),
         audited,
         left_out: options.exclude_tests.clone(),
+        measured: sites_measured,
     })
+}
+
+/// The tests the coverage pass found steady, with what each reaches. A flaky test left in would
+/// fail at random against mutants too, and its failures would count as catches it never made.
+fn steady(listed: Vec<Test>, covered: Covered) -> (Vec<Test>, Vec<Reach>) {
+    listed
+        .into_iter()
+        .zip(covered.reach)
+        .enumerate()
+        .filter(|(index, _)| !covered.flaky.contains(index))
+        .map(|(_, kept)| kept)
+        .unzip()
+}
+
+/// `mutants --estimate`: builds every mutant `options.operators` make, runs the coverage pass
+/// once, and runs no mutant. Gives each site it measured, with what a mutant there is expected to
+/// take ([`measured`]).
+pub fn estimate(
+    project: &Project,
+    options: &Options,
+    progress: &(dyn Fn(Progress) + Sync),
+) -> Result<BTreeMap<String, Duration>, Failure> {
+    let (found, _) = find_for_run(project, options)?;
+    // A skipped mutant isn't built or run, so it costs nothing and its site needn't be measured.
+    let live: BTreeSet<usize> = (0..found.mutants.len())
+        .filter(|&m| found.mutants[m].skipped.is_none())
+        .collect();
+    if live.is_empty() {
+        progress(Progress::NothingToRun);
+        return Ok(BTreeMap::new());
+    }
+    progress(Progress::Building {
+        mutants: live.len(),
+    });
+    let building = Instant::now();
+    // No recorder or probe: the pass measures only where each test goes, not what it passes.
+    let built = compile::build(project, &found, &live, &BTreeSet::new(), progress)?;
+    let steps: Vec<&str> = built.rounds.iter().map(|round| round.phase).collect();
+    progress(Progress::Built {
+        mutants: live.len(),
+        took: building.elapsed(),
+        rounds: &steps,
+        withdrawn: built.unviable.len(),
+        profile: &built.profile,
+    });
+    let cwd = project.copy_dir().join(&project.package_dir);
+    let listed = testrun::list(&built.binaries, &cwd).map_err(|error| Code::Other.with(error))?;
+    let covering = Instant::now();
+    let covered = coverage(project, &built.binaries, &listed, options.workers, progress)?;
+    let flaky = covered.flaky.len();
+    let (tests, reach) = steady(listed, covered);
+    let sites = measured(&found, &live, &built, &tests, &reach, true);
+    let first = first_at_site(&found, &live, &built);
+    progress(Progress::Covered {
+        tests: tests.len(),
+        rustc: &rustc_version(),
+        took: covering.elapsed(),
+        mutants: live.len(),
+        flaky,
+        cost: live
+            .iter()
+            .map(|&m| cost(&found, m, first[m], &built, &tests, &reach).expected)
+            .sum(),
+    });
+    Ok(sites)
 }
 
 /// Whether one of mutastic's arid rules, or an ignore as arid, skipped the mutant: what an audit
@@ -784,6 +846,7 @@ fn nothing_to_run(
         only: !options.only.is_empty(),
         audited: Vec::new(),
         left_out: options.exclude_tests.clone(),
+        measured: BTreeMap::new(),
     }
 }
 
@@ -1202,14 +1265,7 @@ fn cost(
     if found.mutants[index].skipped.is_some() || built.unviable.contains_key(&index) {
         return none;
     }
-    let mut by_binary: BTreeMap<usize, Duration> = BTreeMap::new();
-    let mut covering = 0;
-    for (t, test) in tests.iter().enumerate() {
-        if reach[t].hits.contains(&site) {
-            *by_binary.entry(test.binary).or_default() += reach[t].took;
-            covering += 1;
-        }
-    }
+    let (by_binary, covering) = covering_time(site, tests, reach);
     let expected: Duration = by_binary.values().sum();
     let timeout: Duration = by_binary.values().map(|&baseline| timeout(baseline)).sum();
     if by_binary.is_empty() {
@@ -1220,6 +1276,47 @@ fn cost(
         slow: (expected * 3).min(timeout / 2),
         tests: covering,
     }
+}
+
+/// What the tests that reach `site` took in the coverage pass, by binary, and how many there are.
+fn covering_time(site: u32, tests: &[Test], reach: &[Reach]) -> (BTreeMap<usize, Duration>, usize) {
+    let mut by_binary: BTreeMap<usize, Duration> = BTreeMap::new();
+    let mut covering = 0;
+    for (t, test) in tests.iter().enumerate() {
+        if reach[t].hits.contains(&site) {
+            *by_binary.entry(test.binary).or_default() += reach[t].took;
+            covering += 1;
+        }
+    }
+    (by_binary, covering)
+}
+
+/// Each site the coverage pass measured ([`crate::test_times::site`]), with what a mutant there
+/// is expected to take: the time of the tests that reach it, as [`cost`] has it, zero when none
+/// does. Only a site with a switch built is measured; with `every`, the build had every mutant
+/// there is, so a site whose every mutant didn't compile is measured too, at zero, as no mutant
+/// there runs.
+fn measured(
+    found: &Crate,
+    built_set: &BTreeSet<usize>,
+    built: &compile::Built,
+    tests: &[Test],
+    reach: &[Reach],
+    every: bool,
+) -> BTreeMap<String, Duration> {
+    let first = first_at_site(found, built_set, built);
+    let mut sites = BTreeMap::new();
+    for &index in built_set {
+        let mutant = &found.mutants[index];
+        let site = crate::test_times::site(mutant);
+        if !built.unviable.contains_key(&index) {
+            let (by_binary, _) = covering_time(first[index], tests, reach);
+            sites.insert(site, by_binary.values().sum());
+        } else if every {
+            sites.entry(site).or_insert(Duration::ZERO);
+        }
+    }
+    sites
 }
 
 /// How long a binary's covering tests may run against a mutant: five times what they took, and a

@@ -225,6 +225,11 @@ fn steady(text: &str) -> String {
             r#""name":"rustc","version":…"#,
         ),
         (r"rustc \S+", "rustc …"),
+        // When the run or coverage pass an estimate is from took place.
+        (
+            r"\b\d{1,2} [A-Z][a-z]{2} \d{4} \d\d:\d\d UTC\b",
+            "22 Nov 2026 14:03 UTC",
+        ),
         // The commit a gate's task starts from, which changes with each repository a run makes.
         (r"(?<w>from |--since=)[0-9a-f]{7,40}\b", "$w…"),
         (r"(?<c>\x1b\[[0-9;]*m|\b)\d+ workers?\b", "${c}… workers"),

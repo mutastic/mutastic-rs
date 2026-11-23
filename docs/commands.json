@@ -307,7 +307,7 @@
       "page": "mutants",
       "synopsis": "mutastic mutants [DIR]",
       "summary": "List the mutants, without building or running anything",
-      "detail": "One line each: its id, place, operator, the change, and the function it's in. A mutant near unsafe code says why it's marked, and the last lines count what was left out. With --operators and --unsafe, it shows what those would add before a run.",
+      "detail": "One line each: its id, place, operator, the change, and the function it's in. A mutant near unsafe code says why it's marked, and the last lines count what was left out. With --operators and --unsafe, it shows what those would add before a run. With --operators and a recorded run, the line before the count estimates what the set adds to the tests' time; --estimate measures the tests first.",
       "exits": "0 once they're listed.",
       "takesMutantId": false,
       "examples": [
@@ -322,6 +322,7 @@
       ],
       "options": [
         "--operators",
+        "--estimate",
         "--unsafe",
         "--edition"
       ]
@@ -672,6 +673,25 @@
         "run": {
           "commandLine": "mutastic run --operators=stronger",
           "cargo": "cargo mutastic run --operators=stronger"
+        }
+      }
+    },
+    {
+      "name": "--estimate",
+      "synopsis": "--estimate",
+      "kind": "flag",
+      "group": "Running",
+      "value": "",
+      "choices": [],
+      "help": "Run every test once, with no mutant in, and estimate what defaults, stronger and all would take",
+      "commands": [
+        "mutants"
+      ],
+      "environment": "",
+      "examples": {
+        "mutants": {
+          "commandLine": "mutastic mutants --estimate",
+          "cargo": "cargo mutastic mutants --estimate"
         }
       }
     },

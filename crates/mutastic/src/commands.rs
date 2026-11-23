@@ -293,7 +293,8 @@ pub const COMMANDS: &[Command] = &[
         detail: "One line each: its id, place, operator, the change, and the function it's in. A \
                  mutant near unsafe code says why it's marked, and the last lines count what was \
                  left out. With --operators and --unsafe, it shows what those would add before a \
-                 run.",
+                 run. With --operators and a recorded run, the line before the count estimates \
+                 what the set adds to the tests' time; --estimate measures the tests first.",
         exits: "0 once they're listed.",
         takes_mutant_id: false,
         examples: &[
@@ -459,6 +460,18 @@ pub const OPTIONS: &[CliOption] = &[
         commands: &["run", "mutants", "next", "baseline", "gate open", "gate check"],
         environment: "",
         example: "--operators=stronger",
+    },
+    CliOption {
+        name: "estimate",
+        value: "",
+        kind: Kind::Flag,
+        group: "Running",
+        choices: &[],
+        help: "Run every test once, with no mutant in, and estimate what defaults, stronger and \
+               all would take",
+        commands: &["mutants"],
+        environment: "",
+        example: "--estimate",
     },
     CliOption {
         name: "unsafe",
