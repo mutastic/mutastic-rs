@@ -10,12 +10,6 @@ use ra_ap_syntax::TextSize;
 /// `checked_add` and `checked_sub`, and so on through each family: `mutastic/math`'s method forms.
 const MATH_METHODS: &[(&str, &str)] = &[("add", "sub"), ("mul", "div")];
 const OVERFLOW_FAMILIES: &[&str] = &["checked_", "wrapping_", "saturating_", "overflowing_"];
-/// The operations a `checked_` call can be made unchecked for: `Some(a.wrapping_add(b))`.
-const UNCHECKED: &[&str] = &[
-    "add", "sub", "mul", "div", "rem", "pow", "neg", "abs", "shl", "shr",
-];
-/// The operations a `saturating_` call can wrap for instead.
-const SATURATING: &[&str] = &["add", "sub", "mul", "div", "pow", "neg", "abs"];
 
 impl Finder<'_> {
     /// `if order.is_paid()` to `if !order.is_paid()`: other-comparison's form for a condition that
@@ -561,32 +555,44 @@ impl Finder<'_> {
                 let after = format!("{family}{other}");
                 self.swap_name(MATH, call.syntax(), name_range, name, &after, context);
             }
-            let wrapping = format!("wrapping_{operation}");
-            if *family == "checked_" && UNCHECKED.contains(&operation) {
-                let before = plain(call.syntax());
-                let after = format!(
-                    "Some({})",
-                    plain_replacing(call.syntax(), &[(name_range, &wrapping)])
-                );
-                self.replaced(
-                    UNCHECKED_ARITHMETIC,
-                    call.syntax(),
-                    name_range,
-                    before,
-                    after,
-                    context,
-                );
-            }
-            if *family == "saturating_" && SATURATING.contains(&operation) {
-                self.swap_name(
-                    UNCHECKED_ARITHMETIC,
-                    call.syntax(),
-                    name_range,
-                    name,
-                    &wrapping,
-                    context,
-                );
-            }
+        }
+        let before = plain(call.syntax());
+        self.unchecked(UNCHECKED_ARITHMETIC, call, name, before, context);
+    }
+
+    /// `a.checked_add(b)` to `Some(a.wrapping_add(b))`, and `a.saturating_add(b)` to
+    /// `a.wrapping_add(b)`: the built-in operator's change, and a rules file's `unchecked
+    /// arithmetic`, each with its own words for what was there `before`. A method of any other name
+    /// gets no mutant.
+    pub(super) fn unchecked(
+        &mut self,
+        operator: &'static str,
+        call: &ast::MethodCallExpr,
+        name: &str,
+        before: String,
+        context: Context<'_>,
+    ) {
+        let (Some((wrapping, in_some)), Some(name_ref)) =
+            (crate::callrules::unchecked(name), call.name_ref())
+        else {
+            return;
+        };
+        let name_range = name_ref.syntax().text_range();
+        if in_some {
+            let after = format!(
+                "Some({})",
+                plain_replacing(call.syntax(), &[(name_range, &wrapping)])
+            );
+            self.replaced(operator, call.syntax(), name_range, before, after, context);
+        } else {
+            self.swap_name(
+                operator,
+                call.syntax(),
+                name_range,
+                name,
+                &wrapping,
+                context,
+            );
         }
     }
 

@@ -309,7 +309,11 @@ fn mutastic(args: &[String], env: &[(String, String)]) -> Run {
         .env("NO_COLOR", "1")
         .env("MUTASTIC_PROGRESS", "none");
     for (name, _) in std::env::vars() {
-        if name.starts_with("MUTASTIC_") || name.starts_with("CLAUDE") || name == "CI" {
+        if name.starts_with("MUTASTIC_")
+            || name.starts_with("CLAUDE")
+            || name == "CI"
+            || name == "GITHUB_ACTIONS"
+        {
             command.env_remove(name);
         }
     }

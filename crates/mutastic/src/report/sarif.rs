@@ -135,7 +135,7 @@ fn result_entry(
 
 /// `src/lib.rs`, relative to the workspace, as it's relative to the base: the repository's root,
 /// where the workspace may be a folder down.
-fn from_base(workspace: &Path, file: &Path, base: Option<&Path>) -> String {
+pub(super) fn from_base(workspace: &Path, file: &Path, base: Option<&Path>) -> String {
     let whole = workspace.join(file);
     let relative = base
         .and_then(|base| whole.strip_prefix(base).ok())
@@ -145,7 +145,7 @@ fn from_base(workspace: &Path, file: &Path, base: Option<&Path>) -> String {
 
 /// The git repository the workspace is in: the nearest directory, from the workspace up, with a
 /// `.git` in it.
-fn repository(workspace: &Path) -> Option<PathBuf> {
+pub(super) fn repository(workspace: &Path) -> Option<PathBuf> {
     workspace
         .ancestors()
         .find(|dir| dir.join(".git").exists())

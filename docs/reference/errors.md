@@ -305,6 +305,33 @@ A test fails with no mutant in, every time it runs: how it failed, where its out
 `cargo test` that runs it alone. See [A test fails before any
 mutant](../troubleshooting.md#a-test-fails-before-any-mutant).
 
+## `tests-stopped`
+
+A test ended its test process with no mutant in, and no test failed as a test does: code it ran
+called `std::process::exit`, or it crashed. The message names the test and how its process ended,
+`(it exited with status 3)` or `(it was stopped by SIGABRT)`, and ends in the `cargo test` that runs
+it alone. The Java edition has the same code for a test that ends the tests' JVM.
+
+## `tests-timed-out`
+
+A test ran past the five minutes each test gets with no mutant in, every time it ran, and no other
+test failed: it waits for something that never comes, or never stops. The message names it, `(it
+timed out)`, and ends in the `cargo test` that runs it alone.
+
+## `no-tests`
+
+The package has tests, and every one of them is `#[ignore]`d, so none ran and there's nothing to
+judge a mutant by. Take the `#[ignore]` off a test that calls the code, or write one. A package
+with no tests at all isn't an error: its mutants are not covered, and the run says so. See [No
+tests](../troubleshooting.md#no-tests).
+
+## `nothing-covered`
+
+The tests ran and passed, and none of them reached any of the code with mutants. Scored, every
+mutant would be not covered: a 0% that measures nothing. Only a run of every mutant stops for it;
+with `--only`, `--since` or `--shard`, tests that reach none of the mutants run can be the honest
+answer. Write a `#[test]` that calls the code.
+
 ## `java-edition`
 
 The Java edition can't run: no JDK 25 or later where mutastic looked, a `MUTASTIC_JAVA_HOME` that
@@ -315,10 +342,15 @@ fetch. See [One command, two editions](../editions.md#the-java-edition).
 
 A proc-macro crate, which mutastic can't mutate yet.
 
+## `disk`
+
+A file mutastic reads or writes couldn't be: a full disk, a directory that isn't writable, or a
+file where it keeps a directory. The message names the file and gives the system's reason, then
+what to do about those three.
+
 ## `other`
 
-Anything else, usually what the system said: a disk that's full, a file mutastic can't write. The
-message names the file.
+An error with no code of its own yet. The message says what went wrong.
 
 ## `internal`
 
