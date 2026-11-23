@@ -55,9 +55,17 @@ impl Project {
     /// mutastic's copy): `path+file:///…/itoa#itoa@1.0.19`. Its name alone is ambiguous when a
     /// dependency pulls the same package from a registry, as itoa's and serde_json's dev-dependencies
     /// do, and Cargo then refuses to build.
+    ///
+    /// The directory is taken as Cargo will see it, the workspace as mutastic runs Cargo there,
+    /// not resolved again: on Windows a temporary directory is `C:\Users\RUNNER~1\…`, and Cargo's URL
+    /// keeps the short name its working directory has.
     pub fn spec_at(&self, workspace: &Path) -> String {
-        let dir = workspace.join(&self.package_dir);
-        let dir = std::fs::canonicalize(&dir).unwrap_or(dir);
+        // `join("")` would end the path with a separator, which Cargo's URL hasn't.
+        let dir = if self.package_dir.as_os_str().is_empty() {
+            workspace.to_path_buf()
+        } else {
+            workspace.join(&self.package_dir)
+        };
         format!("path+{}#{}@{}", file_url(&dir), self.package, self.version)
     }
 
