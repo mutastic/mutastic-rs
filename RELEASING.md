@@ -4,9 +4,12 @@ A release is a version tag, `v<version>`, matching the version in `Cargo.toml`. 
 workflow (`.github/workflows/release.yml`) builds the native `mutastic` for each target from it, as
 a draft release to read and publish. Nothing goes to crates.io yet.
 
-From 1.0.0 the Rust and Java editions release each **minor** version together: `X.Y.0` of both, at
-the same time, as the native `mutastic X.Y.z` runs the newest Java edition `X.Y.*`, and a Rust
-`X.Y.0` without its Java `X.Y.0` would find nothing to fetch. A **patch** may ship alone, in
+From 1.0.0 the Rust and Java editions release each **minor** version together, **Java published
+first, then Rust tagged**: the native `mutastic X.Y.z` runs the newest Java edition `X.Y.*`, and a
+Rust `X.Y.0` without its Java `X.Y.0` would find nothing to fetch. The release workflow checks:
+before it builds anything, its `java` job looks in the Java releases' feed for an `X.Y.*` with its
+CLI attached (`scripts/java-paired.sh`), and without one fails within a minute, saying to tag the
+Rust edition after it's published. It runs the Java sample of that release, too. A **patch** may ship alone, in
 either edition: a Rust `X.Y.1` keeps running the newest Java `X.Y.*`, and a Java `X.Y.1` reaches
 everyone on Rust `X.Y.*` within a day, as `mutastic` looks up the Java releases at most once a
 day.
@@ -26,8 +29,8 @@ day.
      by lines added for an operator new since the last release, commit it, so its ids are held
      from this release on.
    - **The Java edition.** From 1.0.0, for a minor release (`X.Y.0`), the Java edition's `X.Y.0`
-     is ready to publish beside this one (the Java repository's `RELEASING.md`). A patch needs
-     nothing from it.
+     is ready to publish after this one's release commit (the Java repository's `RELEASING.md`).
+     A patch needs nothing from it.
    - **The contract's pins.** `scripts/pin-contract.sh prune` deletes all but the newest
      ([contract/README.md](contract/README.md)).
 2. **The release commit,** `chore(release): version X.Y.Z`: the version in `Cargo.toml` (and
@@ -47,19 +50,21 @@ day.
    MUTASTIC_RELEASED_WRITE=1 cargo test --test compat   # writes crates/mutastic/tests/released/X.Y.Z
    ```
    Before 1.0.0 skip that: anything may change, and there's nothing to hold the next to.
-3. With `main` green, tag it and push the tag:
+3. **Move the docs site's pin** (`docs/rust-edition.json` in the Java repository) to the release
+   commit, by its full hash, with `main` green: the docs a Java tag deploys keep the pin as it is
+   at that tag, so for `X.Y.0` the pin moves before the Java edition's `vX.Y.0` is tagged, and
+   names this commit, as its tag doesn't exist yet (the Java `RELEASING.md` says how, with the
+   shared pages' stamps). For a Rust patch alone, the pin reaches docs.mutastic.io with the next
+   Java release.
+4. For `X.Y.0`, wait for the Java edition's `vX.Y.0` to be published with its CLI attached. Then,
+   with `main` green, tag the release commit and push the tag:
    ```sh
-   git tag vX.Y.Z && git push origin vX.Y.Z
+   git tag vX.Y.Z <release commit> && git push origin vX.Y.Z
    ```
-4. **Move the docs site's pin** (`docs/rust-edition.json` in the Java repository) to the new tag,
-   while the release is still a draft: the docs a Java tag deploys keep the pin as it is at that
-   tag, so for `X.Y.0` the pin moves before the Java edition's `vX.Y.0` is tagged (its
-   `RELEASING.md` says how, with the shared pages' stamps). For a Rust patch alone, the pin
-   reaches docs.mutastic.io with the next Java release.
+   Tagged too early, the workflow's `java` job fails within a minute and builds nothing: once the
+   Java release is published, re-run the workflow.
 5. **Read the draft release the workflow makes** (each target's archive, `SHA256SUMS` and Scoop's
-   `mutastic.json`), then publish it. For `X.Y.0`, publish it only once the Java edition's
-   `vX.Y.0` GitHub release has its CLI attached: until then the native `mutastic X.Y.0` finds no
-   Java edition to run in a Maven or Gradle project.
+   `mutastic.json`), then publish it.
 
 ## Withdrawing a release
 

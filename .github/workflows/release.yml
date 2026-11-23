@@ -10,7 +10,8 @@
 # macOS and Linux builds the same way, and the installed command runs a crate. Each binary is built
 # with cargo-auditable on one pinned toolchain, and the release carries a CycloneDX SBOM. Linux builds are static
 # (musl), and Windows builds link the C runtime statically, so nothing else needs installing.
-# Actions are pinned to a commit: a tag can be moved.
+# Actions are pinned to a commit: a tag can be moved. Nothing is built until the Java edition this
+# release runs, the newest X.Y.*, is published: a Rust X.Y.Z tagged before it fails in a minute.
 name: Release
 
 on:
@@ -28,7 +29,30 @@ env:
   RELEASE_TOOLCHAIN: "1.99.1"
 
 jobs:
+  # The Java edition release this one is paired with: the newest X.Y.* the feed lists, which the
+  # native `mutastic X.Y.Z` runs and install-windows fetches. Without one, every later job would
+  # build for half an hour and then fail where it runs the Java edition, so stop here instead.
+  java:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.paired.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            Cargo.toml
+            scripts/java-paired.sh
+          sparse-checkout-cone-mode: false
+      - id: paired
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          tag=$(sh scripts/java-paired.sh "$version")
+          echo "Java edition $tag, for mutastic $version"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: java
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -132,7 +156,7 @@ jobs:
   # project. Windows PowerShell 5.1 installs as `irm ... | iex` runs it, and Git Bash runs
   # install.sh, each into a place of its own.
   install-windows:
-    needs: checksums
+    needs: [java, checksums]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -211,11 +235,12 @@ jobs:
           cargo mutastic run fixtures\pricing --threshold=0
           if ($LASTEXITCODE -ne 0) { throw "cargo mutastic run exited $LASTEXITCODE" }
       # The Java edition's Gradle sample, with its gradlew.bat, which compiles on JDK 17 while the
-      # edition runs on JDK 25 (the last listed is JAVA_HOME). The edition is its latest release.
+      # edition runs on JDK 25 (the last listed is JAVA_HOME). The sample is the one of the Java
+      # release this is paired with, the release the installed command fetches.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: mutastic/mutastic
-          ref: f3718cfdabea42f3b53873de56dcf8539d94751f # main, 10 Nov 2026
+          ref: ${{ needs.java.outputs.tag }}
           path: java
           sparse-checkout: samples/pricing
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
