@@ -114,7 +114,7 @@ impl Tag {
 pub fn code(project: &Project) -> Result<String, Failure> {
     let mut files = BTreeMap::new();
     sources(&project.workspace, Path::new(""), project, &mut files)
-        .map_err(|error| Code::Other.with(format!("couldn't read the workspace: {error}")))?;
+        .map_err(|error| crate::failure::disk(format!("couldn't read the workspace: {error}")))?;
     let mut hasher = Sha256::new();
     for (path, bytes) in files {
         hasher.update(path.as_bytes());
@@ -164,9 +164,9 @@ fn sources(
 /// mustn't leave the last time's to be put together with the other shares'.
 pub fn forget(file: &Path) -> Result<(), Failure> {
     match std::fs::remove_file(file) {
-        Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-            Err(Code::Other.with(format!("couldn't remove {}: {error}", file.display())))
-        }
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(crate::failure::disk(
+            format!("couldn't remove {}: {error}", file.display()),
+        )),
         _ => Ok(()),
     }
 }
@@ -177,7 +177,9 @@ pub fn keep(file: &Path, events: &str) -> Result<(), Failure> {
         .parent()
         .map_or(Ok(()), std::fs::create_dir_all)
         .and_then(|()| std::fs::write(file, events));
-    written.map_err(|error| Code::Other.with(format!("couldn't write {}: {error}", file.display())))
+    written.map_err(|error| {
+        crate::failure::disk(format!("couldn't write {}: {error}", file.display()))
+    })
 }
 
 /// One share, read: where from, which it is, and its events.
@@ -573,7 +575,7 @@ fn events_in(directory: &Path) -> Result<Vec<PathBuf>, Failure> {
     let mut stack = vec![directory.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let entries = std::fs::read_dir(&dir).map_err(|error| {
-            Code::Other.with(format!("couldn't read {}: {error}", dir.display()))
+            crate::failure::disk(format!("couldn't read {}: {error}", dir.display()))
         })?;
         for entry in entries.flatten() {
             let path = entry.path();

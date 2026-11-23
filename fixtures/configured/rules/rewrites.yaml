@@ -1,0 +1,27 @@
+# The other rewrites a rules file can ask for, each on a call the crate makes.
+- id: acme/always-fallback
+  explanation: A call that gives a fallback for a value that may be missing gives the fallback every time. It goes unnoticed when no test has the value there.
+  owners: Option
+  methods: unwrap_or
+  rewrite: keep argument
+  changed: `.{name}()` always gives its fallback
+  headline: no test gives {method} a value for `.{name}()` to prefer to its fallback
+  help: add a test where the value is there, and assert it's the one used
+
+- id: acme/no-limit
+  explanation: A limit on how many items an iterator gives is lifted. It goes unnoticed when no test has more items than the limit.
+  owners: Iterator
+  methods: take
+  rewrite: call take(usize) with usize::MAX
+  changed: `.{name}()` changed to `.{to}`
+  headline: no test gives {method} more items than `.{name}()` lets through
+  help: add a test with more items than the limit, and assert how many come back
+
+- id: acme/wrap-on-overflow
+  explanation: A checked or saturating operation wraps around instead. It goes unnoticed when no test has a result too big for its type.
+  owners: u8, u32
+  methods: checked_add, saturating_add
+  rewrite: unchecked arithmetic
+  changed: `.{name}()` changed to `.{to}()`, which wraps around
+  headline: no test makes `.{name}()` overflow in {method}
+  help: add a test whose result doesn't fit its type, and assert what comes back

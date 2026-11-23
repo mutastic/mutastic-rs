@@ -49,7 +49,8 @@ for the conventions the code is held to, [AGENTS.md](AGENTS.md).
    the worker that found it missed: a test of mutastic's own, left out of the test list, that calls
    it on candidate inputs, as the code is and with the mutant in. The first input where they
    differ, and both values, go on the card, before the mutant's `mutant-finished` goes out. A probe
-   that doesn't compile is dropped, not blamed on a mutant.
+   that doesn't compile is dropped, not blamed on a mutant. A mutant no test reaches is probed the
+   same way, for the assertion to start its function's first test with (`try:`, `start with:`).
 7. **The report.** `report` prints the result in one of four formats: `full` cards for people,
    `concise` lines, `agent` text for coding agents, and `jsonl`, the `mutastic.events/v1` stream.
    `words` writes what a card says about a mutant: the gap, the change and the fix, in the Java
@@ -83,7 +84,7 @@ All the code is in `crates/mutastic/src`:
 | `engine` | A run: finds, builds, records coverage, runs each mutant, and decides its status |
 | `words` | What a card says: the gap, the change, the inputs seen and the help |
 | `suggest` | Suggested tests: candidate inputs, running the probes, and the test written out |
-| `report` | The formats: `full`, `concise`, `agent` and `jsonl`; `report/next.rs`, `mutastic next`'s queue, its order and `--top`, in each format |
+| `report` | The formats: `full`, `concise`, `agent` and `jsonl`; `report/next.rs`, `mutastic next`'s queue, its order and `--top`, in each format; `report/github.rs`, the annotations and job summary a run on GitHub Actions adds |
 | `nextrun` | What the last `mutastic next` left uncaught, and the hash of the code under test, its test code taken out, that says whether only those run again |
 | `shares` | A run split across machines: which share a mutant is in (`--shard`), a share's events, and the whole run put back together from them (`--from-shards`) |
 
@@ -128,7 +129,8 @@ editions' contract names. Every event says `"edition": "rust"`. Where the editio
 `fixtures/` holds the crates they run on, each a package of its own outside mutastic's workspace:
 `pricing` (the Java edition's sample, ported), `operators` (an example of each operator), `truth`
 (each shape a mutated expression can take), `unsafety`, `loops`, `places`, `platforms`, `ranking`,
-`suggestions`, `repeats` (identical lines in one function), `flaky` (a test that fails on its first
+`suggestions`, `unreached` (code no test reaches, for the assertion to start with), `repeats`
+(identical lines in one function), `flaky` (a test that fails on its first
 try, and passes after), `false-catches` (a test that passes before any mutant and fails on its own
 after them) and `workspace`. `samples.rs` and
 `truth.rs` run mutastic on them in place, so its copy goes in each fixture's own `target/`;

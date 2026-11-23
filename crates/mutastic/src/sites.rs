@@ -20,6 +20,7 @@ use ra_ap_syntax::ast::{
 };
 use ra_ap_syntax::{AstNode, Edition, SourceFile, SyntaxKind, SyntaxNode, TextRange};
 
+use crate::arid::ONLY_GUARDS_OUTPUT;
 use crate::cfg::Cfg;
 use crate::id;
 
@@ -1122,7 +1123,15 @@ impl Finder<'_> {
         self.visit(node, context);
         if let Some(expr) = ast::IfExpr::cast(node.clone()) {
             if let Some(condition) = expr.condition() {
+                let before = self.found.mutants.len();
                 self.condition(&condition, context);
+                if operators::guards_only_output(&expr) {
+                    for mutant in &mut self.found.mutants[before..] {
+                        mutant
+                            .skipped
+                            .get_or_insert_with(|| ONLY_GUARDS_OUTPUT.to_string());
+                    }
+                }
             }
         }
         if let Some(expr) = ast::WhileExpr::cast(node.clone()) {
@@ -2019,6 +2028,64 @@ mod tests {
                 ("log::warn!(\"overdrawn: {b}\");", arid),
                 ("eprintln!(\"overdrawn: {b}\");", arid),
                 ("tracing::info!(b);", arid),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_level_check_around_only_output_is_skipped_as_arid() {
+        let source = "pub fn fee(b: i32) -> i32 {\n\
+             if log::log_enabled!(log::Level::Debug) { log::debug!(\"b {b}\"); eprintln!(\"b\"); }\n\
+             if tracing::enabled!(tracing::Level::TRACE) { tracing::trace!(b) }\n\
+             if !(log_enabled!(Level::Info)) { info!(\"quiet\"); }\n\
+             let mut seen = 0;\n\
+             if log_enabled!(Level::Debug) { seen += 1; debug!(\"b {b}\"); }\n\
+             if log_enabled!(Level::Debug) { debug!(\"b {b}\"); } else { seen += 2; }\n\
+             if log_enabled!(Level::Debug) { record(b); }\n\
+             if log_enabled!(Level::Debug) && b > 0 { debug!(\"b {b}\"); }\n\
+             if log_enabled!(Level::Debug) {}\n\
+             seen\n\
+             }\n\
+             fn record(_b: i32) {}";
+        let dir = std::env::temp_dir().join(format!("mutastic-guard-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::write(dir.join("src/lib.rs"), source).unwrap();
+        let found = find(
+            &dir,
+            "sample",
+            &[PathBuf::from("src/lib.rs")],
+            &[REMOVE_CONDITIONAL],
+        );
+        std::fs::remove_dir_all(&dir).ok();
+        let line = |m: &Mutant| source[..m.site.start].lines().count();
+        let guard = Some("arid: only decides whether output is written");
+        let skipped: Vec<(usize, Option<&str>)> = found
+            .mutants
+            .iter()
+            .filter(|m| m.operator == REMOVE_CONDITIONAL)
+            .map(|m| (line(m), m.skipped.as_deref()))
+            .collect();
+        assert_eq!(
+            skipped,
+            [
+                (2, guard),
+                (2, guard),
+                (3, guard),
+                (3, guard),
+                (4, guard),
+                (4, guard),
+                (6, None),
+                (6, None),
+                (7, None),
+                (7, None),
+                (8, None),
+                (8, None),
+                (9, None),
+                (9, None),
+                (9, None),
+                (9, None),
+                (10, None),
+                (10, None),
             ]
         );
     }

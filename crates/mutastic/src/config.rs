@@ -30,10 +30,14 @@ use crate::failure::{Code, Failure};
 
 pub const FILE: &str = "mutastic.yaml";
 
-/// A project's decision: skip the mutants in some code, or mutate code a filter would skip.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// A project's decision: skip the mutants in some code, mutate code a filter would skip, or name
+/// calls of its own that only write output.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Rule {
     pub mutate: bool,
+    /// An `output:` rule: calls of the functions or macros `target` names only write output, as
+    /// a logger's do, and are skipped as `mutastic:output` with the rule's reason.
+    pub output: bool,
     pub target: String,
     pub reason: String,
     /// A `mutate:` rule's `arid:` list: the ids of the arid rules it brings back
@@ -53,16 +57,44 @@ impl Rule {
 
     /// `skip: shop::generated::**`, as the rule was written.
     pub fn written(&self) -> String {
-        format!(
-            "{}: {}",
-            if self.mutate { "mutate" } else { "skip" },
-            self.target
-        )
+        format!("{}: {}", verb(self.mutate, self.output), self.target)
+    }
+
+    /// Whether it's a `skip:` rule.
+    pub fn skips(&self) -> bool {
+        !self.mutate && !self.output
+    }
+
+    /// Whether an `output:` rule names the function or macro a statement calls, by its path as
+    /// written (`audit::record`, `counter`): the path's segments are the last of the rule's, each
+    /// matched as a name in it is, or the whole path matches it.
+    pub fn names_call(&self, path: &str) -> bool {
+        if !self.output || path.is_empty() {
+            return false;
+        }
+        if glob(&self.target, path) || glob(&self.target, &format!("crate::{path}")) {
+            return true;
+        }
+        let target: Vec<&str> = self.target.split("::").collect();
+        let called: Vec<&str> = path.split("::").collect();
+        called.len() <= target.len()
+            && !self.target.contains("**")
+            && target[target.len() - called.len()..]
+                .iter()
+                .zip(&called)
+                .all(|(pattern, name)| glob(pattern, name))
+    }
+
+    /// `arid: only calls audit::record (the audit trail)`: the skip of a call an `output:` rule
+    /// names.
+    pub fn output_reason(&self, path: &str) -> String {
+        format!("arid: only calls {path} ({})", self.reason)
     }
 
     /// Whether a `mutate:` rule brings back a mutant skipped for `reason` (`arid: only writes
     /// output`): an arid skip, of one of the rules its `arid:` lists if it has one.
     pub fn brings_back(&self, reason: &str) -> bool {
+        // An `output:` rule's skips are arid, and a `mutate:` rule brings them back.
         self.mutate
             && reason.starts_with("arid:")
             && (self.arid.is_empty()
@@ -77,6 +109,15 @@ impl Rule {
 }
 
 /// `**` matches across `::`, `*` within one name.
+/// What a rule starts with: `skip`, `mutate` or `output`.
+fn verb(mutate: bool, output: bool) -> &'static str {
+    match (mutate, output) {
+        (true, _) => "mutate",
+        (false, true) => "output",
+        (false, false) => "skip",
+    }
+}
+
 fn glob(pattern: &str, text: &str) -> bool {
     fn matches(pattern: &[u8], text: &[u8]) -> bool {
         match pattern {
@@ -378,14 +419,14 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
             }
             let listed = listed(item).ok_or_else(|| error("expected a list item, `- …`"))?;
             let (verb, target) = listed.split_once(':').unwrap_or(("", ""));
-            if verb != "skip" && verb != "mutate" {
-                if let Some(rule) = crate::similar::closest(verb, ["skip", "mutate"]) {
+            if verb != "skip" && verb != "mutate" && verb != "output" {
+                if let Some(rule) = crate::similar::closest(verb, ["skip", "mutate", "output"]) {
                     return Err(error(&format!(
                         "{verb}: isn't a rule. There's one called {rule}:."
                     )));
                 }
                 return Err(error(
-                    "a rule is `- skip: <pattern>` or `- mutate: <pattern>`, then `reason: …`",
+                    "a rule is `- skip: <pattern>`, `- mutate: <pattern>` or `- output: <pattern>`, then `reason: …`",
                 ));
             }
             if let Some(rule) = pending.take() {
@@ -393,6 +434,7 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
             }
             pending = Some(Pending {
                 mutate: verb == "mutate",
+                output: verb == "output",
                 target: value(target),
                 ..Pending::default()
             });
@@ -446,6 +488,7 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
 #[derive(Default)]
 struct Pending {
     mutate: bool,
+    output: bool,
     target: String,
     reason: Option<String>,
     arid: Vec<String>,
@@ -456,22 +499,21 @@ struct Pending {
 
 impl Pending {
     fn written(&self) -> String {
-        format!(
-            "{}: {}",
-            if self.mutate { "mutate" } else { "skip" },
-            self.target
-        )
+        format!("{}: {}", verb(self.mutate, self.output), self.target)
     }
 
     /// A `mutate:` rule's `arid:`: a list on its line, `[mutastic:output]`, one id, or nothing,
     /// and its list on the lines under it.
     fn arid(&mut self, value: &str, indent: usize) -> Result<(), String> {
         if !self.mutate {
-            return Err(
-                "`arid:` goes on a `mutate:` rule: it says which arid skips to bring back, \
-                        and a `skip:` rule skips everything it covers"
-                    .to_string(),
-            );
+            return Err(format!(
+                "`arid:` goes on a `mutate:` rule: it says which arid skips to bring back, and {}",
+                if self.output {
+                    "an `output:` rule's calls are all skipped as `mutastic:output`"
+                } else {
+                    "a `skip:` rule skips everything it covers"
+                }
+            ));
         }
         if self.arid_given {
             return Err(format!(
@@ -533,6 +575,7 @@ impl Pending {
         }
         Ok(Rule {
             mutate: self.mutate,
+            output: self.output,
             target: self.target,
             reason,
             arid: self.arid,
@@ -714,6 +757,29 @@ mod tests {
         assert_eq!(config.operators, ["stronger", "-stream/swap-match"]);
     }
 
+    /// An `output:` rule names the project's own output calls, with its reason.
+    #[test]
+    fn an_output_rule_names_the_projects_own_output_calls() {
+        let config = parse(
+            "rules:\n  - output: crate::audit::record\n    reason: the audit trail\n\
+             \x20 - output: metrics::counter\n    reason: a metric\n",
+        )
+        .unwrap();
+        assert_eq!(config.rules.len(), 2);
+        assert!(config.rules.iter().all(|rule| rule.output && !rule.skips()));
+        assert_eq!(config.rules[0].written(), "output: crate::audit::record");
+        assert!(config.rules[0].names_call("audit::record"));
+        assert!(config.rules[0].names_call("record"));
+        assert!(config.rules[0].names_call("crate::audit::record"));
+        assert!(!config.rules[0].names_call("audit::keep"));
+        assert!(!config.rules[0].names_call("other::audit::record"));
+        assert!(config.rules[1].names_call("counter"));
+        assert_eq!(
+            config.rules[1].output_reason("metrics::counter"),
+            "arid: only calls metrics::counter (a metric)"
+        );
+    }
+
     #[test]
     fn what_it_doesnt_understand_is_an_error_that_names_the_line() {
         for (text, error) in [
@@ -725,7 +791,9 @@ mod tests {
             ("extends: ''\n", "mutastic.yaml line 1: `extends:` needs a path, such as ../mutastic.yaml"),
             ("extends: a.yaml\n  - x\n", "mutastic.yaml line 2: a list item needs a section above it"),
             ("rules:\n  - skip: a::**\n", "mutastic.yaml line 2: the rule `skip: a::**` needs a `reason:` under it"),
-            ("rules:\n  - drop: a\n", "mutastic.yaml line 2: a rule is `- skip: <pattern>` or `- mutate: <pattern>`, then `reason: …`"),
+            ("rules:\n  - drop: a\n", "mutastic.yaml line 2: a rule is `- skip: <pattern>`, `- mutate: <pattern>` or `- output: <pattern>`, then `reason: …`"),
+            ("rules:\n  - output: audit::record\n", "mutastic.yaml line 2: the rule `output: audit::record` needs a `reason:` under it"),
+            ("rules:\n  - output: a\n    arid: [mutastic:output]\n    reason: r\n", "mutastic.yaml line 3: `arid:` goes on a `mutate:` rule: it says which arid skips to bring back, and an `output:` rule's calls are all skipped as `mutastic:output`"),
             ("operators:\n  stronger\n", "mutastic.yaml line 2: expected a list item, `- …`"),
             ("rules:\n  - mutate: a\n    arid: [mutastic:outptu]\n    reason: r\n", "mutastic.yaml line 3: mutastic:outptu isn't an arid rule. There's one called mutastic:output."),
             ("rules:\n  - mutate: a\n    arid: [sleeps]\n    reason: r\n", "mutastic.yaml line 3: sleeps isn't an arid rule; the rules are mutastic:debug-representations, mutastic:output, mutastic:messages, mutastic:capacity, mutastic:wait-times, mutastic:waits, mutastic:null-checks, mutastic:thread-names, mutastic:keep-alive and mutastic:stack-sizes"),
@@ -892,10 +960,9 @@ mod tests {
     #[test]
     fn patterns_match_paths_as_the_java_editions_match_classes() {
         let rule = |target: &str| Rule {
-            mutate: false,
             target: target.into(),
             reason: "r".into(),
-            arid: Vec::new(),
+            ..Rule::default()
         };
         assert!(rule("shop::generated::**").covers("shop::generated::proto::Order::new"));
         assert!(rule("shop::*::Money").covers("shop::money::Money::add"));

@@ -4,6 +4,7 @@ rules:
     reason: written by a code generator
 plugins:
   - rules/trims.yaml
+  - rules/rewrites.yaml
 operators:
   - defaults
   - -mutastic/return-value

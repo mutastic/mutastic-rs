@@ -61,6 +61,9 @@ pub const ONLY_WRITES_OUTPUT: &str = "arid: only writes output";
 /// edition's words.
 pub const ONLY_FEEDS_A_LOG_LINE: &str = "arid: only feeds a log line";
 
+/// The arid skip of a log level's check around a body that only writes output.
+pub const ONLY_GUARDS_OUTPUT: &str = "arid: only decides whether output is written";
+
 /// The arid skip of a statement that only checks a value it's given, `x.unwrap();`, as the Java
 /// edition skips a removed `Objects.requireNonNull(x)`.
 pub const ONLY_CHECKS_A_VALUE: &str = "arid: only checks the value is there";
@@ -87,7 +90,12 @@ pub const RULES: &[Rule] = &[
         id: "mutastic:output",
         scope: Scope::Site,
         description: "Code that only writes output: a log line, or text printed to the console, and a value worked out for nothing else.",
-        reasons: &[ONLY_WRITES_OUTPUT, ONLY_FEEDS_A_LOG_LINE],
+        reasons: &[
+            ONLY_WRITES_OUTPUT,
+            ONLY_FEEDS_A_LOG_LINE,
+            ONLY_GUARDS_OUTPUT,
+            ONLY_CALLS,
+        ],
         example: "println!(\"saved {id}\");",
     },
     Rule {
@@ -175,8 +183,32 @@ impl Rule {
 
 /// The rule that gives `reason` (`arid: only writes output`), if one of mutastic's own does.
 pub fn rule(reason: &str) -> Option<&'static Rule> {
-    RULES.iter().find(|rule| rule.reasons.contains(&reason))
+    RULES
+        .iter()
+        .find(|rule| rule.reasons.iter().any(|each| gives(each, reason)))
 }
+
+/// Whether a rule's reason, as the contract writes it, is `reason`: `<reason>` is a project's
+/// own words, and any other `<name>` a name in the code, with no space or backtick in it.
+fn gives(written: &str, reason: &str) -> bool {
+    match written.find('<').zip(written.find('>')) {
+        None => written == reason,
+        Some((open, close)) if close > open => {
+            let (before, after) = (&written[..open], &written[close + 1..]);
+            let words = &written[open..=close] == "<reason>";
+            reason.strip_prefix(before).is_some_and(|rest| {
+                (1..=rest.len())
+                    .filter(|&at| rest.is_char_boundary(at))
+                    .take_while(|&at| words || !rest[..at].contains([' ', '`']))
+                    .any(|at| gives(after, &rest[at..]))
+            })
+        }
+        Some(_) => written == reason,
+    }
+}
+
+/// A project's own output call's skip, `arid: only calls audit::record (<reason>)`.
+pub const ONLY_CALLS: &str = "arid: only calls <call> (<reason>)";
 
 /// Every rule's id, in order.
 pub fn ids() -> Vec<&'static str> {
@@ -241,6 +273,12 @@ mod tests {
             Some("mutastic:output")
         );
         assert!(rule("arid: only waits a bit").is_none());
+        assert_eq!(
+            rule("arid: only calls audit::record (the audit trail, read by ops)").map(|r| r.id),
+            Some("mutastic:output")
+        );
+        assert!(rule("arid: only calls audit record (the audit trail)").is_none());
+        assert!(rule("arid: only calls audit::record").is_none());
         assert_eq!(
             named("mutastic:output").map(Rule::url).as_deref(),
             Some("https://docs.mutastic.io/reference/arid/#output")
