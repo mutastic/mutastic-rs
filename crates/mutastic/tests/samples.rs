@@ -3108,7 +3108,7 @@ fn a_false_catch_is_found_and_the_mutants_it_reached_run_again() {
     );
     assert!(
         agent.contains(&format!(
-            "flaky: {broken} passes among the others but fails on its own, with no mutant in (run again after the mutants, it failed): it counts on something another test or the run sets up or leaves behind. It's left out, so its catches don't count: the mutants it reached ran again without it, and the run can't pass until it passes on its own. Make it set up what it needs and clean up what it leaves. Never remove, disable or loosen it to get a run through\n"
+            "flaky: {broken} passes among the others but fails on its own, with no mutant in (run again after the mutants, it failed): it counts on something another test or the run sets up or leaves behind. It's left out, so its catches don't count: the mutants it reached ran again without it, and the run can't pass until it passes on its own. Make it set up what it needs and clean up what it leaves, or run without it with `--exclude-tests={broken}`. Never remove, disable or loosen it to get a run through\n"
         )),
         "{agent}"
     );
@@ -3200,6 +3200,19 @@ fn a_false_catch_is_found_and_the_mutants_it_reached_run_again() {
         "{verify}"
     );
 
+    // The way out the line offers holds: without the broken test, no catch is false, and what
+    // only it reached is not covered.
+    let without = format!("--exclude-tests={broken}");
+    let (code, left_out) = mutastic_in(&dir, &["run", "--format=agent", "--report=none", &without]);
+    assert_eq!(code, 1, "{left_out}");
+    assert!(
+        left_out.starts_with(
+            "mutastic: FAIL · score 33.3% (threshold 80; 50.0% where tests reach) · 6 missed, 6 not covered, 6 caught of 18 mutants (2 more skipped)\n"
+        ),
+        "{left_out}"
+    );
+    assert!(!left_out.contains("flaky"), "{left_out}");
+
     // The gate checks its catches too: a change whose mutants only a broken test catches isn't
     // done.
     let git = |args: &[&str]| {
@@ -3237,6 +3250,291 @@ fn a_false_catch_is_found_and_the_mutants_it_reached_run_again() {
     assert!(
         check.contains(&format!("flaky: {broken} passes among the others")),
         "{check}"
+    );
+}
+
+/// A test added to the pricing fixture's copy that really catches what another test catches: for
+/// `total >= 100` always true, `tests::small_orders_pay_full_price` and this one both fail.
+const SECOND_CATCHER: &str = "use pricing::Pricing;
+
+#[test]
+fn nothing_off_under_a_hundred() {
+    assert_eq!(Pricing::new().discount(99), 0);
+}
+";
+
+/// A flaky test, made so on purpose and the same way every run: it checks nothing, fails the first
+/// time it runs against each mutant, and passes after, as a test that fails now and then does
+/// when it's run again. mutastic's copy starts each run without the markers.
+const FAILS_ONCE: &str = "
+#[test]
+fn discounts_now_and_then() {
+    let _ = Pricing::new().discount(100);
+    let Ok(mutant) = std::env::var(\"MUTASTIC_ACTIVE\") else {
+        return;
+    };
+    std::fs::create_dir_all(\"target\").unwrap();
+    if std::fs::File::create_new(format!(\"target/failed-once-{mutant}\")).is_ok() {
+        panic!(\"failed on its first try\");
+    }
+}
+";
+
+/// `--kill-matrix`, `--confirm-catches`, `--exclude-tests` and `--each-mutant`, as the Java
+/// edition has them, each shown by running it on the pricing fixture with tests added to its
+/// copy.
+#[test]
+fn a_run_takes_the_java_editions_options_for_catches_tests_and_cards() {
+    let dir = copy_of("pricing", "run-options");
+    let more = dir.join("tests/more.rs");
+    let validator = schema();
+    let finished = |jsonl: &str| -> Vec<Value> {
+        let found = events(jsonl);
+        for event in &found {
+            assert!(validator.is_valid(event), "{event}");
+        }
+        found
+    };
+    let mutant = |found: &[Value], id: &str| -> Value {
+        found
+            .iter()
+            .find(|e| e["reason"] == "mutant-finished" && e["id"] == id)
+            .unwrap_or_else(|| panic!("no mutant-finished for {id}"))
+            .clone()
+    };
+    // `total >= 100` always true, always false, and its edge, which no test checks.
+    let (always, never, edge) = ("md56e8c39", "m1636f6d5", "mb2f8ae57");
+
+    // --kill-matrix: every test that catches a mutant, the first being `caughtBy`, in the events
+    // and in mutation.json; without it, only the first, and the run stops there.
+    std::fs::write(&more, SECOND_CATCHER).unwrap();
+    let (code, jsonl) = mutastic_in(&dir, &["run", "--format=jsonl"]);
+    assert_eq!(code, 0, "{jsonl}");
+    let first_only = finished(&jsonl);
+    assert!(
+        first_only.iter().all(|e| e.get("caughtByAll").is_none()),
+        "{jsonl}"
+    );
+    let (code, jsonl) = mutastic_in(&dir, &["run", "--format=jsonl", "--kill-matrix"]);
+    assert_eq!(code, 0, "{jsonl}");
+    let matrix = finished(&jsonl);
+    let caught: Vec<&Value> = matrix.iter().filter(|e| e["status"] == "Killed").collect();
+    assert_eq!(caught.len(), 10, "{jsonl}");
+    for event in &caught {
+        assert_eq!(event["caughtByAll"][0], event["caughtBy"], "{event}");
+        let before = mutant(&first_only, event["id"].as_str().unwrap());
+        assert_eq!(event["caughtBy"], before["caughtBy"], "{event}");
+        assert_eq!(event["testsRun"], before["testsRun"], "{event}");
+    }
+    assert_eq!(
+        mutant(&matrix, always)["caughtByAll"],
+        serde_json::json!([
+            "tests::small_orders_pay_full_price",
+            "more::nothing_off_under_a_hundred"
+        ])
+    );
+    assert_eq!(
+        mutant(&matrix, never)["caughtByAll"],
+        serde_json::json!(["pricing::big_orders_get_ten_percent_off"])
+    );
+    assert!(mutant(&matrix, edge).get("caughtByAll").is_none());
+    let report: Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("target/mutastic/mutation.json")).unwrap(),
+    )
+    .unwrap();
+    let in_report = report["files"]["src/lib.rs"]["mutants"].as_array().unwrap();
+    for event in &caught {
+        let kept = in_report.iter().find(|m| m["id"] == event["id"]).unwrap();
+        assert_eq!(kept["killedBy"], event["caughtByAll"], "{kept}");
+    }
+
+    // --confirm-catches: a catch that doesn't repeat when its test runs again on its own isn't
+    // one. Taken at face value, the flaky test catches the edge, and the run is at 100%.
+    std::fs::write(&more, format!("{SECOND_CATCHER}{FAILS_ONCE}")).unwrap();
+    let flaky = "more::discounts_now_and_then";
+    let (code, lucky) = mutastic_in(&dir, &["run", "--format=agent"]);
+    assert_eq!(code, 0, "{lucky}");
+    assert!(
+        lucky.starts_with("mutastic: PASS · score 100.0% (threshold 80) · 0 missed, 0 not covered, 11 caught of 11 mutants\n"),
+        "{lucky}"
+    );
+    assert!(!lucky.contains("likely flaky"), "{lucky}");
+    let (code, verified) = mutastic_in(&dir, &["verify", edge]);
+    assert_eq!(code, 0, "{verified}");
+    assert_eq!(verified, format!("mutastic: {edge} is caught by {flaky}\n"));
+    let (code, verified) = mutastic_in(&dir, &["verify", edge, "--confirm-catches"]);
+    assert_eq!(code, 1, "{verified}");
+    assert!(
+        verified.starts_with(&format!("mutastic: {edge} is still missed\n")),
+        "{verified}"
+    );
+
+    let (code, agent) = mutastic_in(&dir, &["run", "--format=agent", "--confirm-catches"]);
+    assert_eq!(code, 0, "{agent}");
+    for said in [
+        "mutastic: PASS · score 90.9% (threshold 80) · 1 missed, 0 not covered, 10 caught of 11 mutants\n".to_string(),
+        "vs last run: 100.0% → 90.9% (same code)\n".to_string(),
+        format!("likely flaky: {flaky}; with the code unchanged, whether it catches {edge} changed since the last run. Its catches can't be trusted until it's fixed\n"),
+        format!("likely flaky: {flaky}; its catches of {edge}, {never}, m6d05659f, m95f96847 didn't repeat when run again, so the other covering tests decided\n"),
+        format!("   covered by: tests::small_orders_pay_full_price, {flaky}, more::nothing_off_under_a_hundred, pricing::big_orders_get_ten_percent_off; all still pass with the change ({flaky} failed once, then passed: flaky)\n"),
+    ] {
+        assert!(agent.contains(&said), "no {said:?} in:\n{agent}");
+    }
+
+    let (code, jsonl) = mutastic_in(
+        &dir,
+        &[
+            "run",
+            "--format=jsonl",
+            "--confirm-catches",
+            "--report=none",
+        ],
+    );
+    assert_eq!(code, 0, "{jsonl}");
+    let confirmed = finished(&jsonl);
+    let missed = mutant(&confirmed, edge);
+    assert_eq!(missed["status"], "Survived", "{missed}");
+    assert_eq!(missed["unconfirmedCatchBy"], flaky, "{missed}");
+    assert!(missed.get("caughtBy").is_none(), "{missed}");
+    // The run that confirms isn't counted, as in the Java edition: the four covering tests.
+    assert_eq!(missed["testsRun"], 4, "{missed}");
+    // The tests after the one whose catch didn't repeat decide: here one of them catches it.
+    let decided = mutant(&confirmed, never);
+    assert_eq!(decided["status"], "Killed", "{decided}");
+    assert_eq!(decided["unconfirmedCatchBy"], flaky, "{decided}");
+    assert_eq!(
+        decided["caughtBy"], "pricing::big_orders_get_ten_percent_off",
+        "{decided}"
+    );
+    // A catch that repeats is left as it was.
+    let repeated = mutant(&confirmed, always);
+    assert_eq!(repeated["caughtBy"], "tests::small_orders_pay_full_price");
+    assert!(repeated.get("unconfirmedCatchBy").is_none(), "{repeated}");
+    assert_eq!(
+        confirmed.last().unwrap()["likelyFlaky"],
+        serde_json::json!([{
+            "test": flaky,
+            "mutants": [never, "m6d05659f", "m95f96847", edge],
+            "reasons": ["catch-not-repeated"],
+        }])
+    );
+
+    let (_, full) = mutastic_in(
+        &dir,
+        &["run", "--format=full", "--confirm-catches", "--report=none"],
+    );
+    assert!(
+        full.contains(&format!(
+            " ! likely flaky: {flaky}; its catches of {edge}, {never}, m6d05659f, m95f96847 didn't repeat when run again\n"
+        )),
+        "{full}"
+    );
+    assert!(
+        full.contains(&format!(
+            "(all 4 covering tests still pass); {flaky} failed once, then passed: flaky\n"
+        )),
+        "{full}"
+    );
+
+    // --exclude-tests: a test, or a module of tests, left out and named in the summary. What
+    // only they reach is not covered, and a run without them isn't compared as the same code, so
+    // the tests left out aren't taken for flaky.
+    let (code, full) = mutastic_in(
+        &dir,
+        &[
+            "run",
+            "--format=full",
+            "--report=none",
+            &format!("--exclude-tests={flaky},tests"),
+        ],
+    );
+    assert_eq!(code, 1, "{full}");
+    for said in [
+        "   ○ src/lib.rs:34-37 shipping() (5 mutants)\n".to_string(),
+        "   Mutants  ✓ 5 caught · ✗ 1 missed · ○ 5 not covered (11)\n".to_string(),
+        "     Tests  2 on rustc ".to_string(),
+        format!("  Left out  {flaky}, tests (--exclude-tests)\n"),
+    ] {
+        assert!(full.contains(&said), "no {said:?} in:\n{full}");
+    }
+    assert!(!full.contains("flaky:"), "{full}");
+    assert!(full.contains("vs last run (code changed)"), "{full}");
+    // Given again, it adds; a name that's only part of a module's leaves nothing out.
+    let (_, jsonl) = mutastic_in(
+        &dir,
+        &[
+            "run",
+            "--format=jsonl",
+            "--report=none",
+            "--exclude-tests=more",
+            "--exclude-tests=test",
+        ],
+    );
+    let without_more = finished(&jsonl);
+    assert_eq!(without_more.last().unwrap()["tests"], 3, "{jsonl}");
+    assert_eq!(
+        mutant(&without_more, edge)["coveredBy"],
+        serde_json::json!([
+            "tests::small_orders_pay_full_price",
+            "pricing::big_orders_get_ten_percent_off"
+        ])
+    );
+    let (code, verified) = mutastic_in(&dir, &["verify", edge, "--exclude-tests=more"]);
+    assert_eq!(code, 1, "{verified}");
+
+    // --each-mutant: an entry for every missed mutant, where a line's mutants share one; and
+    // code no test reaches by line, where a function's lines share one.
+    let stronger = [
+        "run",
+        "--report=none",
+        "--exclude-tests=more",
+        "--operators=all",
+    ];
+    let run = |more: &[&str]| mutastic_in(&dir, &[&stronger[..], more].concat()).1;
+    let together = run(&["--format=concise"]);
+    assert!(
+        together.contains(
+            " ✗ src/lib.rs:16 tests pass even when 50 becomes 51 in new() ma9531361,ma59bad6d,me37622a8,m2b0cd027\n"
+        ),
+        "{together}"
+    );
+    let each = run(&["--format=concise", "--each-mutant"]);
+    for said in [
+        " ✗ src/lib.rs:16 tests pass even when 50 becomes 51 in new() ma9531361\n",
+        " ✗ src/lib.rs:16 tests pass even when 50 becomes 49 in new() ma59bad6d\n",
+        " ✗ src/lib.rs:16 tests pass even when 50 becomes 0 in new() me37622a8\n",
+        " ✗ src/lib.rs:16 tests pass even when 50 becomes 1 in new() m2b0cd027\n",
+    ] {
+        assert!(each.contains(said), "no {said:?} in:\n{each}");
+    }
+    let cards = |out: &str| out.matches("[✗ MISSED]").count();
+    assert_eq!(cards(&run(&["--format=full"])), 3);
+    assert_eq!(cards(&run(&["--format=full", "--each-mutant"])), 8);
+    let agent = run(&["--format=agent"]);
+    assert!(agent.contains("   also missed ma59bad6d: "), "{agent}");
+    let agent = run(&["--format=agent", "--each-mutant"]);
+    assert!(!agent.contains("   also missed "), "{agent}");
+    assert!(agent.contains("missed ma59bad6d: "), "{agent}");
+
+    let unreached = ["run", "--report=none", "--exclude-tests=tests,more"];
+    let run = |more: &[&str]| mutastic_in(&dir, &[&unreached[..], more].concat()).1;
+    let by_function = run(&["--format=agent"]);
+    assert!(
+        by_function.contains("- src/lib.rs:34-37 shipping() (5 mutants)\n"),
+        "{by_function}"
+    );
+    let by_line = run(&["--format=agent", "--each-mutant"]);
+    for said in [
+        "- src/lib.rs:34 shipping() (3 mutants)\n",
+        "- src/lib.rs:35 shipping() (1 mutant)\n",
+        "- src/lib.rs:37 shipping() (1 mutant)\n",
+    ] {
+        assert!(by_line.contains(said), "no {said:?} in:\n{by_line}");
+    }
+    let by_line = run(&["--format=full", "--each-mutant"]);
+    assert!(
+        by_line.contains("   ○ src/lib.rs:35 shipping() (1 mutant)\n"),
+        "{by_line}"
     );
 }
 
@@ -4975,5 +5273,181 @@ fn an_audit_runs_the_arid_mutants_and_says_where_a_test_checks_them() {
              run them, add to mutastic.yaml\n               rules:\n"
         ),
         "{full}"
+    );
+}
+
+/// The failures the Java edition has a code for, each provoked on the pricing fixture and read
+/// from its `run-failed` event: tests that are all `#[ignore]`d (`no-tests`), tests that pass and
+/// reach none of the code with mutants (`nothing-covered`, in a run of every mutant only), a test
+/// that ends its process (`tests-stopped`), and a file where mutastic keeps a directory (`disk`).
+#[test]
+fn a_run_that_cant_measure_says_which_kind_of_failure_it_is() {
+    let dir = copy_of("pricing", "error-codes");
+    let failed = |args: &[&str], env: &[(&str, &str)]| {
+        let (code, out) = mutastic_with_input_and_env(
+            &dir,
+            &[args, &["--format=jsonl"]].concat(),
+            "",
+            &[&[("MUTASTIC_PROGRESS", "none")], env].concat(),
+        );
+        let event = events(&out).pop().unwrap();
+        assert!(schema().is_valid(&event), "{event}");
+        assert_eq!(event["reason"], "run-failed", "{event}");
+        assert_eq!(event["exitCode"], 2, "{event}");
+        assert_eq!(code, 2, "{event}");
+        (
+            event["code"].as_str().unwrap().to_string(),
+            event["rendered"].as_str().unwrap().to_string(),
+        )
+    };
+    let unit_tests = dir.join("src/lib.rs");
+    let integration_tests = dir.join("tests/pricing.rs");
+    let ignored = |file: &Path| {
+        let text = std::fs::read_to_string(file).unwrap();
+        std::fs::write(file, text.replace("#[test]\n", "#[test]\n#[ignore]\n")).unwrap();
+    };
+
+    ignored(&unit_tests);
+    ignored(&integration_tests);
+    assert_eq!(
+        failed(&["run", "--report=none"], &[]),
+        (
+            "no-tests".to_string(),
+            "mutastic: no test ran in pricing, so there's nothing to judge a mutant by. mutastic \
+             runs the tests `cargo test` runs, and all 3 of its tests are #[ignore]d: take the \
+             #[ignore] off one that calls this code, or write one\n"
+                .to_string()
+        )
+    );
+
+    std::fs::write(
+        &integration_tests,
+        "#[test]\nfn sums() {\n    assert_eq!(1 + 1, 2);\n}\n",
+    )
+    .unwrap();
+    assert_eq!(
+        failed(&["run", "--report=none"], &[]),
+        (
+            "nothing-covered".to_string(),
+            "mutastic: 1 test ran and passed in pricing, but it reached none of the 2 functions \
+             with mutants, so a score would measure nothing: every mutant would read as reached \
+             by no test. Write a #[test] that calls this code\n"
+                .to_string()
+        )
+    );
+    // A run of some mutants is let through: there, tests that reach none of them can be the
+    // honest answer.
+    let (code, out) = mutastic_in(&dir, &["verify", "mb2f8ae57"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(
+        out.contains("mutastic: mb2f8ae57 isn't reached by any test"),
+        "{out}"
+    );
+
+    std::fs::write(
+        &integration_tests,
+        "#[test]\nfn leaves() {\n    std::process::exit(3);\n}\n",
+    )
+    .unwrap();
+    assert_eq!(
+        failed(&["run", "--report=none"], &[]),
+        (
+            "tests-stopped".to_string(),
+            "mutastic: pricing::leaves (it exited with status 3) fails without any mutant, so \
+             mutastic can't judge one.\n\
+             mutastic runs each test alone: a test that passes with the others, but fails alone, \
+             leans on one of them.\n\
+             Its output is in target/mutastic/tests.log. To run it alone:\n  \
+             cargo test -p pricing --test pricing -- --exact leaves\n"
+                .to_string()
+        )
+    );
+
+    // A file where the work directory goes, in a target directory of this test's own: the
+    // fixture's, with its build, stays as it is.
+    let blocked = dir.join("target").join("blocked");
+    std::fs::create_dir_all(&blocked).unwrap();
+    std::fs::write(blocked.join("mutastic"), "").unwrap();
+    let (code, said) = failed(
+        &["run", "--report=none"],
+        &[("CARGO_TARGET_DIR", blocked.to_str().unwrap())],
+    );
+    assert_eq!(code, "disk");
+    assert!(
+        said.starts_with("mutastic: couldn't make ") && said.contains("blocked"),
+        "{said}"
+    );
+    if cfg!(unix) {
+        assert!(
+            said.ends_with(
+                ". A file is where mutastic keeps a directory: move it, and run mutastic again\n"
+            ),
+            "{said}"
+        );
+    }
+}
+
+/// On GitHub Actions (`GITHUB_ACTIONS=true`) a full run annotates the line of each of its first
+/// misses, on stderr so a format's own output is untouched, and adds a summary to the job's page,
+/// after whatever another step wrote there; elsewhere, or with `MUTASTIC_GITHUB=off`, it does
+/// neither. As the Java edition's `GitHubActionsTest`.
+#[test]
+fn a_run_on_github_actions_annotates_its_misses_and_summarises_the_job() {
+    let dir = copy_of("pricing", "github");
+    // In the build's directory, which a copy keeps from the process before: so not there yet.
+    let summary = dir.join("target").join("summary.md");
+    let _ = std::fs::remove_file(&summary);
+    let run = |format: &str, env: &[(&str, &str)]| {
+        let output = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+            .args(["run", "--report=none", format])
+            .current_dir(&dir)
+            .env_remove("MUTASTIC_FORMAT")
+            .env_remove("MUTASTIC_AGENT")
+            .env_remove("MUTASTIC_GITHUB")
+            .env_remove("GITHUB_ACTIONS")
+            .env("GITHUB_STEP_SUMMARY", &summary)
+            .env("MUTASTIC_PROGRESS", "none")
+            .env("NO_COLOR", "1")
+            .envs(env.iter().copied())
+            .output()
+            .unwrap();
+        (
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        )
+    };
+
+    let (_, off) = run(
+        "--format=concise",
+        &[("GITHUB_ACTIONS", "true"), ("MUTASTIC_GITHUB", "off")],
+    );
+    let (_, elsewhere) = run("--format=concise", &[]);
+    assert!(!off.contains("::warning"), "{off}");
+    assert!(!elsewhere.contains("::warning"), "{elsewhere}");
+    assert!(!summary.exists(), "a summary was written with it off");
+
+    std::fs::write(&summary, "another step's\n").unwrap();
+    let (out, err) = run("--format=jsonl", &[("GITHUB_ACTIONS", "true")]);
+    assert_eq!(
+        err,
+        "::warning file=src/lib.rs,line=26,title=mutastic%3A missed mb2f8ae57::no test checks \
+         `discount()` at `total == 100`\n"
+    );
+    assert!(!out.contains("::warning"), "{out}");
+    assert_eq!(
+        std::fs::read_to_string(&summary).unwrap(),
+        "another step's\n\
+         ### mutastic: PASS · score 90.9% (threshold 80)\n\
+         \n\
+         | Caught | Missed | Not covered | Timed out |\n\
+         |---|---|---|---|\n\
+         | 10 | 1 | 0 | 0 |\n\
+         \n\
+         **Missed, most worth a test first**\n\
+         \n\
+         | Mutant | Where | No test checks |\n\
+         |---|---|---|\n\
+         | `mb2f8ae57` | `src/lib.rs:26` | no test checks `discount()` at `total == 100` |\n\
+         \n"
     );
 }

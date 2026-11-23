@@ -16,6 +16,7 @@ use crate::words::{self, Advice};
 
 pub mod audit;
 pub mod files;
+pub mod github;
 pub mod next;
 pub mod sarif;
 
@@ -89,6 +90,8 @@ pub struct Style {
     pub links: bool,
     pub words: Vocabulary,
     pub labels: Labels,
+    /// `--each-mutant`: a card for every missed mutant, not one for the mutants of each line.
+    pub each_mutant: bool,
 }
 
 /// How a label such as `MISSED` is drawn in colour (`MUTASTIC_PILLS`), as the Java edition draws
@@ -373,6 +376,9 @@ struct View<'a> {
     /// Whether what it gives of the project's text is shown: [`untrusted::value`]d, for a person's
     /// or an agent's reading. Events and report files keep it as it is.
     shown: bool,
+    /// `--each-mutant`: every missed mutant is an entry of its own, and code no test reaches is
+    /// counted by line, not by function.
+    each: bool,
 }
 
 impl<'a> View<'a> {
@@ -382,7 +388,13 @@ impl<'a> View<'a> {
             project: &report.project,
             results: &report.results,
             shown,
+            each: false,
         }
+    }
+
+    /// The same view, with an entry for every missed mutant or one for each line's.
+    fn one_to_a_mutant(self, each: bool) -> View<'a> {
+        View { each, ..self }
     }
 
     fn mutant(&self, result: &MutantResult) -> &'a Mutant {
@@ -552,7 +564,8 @@ impl<'a> View<'a> {
         self.entries_where(|_| true)
     }
 
-    /// The missed mutants `kept` keeps, a line's together, the line's most telling first.
+    /// The missed mutants `kept` keeps, a line's together, the line's most telling first; with
+    /// `--each-mutant`, each on its own, a line's in the order found.
     fn entries_where(&self, kept: impl Fn(&MutantResult) -> bool) -> Vec<Entry<'a>> {
         let mut by_line: BTreeMap<(String, usize), Vec<&'a MutantResult>> = BTreeMap::new();
         for result in self.results {
@@ -563,6 +576,16 @@ impl<'a> View<'a> {
                     .or_default()
                     .push(result);
             }
+        }
+        if self.each {
+            return by_line
+                .into_values()
+                .flatten()
+                .map(|main| Entry {
+                    main,
+                    also: Vec::new(),
+                })
+                .collect();
         }
         by_line
             .into_values()
@@ -806,7 +829,7 @@ fn ranked<'a>(view: &View<'a>, entries: Vec<Entry<'a>>) -> Vec<Entry<'a>> {
 
 fn covered_by(result: &MutantResult) -> String {
     let count = result.covered_by.len();
-    if count == 1 {
+    let covered = if count == 1 {
         format!(
             "covered by {} (its 1 covering test still passes)",
             untrusted::value(&result.covered_by[0])
@@ -816,7 +839,45 @@ fn covered_by(result: &MutantResult) -> String {
             "covered by {} (all {count} covering tests still pass)",
             names(&result.covered_by)
         )
+    };
+    match &result.unconfirmed {
+        Some(test) => format!("{covered}; {}", failed_once(test)),
+        None => covered,
     }
+}
+
+/// What a mutant's card says of the test whose catch of it didn't repeat (`--confirm-catches`), as
+/// the Java edition says it.
+fn failed_once(test: &str) -> String {
+    format!("{} failed once, then passed: flaky", untrusted::value(test))
+}
+
+/// Each test whose catch didn't repeat when it ran again on its own (`--confirm-catches`), with
+/// the mutants it failed against, by name: the Java edition's `Suspects.unconfirmed`.
+fn unconfirmed(report: &Report) -> BTreeMap<String, Vec<String>> {
+    let mut by_test: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for result in &report.results {
+        if let Some(test) = &result.unconfirmed {
+            by_test
+                .entry(test.clone())
+                .or_default()
+                .push(report.found.mutants[result.mutant].id.clone());
+        }
+    }
+    by_test
+}
+
+/// `catch of m1a2b3c4d` or `catches of m1a2b3c4d, m5e6f7a8b`.
+fn catches_of(mutants: &[String]) -> String {
+    format!(
+        "{} of {}",
+        if mutants.len() == 1 {
+            "catch"
+        } else {
+            "catches"
+        },
+        names(mutants)
+    )
 }
 
 /// What a mutant's card says of the test whose catch of it was false, as the Java edition says it.
@@ -839,11 +900,11 @@ pub fn failing_alone(report: &Report) -> String {
 
 /// A test that caught mutants, then failed on its own with no mutant in, run again after them: it
 /// passed among the others, so it counts on what something else sets up or leaves behind. The Java
-/// edition's words, but for the way out it offers with `--exclude-tests`, which this edition
-/// doesn't have yet.
+/// edition's words, with the test's name where it gives `--exclude-tests` the class.
 fn failing_alone_line(flaky: &crate::flaky::Flaky) -> String {
     format!(
-        "flaky: {} passes among the others but fails on its own, with no mutant in (run again after the mutants, it failed): it counts on something another test or the run sets up or leaves behind. It's left out, so its catches don't count: the mutants it reached ran again without it, and the run can't pass until it passes on its own. Make it set up what it needs and clean up what it leaves. Never remove, disable or loosen it to get a run through\n",
+        "flaky: {} passes among the others but fails on its own, with no mutant in (run again after the mutants, it failed): it counts on something another test or the run sets up or leaves behind. It's left out, so its catches don't count: the mutants it reached ran again without it, and the run can't pass until it passes on its own. Make it set up what it needs and clean up what it leaves, or run without it with `--exclude-tests={}`. Never remove, disable or loosen it to get a run through\n",
+        untrusted::value(&flaky.test),
         untrusted::value(&flaky.test)
     )
 }
@@ -1011,7 +1072,7 @@ pub fn file_finished(
 }
 
 fn human(report: &Report, style: Style, format: Format) -> String {
-    let view = View::of(report, true);
+    let view = View::of(report, true).one_to_a_mutant(style.each_mutant);
     let mut out = String::new();
     let entries = view.entries();
     if !entries.is_empty() {
@@ -1087,8 +1148,13 @@ fn human(report: &Report, style: Style, format: Format) -> String {
 /// The run's warnings, before the summary: each flaky test left out, as the Java edition shows them.
 fn warnings(out: &mut String, report: &Report, style: Style) {
     let likely_flaky = likely_flaky(report);
+    let unconfirmed = unconfirmed(report);
     let unrelated = unrelated_catches(report);
-    if report.flaky.is_empty() && likely_flaky.is_empty() && unrelated.is_empty() {
+    if report.flaky.is_empty()
+        && likely_flaky.is_empty()
+        && unconfirmed.is_empty()
+        && unrelated.is_empty()
+    {
         return;
     }
     out.push('\n');
@@ -1117,6 +1183,15 @@ fn warnings(out: &mut String, report: &Report, style: Style) {
             style.amber("! likely flaky:"),
             untrusted::value(test),
             names(mutants)
+        );
+    }
+    for (test, mutants) in &unconfirmed {
+        let _ = writeln!(
+            out,
+            " {} {}; its {} didn't repeat when run again",
+            style.amber("! likely flaky:"),
+            untrusted::value(test),
+            catches_of(mutants)
         );
     }
     for note in unrelated {
@@ -1197,6 +1272,34 @@ fn likely_flaky(report: &Report) -> std::collections::BTreeMap<String, Vec<Strin
         .as_ref()
         .map(crate::record::Comparison::likely_flaky)
         .unwrap_or_default()
+}
+
+/// `run-finished`'s `likelyFlaky`: one entry for each test a signal named, with every mutant it
+/// changed and the signals that named it, `changed-since-last-run` and `catch-not-repeated`, as
+/// the Java edition's `Suspects.json` writes them.
+fn accused(report: &Report) -> Vec<Value> {
+    let mut by_test: BTreeMap<String, (BTreeSet<String>, Vec<&str>)> = BTreeMap::new();
+    let signals = [
+        (likely_flaky(report), "changed-since-last-run"),
+        (unconfirmed(report), "catch-not-repeated"),
+    ];
+    for (suspects, reason) in signals {
+        for (test, mutants) in suspects {
+            let (changed, reasons) = by_test.entry(test).or_default();
+            changed.extend(mutants);
+            reasons.push(reason);
+        }
+    }
+    by_test
+        .into_iter()
+        .map(|(test, (mutants, reasons))| {
+            json!({
+                "test": test,
+                "mutants": mutants,
+                "reasons": reasons,
+            })
+        })
+        .collect()
 }
 
 /// `; it reaches SystemTime::now`: what it reaches that changes from run to run, its own code first.
@@ -1675,20 +1778,31 @@ const NOT_COVERED_SHOWN: usize = 50;
 /// Each function with mutants no test reaches, `src/lib.rs:18-20 tier()`, with each of those
 /// mutants' line and id, in the order found.
 fn not_covered_places(view: &View) -> Vec<NotCovered> {
-    let mut by_function: Vec<(usize, Vec<(usize, String)>)> = Vec::new();
+    // A function out of the tests' reach is one thing to fix, a test that calls it: so by
+    // function, or with `--each-mutant` by line, as the Java edition counts them.
+    // A place is a function, with one of its lines when by line; a mutant there, its line and id.
+    type Place = (usize, Option<usize>);
+    let mut by_place: Vec<(Place, Vec<(usize, String)>)> = Vec::new();
     for result in view.results {
         if result.status == Status::NoCoverage {
             let mutant = view.mutant(result);
             let found = (mutant.line, mutant.id.clone());
-            match by_function.iter_mut().find(|(f, _)| *f == mutant.function) {
+            let place = (mutant.function, view.each.then_some(mutant.line));
+            match by_place.iter_mut().find(|(at, _)| *at == place) {
                 Some((_, mutants)) => mutants.push(found),
-                None => by_function.push((mutant.function, vec![found])),
+                None => by_place.push((place, vec![found])),
             }
         }
     }
-    by_function
+    // A function's lines in order, the functions as found.
+    let found: Vec<usize> = by_place
+        .iter()
+        .map(|((function, _), _)| *function)
+        .collect();
+    by_place.sort_by_key(|((function, line), _)| (found.iter().position(|f| f == function), *line));
+    by_place
         .into_iter()
-        .map(|(function, mutants)| {
+        .map(|((function, _), mutants)| {
             let (from, to) = (
                 mutants.iter().map(|(line, _)| *line).min().unwrap_or(0),
                 mutants.iter().map(|(line, _)| *line).max().unwrap_or(0),
@@ -1779,8 +1893,9 @@ fn not_covered(out: &mut String, view: &View, or_only_flaky: &str, style: Style)
             out,
             "{}",
             style.dim(&format!(
-                "   … and {} more functions",
-                places.len() - NOT_COVERED_SHOWN
+                "   … and {} more {}",
+                places.len() - NOT_COVERED_SHOWN,
+                if view.each { "lines" } else { "functions" }
             ))
         );
     }
@@ -1978,10 +2093,18 @@ fn rows(report: &Report, style: Style) -> Vec<(&'static str, String)> {
             .collect();
         rows.push(("Reports", files.join(&style.dim(" · "))));
     }
-    // What the run left out, after the reports, where the Java edition says the test classes
-    // `--exclude-tests` leaves out: here the code it doesn't mutate.
-    for (index, line) in not_mutated(report).into_iter().enumerate() {
-        rows.push((if index == 0 { "Left out" } else { "" }, style.dim(&line)));
+    // What the run left out, after the reports: the tests `--exclude-tests` leaves out, as the
+    // Java edition names them, then the code this edition doesn't mutate.
+    let tests = (!report.left_out.is_empty()).then(|| {
+        format!(
+            "{}{}",
+            names(&report.left_out),
+            style.dim(" (--exclude-tests)")
+        )
+    });
+    let code = not_mutated(report).into_iter().map(|line| style.dim(&line));
+    for (index, line) in tests.into_iter().chain(code).enumerate() {
+        rows.push((if index == 0 { "Left out" } else { "" }, line));
     }
     // A run of mutants asked for by id has a fate for each, not a score.
     if !report.only {
@@ -2346,7 +2469,7 @@ fn not_mutated(report: &Report) -> Vec<String> {
 
 fn agent(report: &Report, style: Style) -> String {
     let words = style.words;
-    let view = View::of(report, true);
+    let view = View::of(report, true).one_to_a_mutant(style.each_mutant);
     if report.only && !report.results.is_empty() {
         return agent_fates(&view, words);
     }
@@ -2418,6 +2541,14 @@ fn agent(report: &Report, style: Style) -> String {
             "likely flaky: {}; with the code unchanged, whether it catches {} changed since the last run. Its catches can't be trusted until it's fixed",
             untrusted::value(&test),
             names(&mutants)
+        );
+    }
+    for (test, mutants) in unconfirmed(report) {
+        let _ = writeln!(
+            out,
+            "likely flaky: {}; its {} didn't repeat when run again, so the other covering tests decided",
+            untrusted::value(&test),
+            catches_of(&mutants)
         );
     }
     for note in unrelated_catches(report) {
@@ -2630,8 +2761,12 @@ fn agent_entry(view: &View, entry: &Entry, words: Vocabulary) -> String {
     }
     let _ = writeln!(
         out,
-        "   covered by: {}; all still pass with the change{}",
+        "   covered by: {}; all still pass with the change{}{}",
         names(&result.covered_by),
+        result
+            .unconfirmed
+            .as_deref()
+            .map_or(String::new(), |test| format!(" ({})", failed_once(test))),
         result
             .false_catch_by
             .as_deref()
@@ -2827,14 +2962,7 @@ fn jsonl(report: &Report) -> String {
             })
             .collect::<Vec<_>>());
     }
-    finished["likelyFlaky"] = json!(likely_flaky(report)
-        .into_iter()
-        .map(|(test, mutants)| json!({
-            "test": test,
-            "mutants": mutants,
-            "reasons": ["changed-since-last-run"],
-        }))
-        .collect::<Vec<_>>());
+    finished["likelyFlaky"] = json!(accused(report));
     finished["unrelatedCatches"] = json!(unrelated_catches(report)
         .into_iter()
         .map(|note| json!({
@@ -2891,6 +3019,7 @@ pub fn mutant_finished(
         project,
         results: std::slice::from_ref(result),
         shown: false,
+        each: false,
     };
     mutant_event(&view, result)
 }
@@ -3008,8 +3137,14 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
     if let Some(failure) = &result.killed_with {
         event["caughtWith"] = json!(failure);
     }
+    if !result.killed_by_all.is_empty() {
+        event["caughtByAll"] = json!(result.killed_by_all);
+    }
     if let Some(origin) = &result.failure_origin {
         event["failureOrigin"] = json!(origin);
+    }
+    if let Some(test) = &result.unconfirmed {
+        event["unconfirmedCatchBy"] = json!(test);
     }
     if let Some(test) = &result.false_catch_by {
         event["falseCatchBy"] = json!(test);

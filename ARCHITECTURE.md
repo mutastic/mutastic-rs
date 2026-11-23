@@ -27,15 +27,19 @@ for the conventions the code is held to, [AGENTS.md](AGENTS.md).
    (overflow checks and debug assertions on). It blames each compile error on the mutants it lies
    in, withdraws them as unviable, and builds again. Flags reach only the user's crate, through
    `RUSTC_WORKSPACE_WRAPPER`, which is the mutastic binary itself (`wrapper`), never `RUSTFLAGS`.
-4. **Coverage.** `testrun` lists the tests in each built test binary and runs each test alone with
+4. **Coverage.** `testrun` lists the tests in each built test binary, `engine` drops those
+   `--exclude-tests` names, and each of the rest runs alone with
    the switches recording which sites it reaches and the whole numbers each function was called
    with: the "inputs seen" on a card. Every test must pass here: one that fails runs again on its
    own, and if it then passes it's flaky, left out of the run, with what it reaches that varies
    (`flaky`); one that fails every time stops the run.
 5. **Mutants, side by side.** `engine` runs each mutant against only the tests that reach its site,
    the fastest binary first, with `MUTASTIC_ACTIVE` naming it, each run a process of its own under a
-   time limit, on `--workers` threads. The first failing test catches it. A process that dies
-   without a test failing is run again, one test at a time, to see how: in safe code that's caught
+   time limit, on `--workers` threads. The first failing test catches it; with
+   `--confirm-catches`, the first whose failure repeats when it runs again on its own against the
+   mutant, and with `--kill-matrix` the binaries after the catching one run too, to name every
+   test that catches it. A process that dies without a test failing is run again, one test at a
+   time, to see how: in safe code that's caught
    by the crash, and near unsafe code, or in std's own check of an unsafe precondition, it's a
    `RuntimeError`, out of the score. Near-unsafe mutants run with one test thread. Then `guard`
    runs each test that caught a mutant again, on its own with no mutant in: one that fails there
@@ -79,7 +83,7 @@ All the code is in `crates/mutastic/src`:
 | `engine` | A run: finds, builds, records coverage, runs each mutant, and decides its status |
 | `words` | What a card says: the gap, the change, the inputs seen and the help |
 | `suggest` | Suggested tests: candidate inputs, running the probes, and the test written out |
-| `report` | The formats: `full`, `concise`, `agent` and `jsonl`; `report/next.rs`, `mutastic next`'s queue, its order and `--top`, in each format |
+| `report` | The formats: `full`, `concise`, `agent` and `jsonl`; `report/next.rs`, `mutastic next`'s queue, its order and `--top`, in each format; `report/github.rs`, the annotations and job summary a run on GitHub Actions adds |
 | `nextrun` | What the last `mutastic next` left uncaught, and the hash of the code under test, its test code taken out, that says whether only those run again |
 | `shares` | A run split across machines: which share a mutant is in (`--shard`), a share's events, and the whole run put back together from them (`--from-shards`) |
 

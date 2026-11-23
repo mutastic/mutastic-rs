@@ -372,8 +372,14 @@ fn mutant_entry(view: &View, result: &MutantResult) -> Value {
         entry["statusReason"] = json!(reason);
     }
     entry["coveredBy"] = json!(result.covered_by);
+    // Every test that catches it, with `--kill-matrix`, as the events' `caughtByAll` has them;
+    // else the one.
     if let Some(test) = &result.killed_by {
-        entry["killedBy"] = json!([test]);
+        entry["killedBy"] = if result.killed_by_all.is_empty() {
+            json!([test])
+        } else {
+            json!(result.killed_by_all)
+        };
     }
     entry["testsCompleted"] = json!(result.tests_run);
     entry["duration"] = json!(result.took.as_millis() as u64);

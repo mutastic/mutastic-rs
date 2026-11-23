@@ -201,6 +201,8 @@ mod tests {
             covered_by: covered_by.iter().map(|t| t.to_string()).collect(),
             killed_by: by.map(str::to_string),
             killed_with: by.map(|_| "panic".to_string()),
+            killed_by_all: Vec::new(),
+            unconfirmed: None,
             failure_origin: by.map(|_| "assertion".to_string()),
             false_catch_by: None,
             tests_run: 1,

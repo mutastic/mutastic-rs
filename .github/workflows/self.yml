@@ -7,30 +7,41 @@
 # other: no false catch. Each share runs two, and the shares, each on a machine of its own, split
 # the run. The last job puts them together, as --from-shards does.
 #
-# Weekly, not nightly: the run takes 14 of the account's 20 jobs for hours, in two rounds of
-# shares, and its score moves slowly. Run it by hand (workflow_dispatch) after a change that should
-# move it.
+# Weekly, not nightly: its score moves slowly. Run it by hand (workflow_dispatch) after a change
+# that should move it, or to try a change to this file from its branch.
 #
-# It runs on a pull request that changes this file, so a change to it is tried before it lands.
+# It never runs for a pull request, and holds 6 of the account's 20 jobs at most. Actions has no
+# way to put a pull request's checks or the merge queue's ahead of it: on 22 Nov 2026 two of these
+# runs, each started by a pull request that changed this file, held 18 or 19 of the 20 for hours,
+# and six pull requests that had passed waited three hours for the queue to test them.
 name: Self
 
 on:
   schedule:
     - cron: "41 2 * * 0"
   workflow_dispatch:
-  pull_request:
-    paths: [".github/workflows/self.yml"]
 
 permissions:
   contents: read
 
+# One run at a time: a second waits for the first, so two never hold 12 jobs between them.
+concurrency:
+  group: self
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
   # One worker and 16 shares took 2 to 5 hours a share; then two mutants at once and 14 shares,
-  # 2 to 3 hours. With more mutants and more tests a share of 14 passed the 5 hours it is given
-  # (20 and 21 Nov 2026: 417 of 548 mutants after 4h51m), and the runner's own limit is 6. So 28
-  # shares, half the mutants each, 14 at a time.
+  # 2 to 3 hours. From 20 Nov 2026 a share of 14 passed the 5 hours it is given (417 of 548
+  # mutants after 4h51m), and the runner's own limit is 6: so 28 shares, half the mutants each.
+  # The cause was the fixtures building cold, below. Warm again, a share of 28 takes 1h15 to 2h05
+  # (22 Nov 2026), and 28 stay: a short share is cheap to run again, and they run 6 at a time.
   SHARES: 28
+  # Where the tests keep their fixture copies, with their builds, warm for the next mutant
+  # (scratch in tests/common). mutastic gives each test process an empty temporary directory and
+  # deletes it when the process ends, so kept there, as they are without this, every fixture built
+  # cold for every mutant: the same mutants took two and a half times as long.
+  MUTASTIC_RS_TEST_SCRATCH: /tmp
 
 jobs:
   # mutastic, built once from this commit, for every share.
@@ -54,9 +65,10 @@ jobs:
     timeout-minutes: 300
     strategy:
       fail-fast: false
-      # The account runs 20 jobs at once: 14 shares at a time leave room for pull requests' checks,
-      # which would otherwise wait hours behind the run. The other 14 follow as these finish.
-      max-parallel: 14
+      # The account runs 20 jobs at once, and a pull request's checks take 9 to 15 of them: 6
+      # shares at a time leave a whole run's worth free. The rest follow as these finish, so the
+      # 28 take five rounds, 7 to 10 hours in all.
+      max-parallel: 6
       matrix:
         # As many as SHARES says.
         share:
@@ -111,7 +123,7 @@ jobs:
           name: resources-${{ matrix.share }}
           path: resources.log
           retention-days: 7
-      # The tests' fixture copies are kept in the temporary directory, warm for the next mutant.
+      # The tests' fixture copies are kept in MUTASTIC_RS_TEST_SCRATCH, warm for the next mutant.
       - name: Disk used
         if: always()
         run: df -h / && du -sh /tmp/mutastic-rs-tests target || true

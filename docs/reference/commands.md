@@ -32,7 +32,7 @@ mutastic run --shard=2/4 --threshold=0
 mutastic run --from-shards=shares --threshold=70
 ```
 
-**Options:** [`--threshold=N`](#--threshold), [`--fail-on-new`](#--fail-on-new), [`--since[=REF]`](#--since), [`--only=ID`](#--only), [`--workers=N`](#--workers), [`--shard=N/M`](#--shard), [`--from-shards=DIR`](#--from-shards), [`--no-suggestions`](#--no-suggestions), [`--force-coverage`](#--force-coverage), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--report=KIND[:PATH]`](#--report), [`--format=FORMAT`](#--format), [`--vocabulary=WORDS`](#--vocabulary), [`--color=WHEN`](#--color), [`--hyperlinks=WHEN`](#--hyperlinks), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
+**Options:** [`--threshold=N`](#--threshold), [`--fail-on-new`](#--fail-on-new), [`--since[=REF]`](#--since), [`--only=ID`](#--only), [`--workers=N`](#--workers), [`--confirm-catches`](#--confirm-catches), [`--kill-matrix`](#--kill-matrix), [`--shard=N/M`](#--shard), [`--from-shards=DIR`](#--from-shards), [`--no-suggestions`](#--no-suggestions), [`--force-coverage`](#--force-coverage), [`--exclude-tests=TEST`](#--exclude-tests), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--report=KIND[:PATH]`](#--report), [`--format=FORMAT`](#--format), [`--each-mutant`](#--each-mutant), [`--vocabulary=WORDS`](#--vocabulary), [`--color=WHEN`](#--color), [`--hyperlinks=WHEN`](#--hyperlinks), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
 
 **Exit status:** 0 when the score reaches the threshold, 1 when it doesn't; with --fail-on-new, 0 when every mutant no test catches is in the baseline, 1 when one isn't; with --only, 0 when each mutant named is caught or skipped, as verify judges it, and 1 while one is still missed or not covered.
 
@@ -48,7 +48,7 @@ mutastic verify mb2f8ae57 fixtures/pricing
 mutastic verify mb2f8ae57 m95f96847 fixtures/pricing
 ```
 
-**Options:** [`--workers=N`](#--workers), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
+**Options:** [`--workers=N`](#--workers), [`--confirm-catches`](#--confirm-catches), [`--exclude-tests=TEST`](#--exclude-tests), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
 
 **Exit status:** 0 when it catches each mutant named, or the mutant is skipped or crashed where a crash proves nothing; 1 while one is still missed or not covered.
 
@@ -63,7 +63,7 @@ mutastic explain mb2f8ae57
 mutastic explain mb2f8ae57 fixtures/pricing
 ```
 
-**Options:** [`--workers=N`](#--workers), [`--no-suggestions`](#--no-suggestions), [`--format=FORMAT`](#--format), [`--vocabulary=WORDS`](#--vocabulary), [`--color=WHEN`](#--color), [`--hyperlinks=WHEN`](#--hyperlinks), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
+**Options:** [`--workers=N`](#--workers), [`--confirm-catches`](#--confirm-catches), [`--no-suggestions`](#--no-suggestions), [`--exclude-tests=TEST`](#--exclude-tests), [`--format=FORMAT`](#--format), [`--vocabulary=WORDS`](#--vocabulary), [`--color=WHEN`](#--color), [`--hyperlinks=WHEN`](#--hyperlinks), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
 
 **Exit status:** 0 whatever the mutant's result: it explains, it doesn't judge.
 
@@ -97,7 +97,7 @@ mutastic next --top=5
 mutastic next --format=agent
 ```
 
-**Options:** [`--since[=REF]`](#--since), [`--workers=N`](#--workers), [`--no-suggestions`](#--no-suggestions), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--format=FORMAT`](#--format), [`--vocabulary=WORDS`](#--vocabulary), [`--color=WHEN`](#--color), [`--hyperlinks=WHEN`](#--hyperlinks), [`--progress=STYLE`](#--progress), [`--top=N`](#--top), [`--edition=EDITION`](#--edition).
+**Options:** [`--since[=REF]`](#--since), [`--workers=N`](#--workers), [`--confirm-catches`](#--confirm-catches), [`--no-suggestions`](#--no-suggestions), [`--exclude-tests=TEST`](#--exclude-tests), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--format=FORMAT`](#--format), [`--vocabulary=WORDS`](#--vocabulary), [`--color=WHEN`](#--color), [`--hyperlinks=WHEN`](#--hyperlinks), [`--progress=STYLE`](#--progress), [`--top=N`](#--top), [`--edition=EDITION`](#--edition).
 
 **Exit status:** 0 when nothing missed is left, or only mutants proposed for ignoring; 1 while something is queued.
 
@@ -112,7 +112,7 @@ mutastic baseline
 mutastic baseline --prune
 ```
 
-**Options:** [`--workers=N`](#--workers), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--progress=STYLE`](#--progress), [`--prune`](#--prune), [`--edition=EDITION`](#--edition).
+**Options:** [`--workers=N`](#--workers), [`--confirm-catches`](#--confirm-catches), [`--exclude-tests=TEST`](#--exclude-tests), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--progress=STYLE`](#--progress), [`--prune`](#--prune), [`--edition=EDITION`](#--edition).
 
 **Exit status:** 0 when the baseline is written or pruned; 1 when there's one already and --prune isn't given, or --prune is given and there's none.
 
@@ -222,6 +222,26 @@ mutastic run --workers=2
 mutastic verify mb2f8ae57 --workers=2
 ```
 
+### `--confirm-catches`
+
+`--confirm-catches`, for [`baseline`](#baseline), [`explain`](#explain), [`next`](#next), [`run`](#run), [`verify`](#verify). Run each catching test again on its own, to confirm the catch.
+
+```sh
+mutastic baseline --confirm-catches
+mutastic explain mb2f8ae57 --confirm-catches
+mutastic next --confirm-catches
+mutastic run --confirm-catches
+mutastic verify mb2f8ae57 --confirm-catches
+```
+
+### `--kill-matrix`
+
+`--kill-matrix`, for [`run`](#run). Run every test that reaches a caught mutant, to name each that catches it, not only the first: for measuring an order, slower.
+
+```sh
+mutastic run --kill-matrix --format=jsonl
+```
+
 ### `--shard`
 
 `--shard=N/M`, for [`run`](#run). Run only the Nth of M shares of the mutants, to split one run across machines. It keeps its results in shares/N-of-M in target/mutastic for --from-shards.
@@ -254,6 +274,18 @@ mutastic run --no-suggestions
 
 ```sh
 mutastic run --since --force-coverage
+```
+
+### `--exclude-tests`
+
+`--exclude-tests=TEST`, for [`baseline`](#baseline), [`explain`](#explain), [`next`](#next), [`run`](#run), [`verify`](#verify). A test to leave out of the run, by its name as a run shows it, or a module of tests by its path: one that can't run reliably here, with a race or a fixed port; the summary names it.
+
+```sh
+mutastic baseline --exclude-tests=tests::small_orders_pay_full_price
+mutastic explain mb2f8ae57 --exclude-tests=tests::small_orders_pay_full_price
+mutastic next --exclude-tests=tests::small_orders_pay_full_price
+mutastic run --exclude-tests=tests::small_orders_pay_full_price
+mutastic verify mb2f8ae57 --exclude-tests=tests::small_orders_pay_full_price
 ```
 
 ### `--operators`
@@ -296,6 +328,14 @@ mutastic run --report=json
 mutastic explain mb2f8ae57 --format=jsonl
 mutastic next --format=jsonl
 mutastic run --format=jsonl
+```
+
+### `--each-mutant`
+
+`--each-mutant`, for [`run`](#run). A card for every missed mutant, not one for the mutants of each line.
+
+```sh
+mutastic run --each-mutant
 ```
 
 ### `--vocabulary`
@@ -439,6 +479,7 @@ mutastic verify mb2f8ae57 --edition=rust
 - `MUTASTIC_VOCABULARY`: plain or classic, when --vocabulary isn't given. `classic` says killed and survived instead of caught and missed. The JSON report and the event stream always use the standard names. Any other value is refused.
 - `MUTASTIC_PILLS`: Labels: square (the default), rounded (for a Nerd Font) or off. How labels such as MISSED and PASS are drawn. `rounded` needs a terminal font with Nerd Font glyphs; `off` leaves out the coloured blocks and keeps the words. Any other value is refused.
 - `MUTASTIC_ARID=audit`: Run the mutants the arid filters skip, and say what happened. Adds an Arid audit row to the summary: how many of those mutants ran, and how many the tests caught.
+- `MUTASTIC_GITHUB=off`: No GitHub Actions annotations or job summary. On GitHub Actions (`GITHUB_ACTIONS=true`), a full run annotates the line of each of its first ten misses and adds a summary to the job's page. `off` leaves them out.
 - `MUTASTIC_GATE_BUDGET`: Seconds a hooked gate check may take. 600 unless set: what the agents' plugins' Stop hook allows. The check waits for the count of the task's start only as long as this leaves, and hands over before it runs when its last run took longer.
 - `MUTASTIC_GATE_COUNT_WAIT`: Seconds gate check waits for the count of the task's start. 240 unless set. A count not done by then is left, and a pass says the check compared the test attributes in the source only.
 - `NO_COLOR`: No colour. Set to anything, it turns colour off, as it does for many tools.
