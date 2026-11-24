@@ -100,6 +100,10 @@ pub struct MutantResult {
     /// A test that failed against the mutant, then failed on its own with no mutant in too: its
     /// catch didn't count, and the mutant ran again without it.
     pub false_catch_by: Option<String>,
+    /// A test the run named likely flaky that had caught the mutant, so its catch didn't count:
+    /// the mutant ran again without it, and this result is what the other covering tests made of it
+    /// (decision 27). `false_catch_by` instead when the test failed on its own.
+    pub flaky_catch_by: Option<String>,
     pub tests_run: usize,
     pub took: Duration,
     /// The whole numbers its function was called with, by parameter.
@@ -168,6 +172,12 @@ pub struct Report {
     /// `found.mutants`: its first result, which its `mutant-finished` gives, before the
     /// `mutant-revised` with the result in `results`.
     pub revised: BTreeMap<usize, MutantResult>,
+    /// The tests the run named likely flaky: none of their catches count, as each mutant one
+    /// reached ran again without it (decision 27).
+    pub likely_flaky: Vec<crate::likely::LikelyFlaky>,
+    /// The tests an earlier run named, whose catches this run confirmed
+    /// [`crate::watch::CONFIRMATIONS`] more times each.
+    pub watched: Vec<crate::watch::Watched>,
     /// Which share of a split run this is (`--shard`), and what it ran on.
     pub share: Option<crate::shares::Tag>,
     /// The operators the run used, by id: a score is a share of what they make.
@@ -319,6 +329,9 @@ pub struct Options {
     /// mutastic.yaml's `timeout-ceiling:`: the most one mutant's tests may take in all, in place
     /// of the ceiling the suite's own time gives ([`crate::limits`]).
     pub timeout_ceiling: Option<Duration>,
+    /// What earlier runs say of the tests' catches: the last run's results when nothing has
+    /// changed, and the tests watched since one was named likely flaky (decision 27).
+    pub history: crate::watch::History,
 }
 
 /// How a caught mutant's tests run, as the Java edition's `Catches`: each catch run once more to
@@ -707,6 +720,7 @@ fn run_from(
         reach: &reach,
         cwd: &cwd,
         catches: options.catches,
+        watched: &options.history.watched,
         shrink: !options.only.is_empty(),
         limits,
     };
@@ -757,9 +771,17 @@ fn run_from(
         cwd: &cwd,
         workers: options.workers,
         catches: options.catches,
+        watched: &options.history.watched,
         limits,
     };
-    let guarded = crate::guard::check(&mut results, &runs);
+    let mut guarded = crate::guard::check(&mut results, &runs);
+    let likely_flaky = crate::likely::check(
+        &mut results,
+        &mut guarded,
+        &options.history,
+        &runs,
+        &|mutant| found.mutants[mutant].id.clone(),
+    );
     let mut flaky = flaky;
     flaky.extend(guarded.failing_alone.iter().filter_map(|failing| {
         let index = tests.iter().position(|test| &test.display == failing)?;
@@ -832,6 +854,8 @@ fn run_from(
         scope,
         flaky,
         revised,
+        likely_flaky,
+        watched: Vec::new(),
         share: None,
         operators: options.operators.clone(),
         comparison: None,
@@ -990,6 +1014,7 @@ fn nothing_to_run(
                 unconfirmed: None,
                 failure_origin: None,
                 false_catch_by: None,
+                flaky_catch_by: None,
                 tests_run: 0,
                 took: Duration::ZERO,
                 inputs: BTreeMap::new(),
@@ -1030,6 +1055,8 @@ fn nothing_to_run(
         scope: unbuilt.scope,
         flaky: Vec::new(),
         revised: BTreeMap::new(),
+        likely_flaky: Vec::new(),
+        watched: Vec::new(),
         share: None,
         operators: options.operators.clone(),
         comparison: None,
@@ -1723,6 +1750,9 @@ struct Suite<'a> {
     reach: &'a [Reach],
     cwd: &'a std::path::Path,
     catches: Catches,
+    /// The tests watched since a run named them likely flaky: each catch one makes is confirmed
+    /// [`crate::watch::CONFIRMATIONS`] more times.
+    watched: &'a BTreeSet<String>,
     /// Whether the input a property caught a mutant with is shrunk, by running that test once
     /// more with shrinking on: in a run of mutants named by id, whose cards are read one by one.
     shrink: bool,
@@ -1736,6 +1766,7 @@ fn result(found: &Crate, index: usize, site: u32, suite: &Suite) -> MutantResult
         reach,
         cwd,
         catches,
+        watched,
         shrink,
         limits,
     } = *suite;
@@ -1754,6 +1785,7 @@ fn result(found: &Crate, index: usize, site: u32, suite: &Suite) -> MutantResult
             unconfirmed: None,
             failure_origin: None,
             false_catch_by: None,
+            flaky_catch_by: None,
             tests_run: 0,
             took: Duration::ZERO,
             inputs: BTreeMap::new(),
@@ -1784,6 +1816,7 @@ fn result(found: &Crate, index: usize, site: u32, suite: &Suite) -> MutantResult
         unconfirmed: None,
         failure_origin: None,
         false_catch_by: None,
+        flaky_catch_by: None,
         tests_run: 0,
         took: Duration::ZERO,
         inputs: function
@@ -1924,11 +1957,18 @@ fn result(found: &Crate, index: usize, site: u32, suite: &Suite) -> MutantResult
         // repeats when it runs again on its own, and that run's output is its alone.
         let mut first = 0;
         let mut alone = None;
-        if catches.confirm && !failed.is_empty() {
-            match repeated(&run, &failed, &mut result.unconfirmed) {
+        let confirmations = |test: &Test| {
+            if watched.contains(&test.display) {
+                crate::watch::CONFIRMATIONS
+            } else {
+                usize::from(catches.confirm)
+            }
+        };
+        if failed.iter().any(|test| confirmations(test) > 0) {
+            match repeated(&run, &failed, &confirmations, &mut result.unconfirmed) {
                 Some((at, again)) => {
                     first = at;
-                    alone = Some(again).filter(|again| again.failed.is_some());
+                    alone = again.filter(|again| again.failed.is_some());
                 }
                 // No catch repeated, and the group's other tests passed: the next group decides.
                 None => continue,
@@ -1999,21 +2039,29 @@ fn result(found: &Crate, index: usize, site: u32, suite: &Suite) -> MutantResult
     result
 }
 
-/// The first of `failed` whose failure repeats when it runs again on its own against the mutant
-/// (`--confirm-catches`): its place among them, and that run. A test that passes this time didn't
-/// catch the mutant: it's `unconfirmed`, the last such kept, as the Java edition keeps it, and the
-/// next one that failed is tried. A run that fails any other way, or runs out of time, confirms.
+/// The first of `failed` whose failure repeats each time it runs again on its own against the
+/// mutant, as many times as `confirmations` gives it (`--confirm-catches` once; a watched test
+/// [`crate::watch::CONFIRMATIONS`] times; none, and its catch stands): its place among them, and
+/// its last run, if it ran again. A test that passes once didn't catch the mutant: it's
+/// `unconfirmed`, the last such kept, as the Java edition keeps it, and the next one that failed is
+/// tried. A run that fails any other way, or runs out of time, confirms.
 fn repeated(
     run: &impl Fn(&[&str]) -> Outcome,
     failed: &[&Test],
+    confirmations: &dyn Fn(&Test) -> usize,
     unconfirmed: &mut Option<String>,
-) -> Option<(usize, Outcome)> {
-    for (at, test) in failed.iter().enumerate() {
-        let again = run(&[test.name.as_str()]);
-        if !again.passed {
-            return Some((at, again));
+) -> Option<(usize, Option<Outcome>)> {
+    'tests: for (at, test) in failed.iter().enumerate() {
+        let mut last = None;
+        for _ in 0..confirmations(test) {
+            let again = run(&[test.name.as_str()]);
+            if again.passed {
+                *unconfirmed = Some(test.display.clone());
+                continue 'tests;
+            }
+            last = Some(again);
         }
-        *unconfirmed = Some(test.display.clone());
+        return Some((at, last));
     }
     None
 }
@@ -2032,6 +2080,7 @@ struct BuildRuns<'a> {
     cwd: &'a std::path::Path,
     workers: usize,
     catches: Catches,
+    watched: &'a BTreeSet<String>,
     limits: Limits,
 }
 
@@ -2086,6 +2135,7 @@ impl crate::guard::Runs for BuildRuns<'_> {
             reach: &reach,
             cwd: self.cwd,
             catches: self.catches,
+            watched: self.watched,
             shrink: false,
             limits: self.limits,
         };

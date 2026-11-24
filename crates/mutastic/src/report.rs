@@ -873,21 +873,6 @@ fn failed_once(test: &str) -> String {
     format!("{} failed once, then passed: flaky", untrusted::value(test))
 }
 
-/// Each test whose catch didn't repeat when it ran again on its own (`--confirm-catches`), with
-/// the mutants it failed against, by name: the Java edition's `Suspects.unconfirmed`.
-fn unconfirmed(report: &Report) -> BTreeMap<String, Vec<String>> {
-    let mut by_test: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for result in &report.results {
-        if let Some(test) = &result.unconfirmed {
-            by_test
-                .entry(test.clone())
-                .or_default()
-                .push(report.found.mutants[result.mutant].id.clone());
-        }
-    }
-    by_test
-}
-
 /// `catch of m1a2b3c4d` or `catches of m1a2b3c4d, m5e6f7a8b`.
 fn catches_of(mutants: &[String]) -> String {
     format!(
@@ -906,6 +891,44 @@ fn false_catch(test: &str) -> String {
     format!(
         "{} failed against it, but fails on its own with no mutant in too: that catch doesn't count",
         untrusted::value(test)
+    )
+}
+
+/// What a mutant's card says of the likely flaky test whose catch of it didn't count, as the Java
+/// edition says it.
+fn flaky_catch(test: &str) -> String {
+    format!(
+        "{} failed against it, but it's likely flaky: that catch doesn't count",
+        untrusted::value(test)
+    )
+}
+
+/// `None of its catches count: 3 mutants it reached ran again without it, and the next runs
+/// confirm each catch it makes 3 times.`, as the Java edition says it (decision 27).
+fn none_count(named: &crate::likely::LikelyFlaky) -> String {
+    format!(
+        "None of its catches count: {} it reached ran again without it, and the next runs confirm \
+         each catch it makes {} times.",
+        crate::amounts::count(named.rerun.len(), "mutant"),
+        crate::watch::CONFIRMATIONS
+    )
+}
+
+/// `tests::totals, likely flaky in an earlier run: each catch it made had to repeat 3 times; 1 of
+/// 3 runs held`, and `…, so it's no longer watched` once it has held enough.
+fn watched_line(watched: &crate::watch::Watched) -> String {
+    format!(
+        "{}, likely flaky in an earlier run: each catch it made had to repeat {} times; {} of {} \
+         runs held{}",
+        untrusted::value(&watched.test),
+        crate::watch::CONFIRMATIONS,
+        watched.held,
+        crate::watch::NEEDED,
+        if watched.released {
+            ", so it's no longer watched"
+        } else {
+            ""
+        }
     )
 }
 
@@ -1189,12 +1212,10 @@ fn human(report: &Report, style: Style, format: Format) -> String {
 
 /// The run's warnings, before the summary: each flaky test left out, as the Java edition shows them.
 fn warnings(out: &mut String, report: &Report, style: Style) {
-    let likely_flaky = likely_flaky(report);
-    let unconfirmed = unconfirmed(report);
     let unrelated = unrelated_catches(report);
     if report.flaky.is_empty()
-        && likely_flaky.is_empty()
-        && unconfirmed.is_empty()
+        && report.likely_flaky.is_empty()
+        && report.watched.is_empty()
         && unrelated.is_empty()
     {
         return;
@@ -1218,22 +1239,36 @@ fn warnings(out: &mut String, report: &Report, style: Style) {
             flaky_reason(flaky)
         );
     }
-    for (test, mutants) in &likely_flaky {
-        let _ = writeln!(
-            out,
-            " {} {}; with the code unchanged, whether it catches {} changed since the last run",
-            style.amber("! likely flaky:"),
-            untrusted::value(test),
-            names(mutants)
-        );
+    for named in &report.likely_flaky {
+        let changed = named.mutants_for(crate::likely::Reason::Changed);
+        if !changed.is_empty() {
+            let _ = writeln!(
+                out,
+                " {} {}; with the code unchanged, whether it catches {} changed since the last run. {}",
+                style.amber("! likely flaky:"),
+                untrusted::value(&named.test),
+                names(&changed),
+                none_count(named)
+            );
+        }
+        let unconfirmed = named.mutants_for(crate::likely::Reason::NotRepeated);
+        if !unconfirmed.is_empty() {
+            let _ = writeln!(
+                out,
+                " {} {}; its {} didn't repeat when run again. {}",
+                style.amber("! likely flaky:"),
+                untrusted::value(&named.test),
+                catches_of(&unconfirmed),
+                none_count(named)
+            );
+        }
     }
-    for (test, mutants) in &unconfirmed {
+    for watched in &report.watched {
         let _ = writeln!(
             out,
-            " {} {}; its {} didn't repeat when run again",
-            style.amber("! likely flaky:"),
-            untrusted::value(test),
-            catches_of(mutants)
+            " {} {}",
+            style.amber("! watched:"),
+            watched_line(watched)
         );
     }
     for note in unrelated {
@@ -1306,40 +1341,41 @@ fn unrelated_catches(report: &Report) -> Vec<UnrelatedCatches> {
         .collect()
 }
 
-/// Each test whose catches changed since the last run with the code and mutastic unchanged, and
-/// the mutants it changed.
-fn likely_flaky(report: &Report) -> std::collections::BTreeMap<String, Vec<String>> {
+/// `run-finished`'s `likelyFlaky`: one entry for each test the run named, with every mutant it
+/// changed, the signals that named it, and the mutants that ran again without it, as the Java
+/// edition's `Suspects.json` writes them.
+fn accused(report: &Report) -> Vec<Value> {
     report
-        .comparison
-        .as_ref()
-        .map(crate::record::Comparison::likely_flaky)
-        .unwrap_or_default()
+        .likely_flaky
+        .iter()
+        .map(|named| {
+            json!({
+                "test": named.test,
+                "mutants": named.mutants(),
+                "reasons": named.by_reason.keys().map(|reason| reason.name()).collect::<Vec<_>>(),
+                "rerun": named.rerun,
+            })
+        })
+        .collect()
 }
 
-/// `run-finished`'s `likelyFlaky`: one entry for each test a signal named, with every mutant it
-/// changed and the signals that named it, `changed-since-last-run` and `catch-not-repeated`, as
-/// the Java edition's `Suspects.json` writes them.
-fn accused(report: &Report) -> Vec<Value> {
-    let mut by_test: BTreeMap<String, (BTreeSet<String>, Vec<&str>)> = BTreeMap::new();
-    let signals = [
-        (likely_flaky(report), "changed-since-last-run"),
-        (unconfirmed(report), "catch-not-repeated"),
-    ];
-    for (suspects, reason) in signals {
-        for (test, mutants) in suspects {
-            let (changed, reasons) = by_test.entry(test).or_default();
-            changed.extend(mutants);
-            reasons.push(reason);
-        }
-    }
-    by_test
-        .into_iter()
-        .map(|(test, (mutants, reasons))| {
-            json!({
-                "test": test,
-                "mutants": mutants,
-                "reasons": reasons,
-            })
+/// `run-finished`'s `watched`: each test watched since an earlier run named it, as this run left
+/// it.
+fn watched_json(report: &Report) -> Vec<Value> {
+    report
+        .watched
+        .iter()
+        .map(|watched| {
+            let mut entry = json!({
+                "test": watched.test,
+                "held": watched.held,
+                "needed": crate::watch::NEEDED,
+                "confirmations": crate::watch::CONFIRMATIONS,
+            });
+            if watched.released {
+                entry["released"] = json!(true);
+            }
+            entry
         })
         .collect()
 }
@@ -1721,6 +1757,7 @@ fn card(out: &mut String, view: &View, entry: &Entry, style: Style) {
     let mut notes: Vec<String> = advice.notes.clone();
     notes.push(covered_by(result));
     notes.extend(result.false_catch_by.as_deref().map(false_catch));
+    notes.extend(result.flaky_catch_by.as_deref().map(flaky_catch));
     for (index, note) in notes.iter().enumerate() {
         if index == 0 {
             let _ = writeln!(
@@ -2662,21 +2699,30 @@ fn agent(report: &Report, style: Style) -> String {
         );
     }
     out.push_str(&agent_reports(report));
-    for (test, mutants) in likely_flaky(report) {
-        let _ = writeln!(
-            out,
-            "likely flaky: {}; with the code unchanged, whether it catches {} changed since the last run. Its catches can't be trusted until it's fixed",
-            untrusted::value(&test),
-            names(&mutants)
-        );
+    for named in &report.likely_flaky {
+        let changed = named.mutants_for(crate::likely::Reason::Changed);
+        if !changed.is_empty() {
+            let _ = writeln!(
+                out,
+                "likely flaky: {}; with the code unchanged, whether it catches {} changed since the last run. Its catches can't be trusted until it's fixed. {}",
+                untrusted::value(&named.test),
+                names(&changed),
+                none_count(named)
+            );
+        }
+        let unconfirmed = named.mutants_for(crate::likely::Reason::NotRepeated);
+        if !unconfirmed.is_empty() {
+            let _ = writeln!(
+                out,
+                "likely flaky: {}; its {} didn't repeat when run again, so the other covering tests decided. {}",
+                untrusted::value(&named.test),
+                catches_of(&unconfirmed),
+                none_count(named)
+            );
+        }
     }
-    for (test, mutants) in unconfirmed(report) {
-        let _ = writeln!(
-            out,
-            "likely flaky: {}; its {} didn't repeat when run again, so the other covering tests decided",
-            untrusted::value(&test),
-            catches_of(&mutants)
-        );
+    for watched in &report.watched {
+        let _ = writeln!(out, "watched: {}", watched_line(watched));
     }
     for note in unrelated_catches(report) {
         let _ = writeln!(
@@ -2909,7 +2955,7 @@ fn agent_entry(view: &View, entry: &Entry, words: Vocabulary) -> String {
     }
     let _ = writeln!(
         out,
-        "   covered by: {}; all still pass with the change{}{}",
+        "   covered by: {}; all still pass with the change{}{}{}",
         names(&result.covered_by),
         result
             .unconfirmed
@@ -2918,7 +2964,11 @@ fn agent_entry(view: &View, entry: &Entry, words: Vocabulary) -> String {
         result
             .false_catch_by
             .as_deref()
-            .map_or(String::new(), |test| format!(" ({})", false_catch(test)))
+            .map_or(String::new(), |test| format!(" ({})", false_catch(test))),
+        result
+            .flaky_catch_by
+            .as_deref()
+            .map_or(String::new(), |test| format!(" ({})", flaky_catch(test)))
     );
     for note in &advice.notes {
         let _ = writeln!(out, "   evidence: {note}");
@@ -3137,6 +3187,9 @@ fn jsonl(report: &Report) -> String {
             .collect::<Vec<_>>());
     }
     finished["likelyFlaky"] = json!(accused(report));
+    if !report.watched.is_empty() {
+        finished["watched"] = json!(watched_json(report));
+    }
     finished["unrelatedCatches"] = json!(unrelated_catches(report)
         .into_iter()
         .map(|note| json!({
@@ -3334,6 +3387,9 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
     }
     if let Some(test) = &result.false_catch_by {
         event["falseCatchBy"] = json!(test);
+    }
+    if let Some(test) = &result.flaky_catch_by {
+        event["flakyCatchBy"] = json!(test);
     }
     if let Some(inputs) = inputs(result) {
         event["inputs"] = inputs;
@@ -3606,6 +3662,7 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
         notes.push(format!("covered by {}", names(&result.covered_by)));
     }
     notes.extend(result.false_catch_by.as_deref().map(false_catch));
+    notes.extend(result.flaky_catch_by.as_deref().map(flaky_catch));
     for (index, note) in notes.iter().enumerate() {
         if index == 0 {
             let _ = writeln!(

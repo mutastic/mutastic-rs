@@ -83,6 +83,7 @@
         "nearUnsafe": { "type": "string", "description": "The Rust edition only: why the mutant is near unsafe code, as the events say it (`inside unsafe code`, …). A crash there isn't counted as caught." },
         "failureOrigin": { "enum": ["assertion", "test", "code", "unknown", "exit"], "description": "For a caught mutant, where the failure came from: `assertion` (a check failed), `test` (the test's own code threw), `code` (the code under test threw), `unknown`, or `exit` (the code the test ran ended the JVM)." },
         "caughtInput": { "type": "string", "description": "For a mutant a property test caught, the input it failed on, as the events' `caughtInput` gives it." },
+        "flakyCatchBy": { "type": "string", "description": "A test named likely flaky in the run that had caught it, so its catch didn't count: the status is what the other covering tests made of it, as the events' `flakyCatchBy` gives it (decision 27)." },
         "skipRule": { "type": "string", "pattern": "^mutastic:[a-z]+(-[a-z]+)*$", "description": "For a mutant one of mutastic's own arid rules skipped, the rule's id, as the events' `skipRule`: `mutastic:waits`." },
         "skipDocs": { "type": "string", "description": "With `skipRule`, the rule's section of the docs: `https://docs.mutastic.io/reference/arid/#waits`." },
         "bringBack": { "type": "string", "description": "With `skipRule`, the `mutastic.yaml` text that runs the rule's mutants in the mutant's method: a `rules:` list of one `mutate:` rule with `arid:` and a `reason:` to fill in." }

@@ -28,6 +28,11 @@ pub struct Guarded {
     /// The tests that caught a mutant and then failed on their own with no mutant in, in the order
     /// found.
     pub failing_alone: Vec<String>,
+    /// The tests left out, and so not run again by any mutant: those failing alone.
+    pub left_out: BTreeSet<String>,
+    /// The mutants each of `failing_alone` reached that ran again without it, by their index in
+    /// `results`.
+    pub rerun: BTreeMap<String, BTreeSet<usize>>,
 }
 
 /// How the guard reaches the tests: the engine's runs, behind a seam the tests can stand in for.
@@ -53,7 +58,6 @@ pub trait Runs {
 pub fn check(results: &mut [MutantResult], runs: &impl Runs) -> Guarded {
     let mut guarded = Guarded::default();
     let mut checked = BTreeSet::new();
-    let mut left_out = BTreeSet::new();
     loop {
         let to_check = unchecked(results, &checked, runs);
         if to_check.is_empty() {
@@ -68,8 +72,18 @@ pub fn check(results: &mut [MutantResult], runs: &impl Runs) -> Guarded {
             break;
         }
         guarded.failing_alone.extend(failing.iter().cloned());
-        left_out.extend(failing.iter().cloned());
-        run_again_without(results, &failing, &left_out, runs, &mut guarded.first);
+        guarded.left_out.extend(failing.iter().cloned());
+        let rerun = run_again_without(
+            results,
+            &failing,
+            &guarded.left_out,
+            runs,
+            &mut guarded.first,
+            &|revised, test| revised.false_catch_by = Some(test.to_string()),
+        );
+        for (test, indexes) in rerun {
+            guarded.rerun.entry(test).or_default().extend(indexes);
+        }
     }
     guarded
 }
@@ -96,24 +110,42 @@ fn unchecked(
 }
 
 /// Each mutant one of `failing` reached, run again without the tests `left_out`, in place in
-/// `results`; its first result kept in `first`.
-fn run_again_without(
+/// `results`; its first result kept in `first`. A result one of `failing` had caught is `marked`
+/// with that test. The mutants run again, by their index in `results`, under each of `failing`
+/// that reached them.
+pub(crate) fn run_again_without(
     results: &mut [MutantResult],
     failing: &BTreeSet<String>,
     left_out: &BTreeSet<String>,
     runs: &impl Runs,
     first: &mut BTreeMap<usize, MutantResult>,
-) {
+    marked: &dyn Fn(&mut MutantResult, &str),
+) -> BTreeMap<String, BTreeSet<usize>> {
     let reached: Vec<usize> = (0..results.len())
         .filter(|&index| reached_by(&results[index], failing))
         .collect();
+    let mut rerun: BTreeMap<String, BTreeSet<usize>> = BTreeMap::new();
+    for &index in &reached {
+        for test in results[index]
+            .covered_by
+            .iter()
+            .filter(|t| failing.contains(*t))
+        {
+            rerun.entry(test.clone()).or_default().insert(index);
+        }
+    }
     let again = runs.run_again(results, &reached, left_out);
     for (index, mut revised) in reached.into_iter().zip(again) {
         let before = &results[index];
-        revised.false_catch_by = false_catcher(before, failing).or(before.false_catch_by.clone());
+        revised.false_catch_by = before.false_catch_by.clone();
+        revised.flaky_catch_by = before.flaky_catch_by.clone();
+        if let Some(test) = caught_by_one_of(before, failing) {
+            marked(&mut revised, &test);
+        }
         first.entry(index).or_insert_with(|| before.clone());
         results[index] = revised;
     }
+    rerun
 }
 
 /// Whether one of `failing` reached the mutant, so its result may rest on it: a miss as much as a
@@ -123,7 +155,7 @@ fn reached_by(result: &MutantResult, failing: &BTreeSet<String>) -> bool {
 }
 
 /// The test that caught the mutant, if it's one of `failing`.
-fn false_catcher(result: &MutantResult, failing: &BTreeSet<String>) -> Option<String> {
+fn caught_by_one_of(result: &MutantResult, failing: &BTreeSet<String>) -> Option<String> {
     result
         .killed_by
         .clone()
@@ -206,6 +238,7 @@ mod tests {
             unconfirmed: None,
             failure_origin: by.map(|_| "assertion".to_string()),
             false_catch_by: None,
+            flaky_catch_by: None,
             tests_run: 1,
             took: Duration::ZERO,
             inputs: BTreeMap::new(),
