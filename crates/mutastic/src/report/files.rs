@@ -408,6 +408,9 @@ fn mutant_more(
     if missed {
         more.insert("fix".into(), json!(advice.help));
     }
+    if let Some(input) = &result.killed_input {
+        more.insert("caughtInput".into(), json!(input));
+    }
     if let Some(inputs) = super::inputs(result) {
         more.insert("inputs".into(), inputs);
     }

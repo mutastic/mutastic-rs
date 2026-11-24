@@ -382,11 +382,13 @@ struct View<'a> {
 }
 
 impl<'a> View<'a> {
-    /// ` (case #[case(30, 0, 30)])`, the row the test that caught `result` is, when it's one.
-    fn case_said(&self, result: &MutantResult) -> String {
-        crate::cases::caught(self.project, result)
+    /// ` (case #[case(30, 0, 30)])`, the row the test that caught `result` is, when it's one;
+    /// then `` with `xs = [0, 0]` ``, the input it failed on, when it's a property that names one.
+    fn catch_said(&self, result: &MutantResult) -> String {
+        let case = crate::cases::caught(self.project, result)
             .map(|case| case.said())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        case + &crate::properties::said(result.killed_input.as_deref())
     }
 
     fn of(report: &'a Report, shown: bool) -> View<'a> {
@@ -2031,7 +2033,7 @@ fn fate(view: &View, result: &MutantResult, style: Style) -> String {
             "{id} is {} by {}{}",
             words.detected(),
             untrusted::value(result.killed_by.as_deref().unwrap_or("a test")),
-            view.case_said(result)
+            view.catch_said(result)
         )),
         Status::Timeout => detected(format!(
             "{id} is {}: its tests stopped finishing in time",
@@ -2815,7 +2817,7 @@ fn agent_fates(view: &View, words: Vocabulary) -> String {
                     "is {} by {}{}",
                     words.detected(),
                     untrusted::value(result.killed_by.as_deref().unwrap_or("a test")),
-                    view.case_said(result)
+                    view.catch_said(result)
                 ),
                 Status::Timeout => {
                     format!(
@@ -2957,6 +2959,7 @@ pub fn run_started(
     unsafe_mode: crate::sites::UnsafeMode,
     share: Option<serde_json::Value>,
     at: &[String],
+    properties: Option<serde_json::Value>,
 ) -> serde_json::Value {
     let mut started = json!({
         "schema": SCHEMA,
@@ -2984,6 +2987,11 @@ pub fn run_started(
     if !at.is_empty() {
         started["at"] = json!(at);
     }
+    // The property tests' frameworks, and the seed mutastic drew their cases from: a run with
+    // another seed is a different run.
+    if let Some(properties) = properties {
+        started["propertyTests"] = properties;
+    }
     started
 }
 
@@ -3004,6 +3012,7 @@ fn jsonl(report: &Report) -> String {
             report.unsafe_mode,
             report.share.as_ref().map(crate::shares::Tag::json),
             &at_typed(report),
+            crate::properties::started(&report.project),
         ));
     }
     // A mutant run again without a test that fails on its own gives its first result here, and its
@@ -3303,6 +3312,9 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
     if let Some(case) = crate::cases::caught(view.project, result) {
         event["caughtCase"] = json!({"test": case.test, "index": case.index, "name": case.name});
     }
+    if let Some(input) = &result.killed_input {
+        event["caughtInput"] = json!(input);
+    }
     if !result.killed_by_all.is_empty() {
         event["caughtByAll"] = json!(result.killed_by_all);
     }
@@ -3525,7 +3537,7 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
             format!(
                 "caught by {}{}{}",
                 untrusted::value(result.killed_by.as_deref().unwrap_or("a test")),
-                view.case_said(result),
+                view.catch_said(result),
                 match result.killed_with.as_deref() {
                     Some(how) if how.starts_with("crash") => {
                         format!(", by a crash ({})", untrusted::value(how))

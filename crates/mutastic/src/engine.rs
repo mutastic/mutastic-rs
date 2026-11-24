@@ -84,6 +84,9 @@ pub struct MutantResult {
     pub covered_by: Vec<String>,
     pub killed_by: Option<String>,
     pub killed_with: Option<String>,
+    /// The input the property test that caught it says it failed on, `xs = [0, 0]`, when one
+    /// did and its framework prints it ([`crate::properties::failing_input`]).
+    pub killed_input: Option<String>,
     /// With `--kill-matrix`, every covering test that catches it, `killed_by` first, then the
     /// rest in the order they're listed; empty otherwise, and when no test did.
     pub killed_by_all: Vec<String>,
@@ -395,6 +398,9 @@ pub enum Progress<'a> {
         rounds: &'a [&'a str],
         withdrawn: usize,
         profile: &'a serde_json::Value,
+        /// `run-started`'s `propertyTests`, read once the build has resolved the frameworks'
+        /// versions.
+        properties: Option<serde_json::Value>,
     },
     /// A worker of the coverage pass starts a test.
     TestStarted { worker: usize, name: &'a str },
@@ -558,6 +564,7 @@ pub fn run(
         rounds: &steps,
         withdrawn: built.unviable.len(),
         profile: &built.profile,
+        properties: crate::properties::started(project),
     });
     let cwd = project.copy_dir().join(&project.package_dir);
     let mut listed =
@@ -635,6 +642,7 @@ pub fn run(
         reach: &reach,
         cwd: &cwd,
         catches: options.catches,
+        shrink: !options.only.is_empty(),
     };
     let ran = testrun::parallel_on(&indexed, workers, |worker, &(mutant, cost)| {
         if cost.expected > Duration::ZERO {
@@ -811,6 +819,7 @@ pub fn estimate(
         rounds: &steps,
         withdrawn: built.unviable.len(),
         profile: &built.profile,
+        properties: crate::properties::started(project),
     });
     let cwd = project.copy_dir().join(&project.package_dir);
     let listed = testrun::list(&built.binaries, &cwd).map_err(|error| Code::Other.with(error))?;
@@ -873,6 +882,7 @@ fn nothing_to_run(
                 covered_by: Vec::new(),
                 killed_by: None,
                 killed_with: None,
+                killed_input: None,
                 killed_by_all: Vec::new(),
                 unconfirmed: None,
                 failure_origin: None,
@@ -1268,7 +1278,9 @@ fn coverage(
                 let test = &tests[index];
                 let outcome = &reached[index].0;
                 let output = format!("{}\n{}", outcome.stdout, outcome.stderr);
-                let seeded = crate::flaky::seeded(&output);
+                // A proptest from before 1.7 takes no seed: its command can't repeat the draw.
+                let seeded =
+                    crate::flaky::seeded(&output) && crate::properties::seeds_proptest(project);
                 let command = rerun(project, &binaries[test.binary], &test.name);
                 crate::flaky::Red {
                     display: test.display.clone(),
@@ -1276,7 +1288,10 @@ fn coverage(
                     stopped: crate::flaky::stopped(outcome),
                     panic: crate::flaky::panic_message(&output),
                     rerun: if seeded {
-                        format!("PROPTEST_RNG_SEED={} {command}", testrun::PROPTEST_SEED)
+                        format!(
+                            "PROPTEST_RNG_SEED={} {command}",
+                            crate::properties::PROPTEST_SEED
+                        )
                     } else {
                         command
                     },
@@ -1503,6 +1518,9 @@ struct Suite<'a> {
     reach: &'a [Reach],
     cwd: &'a std::path::Path,
     catches: Catches,
+    /// Whether the input a property caught a mutant with is shrunk, by running that test once
+    /// more with shrinking on: in a run of mutants named by id, whose cards are read one by one.
+    shrink: bool,
 }
 
 fn result(found: &Crate, index: usize, site: u32, suite: &Suite) -> MutantResult {
@@ -1512,6 +1530,7 @@ fn result(found: &Crate, index: usize, site: u32, suite: &Suite) -> MutantResult
         reach,
         cwd,
         catches,
+        shrink,
     } = *suite;
     let mutant = &found.mutants[index];
     let function = &found.functions[mutant.function];
@@ -1523,6 +1542,7 @@ fn result(found: &Crate, index: usize, site: u32, suite: &Suite) -> MutantResult
             covered_by: Vec::new(),
             killed_by: None,
             killed_with: None,
+            killed_input: None,
             killed_by_all: Vec::new(),
             unconfirmed: None,
             failure_origin: None,
@@ -1552,6 +1572,7 @@ fn result(found: &Crate, index: usize, site: u32, suite: &Suite) -> MutantResult
         covered_by: covering.iter().map(|&t| tests[t].display.clone()).collect(),
         killed_by: None,
         killed_with: None,
+        killed_input: None,
         killed_by_all: Vec::new(),
         unconfirmed: None,
         failure_origin: None,
@@ -1600,7 +1621,14 @@ fn result(found: &Crate, index: usize, site: u32, suite: &Suite) -> MutantResult
         )
     });
     let started = Instant::now();
-    let active = [("MUTASTIC_ACTIVE", mutant.ordinal.to_string())];
+    // The mutant, and the frameworks' settings for a mutant's run: a property's first
+    // counterexample catches it, so it isn't shrunk.
+    let mut active = vec![("MUTASTIC_ACTIVE", mutant.ordinal.to_string())];
+    active.extend(
+        crate::properties::MUTANT_RUN
+            .iter()
+            .map(|&(key, value)| (key, value.to_string())),
+    );
     let named = |group: &[usize]| {
         let mut names: Vec<&str> = group.iter().map(|&t| tests[t].name.as_str()).collect();
         // Near unsafe code, one test at a time: a mutant that corrupts memory mustn't make a
@@ -1698,6 +1726,21 @@ fn result(found: &Crate, index: usize, site: u32, suite: &Suite) -> MutantResult
         });
         let catcher = failed.get(first).copied();
         let name = catcher.map(|test| &test.name).or(outcome.failed.as_ref());
+        result.killed_input = name.and_then(|name| crate::properties::failing_input(output, name));
+        // Shrunk once, for the card a run of named mutants shows: the catch ran unshrunk.
+        let shrinkable = result.killed_input.is_some() && crate::properties::unshrunk(output);
+        if let (true, Some(name)) = (shrink && shrinkable, name) {
+            let shrunk = testrun::run(
+                &built.binaries[binary],
+                cwd,
+                &[name.as_str()],
+                &active[..1],
+                timeout,
+            );
+            if let Some(input) = crate::properties::failing_input(&shrunk.stdout, name) {
+                result.killed_input = Some(input);
+            }
+        }
         // A panic names its file from the package, or from the workspace above it.
         let roots: Vec<&std::path::Path> = cwd.ancestors().collect();
         result.failure_origin =
@@ -1822,6 +1865,7 @@ impl crate::guard::Runs for BuildRuns<'_> {
             reach: &reach,
             cwd: self.cwd,
             catches: self.catches,
+            shrink: false,
         };
         testrun::parallel(&mutants, self.workers, |&mutant| {
             let again = result(self.found, mutant, self.first[mutant], &suite);

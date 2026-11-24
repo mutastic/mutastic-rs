@@ -64,6 +64,7 @@ pub mod nextrun;
 pub mod operator_docs;
 pub mod origin;
 pub mod progress;
+pub mod properties;
 pub mod record;
 pub mod records;
 pub mod report;

@@ -36,6 +36,8 @@ pub struct Project {
     pub features: std::collections::BTreeSet<String>,
     /// The directories of the workspace's packages, relative to the workspace.
     pub members: std::collections::BTreeSet<PathBuf>,
+    /// The property-testing frameworks the package depends on.
+    pub properties: std::collections::BTreeSet<crate::properties::Framework>,
 }
 
 impl Project {
@@ -319,6 +321,7 @@ pub fn read(dir: &str) -> Result<Project, Failure> {
         edition: package["edition"].as_str().unwrap_or("2021").to_string(),
         features: crate::cfg::default_features(&package["features"]),
         members,
+        properties: crate::properties::used(&package["dependencies"]),
     })
 }
 

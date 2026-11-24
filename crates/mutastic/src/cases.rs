@@ -145,6 +145,7 @@ mod tests {
             edition: "2021".into(),
             features: Default::default(),
             members: Default::default(),
+            properties: Default::default(),
         }
     }
 

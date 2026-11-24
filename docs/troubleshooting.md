@@ -385,14 +385,38 @@ own output does.
 **Keep `--exact`.** Every command mutastic offers runs a test by its whole name with `--exact`.
 Without it, `case_1` is a filter that also runs `case_10` and `case_11`.
 
-**A property test draws the same cases every run.** mutastic sets `PROPTEST_RNG_SEED` to `0` for the
-tests it runs, unless you've set it yourself, so a property that fails for some cases fails in every
-run or in none: it can't catch a mutant in one run and miss it in the next. To try other cases, set
-`PROPTEST_RNG_SEED` before you run mutastic; to see a property fail as mutastic saw it, run its
-command with `PROPTEST_RNG_SEED=0` set. mutastic turns proptest's saved failures off and doesn't copy
-`proptest-regressions/`: the cases you've saved there aren't replayed in its runs, and nothing is
-written to your tree. A property passes a function many values, so a card's `inputs seen` shows the
-smallest and largest few and how many, and the test it suggests tries small numbers first.
+**A property test draws the same cases every run.** A property draws its inputs at random, so
+drawn afresh, a mutant only some inputs catch would be caught in one run and missed in the next,
+and the flaky check would take a property that fails for a rare input for a flaky test. mutastic
+sets `PROPTEST_RNG_SEED` to `0` for the tests it runs, unless you've set it yourself, so a proptest
+property that fails for some cases fails in every run or in none. `run-started` records the seed in
+`propertyTests`. To try other cases, set `PROPTEST_RNG_SEED` before you run mutastic; to see a
+property fail as mutastic saw it, run its command with `PROPTEST_RNG_SEED=0` set. mutastic turns
+proptest's saved failures off and doesn't copy `proptest-regressions/`: the cases you've saved
+there aren't replayed in its runs, and nothing is written to your tree. A property passes a
+function many values, so a card's `inputs seen` shows the smallest and largest few and how many,
+and the test it suggests tries small numbers first.
+
+**A card names the input that caught a mutant.** When a property catches a mutant, a card says
+which input it failed on, ``caught by props::reverses_twice with `xs = [0]` ``, and the
+`mutant-finished` event has it as `caughtInput`, as does `mutation.json`. mutastic reads it from
+proptest's `minimal failing input:`, quickcheck's `Arguments: (…)` and bolero's `Input:`; arbtest
+prints only a seed, so its catches name none. One counterexample is enough to catch a mutant, so a
+run of every mutant turns proptest's shrinking off (`PROPTEST_MAX_SHRINK_ITERS=0`), often the
+costly part of a failing property: the input it names is the first case that failed, cut to 300
+characters. A run of mutants named by id, `run --only`, `verify` or `explain`, runs the catching
+property once more with shrinking on, and names the smallest input proptest shrinks it to.
+
+**Some frameworks can't be seeded.** proptest reads `PROPTEST_RNG_SEED` from 1.7.0 on; an older
+one seeds each test from the system and only warns about the variable, so `cargo update -p
+proptest` to a later 1.x is what pins it. quickcheck seeds itself from the system in every run, with
+no variable to set it, and arbtest's `ARBTEST_SEED` and bolero's `BOLERO_RANDOM_SEED` replay a
+single case rather than seed the search, so mutastic leaves them as they are. A run of a package that uses
+them ends with a note on stderr, `note: property tests in quickcheck run with their own seeds,
+which mutastic can't set: …` (`proptest 1.6.0` for an old proptest), and `run-started`'s
+`propertyTests` lists them as `unseeded`: a
+mutant only a few of their inputs catch can be caught in one run and missed in the next. To keep
+such a mutant's result steady, check its edge in a test of its own.
 
 **A crash is not a check.** A `#[values]` matrix whose rows multiply by 0 catches `*` becoming `/`
 by dividing by zero: the mutant counts as caught, with `panic: attempt to divide by zero`, though no

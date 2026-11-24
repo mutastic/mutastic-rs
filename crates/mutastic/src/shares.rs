@@ -650,6 +650,7 @@ fn result_of(index: usize, event: &Value) -> Option<MutantResult> {
         covered_by: strings(&event["coveredBy"]),
         killed_by: text("caughtBy"),
         killed_with: text("caughtWith"),
+        killed_input: text("caughtInput"),
         killed_by_all: strings(&event["caughtByAll"]),
         unconfirmed: text("unconfirmedCatchBy"),
         failure_origin: text("failureOrigin"),
