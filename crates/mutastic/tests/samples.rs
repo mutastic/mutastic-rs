@@ -548,6 +548,46 @@ fn a_binary_a_test_runs_as_a_process_is_mutated_there() {
     );
 }
 
+/// Code under a `cfg` the build doesn't have is not built here, whatever the name: one a build
+/// script sets or doesn't, `docsrs`, `loom`, a name and value nothing sets. Judged from the build's
+/// own `cfg`s, on a first run, when the mutants were found before the build could say, and on the
+/// next, found with what the last build kept.
+#[test]
+fn code_the_build_doesnt_have_is_not_built_here() {
+    let windows = if cfg!(windows) {
+        ""
+    } else {
+        ", `cfg(target_os = \"windows\")` (2)"
+    };
+    for (name, left_out) in [
+        (
+            "cfg-off-variants",
+            "`cfg(docsrs)` (2), `cfg(loom)` (2), `cfg(miri)` (2), `cfg(not(from_build))` (2)"
+                .to_string(),
+        ),
+        (
+            "cfg-off-counted",
+            format!("`cfg(feature = \"nope\")` (2), `cfg(my_flag)` (2), `cfg(note = \"x\")` (2){windows}"),
+        ),
+    ] {
+        let dir = fixture(name);
+        let record = Path::new(&dir).join(format!("target/mutastic/target/mutastic-cfg/{name}.txt"));
+        std::fs::remove_file(&record).ok();
+        for run in ["first", "next"] {
+            let (code, stdout) = mutastic(&["run", &dir]);
+            assert!(
+                stdout.contains(&format!("not built here: {left_out}\n")),
+                "{name}, {run} run: {stdout}"
+            );
+            // On Windows, the function for Windows is built, and no test reaches it.
+            if !cfg!(windows) {
+                assert_eq!(code, 0, "{name}, {run} run: {stdout}");
+                assert!(stdout.contains("Score  100.0%"), "{name}, {run} run: {stdout}");
+            }
+        }
+    }
+}
+
 /// A test that calls what `main` calls, in the tests' own process, where a mutant makes it call
 /// `process::exit`. Status 2 fails `cargo test`, so the test that was running caught it, by the
 /// exit, not a crash; status 0 passes it, so it's no catch, and the tests after it decide. A loop

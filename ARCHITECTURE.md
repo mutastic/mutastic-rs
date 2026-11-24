@@ -7,9 +7,13 @@ for the conventions the code is held to, [AGENTS.md](AGENTS.md).
 
 1. **The project.** `workspace` reads the package from `cargo metadata`: its targets, its features
    and the workspace around it. A workspace's root that isn't itself a package is refused, with
-   the members named. `cfg` asks rustc which `cfg` predicates hold for the target (`rustc --print
-   cfg`) and follows the package's default features, so code this build doesn't have is counted
-   rather than mutated. A predicate rustc doesn't know for every target is never taken as off.
+   the members named. `cfg` judges which `cfg` predicates hold, so code this build doesn't have
+   is counted rather than mutated: from the `cfg`s the package's last build in the copy had, which
+   the wrapper keeps as it compiles it (`rustc --print cfg` with every `--cfg` it was given), where
+   a name not among them is off; before a build, from `rustc --print cfg` for the target and the
+   package's default features, where a predicate rustc doesn't know for every target is never
+   taken as off. Once the copy is built, a run whose build's `cfg`s leave out code it mutated
+   finds the mutants again with them and builds again.
 2. **Mutants.** `sites` parses every file reachable from the package's targets with
    rust-analyzer's parser (`ra_ap_syntax`), from syntax alone, with no type information. It finds
    each site for each operator the run uses: the defaults in `sites.rs`, and `stronger` and
@@ -131,7 +135,8 @@ editions' contract names. Every event says `"edition": "rust"`. Where the editio
 `fixtures/` holds the crates they run on, each a package of its own outside mutastic's workspace:
 `pricing` (the Java edition's sample, ported), `operators` (an example of each operator), `truth`
 (each shape a mutated expression can take), `unsafety`, `loops`, `places`, `platforms`, `ranking`,
-`suggestions`, `unreached` (code no test reaches, for the assertion to start with), `repeats`
+`suggestions`, `cfg-off-variants` and `cfg-off-counted` (code under `cfg`s only the build can
+judge), `unreached` (code no test reaches, for the assertion to start with), `repeats`
 (identical lines in one function), `flaky` (a test that fails on its first
 try, and passes after), `properties` (proptest and quickcheck properties, one boundary only some draws catch), `false-catches` (a test that passes before any mutant and fails on its own
 after them) and `workspace`. `samples.rs` and

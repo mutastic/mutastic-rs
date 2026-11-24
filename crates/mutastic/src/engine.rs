@@ -364,7 +364,7 @@ pub fn find_with(project: &Project, operators: &[&str], mode: UnsafeMode) -> Cra
         &project.roots,
         operators,
         mode,
-        &crate::cfg::Cfg::here(project.features.clone()),
+        &crate::cfg::Cfg::of(&project.cfg_record(), project.features.clone()),
     )
 }
 
@@ -466,10 +466,23 @@ pub fn run(
     options: &Options,
     progress: &(dyn Fn(Progress) + Sync),
 ) -> Result<Report, Failure> {
-    let started = Instant::now();
-    let started_at = clock();
-    let started_wall = std::time::SystemTime::now();
-    let (found, stale_ignores) = find_for_run(project, options)?;
+    let began = (Instant::now(), clock(), std::time::SystemTime::now());
+    run_from(project, options, progress, began, true)
+}
+
+/// A run, from `began`. With `judge`, once the copy is built, the build's own `cfg`s are held to
+/// the ones the mutants were found with, and when they leave out code that was mutated, the run
+/// starts again with them ([`found_again`]).
+fn run_from(
+    project: &Project,
+    options: &Options,
+    progress: &(dyn Fn(Progress) + Sync),
+    began: (Instant, Option<String>, std::time::SystemTime),
+    judge: bool,
+) -> Result<Report, Failure> {
+    let (started, started_at, started_wall) = began.clone();
+    let judged = crate::cfg::recorded(&project.cfg_record());
+    let (mut found, stale_ignores) = find_for_run(project, options)?;
     let chosen: BTreeSet<&str> = found
         .mutants
         .iter()
@@ -555,7 +568,22 @@ pub fn run(
         mutants: selected.len(),
     });
     let building = Instant::now();
-    let built = compile::build(project, &found, &built_set, &recorders, progress)?;
+    let build = || compile::build(project, &found, &built_set, &recorders, progress);
+    let mut built = build()?;
+    if judge {
+        match found_again(
+            project,
+            options,
+            &found,
+            judged.as_deref(),
+            &mut built,
+            build,
+        )? {
+            Judgement::Again => return run_from(project, options, progress, began, false),
+            Judgement::Recounted(not_built) => found.not_built = not_built,
+            Judgement::Kept => {}
+        }
+    }
     let build_took = building.elapsed();
     let steps: Vec<&str> = built.rounds.iter().map(|round| round.phase).collect();
     progress(Progress::Built {
@@ -797,6 +825,16 @@ pub fn estimate(
     options: &Options,
     progress: &(dyn Fn(Progress) + Sync),
 ) -> Result<BTreeMap<String, Duration>, Failure> {
+    estimate_from(project, options, progress, true)
+}
+
+fn estimate_from(
+    project: &Project,
+    options: &Options,
+    progress: &(dyn Fn(Progress) + Sync),
+    judge: bool,
+) -> Result<BTreeMap<String, Duration>, Failure> {
+    let judged = crate::cfg::recorded(&project.cfg_record());
     let (found, _) = find_for_run(project, options)?;
     // A skipped mutant isn't built or run, so it costs nothing and its site needn't be measured.
     let live: BTreeSet<usize> = (0..found.mutants.len())
@@ -811,7 +849,23 @@ pub fn estimate(
     });
     let building = Instant::now();
     // No recorder or probe: the pass measures only where each test goes, not what it passes.
-    let built = compile::build(project, &found, &live, &BTreeSet::new(), progress)?;
+    let build = || compile::build(project, &found, &live, &BTreeSet::new(), progress);
+    let mut built = build()?;
+    if judge
+        && matches!(
+            found_again(
+                project,
+                options,
+                &found,
+                judged.as_deref(),
+                &mut built,
+                build
+            )?,
+            Judgement::Again
+        )
+    {
+        return estimate_from(project, options, progress, false);
+    }
     let steps: Vec<&str> = built.rounds.iter().map(|round| round.phase).collect();
     progress(Progress::Built {
         mutants: live.len(),
@@ -938,6 +992,73 @@ fn nothing_to_run(
         left_out: options.exclude_tests.clone(),
         measured: BTreeMap::new(),
     }
+}
+
+/// What the build's own `cfg`s say of the mutants found before it.
+enum Judgement {
+    /// They're what the mutants were found with, or the build didn't keep them.
+    Kept,
+    /// They leave out the same code, counted by the `cfg`s that are off as they have them.
+    Recounted(BTreeMap<String, usize>),
+    /// They leave out code that was mutated: the mutants are found, and built, again.
+    Again,
+}
+
+/// Holds the `cfg`s the copy's build had (the wrapper keeps them as it compiles the package) to
+/// `judged`, the ones the mutants were found with. A build that was fresh from before they were
+/// kept is compiled again, its crate roots touched, so it keeps them; once only, so a build that
+/// can't keep them doesn't compile twice every run.
+fn found_again(
+    project: &Project,
+    options: &Options,
+    found: &Crate,
+    judged: Option<&str>,
+    built: &mut compile::Built,
+    build: impl Fn() -> Result<compile::Built, Failure>,
+) -> Result<Judgement, Failure> {
+    let record = project.cfg_record();
+    if !record.exists() && touch_roots(project) {
+        *built = build()?;
+        if !record.exists() {
+            let kept = record.parent().map(std::fs::create_dir_all);
+            if kept.is_some_and(|made| made.is_ok()) {
+                std::fs::write(&record, "").ok();
+            }
+        }
+    }
+    let Some(seen) = crate::cfg::recorded(&record) else {
+        return Ok(Judgement::Kept);
+    };
+    if judged == Some(seen.as_str()) {
+        return Ok(Judgement::Kept);
+    }
+    let (refound, _) = find_for_run(project, options)?;
+    let ids =
+        |found: &Crate| -> Vec<String> { found.mutants.iter().map(|m| m.id.clone()).collect() };
+    if ids(&refound) == ids(found) {
+        Ok(Judgement::Recounted(refound.not_built))
+    } else {
+        Ok(Judgement::Again)
+    }
+}
+
+/// Marks the package's crate roots in the copy as changed now, so Cargo compiles the package
+/// again: whether any was.
+fn touch_roots(project: &Project) -> bool {
+    let copy = project.copy_dir();
+    let now = std::time::SystemTime::now();
+    project
+        .roots
+        .iter()
+        .filter(|root| {
+            std::fs::File::options()
+                .append(true)
+                .open(copy.join(root))
+                .and_then(|file| file.set_modified(now))
+                .is_ok()
+        })
+        .count()
+        > 0
 }
 
 /// The mutants a run finds, with what the project decided not to test skipped, and the ids of
