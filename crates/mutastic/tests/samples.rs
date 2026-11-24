@@ -5364,6 +5364,37 @@ fn a_cfg_the_build_doesnt_have_is_quoted_inside_the_fence() {
     }
 }
 
+/// A package with a name from crates.io that its own dev-dependency pulls from there, as itoa's
+/// and serde_json's do: `-p itoa` is ambiguous to Cargo, which then builds nothing. mutastic names
+/// the package by its spec, `path+file://…#itoa@0.1.0`, so the run goes through, and so does the
+/// command it shows for a test to run alone.
+#[test]
+fn a_package_named_as_its_dependency_is_still_built() {
+    let dir = copy_of("namesake", "namesake");
+    let (code, out) = mutastic_in(&dir, &["run", "."]);
+    assert!(code == 0 || code == 1, "exit {code}:\n{out}");
+    assert!(out.contains("Score"), "{out}");
+    assert!(!out.contains("ambiguous"), "{out}");
+
+    let source = dir.join("src/lib.rs");
+    let original = std::fs::read_to_string(&source).unwrap();
+    std::fs::write(
+        &source,
+        original.replace(
+            "                digits(n),\n",
+            "                digits(n) + 1,\n",
+        ),
+    )
+    .unwrap();
+    let (code, red) = mutastic_in(&dir, &["run", "."]);
+    assert_eq!(code, 3, "{red}");
+    let spec = regex::Regex::new(
+        r"cargo test -p (?<quote>\x22?)path\+file://[^ ]*namesake#itoa@0\.1\.0(?<again>\x22?) --lib -- --exact tests::as_many_digits_as_itoa_writes",
+    )
+    .unwrap();
+    assert!(spec.is_match(&red), "{red}");
+}
+
 /// The operators a gated task is held to, on `fixtures/checkout`: a task that charges for the
 /// quantity, with a test that buys one item, passes on the defaults, but stronger's keep-operand
 /// mutant, `quantity * price` becoming `price`, survives it. The set is chosen when the gate opens,

@@ -18,6 +18,8 @@ pub struct Project {
     pub workspace: PathBuf,
     pub target: PathBuf,
     pub package: String,
+    /// The package's version, `1.0.19`: with its directory, what names it to Cargo past doubt.
+    pub version: String,
     /// The package's directory, relative to the workspace.
     pub package_dir: PathBuf,
     /// Crate roots of the package's library and binaries, relative to the workspace.
@@ -49,8 +51,35 @@ impl Project {
         self.mutastic_dir().join("target")
     }
 
+    /// The package as `-p` names it to Cargo in the workspace at `workspace` (the person's, or
+    /// mutastic's copy): `path+file:///…/itoa#itoa@1.0.19`. Its name alone is ambiguous when a
+    /// dependency pulls the same package from a registry, as itoa's and serde_json's dev-dependencies
+    /// do, and Cargo then refuses to build.
+    ///
+    /// The directory is taken as Cargo will see it, the workspace as mutastic runs Cargo there,
+    /// not resolved again: on Windows a temporary directory is `C:\Users\RUNNER~1\…`, and Cargo's URL
+    /// keeps the short name its working directory has.
+    pub fn spec_at(&self, workspace: &Path) -> String {
+        // `join("")` would end the path with a separator, which Cargo's URL hasn't.
+        let dir = if self.package_dir.as_os_str().is_empty() {
+            workspace.to_path_buf()
+        } else {
+            workspace.join(&self.package_dir)
+        };
+        format!("path+{}#{}@{}", file_url(&dir), self.package, self.version)
+    }
+
+    /// Whether the person's `Cargo.lock` has another package of this one's name, so a command
+    /// they're shown names it by [`Project::spec_at`] rather than by its name alone.
+    fn name_is_ambiguous(&self) -> bool {
+        let line = format!("name = \"{}\"", self.package);
+        std::fs::read_to_string(self.workspace.join("Cargo.lock"))
+            .is_ok_and(|lock| lock.lines().filter(|l| l.trim() == line).count() > 1)
+    }
+
     /// `cargo <words> -p <package> <after>`, as the person runs it from where they ran mutastic:
-    /// with the package's manifest when they named its directory, so it runs from there too.
+    /// with the package's manifest when they named its directory, so it runs from there too. The
+    /// package is named by its spec when its name alone is ambiguous.
     pub fn cargo_command(&self, words: &str, after: &str) -> String {
         let manifest = if self.given == "." {
             String::new()
@@ -68,8 +97,47 @@ impl Project {
         } else {
             format!(" {after}")
         };
-        format!("cargo {words}{manifest} -p {}{after}", self.package)
+        let package = if self.name_is_ambiguous() {
+            let spec = self.spec_at(&self.workspace);
+            if spec.contains([' ', '\'', '"']) {
+                format!("\"{spec}\"")
+            } else {
+                spec
+            }
+        } else {
+            self.package.clone()
+        };
+        format!("cargo {words}{manifest} -p {package}{after}")
     }
+}
+
+/// `file:///home/me/itoa`, or `file:///C:/Users/me/itoa`: a directory as a URL, percent-encoding
+/// what a URL's path can't hold as the `url` crate Cargo uses does, so Cargo's own URL for the
+/// package is the same one.
+fn file_url(dir: &Path) -> String {
+    let shown = dir.display().to_string();
+    let shown = shown
+        .strip_prefix(r"\\?\")
+        .unwrap_or(&shown)
+        .replace('\\', "/");
+    let mut url = String::from(if shown.starts_with('/') {
+        "file://"
+    } else {
+        "file:///"
+    });
+    for byte in shown.bytes() {
+        let escaped = !(0x21..0x7f).contains(&byte)
+            || matches!(
+                byte,
+                b'"' | b'#' | b'<' | b'>' | b'`' | b'?' | b'{' | b'}' | b'%'
+            );
+        if escaped {
+            let _ = std::fmt::Write::write_fmt(&mut url, format_args!("%{byte:02X}"));
+        } else {
+            url.push(char::from(byte));
+        }
+    }
+    url
 }
 
 /// A target of the package: its name, whether it's the library, and its crate root.
@@ -244,6 +312,7 @@ pub fn read(dir: &str) -> Result<Project, Failure> {
         workspace: workspace_real,
         target,
         package: package["name"].as_str().unwrap_or_default().to_string(),
+        version: package["version"].as_str().unwrap_or_default().to_string(),
         roots,
         targets,
         crate_name,
@@ -458,6 +527,21 @@ pub fn write_if_changed(path: &Path, text: &str) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The directory in a package's spec, as the `url` crate Cargo uses writes it: what a URL's
+    /// path can't hold percent-encoded, and a Windows path from its drive.
+    #[test]
+    fn a_directory_is_a_url_as_cargo_writes_it() {
+        assert_eq!(
+            file_url(Path::new("/home/me/My Projects/a#b%{c}")),
+            "file:///home/me/My%20Projects/a%23b%25%7Bc%7D"
+        );
+        assert_eq!(
+            file_url(Path::new(r"\\?\C:\Users\me\itoa")),
+            "file:///C:/Users/me/itoa"
+        );
+        assert_eq!(file_url(Path::new("/srv/café")), "file:///srv/caf%C3%A9");
+    }
 
     /// A workspace that keeps a fixture out of it, as mutastic's own does: in the copy, Cargo
     /// takes the fixture for a package on its own, as it does in the workspace.
