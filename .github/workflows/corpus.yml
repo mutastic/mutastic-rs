@@ -27,9 +27,6 @@ on:
         required: false
         type: string
         default: ""
-  # TEMPORARY, to try the workflow from its branch before it's on main: every crate.
-  push:
-    branches: [ci/corpus-nightly]
 
 permissions:
   contents: read
