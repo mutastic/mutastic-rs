@@ -26,6 +26,7 @@ date_format='%Y-%m-%d'
 sections='breaking-changes|Breaking changes
 card-changes|Card changes
 scoring-changes|Scoring changes
+score-corrections|Score corrections
 security|Security
 additions|Additions
 changes|Changes

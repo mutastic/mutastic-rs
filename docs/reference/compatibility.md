@@ -17,8 +17,11 @@ mutant: a new operator only adds ids.
 A score is the share of the mutants caught. The same code and tests score the same, unless a
 release says otherwise:
 
-- **A patch release** (`1.2.3` to `1.2.4`) never moves a score. It fixes what mutastic gets wrong
-  without changing which mutants count.
+- **A patch release** (`1.2.3` to `1.2.4`) never lowers a score, never adds a mutant and never
+  turns a passing run into a failing one. It fixes what mutastic gets wrong; the one way it may
+  move a score is a correction that drops mutants that could never run, such as code the build
+  never compiles counted by mistake, so the score can only rise. Its release notes say which, under
+  *Score corrections*.
 - **A minor release** (`1.2` to `1.3`) may change a score: an operator added to the default set,
   or a filter that skips more or less. Its changelog says which, and how scores move, under
   *Scoring changes*.

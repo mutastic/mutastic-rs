@@ -21,10 +21,14 @@ day.
    pinned in `crates/mutastic/tests/schema/`), and, from 1.0.0, on a command, option, variable,
    exit status, `mutastic.yaml` or rules file the last 1.0+ release took and this one doesn't
    (`tests/compat.rs`). These are left to you:
-   - **Scores.** Read the *Scoring changes* that `scripts/changelog.sh preview` prints, the
-     entries waiting in `changes/`. A patch release (`X.Y.Z+1`) has none: anything that moves a
-     score (an operator into or out of the default set, a filter that skips more or less) waits
-     for a minor release. A minor release's changelog says which scores move, and how.
+   - **Scores.** Read the *Scoring changes* and *Score corrections* that
+     `scripts/changelog.sh preview` prints, the entries waiting in `changes/`. A patch release
+     (`X.Y.Z+1`) may have score corrections, which only drop mutants that could never run, such as
+     code the build never compiles counted by mistake: read each, and hold the patch back if one
+     could lower a score, add a mutant or fail a run that passed. It has no scoring changes:
+     anything else that moves a score (an operator into or out of the default set, a filter that
+     skips more or less, a change to timeouts, mutants newly found) waits for a minor release. A
+     minor release's changelog says which scores move, and how.
    - **Ids.** Run `MUTASTIC_IDS_WRITE=1 cargo test --test ids`. If `tests/ids/ids.tsv` changes, only
      by lines added for an operator new since the last release, commit it, so its ids are held
      from this release on.
