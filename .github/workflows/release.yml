@@ -1,5 +1,6 @@
-# The native `mutastic` command for each target, on a version tag (`v0.2.1`), as a draft release for
-# a person to read and publish. Each target is `mutastic-<version>-<target>.tar.gz`, or `.zip` on
+# The native `mutastic` command for each target, on a version tag (`v0.2.1`), as a draft release
+# with a summary for its approver, then published as the latest release once they approve the
+# `release` environment's deployment, the one step a person takes after the tag. Each target is `mutastic-<version>-<target>.tar.gz`, or `.zip` on
 # Windows, holding `mutastic-<version>-<target>/` with `mutastic` and `cargo-mutastic` (`.exe` on
 # Windows), the licence and the README; and `SHA256SUMS` lists them all. `scripts/install.sh` and
 # `scripts/install.ps1` install from that layout, as does cargo-binstall; `mutastic.json` is Scoop's
@@ -12,7 +13,8 @@
 # of a release, and the SBOM as what its archives are made of, is attested. Linux builds are static
 # (musl), and Windows builds link the C runtime statically, so nothing else needs installing.
 # Actions are pinned to a commit: a tag can be moved. Nothing is built until the Java edition this
-# release runs, the newest X.Y.*, is published: a Rust X.Y.Z tagged before it fails in a minute.
+# release runs, the newest X.Y.*, is published: a Rust X.Y.Z tagged before it fails in a minute,
+# and the publish job checks it again before publishing.
 name: Release
 
 on:
@@ -349,20 +351,23 @@ jobs:
           mutastic run fixtures/pricing --threshold=0
           cargo mutastic run fixtures/pricing --threshold=0
 
-  # The only job that can write to the repository. It runs in the `release` environment, so once
-  # that has a required reviewer, nothing is drafted until they approve the run.
-  release:
+  # The draft, and the summary its approver reads: the version, each asset and its attestation, the
+  # notes and the Java edition it pairs with, written by .github/release-summary.sh from the draft
+  # as it is on GitHub. A draft is seen only by those who can write to the repository.
+  draft:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [checksums, install-windows, install-unix]
+    needs: [java, checksums, install-windows, install-unix]
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: release
     permissions:
       contents: write
+      # `gh attestation verify`, for the summary.
+      attestations: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: |
+            .github/release-summary.sh
             CHANGELOG.md
             scripts/changelog.sh
           sparse-checkout-cone-mode: false
@@ -380,3 +385,37 @@ jobs:
             --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" \
             archives/mutastic-*.tar.gz archives/mutastic-*.zip \
             archives/SHA256SUMS archives/mutastic.json archives/mutastic-*.cdx.json
+      - name: The summary, for the approver
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JAVA: ${{ needs.java.outputs.tag }}
+        run: bash .github/release-summary.sh "$GITHUB_REF_NAME" "$JAVA"
+
+  # The one approval: the job runs in the `release` environment, so it waits for its required
+  # reviewer, who reads the draft job's summary first. Then .github/release-publish.sh checks again
+  # that the Java edition is published with its CLI, publishes the draft as the latest release and
+  # starts release-verify.yml. Without a required reviewer, it refuses and the draft stays one.
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: write
+      # Reading the environment's reviewers, and starting release-verify.yml.
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            .github/release-publish.sh
+            Cargo.toml
+            scripts/java-paired.sh
+          sparse-checkout-cone-mode: false
+      - name: Publish the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          sh .github/release-publish.sh "$GITHUB_REF_NAME" "$version"

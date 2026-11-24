@@ -1,8 +1,9 @@
 # Releasing mutastic for Rust
 
 A release is a version tag, `v<version>`, matching the version in `Cargo.toml`. The release
-workflow (`.github/workflows/release.yml`) builds the native `mutastic` for each target from it, as
-a draft release to read and publish. Nothing goes to crates.io yet.
+workflow (`.github/workflows/release.yml`) builds the native `mutastic` for each target from it,
+drafts the release with a summary for its approver, and publishes it once they approve. Nothing
+goes to crates.io yet.
 
 From 1.0.0 the Rust and Java editions release each **minor** version together, **Java published
 first, then Rust tagged**: the native `mutastic X.Y.z` runs the newest Java edition `X.Y.*`, and a
@@ -42,6 +43,9 @@ train waits for the next one.
 
 ## Each release
 
+The release commit's pull request, then the tag, then the summary to read, one approval, and
+`release-verify.yml` to check. In full:
+
 1. **Check the promises** ([Compatibility](docs/reference/compatibility.md)). The tests already fail
    on a moved mutant id (`tests/ids.rs`), on an event the schema doesn't describe (the schema is
    pinned in `crates/mutastic/tests/schema/`), and, from 1.0.0, on a command, option, variable,
@@ -68,12 +72,13 @@ train waits for the next one.
      A patch needs nothing from it.
    - **The contract's pins.** `scripts/pin-contract.sh prune` deletes all but the newest
      ([contract/README.md](contract/README.md)); `release-check` fails until it's run.
-2. **The release commit,** `chore(release): version X.Y.Z`: the version in `Cargo.toml` (and
-   `Cargo.lock`), the changelog's section for it, and the docs' kept outputs that print the
-   version, written again with `MUTASTIC_DOCS_WRITE=1 cargo test --test docs`. Each entry since the
-   last release is a file in `changes/` ([changes/README.md](changes/README.md)), so pull requests
-   don't conflict over `CHANGELOG.md`. Read them as one section, then gather them into
-   `CHANGELOG.md` as `## X.Y.Z (YYYY-MM-DD)`, dated today, which deletes the files:
+2. **The release commit,** `chore(release): version X.Y.Z`, in a pull request: the version in
+   `Cargo.toml` (and `Cargo.lock`), the changelog's section for it, and the docs' kept outputs
+   that print the version, written again with `MUTASTIC_DOCS_WRITE=1 cargo test --test docs`.
+   Each entry since the last release is a file in `changes/`
+   ([changes/README.md](changes/README.md)), so pull requests don't conflict over `CHANGELOG.md`.
+   Read them as one section, then gather them into `CHANGELOG.md` as `## X.Y.Z (YYYY-MM-DD)`,
+   dated today, which deletes the files:
    ```sh
    scripts/changelog.sh preview X.Y.Z   # prints the section, writes nothing
    scripts/changelog.sh release X.Y.Z   # writes it below Unreleased, deletes the entries
@@ -93,19 +98,32 @@ train waits for the next one.
    `X.Y.0` the pin moves before the Java edition's `vX.Y.0` is tagged, and names this commit, as
    its tag doesn't exist yet. For a Rust patch alone, the pin reaches docs.mutastic.io with the
    next Java release.
-4. For `X.Y.0`, wait for the Java edition's `vX.Y.0` to be published with its CLI attached. Then,
-   with `main` green, tag the release commit and push the tag:
+4. **The tag.** For `X.Y.0`, wait for the Java edition's `vX.Y.0` to be published with its CLI
+   attached. Then, with the release commit merged and `main` green, tag it and push the tag:
    ```sh
    git tag vX.Y.Z <release commit> && git push origin vX.Y.Z
    ```
    Tagged too early, the workflow's `java` job fails within a minute and builds nothing: once the
    Java release is published, re-run the workflow.
-5. **Read the draft release the workflow makes** (each target's archive, `SHA256SUMS` and Scoop's
-   `mutastic.json`), then publish it. Its notes are the release's section of `CHANGELOG.md`
-   (`scripts/changelog.sh notes X.Y.Z`): a tag whose commit has no section fails within a minute,
-   before anything is built. The job that drafts it runs in the `release` environment, so once
-   that has a required reviewer, approve the run (*Review deployments*) for the draft to appear.
-   Every asset is attested before the draft is made ([Checking a download](#checking-a-download)).
+5. **Read the summary.** The workflow builds and checks every target, drafts the release, and
+   writes what its approver needs as the *draft* job's summary, in the run's page: the version and
+   a link to the draft; each asset (each target's archive, `SHA256SUMS`, Scoop's `mutastic.json`
+   and the SBOM) with its size and the digest GitHub took; each one's attestation, checked
+   ([Checking a download](#checking-a-download)); the notes, the release's section of
+   `CHANGELOG.md` (`scripts/changelog.sh notes X.Y.Z`); and the Java edition it pairs with.
+   `.github/release-summary.sh` writes it from the draft as it is on GitHub, so it's the
+   workflow's account, not a person's or an agent's. A tag whose commit has no section in
+   `CHANGELOG.md` fails within a minute, before anything is built.
+6. **Approve once.** The *publish* job waits in the `release` environment: approve it (*Review
+   deployments*). It checks again that the Java edition `X.Y.*` is published with its CLI
+   (`scripts/java-paired.sh`), and refuses, saying so, if it isn't; then it publishes the draft as
+   the latest release and starts `release-verify.yml` on it (`.github/release-publish.sh`). It
+   refuses, too, while the environment has no required reviewer, so nothing is published that
+   nobody approved: give `release` one, with its deployments limited to `v*` tags (*Settings*,
+   *Environments*), and re-run the job. Rejected or refused, the release stays a draft, which
+   nobody installs: re-run the job once it can pass, or delete the draft and release the next
+   patch. Never tag the same version again.
+7. **Check `release-verify.yml`** ([After a release](#after-a-release)).
 
 ## Before tagging
 
@@ -130,8 +148,9 @@ passed there fails.
 machine that never had mutastic: installed by the `install.sh` and `install.ps1` mutastic.io
 serves and from Scoop's `mutastic.json`, each asset held to GitHub's record of it and to its
 attestation, `mutastic --version` naming both editions, a run on `fixtures/pricing`, and the Java
-edition it pairs with fetched and run on that release's `samples/pricing`. It starts on its own when the draft is
-published: look at it in *Actions*. To check a release again:
+edition it pairs with fetched and run on that release's `samples/pricing`. The publish job starts
+it once the draft is published, as a draft published by hand does: look at it in *Actions*. To
+check a release again:
 ```sh
 gh workflow run release-verify.yml -f version=X.Y.Z   # -f java=X.Y.Z for another Java edition
 ```
