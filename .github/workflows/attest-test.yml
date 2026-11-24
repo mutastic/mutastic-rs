@@ -1,0 +1,88 @@
+# Temporary: release.yml's attest steps on dummy files, then the checks release-assets.sh makes,
+# on a push to this branch only. Removed before the pull request.
+name: Attest test
+
+on:
+  push:
+    branches: [ci/attest-releases]
+    paths: [.github/workflows/attest-test.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  attest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - id: sbom
+        run: |
+          mkdir archives && cd archives
+          echo "attest test $GITHUB_RUN_ID a" > mutastic-0.0.0-attest-test-a.tar.gz
+          echo "attest test $GITHUB_RUN_ID b" > mutastic-0.0.0-attest-test-b.zip
+          sha256sum mutastic-*.tar.gz mutastic-*.zip > SHA256SUMS && cat SHA256SUMS
+          echo "{\"test\": \"$GITHUB_RUN_ID\"}" > mutastic.json
+          printf '{"bomFormat":"CycloneDX","specVersion":"1.3","serialNumber":"urn:uuid:%s","version":1,"components":[]}\n' \
+            "$(cat /proc/sys/kernel/random/uuid)" > mutastic-0.0.0.cdx.json
+          echo "path=archives/mutastic-0.0.0.cdx.json" >> "$GITHUB_OUTPUT"
+      - name: Attest the archives
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: archives/SHA256SUMS
+      - name: Attest SHA256SUMS, Scoop's manifest and the SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            archives/SHA256SUMS
+            archives/mutastic.json
+            ${{ steps.sbom.outputs.path }}
+      - name: Attest the SBOM, for the archives
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: archives/SHA256SUMS
+          sbom-path: ${{ steps.sbom.outputs.path }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: archives
+          path: archives
+
+  verify:
+    needs: attest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      attestations: read
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: archives
+          path: archives
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          SIGNER: ${{ github.repository }}/.github/workflows/attest-test.yml
+        run: |
+          gh --version | head -n 1
+          for file in archives/*; do
+            gh attestation verify "$file" --repo "$GITHUB_REPOSITORY" --signer-workflow "$SIGNER" \
+              --source-ref "$GITHUB_REF" > /dev/null
+            echo "ok provenance $file"
+          done
+          for file in archives/*.tar.gz archives/*.zip; do
+            gh attestation verify "$file" --repo "$GITHUB_REPOSITORY" --signer-workflow "$SIGNER" \
+              --source-ref "$GITHUB_REF" --predicate-type https://cyclonedx.org/bom > /dev/null
+            echo "ok sbom $file"
+          done
+          # What must fail: a changed file, another ref, another workflow.
+          echo changed >> archives/mutastic.json
+          if gh attestation verify archives/mutastic.json --repo "$GITHUB_REPOSITORY"; then exit 1; fi
+          echo "ok changed file refused"
+          if gh attestation verify archives/SHA256SUMS --repo "$GITHUB_REPOSITORY" --source-ref refs/tags/v0.0.0; then exit 1; fi
+          echo "ok other ref refused"
+          if gh attestation verify archives/SHA256SUMS --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"; then exit 1; fi
+          echo "ok other workflow refused"
