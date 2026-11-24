@@ -5,19 +5,27 @@ mutastic for Rust is the Rust edition of mutastic, a mutation-testing tool. Read
 This file is the conventions the code is held to, and why. Some are enforced by CI; the rest are
 judgement, written down so they're designed around rather than met as a failure in review.
 
+Use `just <verb>`: `just --list` shows them. Run `just check` before a pull request; `just ci` is
+what CI runs. Call `cargo` directly only when no recipe exists. The words are the same in the Java
+edition, so a command learned here works there.
+
 ## Build
 
 ```sh
-cargo fmt --all                            # format the code
-cargo clippy --all-targets -- -D warnings  # every lint, as errors
-cargo test                                 # unit tests, then mutastic run on the fixtures
-MUTASTIC_DOCS_WRITE=1 cargo test --test docs  # after changing what mutastic prints or takes: the docs' copies
-MUTASTIC_IDS_WRITE=1 cargo test --test ids    # after adding an operator or a shape: the ids list
-cargo run --bin mutastic -- run fixtures/pricing
+just setup        # once per clone: the commit message hook
+just check        # the format, every lint as an error, and the tests: unit tests, then
+                  # mutastic run on the fixtures
+just fmt          # format the code
+just lint         # the format and every lint, without the tests
+just test --test docs  # one test crate, or whatever cargo test takes
+just docs-output  # after changing what mutastic prints or takes: the docs' copies; read the diff
+just ids          # after adding an operator or a shape: the ids list
+just run run fixtures/pricing
 ```
 
-CI runs the first three on Linux and macOS, builds on the oldest toolchain `rust-version` names,
-and checks the dependencies with cargo-deny (`deny.toml`).
+`just ci` is what CI runs: the checks, on Linux and macOS; a build on the oldest toolchain
+`rust-version` names (`just msrv`); and the dependencies checked with cargo-deny (`just audit`,
+`deny.toml`).
 
 ## Code conventions
 
@@ -58,14 +66,14 @@ Formatting is rustfmt's, with its defaults: that is the spec, not taste.
     `revert`, with `!` or a `BREAKING CHANGE:` footer for a breaking change. The scope, optional, is
     the crate area: `engine`, `sites`, `report`, `cli`, `gate`, `java`, `cargo`, `fixtures`, `docs`,
     `ci` or `release`. [Commit messages](CONTRIBUTING.md#commit-messages) has examples from this
-    log. `.githooks/commit-msg` checks each message (`git config core.hooksPath .githooks`), and CI
-    checks every new commit. Commits before 9 Nov 2026 use the older style and are never reworded.
+    log. `.githooks/commit-msg` checks each message (`just setup` turns it on), and CI checks
+    every new commit. Commits before 9 Nov 2026 use the older style and are never reworded.
 
     A pull request's title becomes its squash merge's subject with " (#<number>)" added, so keep
-    it to 44 characters (43 from #100); CI checks it. Merge with `sh .githooks/merge-pr <number>
-    [body-file]`, never `gh pr merge` by hand: it checks the whole message, body wrapped at 72,
-    and once CI is green adds the pull request to the merge queue, which lands it only if it
-    still passes merged with the latest main. It returns once queued; `--wait` waits for it to
+    it to 44 characters (43 from #100); CI checks it. Merge with `just merge <number>
+    [body-file]` (`.githooks/merge-pr`), never `gh pr merge` by hand: it checks the whole
+    message, body wrapped at 72, and once CI is green adds the pull request to the merge queue,
+    which lands it only if it still passes merged with the latest main. It returns once queued; `--wait` waits for it to
     land (run it in the background, as the queue can take an hour), and prints the commit. The
     queue takes the body from the pull request's description, which merge-pr sets: don't edit
     it after. See [Commit messages](CONTRIBUTING.md#commit-messages).

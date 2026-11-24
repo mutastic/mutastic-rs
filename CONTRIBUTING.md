@@ -17,33 +17,32 @@ Everyone taking part in issues, pull requests and discussions agrees to the
 
 You need a stable Rust toolchain with `rustfmt` and `clippy`. `rust-version` in
 [Cargo.toml](Cargo.toml) is the oldest that builds mutastic, and CI builds on it as well as on the
-latest stable.
+latest stable. The build's commands need [just](https://just.systems) 1.59.0 or later:
+`brew install just`, `scoop install just`, `winget install --id Casey.Just` or
+`cargo install just --locked`. On Windows, recipes run in Git Bash's `sh`.
 
 ```sh
 git clone https://github.com/mutastic/mutastic-rs.git
 cd mutastic-rs
-cargo test
+just setup
+just check
 ```
 
-CI runs these, on Linux and macOS, and each must pass:
-
-```sh
-cargo fmt --all --check
-cargo clippy --all-targets -- -D warnings
-cargo test
-```
-
-`cargo test` builds and runs mutastic on the crates in `fixtures/`, so the first run takes a few
-minutes; later ones reuse the fixtures' builds. CI also checks the dependencies' licences and
-advisories with [cargo-deny](https://github.com/EmbarkStudios/cargo-deny), against
-[deny.toml](deny.toml).
+`just setup` turns on the commit message hook, once per clone. `just check` runs everything a pull
+request needs to pass, as CI does on Linux and macOS: the format, every clippy lint as an error,
+and the tests. The tests build and run mutastic on the crates in `fixtures/`, so the first run
+takes a few minutes; later ones reuse the fixtures' builds. CI also builds on the oldest toolchain
+(`just msrv`) and checks the dependencies' licences and advisories with
+[cargo-deny](https://github.com/EmbarkStudios/cargo-deny), against [deny.toml](deny.toml)
+(`just audit`); `just ci` runs all of it.
 
 Useful along the way:
 
 ```sh
-cargo test --test docs                       # one integration test file
-cargo test --lib sites                       # the unit tests in one module
-cargo run --bin mutastic -- run fixtures/pricing
+just fmt                       # format the code
+just test --test docs          # one integration test file
+just test --lib sites          # the unit tests in one module
+just run run fixtures/pricing  # mutastic, built from here
 ```
 
 [ARCHITECTURE.md](ARCHITECTURE.md) explains how the pieces fit, and `fixtures/` holds the small
@@ -52,14 +51,11 @@ crates the tests run mutastic on.
 ## Commands
 
 A job spelled in cargo's words is spelled differently in the Java edition, and again after a
-change of build tool. So the everyday ones are also recipes in the [justfile](justfile), a word
-each, meaning the same in both editions: `just` lists them, `just check` runs everything a pull
-request needs to pass (the format, clippy and the tests), and `just ci` what CI runs. Each is one
-line over cargo or a script, so the commands above still work without it.
-
-Install [just](https://just.systems) 1.59.0 or later with `brew install just`,
-`scoop install just`, `winget install --id Casey.Just` or `cargo install just --locked`. On
-Windows, recipes run in Git Bash's `sh`.
+change of build tool. So the everyday ones are recipes in the [justfile](justfile), a word each,
+meaning the same in both editions: `just --list` shows them, `just check` runs everything a pull
+request needs to pass, and `just ci` what CI runs. Each is one line over cargo or a script, which
+the justfile shows (`just test` is `cargo test --locked`), so the work can still be done without
+it. Call `cargo` directly only for a job no recipe covers.
 
 ## Making a change
 
@@ -76,14 +72,14 @@ Windows, recipes run in Git Bash's `sh`.
     mutants.
 - **Tests:** a change in behaviour comes with a test that fails without it.
 - **Docs:** user-facing changes update the pages in `docs/` (see [docs/README.md](docs/README.md)).
-  After changing what mutastic prints, run `MUTASTIC_DOCS_WRITE=1 cargo test --test docs`, which
-  writes the docs' copies of its output again, then read the diff.
+  After changing what mutastic prints or takes, run `just docs-output`, which writes the docs'
+  copies of its output again, then read the diff.
 - **The changelog:** a change someone using mutastic would notice gets an entry, as a file of its
   own in `changes/<section>/` ([changes/README.md](changes/README.md) has the sections and the
   shape). Don't edit `CHANGELOG.md`: a release gathers the files into it, and CI fails a pull
   request that edits it, as pull requests that all added to its end conflicted in the merge queue.
-- **Ids:** after adding an operator, or a shape an operator finds, run
-  `MUTASTIC_IDS_WRITE=1 cargo test --test ids`. Lines may be added to the list, never changed or
+- **Ids:** after adding an operator, or a shape an operator finds, run `just ids`. Lines may be
+  added to the list, never changed or
   removed: a changed line is an id that broke.
 - **Dependencies:** commit `Cargo.lock` with the change. A new dependency's licence must be one
   [deny.toml](deny.toml) allows.
@@ -106,11 +102,12 @@ in the Java repository says how it works.
 - **The pin.** The check reads the contract at a commit of the Java repository, fetched once into
   the target directory: the newest pin in [`contract/pins`](contract/pins), one file to a pull
   request, so no two conflict ([contract/README.md](contract/README.md)).
-  `MUTASTIC_CONTRACT=<file> cargo test --test contract` checks against a working copy instead,
+  `MUTASTIC_CONTRACT=<file> just contract` checks against a working copy instead,
   while a contract change is being written.
 - **Adding an option, or closing a gap:** change the contract in a mutastic pull request first
   (the option, or `rust` taken out of its pending entry), then pin that merge commit in the pull
-  request that changes mutastic-rs: `scripts/pin-contract.sh <slug>` adds its pin.
+  request that changes mutastic-rs: `just pin-contract <slug>` adds its pin, and `just contract`
+  runs the check.
 - **The weekly drift job** (`.github/workflows/contract-drift.yml`) runs the check against mutastic
   main, and fails visibly when the two have moved apart.
 - **A new edition** built on this one (Swift) starts from `tests/contract.rs` and its own port of
@@ -166,11 +163,8 @@ Commits before 9 Nov 2026 use the older style, a long subject that says why, and
 rewritten.
 
 `.githooks/commit-msg` checks each message as you commit, and lets merge, revert, `fixup!` and
-`squash!` commits through as git writes them. Turn it on once in each clone:
-
-```sh
-git config core.hooksPath .githooks
-```
+`squash!` commits through as git writes them. `just setup` turns it on, once in each clone
+(`git config core.hooksPath .githooks`, if you'd rather).
 
 CI runs the same check on each new commit in a push or pull request (`.githooks/check-commits`),
 counting from the commit that added the hook. `sh .githooks/test-commit-msg` tests the hook.
@@ -186,7 +180,7 @@ can still turn `main` red once merged beside another one, so the queue tests eac
 merged with the latest `main` and every pull request ahead of it, with the same checks, and
 merges it only if that passes. One that fails there leaves the queue, and `main` stays green.
 
-Merge with `.githooks/merge-pr`, not `gh pr merge` by hand. It writes the subject from the title,
+Merge with `just merge` (`.githooks/merge-pr`), not `gh pr merge` by hand. It writes the subject from the title,
 takes the body from a file (wrapped at 72) or leaves it empty, checks the whole message with
 `commit-msg`, and adds the pull request to the queue for the commit the checks ran on, once none has
 failed: the queue takes it only once they all pass. The queue writes the squash commit from the
@@ -201,9 +195,9 @@ request still goes through it, as the rules let no one merge past it, and withou
 past the checks where the rules let an admin. The message is checked either way.
 
 ```sh
-sh .githooks/merge-pr 59                   # subject "<title> (#59)", no body; queued
-sh .githooks/merge-pr 59 body.txt          # with a body that says why
-sh .githooks/merge-pr --wait 59 body.txt   # and wait for it to land on main
+just merge 59                   # subject "<title> (#59)", no body; queued
+just merge 59 body.txt          # with a body that says why
+just merge 59 body.txt --wait   # and wait for it to land on main
 ```
 
 ## Releases

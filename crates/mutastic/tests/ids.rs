@@ -7,8 +7,8 @@
 //! So does a new mutant of an operator already listed, until the list is written again, so the list
 //! keeps holding every mutant. Only an operator that's new adds ids freely.
 //!
-//! To write the list: `MUTASTIC_IDS_WRITE=1 cargo test --test ids`, then read the diff: lines may
-//! be added, never changed or removed.
+//! To write the list: `just ids` (`MUTASTIC_IDS_WRITE=1 cargo test --test ids`), then read the
+//! diff: lines may be added, never changed or removed.
 
 #![allow(
     clippy::unwrap_used,
@@ -114,7 +114,8 @@ fn every_kept_id_still_names_its_mutant() {
         .collect();
     assert!(
         added.is_empty(),
-        "new mutants of operators already kept: MUTASTIC_IDS_WRITE=1 cargo test --test ids\n{}",
+        "new mutants of operators already kept: just ids \
+         (MUTASTIC_IDS_WRITE=1 cargo test --test ids)\n{}",
         added.join("\n")
     );
     assert!(kept.len() > 50, "{} ids kept", kept.len());

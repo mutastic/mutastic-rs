@@ -2,7 +2,7 @@
 //! declared here, and only on the commands it names; `--help` is written from these ([`crate::help`]);
 //! and so is `docs/commands.json`, the docs site's reference pages, in the Java edition's shape
 //! (`mutastic.commands/v1`). The docs test fails while the committed copy differs from
-//! [`model`]: `MUTASTIC_DOCS_WRITE=1 cargo test --test docs` writes it again.
+//! [`model`]: `just docs-output` (`MUTASTIC_DOCS_WRITE=1 cargo test --test docs`) writes it again.
 
 use serde_json::{json, Value};
 
@@ -1012,7 +1012,8 @@ pub fn markdown() -> String {
     let mut page = String::from(
         "# Commands\n\n\
          <!-- Written from crates/mutastic/src/commands.rs by the docs test, with \
-         MUTASTIC_DOCS_WRITE=1 cargo test --test docs; change the declarations, not this page. -->\n\n\
+         just docs-output (MUTASTIC_DOCS_WRITE=1 cargo test --test docs); change the declarations, \
+         not this page. -->\n\n\
          Every command `mutastic` takes, with its options, the environment it reads and the codes it \
          exits with. `cargo mutastic` takes the same words.\n\n",
     );

@@ -83,13 +83,14 @@ fn newest(pins: &BTreeMap<String, String>) -> Result<String, String> {
         let Some(position) = pin["position"].as_u64() else {
             return Err(format!(
                 "contract/pins/{name} needs a position, the commits since the anchor on mutastic \
-                 main: scripts/pin-contract.sh writes one"
+                 main: just pin-contract <slug> (sh scripts/pin-contract.sh <slug>) writes one"
             ));
         };
         if !full_commit.is_match(commit) || !utc_date.is_match(date) {
             return Err(format!(
                 "contract/pins/{name} needs a commit of 40 hex digits and a date like \
-                 2026-11-20T10:30:52Z: scripts/pin-contract.sh writes one"
+                 2026-11-20T10:30:52Z: just pin-contract <slug> (sh scripts/pin-contract.sh \
+                 <slug>) writes one"
             ));
         }
         let place = (position, date.to_string());
@@ -109,7 +110,11 @@ fn newest(pins: &BTreeMap<String, String>) -> Result<String, String> {
         .into_values()
         .next_back()
         .map(|(_, commit)| commit)
-        .ok_or_else(|| "contract/pins has no pin: scripts/pin-contract.sh adds one".to_string())
+        .ok_or_else(|| {
+            "contract/pins has no pin: just pin-contract <slug> \
+             (sh scripts/pin-contract.sh <slug>) adds one"
+                .to_string()
+        })
 }
 
 /// The contract: `MUTASTIC_CONTRACT`'s file, or the newest pin's commit's, fetched once.
@@ -210,7 +215,7 @@ fn unrecorded(found: &[Found], surfaces: &[&str]) -> Vec<String> {
             failures.push(format!(
                 "{}: {}. Make the Rust edition match, or record it under differences in {file} \
                  (engine with a reason, dated with an until, pending with an issue), then pin \
-                 that commit with scripts/pin-contract.sh",
+                 that commit with just pin-contract <slug> (sh scripts/pin-contract.sh <slug>)",
                 each.item, each.what
             ));
         }
@@ -227,7 +232,8 @@ fn unrecorded(found: &[Found], surfaces: &[&str]) -> Vec<String> {
         if !here.is_empty() && !found.iter().any(|each| names(&here, &each.item)) {
             failures.push(format!(
                 "{} now matches for rust: take rust out of its editions, or the entry out, in \
-                 {file}, then pin that commit with scripts/pin-contract.sh",
+                 {file}, then pin that commit with just pin-contract <slug> \
+                 (sh scripts/pin-contract.sh <slug>)",
                 difference["id"].as_str().unwrap()
             ));
         }

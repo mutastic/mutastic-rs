@@ -1,6 +1,6 @@
 # Commands
 
-<!-- Written from crates/mutastic/src/commands.rs by the docs test, with MUTASTIC_DOCS_WRITE=1 cargo test --test docs; change the declarations, not this page. -->
+<!-- Written from crates/mutastic/src/commands.rs by the docs test, with just docs-output (MUTASTIC_DOCS_WRITE=1 cargo test --test docs); change the declarations, not this page. -->
 
 Every command `mutastic` takes, with its options, the environment it reads and the codes it exits with. `cargo mutastic` takes the same words.
 

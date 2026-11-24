@@ -540,7 +540,8 @@ mod tests {
         assert_eq!(
             pin["sha256"].as_str().unwrap(),
             sum,
-            "src/report/page/report.html isn't the pinned page: scripts/pin-report-page.sh <commit>"
+            "src/report/page/report.html isn't the pinned page: just pin-report-page <commit> \
+             (sh scripts/pin-report-page.sh <commit>)"
         );
         assert_eq!(PAGE.matches(SLOT).count(), 1);
     }
