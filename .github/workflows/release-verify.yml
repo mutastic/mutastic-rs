@@ -1,0 +1,158 @@
+# A release once it's out, as a person gets it, on Linux, macOS and Windows: installed with the
+# install.sh and install.ps1 that mutastic.io serves, and from Scoop's manifest on the release, on
+# a machine that never had mutastic. The installed command must say it's this release, run a crate
+# (fixtures/pricing, as the release's tag has it), and, as the front door to the Java edition, fetch
+# the Java release it pairs with and run it on that release's samples/pricing, printing the score
+# line its PricingSampleTest expects. Every asset is held to GitHub's record of it, too. The
+# release workflow checks the archives before they're a release; this checks what people download.
+#
+# It starts on its own when a release is published. Run by hand, it checks one already out:
+#   gh workflow run release-verify.yml -f version=X.Y.Z [-f java=X.Y.Z]
+# A failure says what failed in the run's summary: anyone who installed the release has it, so a
+# failure is fixed forward (RELEASING.md, *Withdrawing a release*). .github/release-verify.sh has
+# the steps. Actions are pinned to a commit: a tag can be moved.
+name: Release verify
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The release to check, X.Y.Z.
+        required: true
+        type: string
+      java:
+        description: The Java edition to fetch, X.Y.Z; the newest of the same X.Y unless set, as the native command picks.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  # The release, and the Java release its front door fetches; every asset held to GitHub's record.
+  published:
+    # A pre-release's tag isn't a plain version: nothing finds it as the latest.
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      java: ${{ steps.version.outputs.java }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            .github
+            scripts/java-paired.sh
+          sparse-checkout-cone-mode: false
+      - id: version
+        env:
+          GIVEN: ${{ inputs.version || github.event.release.tag_name }}
+          JAVA: ${{ inputs.java }}
+        run: |
+          version=${GIVEN#v}
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::$GIVEN isn't a version X.Y.Z"; exit 1; }
+          if [ -n "$JAVA" ]; then java=${JAVA#v}; else java=$(sh scripts/java-paired.sh "$version") && java=${java#v}; fi
+          [[ "$java" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::no Java edition to fetch for $version: ${java:-none}"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "java=$java" >> "$GITHUB_OUTPUT"
+          echo "## mutastic $version, as it's installed, with Java $java" >> "$GITHUB_STEP_SUMMARY"
+      - name: The release's assets, against GitHub's record of them
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ steps.version.outputs.version }}
+        run: bash .github/release-assets.sh "$TAG"
+
+  install:
+    needs: published
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    name: install on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.published.outputs.version }}
+      JAVA: ${{ needs.published.outputs.java }}
+    steps:
+      # The steps from here; the crate from the release's tag; the Java sample, and the line it
+      # expects, from the Java release's.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: v${{ needs.published.outputs.version }}
+          path: release
+          sparse-checkout: fixtures/pricing
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: mutastic/mutastic
+          ref: v${{ needs.published.outputs.java }}
+          path: java
+          sparse-checkout: |
+            samples/pricing
+            mutastic-cli/src/test/java/io/mutastic/cli/PricingSampleTest.java
+          sparse-checkout-cone-mode: false
+      # Cargo, for the crate; JDK 17 for the Java sample's tests and 25 for the Java edition (the
+      # last listed is JAVA_HOME).
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 16 Oct 2026
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: |
+            17
+            25
+      # Somewhere new for mutastic to keep its releases, so nothing is there before it's installed.
+      # Forward slashes, which PowerShell and Git Bash both read.
+      - name: A new MUTASTIC_HOME
+        run: |
+          home="${RUNNER_TEMP//\\//}/home"
+          echo "MUTASTIC_HOME=$home" >> "$GITHUB_ENV"
+          echo "MUTASTIC_BIN_DIR=$home/bin" >> "$GITHUB_ENV"
+          echo "## install on ${{ matrix.os }}" >> "$GITHUB_STEP_SUMMARY"
+      - name: Install with install.sh, from mutastic.io
+        if: runner.os != 'Windows'
+        env:
+          MUTASTIC_NATIVE_VERSION: ${{ env.VERSION }}
+        run: |
+          curl -fsSL https://mutastic.io/install.sh | sh
+          echo "- ✓ \`curl -fsSL https://mutastic.io/install.sh | sh\` installed $VERSION" >> "$GITHUB_STEP_SUMMARY"
+      # Windows PowerShell 5.1, as `irm ... | iex` runs it for most people.
+      - name: Install with install.ps1, from mutastic.io
+        if: runner.os == 'Windows'
+        shell: powershell
+        env:
+          MUTASTIC_NATIVE_VERSION: ${{ env.VERSION }}
+        run: |
+          irm https://mutastic.io/install.ps1 | iex
+      - name: mutastic --version
+        working-directory: release
+        run: bash ../.github/release-verify.sh version "$VERSION" "$MUTASTIC_BIN_DIR"
+      - name: Run on a crate
+        working-directory: release
+        run: bash ../.github/release-verify.sh crate "$VERSION" "$MUTASTIC_BIN_DIR"
+      - name: Fetch the Java edition and run it
+        working-directory: release
+        run: bash ../.github/release-verify.sh java "$VERSION" "$MUTASTIC_BIN_DIR" "$JAVA" ../java
+      # Scoop, from the release's own manifest, into Scoop's own folders.
+      - name: Install with Scoop, from the release's mutastic.json
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-Expression "& {$(Invoke-RestMethod https://get.scoop.sh)} -RunAsAdmin"
+          $shims = "$env:USERPROFILE\scoop\shims"
+          & "$shims\scoop.cmd" install "https://github.com/mutastic/mutastic-rs/releases/download/v$env:VERSION/mutastic.json"
+          if ($LASTEXITCODE -ne 0) { throw "scoop install exited $LASTEXITCODE" }
+          $said = (& "$shims\mutastic.exe" --version) -join "`n"
+          if ($LASTEXITCODE -ne 0 -or ($said -split "`n")[0] -ne "mutastic $env:VERSION") {
+            "### ✗ mutastic $env:VERSION on Windows: Scoop's mutastic --version says ``$said``" | Add-Content $env:GITHUB_STEP_SUMMARY
+            throw "Scoop's mutastic --version says: $said"
+          }
+          "- ✓ ``scoop install`` from the release's mutastic.json: ``mutastic $env:VERSION``" | Add-Content $env:GITHUB_STEP_SUMMARY

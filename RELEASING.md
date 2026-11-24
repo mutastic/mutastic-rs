@@ -79,6 +79,32 @@ day.
    (`scripts/changelog.sh notes X.Y.Z`): a tag whose commit has no section fails within a minute,
    before anything is built.
 
+## Before tagging
+
+Run the candidate: the native `mutastic` built from the release commit, over a share of every
+fixture's mutants (`scripts/candidate-run.sh`, a few minutes). It fails when a run crashes
+(`internal`), can't run (`run-failed`), or finds the tests fail without any mutant, outside the
+fixtures built to. Run it on the release's branch, or locally:
+```sh
+gh workflow run candidate-run.yml --ref <branch>
+scripts/candidate-run.sh             # --of=N for a smaller share, or name fixtures to run
+```
+Don't tag a candidate that fails: its run's summary and artifact say which fixture, and how.
+
+## After a release
+
+`release-verify.yml` checks the release as a person gets it, on Linux, macOS and Windows, on a
+machine that never had mutastic: installed by the `install.sh` and `install.ps1` mutastic.io
+serves and from Scoop's `mutastic.json`, each asset held to GitHub's record of it, `mutastic
+--version` naming both editions, a run on `fixtures/pricing`, and the Java edition it pairs with
+fetched and run on that release's `samples/pricing`. It starts on its own when the draft is
+published: look at it in *Actions*. To check a release again:
+```sh
+gh workflow run release-verify.yml -f version=X.Y.Z   # -f java=X.Y.Z for another Java edition
+```
+A failure's summary says what failed and where. Anyone who installed it has it, so fix forward:
+card it, withdraw the release if it can't be used (below), and release `X.Y.Z+1`.
+
 ## Withdrawing a release
 
 A release can't be taken back from anyone who has it: an archive downloaded stays downloaded. What
