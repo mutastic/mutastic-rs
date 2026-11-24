@@ -1247,6 +1247,9 @@ fn finish(
     if format != Format::Jsonl && parsed.only.is_empty() && report.scope.is_none() {
         baseline_note(&report, &parsed.operators_chosen);
     }
+    if reports_left_out(parsed) {
+        stderr_line!("{REPORTS_LEFT_OUT}");
+    }
     if !report.failing_alone().is_empty() {
         // A test fails on the code with no mutant in, as one that fails before any mutant does.
         return Ok(ExitCode::from(TESTS_FAIL));
@@ -1322,6 +1325,20 @@ fn catches(caught: usize, scored: usize) -> String {
     } else {
         format!("catch {caught} of the {scored} mutants")
     }
+}
+
+/// What a run with `--only` says of the reports `--report` named, as the Java edition says it.
+pub const REPORTS_LEFT_OUT: &str = "note: --report is left out with --only: a run of some mutants \
+     writes no reports, as it says nothing about the rest; run without --only to write them";
+
+/// With `--only`, the reports `--report` named aren't written, and a note on stderr says why, so one
+/// asked for isn't missed in silence. A note, not a failure: the run's exit code is its own.
+fn reports_left_out(parsed: &Parsed) -> bool {
+    !parsed.only.is_empty()
+        && parsed
+            .reports
+            .as_ref()
+            .is_some_and(|named| !named.is_empty())
 }
 
 /// After a full run, how many of the baseline's mutants it found caught: they can be pruned. Not
