@@ -1,6 +1,7 @@
 asan
 audit
 build
+candidate
 changelog-check
 changelog-preview
 check
@@ -20,6 +21,10 @@ miri
 msrv
 pin-contract
 pin-report-page
+release
+release-check
+release-prepare
+release-verify
 run
 self-build
 self-merge

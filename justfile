@@ -132,6 +132,36 @@ changelog-check *args:
 merge N *body:
     sh .githooks/merge-pr "$@"
 
+# The release, in RELEASING.md's order. Agents may run release-prepare, release-check,
+# release-verify and candidate; release is Brian's. [confirm] only asks: `--yes` skips it, so the
+# `release` environment's approval in CI is what stands between a tag and a published release.
+
+# Runs the release candidate, the native mutastic from here over a share of every fixture: just candidate --of=8
+[group('release')]
+candidate *args:
+    bash scripts/candidate-run.sh "$@"
+
+# Makes the release commit on a branch and opens its pull request: just release-prepare 1.4.0
+[group('release')]
+release-prepare VERSION:
+    sh scripts/release-prepare.sh "$@"
+
+# Checks what a release needs, all at once, writing nothing tracked: just release-check 1.4.0
+[group('release')]
+release-check VERSION:
+    sh scripts/release-check.sh "$@"
+
+# Brian's: tags main's release commit vVERSION and pushes the tag, which builds the draft release
+[confirm("Push the tag vVERSION on main's release commit? release.yml then builds the draft release, waiting on the release environment's approval")]
+[group('release')]
+release VERSION:
+    sh scripts/release-tag.sh "$@"
+
+# Checks a release as a person gets it, on Linux, macOS and Windows: just release-verify 1.4.0
+[group('release')]
+release-verify VERSION:
+    gh workflow run release-verify.yml -f version="$1"
+
 # CI's jobs that `just ci` doesn't cover, so a job can be run here as CI runs it.
 
 # Builds the release mutastic that self-shard and self-merge run on mutastic
