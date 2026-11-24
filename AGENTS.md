@@ -112,4 +112,6 @@ Formatting is rustfmt's, with its defaults: that is the spec, not taste.
 - **The changelog is files until a release.** An entry is `changes/<section>/<slug>.md`, the
   entry exactly as `CHANGELOG.md` will show it ([changes/README.md](changes/README.md)); never edit
   `CHANGELOG.md` outside a `chore(release)` commit. A change that adds mutants to the default set
-  moves scores, so it needs a `changes/scoring-changes/` entry.
+  moves scores, so it needs a `changes/scoring-changes/` entry, and waits for a minor release. One
+  that only drops mutants that could never run, so a score can only rise, is a
+  `changes/score-corrections/` entry, and a patch may have it.

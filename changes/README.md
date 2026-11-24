@@ -28,6 +28,7 @@ The sections, in the order a release lists them:
 | `breaking-changes` | Breaking changes | something that worked and now doesn't, for a major release   |
 | `card-changes`     | Card changes     | what a card says                                             |
 | `scoring-changes`  | Scoring changes  | what moves a score: an operator into or out of the defaults, a filter that skips more or less; a minor release only |
+| `score-corrections` | Score corrections | a correction that drops mutants that could never run, so a score can only rise; a patch may have it |
 | `security`         | Security         | a fix that keeps a project or a machine safe                 |
 | `additions`        | Additions        | something new                                                |
 | `changes`          | Changes          | something that works differently                             |
