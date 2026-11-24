@@ -6311,3 +6311,97 @@ fn a_likely_flaky_or_watched_tests_name_is_escaped() {
         "{human}"
     );
 }
+
+/// A test that checks nothing of `double` and fails its first try against each mutant, the same
+/// way every run: its catches are luck.
+const DOUBLES_ONCE: &str = "
+#[test]
+fn doubles_now_and_then() {
+    let _ = pricing::double(3);
+    let Ok(mutant) = std::env::var(\"MUTASTIC_ACTIVE\") else {
+        return;
+    };
+    std::fs::create_dir_all(\"target\").unwrap();
+    if std::fs::File::create_new(format!(\"target/doubled-once-{mutant}\")).is_ok() {
+        panic!(\"failed on its first try\");
+    }
+}
+";
+
+/// The gate confirms a watched test's catches as `run` does (decision 27): a task whose new code
+/// only a lucky test "catches" passes the gate until that test is watched, and then it doesn't, as
+/// the catches don't repeat. The gate never writes the watch.
+#[test]
+fn the_gate_confirms_a_watched_tests_catches() {
+    let gated = |label: &str| {
+        let dir = copy_of("pricing", label);
+        let git = |args: &[&str]| {
+            let output = Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "git {args:?}");
+        };
+        git(&["init", "-q"]);
+        std::fs::write(dir.join(".gitignore"), "target\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "start"]);
+        let (code, out) = mutastic_in(&dir, &["gate", "open"]);
+        assert_eq!(code, 0, "{out}");
+        let lib = dir.join("src/lib.rs");
+        let text = std::fs::read_to_string(&lib).unwrap();
+        std::fs::write(
+            &lib,
+            format!("{text}\npub fn double(x: u32) -> u32 {{\n    x * 2\n}}\n"),
+        )
+        .unwrap();
+        std::fs::write(dir.join("tests/lucky.rs"), DOUBLES_ONCE).unwrap();
+        dir
+    };
+
+    let unwatched = gated("gate-lucky");
+    let (code, lucky) = mutastic_in(&unwatched, &["gate", "check"]);
+    assert_eq!(code, 0, "taken at face value, its catches pass: {lucky}");
+
+    let watched = gated("gate-watched");
+    let kept = "lucky::doubles_now_and_then\t0\n";
+    watching(&watched, kept);
+    let (code, held) = mutastic_in(&watched, &["gate", "check"]);
+    assert_eq!(code, 1, "confirmed, they don't repeat: {held}");
+    assert!(held.contains("so it isn't done"), "{held}");
+    assert_eq!(watch(&watched).as_deref(), Some(kept));
+}
+
+/// `next` confirms a watched test's catches as `run` does: a mutant only a lucky test "catches"
+/// is queued once that test is watched. `next` never writes the watch.
+#[test]
+fn next_confirms_a_watched_tests_catches() {
+    let lucky = |label: &str| {
+        let dir = copy_of("pricing", label);
+        std::fs::write(
+            dir.join("tests/more.rs"),
+            format!("{SECOND_CATCHER}{FAILS_ONCE}"),
+        )
+        .unwrap();
+        dir
+    };
+    // `total >= 100`'s edge, which only the lucky test "catches".
+    let edge = "mb2f8ae57";
+
+    let (code, nothing) = mutastic_in(&lucky("next-lucky"), &["next", "--format=agent"]);
+    assert_eq!(code, 0, "taken at face value, nothing is left: {nothing}");
+    assert!(!nothing.contains(edge), "{nothing}");
+
+    let dir = lucky("next-watched");
+    let kept = "more::discounts_now_and_then\t0\n";
+    watching(&dir, kept);
+    let (code, queued) = mutastic_in(&dir, &["next", "--format=agent"]);
+    assert_eq!(code, 1, "confirmed, its catch doesn't repeat: {queued}");
+    assert!(queued.contains(edge), "{queued}");
+    assert_eq!(watch(&dir).as_deref(), Some(kept));
+}
