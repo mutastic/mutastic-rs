@@ -6101,3 +6101,51 @@ fn a_run_on_github_actions_annotates_its_misses_and_summarises_the_job() {
          \n"
     );
 }
+
+/// `timeout-ceiling:` caps what one mutant's tests may take, under the floor of ten seconds too: a
+/// loop that never ends is stopped there, timed out with a note that says it hit the ceiling, in
+/// the card, the report and `verify`; the events keep their schema's `Timeout`.
+#[test]
+fn a_mutant_stopped_at_the_ceiling_says_so() {
+    let dir = copy_of("spin", "ceiling");
+    std::fs::write(dir.join("mutastic.yaml"), "timeout-ceiling: 2s\n").unwrap();
+    let started = Instant::now();
+    let (code, out) = mutastic_in(&dir, &["run", ".", "--only=m8228fb96", "--format=full"]);
+    let took = started.elapsed();
+    assert!(took < Duration::from_secs(10), "{took:?}");
+    assert_eq!(code, 0, "{out}");
+    let note = "its tests ran for the most a mutant's tests may, 2.0s (timeout-ceiling:)";
+    assert!(
+        out.contains(&format!("m8228fb96 is caught: {note}")),
+        "{out}"
+    );
+    let (code, verified) = mutastic_in(&dir, &["verify", "m8228fb96", "."]);
+    assert_eq!(code, 0, "{verified}");
+    assert!(
+        verified.contains(&format!("m8228fb96 is caught by a timeout: {note}")),
+        "{verified}"
+    );
+    let (_, jsonl) = mutastic_in(&dir, &["run", ".", "--format=jsonl"]);
+    let finished: Vec<Value> = events(&jsonl)
+        .into_iter()
+        .filter(|event| event["reason"] == "mutant-finished" && event["id"] == "m8228fb96")
+        .collect();
+    assert_eq!(finished.len(), 1, "{jsonl}");
+    assert_eq!(finished[0]["status"], "Timeout");
+    assert!(finished[0].get("statusReason").is_none(), "{}", finished[0]);
+    let report: Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("target/mutastic/mutation.json")).unwrap(),
+    )
+    .unwrap();
+    let reasons: Vec<&str> = report["files"]["src/lib.rs"]["mutants"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|mutant| mutant["id"] == "m8228fb96")
+        .filter_map(|mutant| mutant["statusReason"].as_str())
+        .collect();
+    assert_eq!(
+        reasons,
+        ["the tests ran for the most a mutant's tests may, 2.0s (timeout-ceiling:)"]
+    );
+}

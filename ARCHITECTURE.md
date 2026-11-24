@@ -141,7 +141,8 @@ editions' contract names. Every event says `"edition": "rust"`. Where the editio
 judge), `unreached` (code no test reaches, for the assertion to start with), `repeats`
 (identical lines in one function), `flaky` (a test that fails on its first
 try, and passes after), `properties` (proptest and quickcheck properties, one boundary only some draws catch), `false-catches` (a test that passes before any mutant and fails on its own
-after them), `mod-in-macro` (a module a macro declares) and `workspace`. `samples.rs` and
+after them), `mod-in-macro` (a module a macro declares), `spin` and `timeout-sum` (a loop a mutant never
+ends, reached by one fast test, and by twenty slow ones besides) and `workspace`. `samples.rs` and
 `truth.rs` run mutastic on them in place, so its copy goes in each fixture's own `target/`;
 `docs.rs` copies them to the system's temporary directory first, so the commands it captures read
 as a person types them at the repository's root. The tests keep their copies there warm for the

@@ -66,7 +66,7 @@ report it with the error.
 ## A loop counter takes a long time
 
 A mutant that stops a loop's counter from moving makes the loop run forever. mutastic stops each
-such run when it has taken several times as long as its tests did without a mutant, and counts the
+such run when it has taken several times as long as its tests do without a mutant, and counts the
 mutant as timed out, which counts as caught: the tests did notice, by never finishing. A loop
 counter can have several such mutants (`n /= 10` to `n %= 10`, `10` to `1`), and each waits for its
 time limit, so a run with many takes noticeably longer. This is a crate whose only function counts
@@ -101,14 +101,36 @@ Nothing needs fixing: those mutants are caught. If the time matters more than th
 run the defaults, which make few of them; `stronger` and `extended` add the constants and the
 arithmetic that hang loops.
 
+### How long a mutant's tests may run
+
+The time limit comes from each test's own time: how long it takes with no mutant in. Each test may
+take five times that, and a second. A test binary's tests run side by side, as `cargo test` runs
+them, so its limit is the longest test's, with the others' shared out between the tests that run at
+once, rather than every test's added up; and a run is never stopped before ten seconds. Twenty tests
+of a second and one fast test, which a mutant makes loop for ever, are stopped after about 20
+seconds when that mutant runs on its own on 8 cores, where their limits added up come to two
+minutes.
+
+Some tests take far longer in the coverage pass than on their own, as it records every call's whole
+numbers: a test that makes millions of calls is run again on its own, without the recording, to
+time it. One mutant's tests never run longer than the ceiling: ten minutes, or twenty times the
+whole suite's own time when that's longer. A mutant stopped there is timed out, and its card says
+so: `its tests ran for the most a mutant's tests may, 10m00s (timeout-ceiling:)`. For a suite
+whose mutants need longer, or to stop them sooner, set it in `mutastic.yaml`:
+
+```yaml
+timeout-ceiling: 30m
+```
+
 ## A slow test suite
 
 Each mutant runs only the tests that reach it, and stops at the first that fails, so a run costs
 far less than one suite run per mutant. When it's still slow:
 
 - **Look at what's slow in your tests first.** The coverage pass runs every test once, on its own,
-  and a mutant's time limit follows its tests' time. A test that sleeps, or waits on the network,
-  slows every mutant it reaches.
+  and a mutant's time limit follows its tests' own time (see
+  [How long a mutant's tests may run](#how-long-a-mutants-tests-may-run)). A test that sleeps, or
+  waits on the network, slows every mutant it reaches.
 - **Use more workers** if the machine has the cores: `--workers` sets how many mutants run side by
   side.
 - **Run fewer mutants.** `--operators=defaults` is the smallest set, and `--only` runs just the

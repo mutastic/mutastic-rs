@@ -137,7 +137,20 @@ struct Running {
     expected: Duration,
     /// Past this it's SLOW.
     slow: Duration,
+    /// When it's timed out; zero for a test of the coverage pass.
+    limit: Duration,
     tests: usize,
+}
+
+/// What the mutants running past their SLOW mark have left of their limits, the most of it: a
+/// mutant that has run that long may well run until it's timed out.
+fn stuck(workers: &[Option<Running>]) -> Option<Duration> {
+    workers
+        .iter()
+        .flatten()
+        .filter(|running| running.started.elapsed() > running.slow.max(SLOW_FLOOR))
+        .map(|running| running.limit.saturating_sub(running.started.elapsed()))
+        .max()
 }
 
 /// A test in the coverage pass is SLOW after a minute: there's nothing to measure it against yet.
@@ -468,6 +481,7 @@ impl Inner {
                         started: Instant::now(),
                         expected: Duration::ZERO,
                         slow: SLOW_TEST,
+                        limit: Duration::ZERO,
                         tests: 1,
                     });
                 }
@@ -516,6 +530,7 @@ impl Inner {
                 mutant,
                 expected,
                 slow,
+                limit,
                 tests,
             } => {
                 let doing = report::running(found, &found.mutants[mutant], self.style);
@@ -526,6 +541,7 @@ impl Inner {
                         started: Instant::now(),
                         expected,
                         slow,
+                        limit,
                         tests,
                     });
                 }
@@ -685,8 +701,9 @@ impl Inner {
             .collect()
     }
 
-    /// How far the mutants are by cost, and what's left once three have finished and ten seconds
-    /// have passed: the time so far, scaled by the cost still to run.
+    /// How far the mutants are by cost, and what's left: once three have finished and ten seconds
+    /// have passed, the time so far, scaled by the cost still to run; and never less than what a
+    /// mutant running past its SLOW mark has left of its limit, as it may well run to it.
     fn estimate(state: &State) -> (Option<f64>, Option<Duration>) {
         if state.phase != Phase::Mutants || state.cost.is_zero() {
             return (None, None);
@@ -694,11 +711,13 @@ impl Inner {
         let weighted = state.cost_done.as_secs_f64() / state.cost.as_secs_f64();
         let elapsed = state.since.elapsed();
         let ran = state.counts.caught + state.counts.missed + state.counts.timed_out;
-        if ran < 3 || elapsed < Duration::from_secs(10) || state.cost_done.is_zero() {
-            return (Some(weighted), None);
-        }
-        let left = (state.cost - state.cost_done).as_secs_f64() / state.cost_done.as_secs_f64();
-        (Some(weighted), Some(elapsed.mul_f64(left)))
+        let scaled = (ran >= 3 && elapsed >= Duration::from_secs(10) && !state.cost_done.is_zero())
+            .then(|| {
+                let left =
+                    (state.cost - state.cost_done).as_secs_f64() / state.cost_done.as_secs_f64();
+                elapsed.mul_f64(left)
+            });
+        (Some(weighted), scaled.max(stuck(&state.workers)))
     }
 
     /// Clears the live block, writes `text` as permanent lines, and draws the block again, in one
@@ -879,6 +898,32 @@ impl Inner {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The time left counts what a mutant running past its SLOW mark has left of its limit: one
+    /// that loops until it's timed out holds its worker that long.
+    #[test]
+    fn the_time_left_counts_a_slow_mutants_limit() {
+        let running = |ran: u64, slow: u64, limit: u64| {
+            Some(Running {
+                doing: String::new(),
+                id: String::new(),
+                started: Instant::now() - Duration::from_secs(ran),
+                expected: Duration::ZERO,
+                slow: Duration::from_secs(slow),
+                limit: Duration::from_secs(limit),
+                tests: 1,
+            })
+        };
+        let left = |workers: &[Option<Running>]| stuck(workers).map(|left| left.as_secs());
+        // 30s into a limit of 600s, past its mark of 5s: about 570s to go.
+        assert!(left(&[running(30, 5, 600), None]).is_some_and(|secs| (568..=570).contains(&secs)));
+        // The most of them.
+        assert!(left(&[running(30, 5, 100), running(40, 5, 600)]).is_some_and(|secs| secs > 500));
+        // Not yet past its mark, or past its limit: nothing to add.
+        assert_eq!(left(&[running(3, 5, 600)]), None);
+        assert_eq!(left(&[running(30, 5, 20)]), Some(0));
+        assert_eq!(left(&[None]), None);
+    }
 
     #[test]
     fn the_tab_shows_progress_only_where_the_terminal_says_it_draws_it() {

@@ -150,6 +150,9 @@ pub struct Configuration {
     pub gate_operators_from: Vec<String>,
     /// The tests `exclude-tests:` leaves out of every run, each with its reason.
     pub exclude_tests: Vec<ExcludedTest>,
+    /// `timeout-ceiling:`, the most one mutant's tests may take in all: none when the file sets
+    /// none, and the suite's own time sets it ([`crate::limits`]).
+    pub timeout_ceiling: Option<std::time::Duration>,
 }
 
 /// A test `exclude-tests:` leaves out: a test that fails here on its own, until it's fixed, by
@@ -268,6 +271,7 @@ impl Configuration {
             } else {
                 self.gate_operators
             },
+            timeout_ceiling: self.timeout_ceiling.or(parent.timeout_ceiling),
         }
     }
 
@@ -406,6 +410,15 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
                     line: index + 1,
                     path,
                 });
+                section = "";
+                continue;
+            }
+            if let Some(ceiling) = line.trim().strip_prefix("timeout-ceiling:") {
+                if config.timeout_ceiling.is_some() {
+                    return Err(error("a file sets `timeout-ceiling:` once"));
+                }
+                let ceiling = crate::limits::parse_ceiling(&value(ceiling));
+                config.timeout_ceiling = Some(ceiling.map_err(|what| error(&what))?);
                 section = "";
                 continue;
             }
@@ -761,7 +774,7 @@ fn not_a_section(line: &str) -> String {
         Some(close) => format!("{key} isn't a section. There's one called {close}:."),
         None => format!(
             "{key} isn't a section; the sections are extends:, rules:, plugins:, filters:, \
-             operators:, exclude-tests: and gate:"
+             operators:, exclude-tests:, gate: and timeout-ceiling:"
         ),
     }
 }
@@ -775,6 +788,7 @@ const SECTIONS: &[&str] = &[
     "operators",
     "exclude-tests",
     "gate",
+    "timeout-ceiling",
 ];
 
 /// What `gate:` takes, as an error says it.
@@ -857,7 +871,7 @@ mod tests {
     fn what_it_doesnt_understand_is_an_error_that_names_the_line() {
         for (text, error) in [
             ("rule:\n", "mutastic.yaml line 1: rule: isn't a section. There's one called rules:."),
-            ("colour:\n", "mutastic.yaml line 1: colour: isn't a section; the sections are extends:, rules:, plugins:, filters:, operators:, exclude-tests: and gate:"),
+            ("colour:\n", "mutastic.yaml line 1: colour: isn't a section; the sections are extends:, rules:, plugins:, filters:, operators:, exclude-tests:, gate: and timeout-ceiling:"),
             ("operators: [stronger]\n", "mutastic.yaml line 1: operators: takes a list, an item a line under it:\n  operators:\n    - stronger"),
             ("rules:\n  - skp: a\n", "mutastic.yaml line 2: skp: isn't a rule. There's one called skip:."),
             ("extends: a.yaml\nextends: b.yaml\n", "mutastic.yaml line 2: a file extends one other file, once"),
@@ -880,6 +894,9 @@ mod tests {
             ("exclude-tests: [a]\n", "mutastic.yaml line 1: exclude-tests: takes a list, an item a line under it:\n  exclude-tests:\n    - a"),
             ("exclude-test:\n", "mutastic.yaml line 1: exclude-test: isn't a section. There's one called exclude-tests:."),
             ("rules:\n  - mutate: a\n    arid: []\n    reason: r\n", "mutastic.yaml line 4: the rule `mutate: a` has an empty `arid:` list: name the rules to bring back, or leave `arid:` out to bring back every arid skip"),
+            ("timeout-ceiling: 10\n", "mutastic.yaml line 1: `timeout-ceiling:` takes a time above 0 with its unit, such as 10m, 90s or 2h, not 10"),
+            ("timeout-ceiling: 10m\ntimeout-ceiling: 5m\n", "mutastic.yaml line 2: a file sets `timeout-ceiling:` once"),
+            ("timeout_ceiling: 10m\n", "mutastic.yaml line 1: timeout_ceiling: isn't a section. There's one called timeout-ceiling:."),
         ] {
             assert_eq!(parse(text).unwrap_err(), error);
         }
@@ -915,6 +932,41 @@ mod tests {
                 ("shop::all", vec![]),
             ]
         );
+    }
+
+    /// `timeout-ceiling:` sets the most one mutant's tests may take, quoted or not, and a file's
+    /// own is kept over the one it extends.
+    #[test]
+    fn timeout_ceiling_sets_the_most_a_mutants_tests_take() {
+        let minutes = |m: u64| Some(std::time::Duration::from_secs(m * 60));
+        assert_eq!(
+            parse("timeout-ceiling: 30m\n").unwrap().timeout_ceiling,
+            minutes(30)
+        );
+        assert_eq!(
+            parse("operators:\n  - stronger\ntimeout-ceiling: '2h' # a long suite\n")
+                .unwrap()
+                .timeout_ceiling,
+            minutes(120)
+        );
+        assert_eq!(
+            parse("operators:\n  - stronger\n").unwrap().timeout_ceiling,
+            None
+        );
+        let dir = written(
+            "ceiling",
+            &[
+                ("mutastic.yaml", "timeout-ceiling: 30m\n"),
+                (
+                    "own/mutastic.yaml",
+                    "extends: ../mutastic.yaml\ntimeout-ceiling: 5m\n",
+                ),
+                ("kept/mutastic.yaml", "extends: ../mutastic.yaml\n"),
+            ],
+        );
+        let read = |package: &str| Configuration::read(&dir.join(package)).unwrap();
+        assert_eq!(read("own").timeout_ceiling, minutes(5));
+        assert_eq!(read("kept").timeout_ceiling, minutes(30));
     }
 
     /// A directory of its own for one test, with `files` written in it.
