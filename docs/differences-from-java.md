@@ -132,6 +132,8 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
 - **`--each-mutant`** gives every missed mutant its own card, as in the Java edition. The Rust
   edition's `full` format has no limit on the cards it shows for a file, so there's no `… and 3
   more missed mutants in this file` line for it to lift.
+- **The agent format at 100%** still has `rules:` and `decline:` after the verdict; the Java
+  edition's stops at `vs last run:` and `reports:`, as nothing is left for them to govern.
 - **The summary's `Left out` row** names each test left out, with its reason, as the Java
   edition's does, then the code the Rust edition doesn't mutate, on lines of its own under it.
 - **Report files** are `mutation.json` and `mutation.html` in `target/mutastic`; there's no

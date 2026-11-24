@@ -212,6 +212,10 @@ From 1.0.0 its structure is fixed, and its words are not:
 - **The fence:** the entries, what no test reaches and the code not built here come after
   `decline:` (and `tasks:`), between `<<mutastic-data TOKEN>>` and `<<end mutastic-data TOKEN>>`:
   see [Agent output and untrusted text](#agent-output-and-untrusted-text).
+- **At 100%:** with nothing missed and nothing unreached, the verdict, `vs last run:`, `reports:`,
+  `rules:` and `decline:` are the whole of it. There's nothing of the project's to quote, so no
+  fence opens, unless code isn't built here. The Java edition leaves out `rules:` and `decline:`
+  as well, as nothing is left for them to govern.
 - **What may change in any release:** the words of a headline, the evidence, a fix and the rules;
   which other labelled lines an entry has; and how many entries are shown.
 
