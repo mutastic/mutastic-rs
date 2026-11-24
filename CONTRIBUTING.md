@@ -234,7 +234,7 @@ just merge 59 body.txt --wait   # and wait for it to land on main
 ## Releases
 
 A release is a version tag, `v<version>`, matching the version in `Cargo.toml`: the release
-workflow builds mutastic for each target from it, as a draft to read and publish. See
+workflow builds mutastic for each target from it as a draft, and publishes it once approved. See
 [How a release is laid out](docs/install.md#how-a-release-is-laid-out). Nothing is on crates.io
 yet: the crate names `mutastic`, `cargo-mutastic` and `mutastic-rs` are reserved there, and every
 crate here is `publish = false`.
