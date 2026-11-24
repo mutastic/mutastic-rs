@@ -618,9 +618,9 @@ pub fn find_with(
     let mut seen = std::collections::BTreeSet::new();
     let mut queue: Vec<Queued> = roots
         .iter()
-        .map(|root| (root.clone(), String::new(), true, None))
+        .map(|root| (root.clone(), String::new(), true, None, Macros::new()))
         .collect();
-    while let Some((file, module, is_root, off)) = queue.pop() {
+    while let Some((file, module, is_root, off, mut macros)) = queue.pop() {
         let file = PathBuf::from(crate::workspace::slashed(&file));
         if !seen.insert(file.clone()) {
             continue;
@@ -631,9 +631,15 @@ pub fn find_with(
         let parse = SourceFile::parse(&text, Edition::CURRENT);
         let tree = parse.tree();
         for (child, child_module, declared_off) in
-            child_modules(workspace, &file, &module, is_root, &tree, cfg)
+            child_modules(workspace, &file, &module, is_root, &tree, cfg, &mut macros)
         {
-            queue.push((child, child_module, false, off.clone().or(declared_off)));
+            queue.push((
+                child,
+                child_module,
+                false,
+                off.clone().or(declared_off),
+                macros.clone(),
+            ));
         }
         let damaged = damaged_items(&tree, parse.errors().iter().map(|error| error.range()));
         parsed.push(Parsed {
@@ -697,12 +703,18 @@ pub fn find_with(
     found
 }
 
-/// A file still to read: its path, module path, whether it's a crate root, and the `cfg` that
-/// leaves it out of this build.
-type Queued = (PathBuf, String, bool, Option<String>);
+/// A file still to read: its path, module path, whether it's a crate root, the `cfg` that leaves
+/// it out of this build, and the macros its module can call.
+type Queued = (PathBuf, String, bool, Option<String>, Macros);
+
+/// The `macro_rules!` macros a module can call, by name, each with what its rules expand to.
+type Macros = BTreeMap<String, Vec<String>>;
 
 /// The files of `mod name;` declarations in `tree`, with their module paths and the `cfg` that
-/// leaves each out of this build, if one does.
+/// leaves each out of this build, if one does: those written in the file, and those a
+/// `macro_rules!` of the crate's declares where the file calls it as an item
+/// ([`declared_by_macros`]). `macros` are those the module can call: the ones from above it, and,
+/// for its child modules, its own and those of a `#[macro_use] mod` it declares.
 fn child_modules(
     workspace: &Path,
     file: &Path,
@@ -710,6 +722,7 @@ fn child_modules(
     is_root: bool,
     tree: &SourceFile,
     cfg: &Cfg,
+    macros: &mut Macros,
 ) -> Vec<(PathBuf, String, Option<String>)> {
     let dir = match file.parent() {
         Some(parent) if is_root || file.file_name().is_some_and(|name| name == "mod.rs") => {
@@ -718,46 +731,190 @@ fn child_modules(
         Some(parent) => parent.join(file.file_stem().unwrap_or_default()),
         None => PathBuf::new(),
     };
+    let at = ModuleAt {
+        workspace,
+        dir: &dir,
+        module,
+        cfg,
+    };
     let mut children = Vec::new();
     for declared in tree.syntax().descendants().filter_map(ast::Module::cast) {
-        if declared.item_list().is_some() || is_test_only(declared.syntax()) {
-            continue;
-        }
-        let Some(name) = declared.name().map(|name| name.text().to_string()) else {
+        let Some(child) = at.child(&declared, &[], None) else {
             continue;
         };
-        let inline: Vec<String> = declared
-            .syntax()
-            .ancestors()
-            .skip(1)
-            .filter_map(ast::Module::cast)
-            .filter_map(|outer| outer.name().map(|name| name.text().to_string()))
-            .collect();
-        let mut base = dir.clone();
-        for outer in inline.iter().rev() {
+        let macro_use = declared
+            .attrs()
+            .any(|attr| crate::sites::plain(attr.syntax()) == "#[macro_use]");
+        if macro_use {
+            if let Ok(text) = std::fs::read_to_string(workspace.join(&child.0)) {
+                macros.extend(macro_rules(
+                    &SourceFile::parse(&text, Edition::CURRENT).tree(),
+                ));
+            }
+        }
+        children.push(child);
+    }
+    macros.extend(macro_rules(tree));
+    for (call, expansion) in declared_by_macros(tree, macros) {
+        let outer = inline_modules(call.syntax());
+        let call_off = cfg.off_at(call.syntax());
+        children.extend(
+            expansion
+                .syntax()
+                .descendants()
+                .filter_map(ast::Module::cast)
+                .filter_map(|declared| at.child(&declared, &outer, call_off.clone())),
+        );
+    }
+    children
+}
+
+/// Where the `mod` declarations of one file lead: its directory for child modules, its module
+/// path, and the `cfg`s of this build.
+struct ModuleAt<'a> {
+    workspace: &'a Path,
+    dir: &'a Path,
+    module: &'a str,
+    cfg: &'a Cfg,
+}
+
+impl ModuleAt<'_> {
+    /// The file `declared` names, its module path and the `cfg` that leaves it out, when it's a
+    /// `mod name;` outside test code. `outer` are the inline modules around it from outside its
+    /// tree (a macro's call's, for a declaration in its expansion), outermost first, and `off`
+    /// the `cfg` already known to leave it out.
+    fn child(
+        &self,
+        declared: &ast::Module,
+        outer: &[String],
+        off: Option<String>,
+    ) -> Option<(PathBuf, String, Option<String>)> {
+        if declared.item_list().is_some() || is_test_only(declared.syntax()) {
+            return None;
+        }
+        let name = declared.name()?.text().to_string();
+        let mut inline = outer.to_vec();
+        inline.extend(inline_modules(declared.syntax()));
+        let mut base = self.dir.to_path_buf();
+        for outer in &inline {
             base.push(outer);
         }
-        let path = path_attribute(&declared)
+        let path = path_attribute(declared)
             .map(|path| base.join(path))
             .unwrap_or_else(|| {
                 let flat = base.join(format!("{name}.rs"));
                 let nested = base.join(&name).join("mod.rs");
-                if workspace.join(&flat).exists() || !workspace.join(&nested).exists() {
+                if self.workspace.join(&flat).exists() || !self.workspace.join(&nested).exists() {
                     flat
                 } else {
                     nested
                 }
             });
-        let mut parts: Vec<String> = module
+        let mut parts: Vec<String> = self
+            .module
             .split("::")
             .filter(|part| !part.is_empty())
             .map(str::to_string)
             .collect();
-        parts.extend(inline.into_iter().rev());
+        parts.extend(inline);
         parts.push(name);
-        children.push((path, parts.join("::"), cfg.off_at(declared.syntax())));
+        let off = off.or_else(|| self.cfg.off_at(declared.syntax()));
+        Some((path, parts.join("::"), off))
     }
-    children
+}
+
+/// The names of the inline modules around `node`, outermost first.
+fn inline_modules(node: &SyntaxNode) -> Vec<String> {
+    let mut names: Vec<String> = node
+        .ancestors()
+        .skip(1)
+        .filter_map(ast::Module::cast)
+        .filter_map(|outer| outer.name().map(|name| name.text().to_string()))
+        .collect();
+    names.reverse();
+    names
+}
+
+/// The macros `tree` defines with `macro_rules!`.
+fn macro_rules(tree: &SourceFile) -> Macros {
+    tree.syntax()
+        .descendants()
+        .filter_map(ast::MacroRules::cast)
+        .filter_map(|rules| {
+            let name = rules.name()?.text().to_string();
+            Some((name, expansions(&rules.token_tree()?)))
+        })
+        .collect()
+}
+
+/// The calls `tree` makes as items to one of `rules`, each with what the macro's rules expand to,
+/// parsed: a crate can declare its modules from a macro, as serde's `crate_root!()` does, and
+/// rustc reads their files as if declared where the macro is called. Every rule's expansion
+/// counts, as which one a call takes isn't known from syntax; a `$name` in one is left as the
+/// parser recovers it, so only a module named in the macro itself is found.
+fn declared_by_macros(tree: &SourceFile, rules: &Macros) -> Vec<(ast::MacroCall, SourceFile)> {
+    if rules.is_empty() {
+        return Vec::new();
+    }
+    tree.syntax()
+        .descendants()
+        .filter_map(ast::MacroCall::cast)
+        .filter(|call| {
+            call.syntax().parent().is_some_and(|parent| {
+                ast::SourceFile::can_cast(parent.kind()) || ast::ItemList::can_cast(parent.kind())
+            })
+        })
+        .filter(|call| !is_test_only(call.syntax()))
+        .flat_map(|call| {
+            let called = call
+                .path()
+                .filter(|path| path.qualifier().is_none())
+                .and_then(|path| path.segment()?.name_ref())
+                .map(|name| name.text().to_string());
+            called
+                .and_then(|name| rules.get(&name))
+                .into_iter()
+                .flatten()
+                .map(|expansion| {
+                    (
+                        call.clone(),
+                        SourceFile::parse(expansion, Edition::CURRENT).tree(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// What each rule of a `macro_rules!` body expands to, without its brackets: every bracketed
+/// group after a `=>`, which a token tree holds as `=` and then `>`.
+fn expansions(body: &ast::TokenTree) -> Vec<String> {
+    let mut expansions = Vec::new();
+    let kinds = |child: &ra_ap_syntax::SyntaxElement| child.kind();
+    let significant: Vec<_> = body
+        .syntax()
+        .children_with_tokens()
+        .filter(|child| !matches!(kinds(child), SyntaxKind::WHITESPACE | SyntaxKind::COMMENT))
+        .collect();
+    for (at, child) in significant.iter().enumerate() {
+        let before: Vec<SyntaxKind> = significant[at.saturating_sub(2)..at]
+            .iter()
+            .map(kinds)
+            .collect();
+        let after_arrow = matches!(
+            before.as_slice(),
+            [.., SyntaxKind::FAT_ARROW] | [SyntaxKind::EQ, SyntaxKind::R_ANGLE]
+        );
+        let Some(rule) = child.as_node().cloned().and_then(ast::TokenTree::cast) else {
+            continue;
+        };
+        if after_arrow {
+            let text = rule.syntax().text().to_string();
+            let inner = text.get(1..text.len().saturating_sub(1)).unwrap_or("");
+            expansions.push(inner.to_string());
+        }
+    }
+    expansions
 }
 
 pub(crate) fn path_attribute(module: &ast::Module) -> Option<String> {
@@ -2328,6 +2485,66 @@ mod tests {
         assert!(
             ids(&skipped).is_subset(&ids(&everything)),
             "ids don't depend on the mode"
+        );
+    }
+
+    #[test]
+    fn modules_a_macro_of_the_crates_declares_are_found() {
+        let dir = std::env::temp_dir().join(format!("mutastic-macro-mods-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src/nested")).unwrap();
+        std::fs::create_dir_all(dir.join("src/outer")).unwrap();
+        std::fs::write(
+            dir.join("src/lib.rs"),
+            "#[macro_use]\nmod roots;\n\
+             macro_rules! here {\n    () => {\n        pub mod near;\n        mod inline { pub fn g(x: u8) -> u8 { x + 1 } }\n    };\n    ($name:ident) => { mod $name; };\n}\n\
+             here!();\n\
+             crate_root!();\n\
+             mod outer { kept!(); }\n\
+             fn f() { here!(); }\n\
+             macro_rules! unused { () => { mod never; } }\n\
+             #[cfg(test)]\nmod tests { crate_root!(); }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("src/roots.rs"),
+            "macro_rules! crate_root {\n    () => {\n        #[cfg(windows)]\n        mod off;\n        pub mod nested;\n    };\n}\n\
+             macro_rules! kept { [] => [ #[path = \"held.rs\"] mod kept; ] }\n",
+        )
+        .unwrap();
+        for (file, function) in [
+            ("near.rs", "near"),
+            ("off.rs", "off"),
+            ("nested/mod.rs", "nested"),
+            ("outer/held.rs", "kept"),
+            ("never.rs", "never"),
+        ] {
+            let text = format!("pub fn {function}(x: u8) -> u8 {{ x - 1 }}");
+            std::fs::write(dir.join("src").join(file), text).unwrap();
+        }
+        let unix = Cfg::new("unix\ntarget_os=\"linux\"\n", BTreeSet::new());
+        let found = find_with(
+            &dir,
+            "sample",
+            &[PathBuf::from("src/lib.rs")],
+            &[MATH],
+            UnsafeMode::Skip,
+            &unix,
+        );
+        std::fs::remove_dir_all(&dir).ok();
+        let paths: BTreeSet<String> = found
+            .mutants
+            .iter()
+            .map(|m| found.functions[m.function].path.clone())
+            .collect();
+        assert_eq!(
+            paths.into_iter().collect::<Vec<_>>(),
+            ["near::near", "nested::nested", "outer::kept::kept"],
+            "a macro's own inline module isn't parsed, and one never called declares nothing"
+        );
+        assert_eq!(
+            found.not_built.into_iter().collect::<Vec<_>>(),
+            [("cfg(windows)".to_string(), 1)],
+            "off.rs"
         );
     }
 
