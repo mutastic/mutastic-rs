@@ -58,6 +58,7 @@ pub mod help;
 pub mod id;
 pub mod ignores;
 pub mod java;
+pub mod limits;
 pub mod locate;
 pub mod mistyped;
 pub mod nextrun;

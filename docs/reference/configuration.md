@@ -35,6 +35,7 @@ operators:
 | `operators:` | Which operators run, as `--operators` chooses, which replaces this for one run: a set (`defaults`, `stronger`, `extended`, `all`), a namespace (`stream`) or an operator's id, or one of those after `-` to leave it out |
 | `exclude-tests:` | Tests every run leaves out, each `- test: <name>` with a `reason:` under it: see [Leaving a test out](#leaving-a-test-out) |
 | `gate:` | What the gate holds an agent's task to: `operators:` under it, a list as `operators:` takes, chooses the gate's operators in its place, and `gate open --operators` replaces it. See [Which operators](../test-first-agent.md#which-operators) |
+| `timeout-ceiling:` | The most one mutant's tests may take, a whole number with its unit (`30m`, `90s`, `2h`), in place of ten minutes or twenty times the suite's own time. A mutant stopped there is timed out, with a note that says so. A package's file sets it over the one it extends. See [How long a mutant's tests may run](../troubleshooting.md#how-long-a-mutants-tests-may-run) |
 | `filters:` | A compiled plugin's filters: the Rust edition has no compiled plugins yet, so naming one is an error |
 
 A pattern is a path: `**` matches any depth, `*` one name, and a function is its path in the crate,
@@ -90,7 +91,9 @@ first line names it:
 # yaml-language-server: $schema=https://docs.mutastic.io/schemas/mutastic-yaml/v1.json
 ```
 
-The schema takes `filters:`, which the Rust edition refuses until it has compiled plugins.
+The schema takes `filters:`, which the Rust edition refuses until it has compiled plugins. It
+doesn't have `timeout-ceiling:` yet, which only the Rust edition reads: an editor checking the
+file against it flags the key.
 
 ### Leaving a test out
 

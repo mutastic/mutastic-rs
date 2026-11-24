@@ -85,6 +85,10 @@ call. The crate's own gets none, as its inputs are its callers' to give.
   time. See [Unsafe code](concepts/unsafe.md).
 - **Overflow checks and debug assertions** are always on in mutastic's build, whatever your
   profiles say. See [Profiles](concepts/profiles.md).
+- **Time limits.** A mutant's tests may take five times each test's own time and a second, side by
+  side, under a ceiling `timeout-ceiling:` in `mutastic.yaml` sets; the Java edition doesn't read
+  `timeout-ceiling:` yet. See
+  [How long a mutant's tests may run](troubleshooting.md#how-long-a-mutants-tests-may-run).
 
 ## Operators
 

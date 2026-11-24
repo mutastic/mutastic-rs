@@ -466,7 +466,10 @@ fn status_reason(result: &MutantResult, headline: &str) -> String {
         Status::Ignored | Status::RuntimeError => result.reason.clone().unwrap_or_default(),
         Status::Killed => result.killed_with.clone().unwrap_or_default(),
         Status::Survived => headline.to_string(),
-        Status::Timeout => "the tests didn't finish in time".into(),
+        Status::Timeout => match crate::limits::at_ceiling(result) {
+            Some(note) => format!("the tests {note}"),
+            None => "the tests didn't finish in time".into(),
+        },
         Status::NoCoverage => "no test reaches this line".into(),
     }
 }

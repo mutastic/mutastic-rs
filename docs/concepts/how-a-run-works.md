@@ -107,8 +107,10 @@ mutant's tests pass, and nothing is left on your machine. The coverage pass's pr
 each too. It's made inside the temporary directory mutastic is given, so a `TMPDIR` you set still
 picks the disk.
 
-Each run has a time limit, set from how long its tests took in the coverage pass, so a mutant
-that makes a loop run forever is stopped and counted as timed out, which counts as caught.
+Each run has a time limit, set from how long each of its tests takes on its own, so a mutant that
+makes a loop run forever is stopped and counted as timed out, which counts as caught. No mutant's
+tests run past the ceiling, which `timeout-ceiling:` sets: see
+[How long a mutant's tests may run](../troubleshooting.md#how-long-a-mutants-tests-may-run).
 
 Once every mutant has its result, each test that caught one runs again, on its own with no mutant
 in. One that fails there didn't need a mutant to fail: its catches don't count, and each mutant it

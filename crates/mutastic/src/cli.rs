@@ -330,6 +330,8 @@ struct Parsed {
     exclude_tests: Vec<String>,
     /// mutastic.yaml's `exclude-tests:`: the tests every run leaves out, each with its reason.
     configured_tests: Vec<crate::config::ExcludedTest>,
+    /// mutastic.yaml's `timeout-ceiling:`.
+    timeout_ceiling: Option<std::time::Duration>,
     /// `--each-mutant`: a card for every missed mutant, not one for each line's.
     each_mutant: bool,
     /// `--shard`: the share of the mutants this run runs.
@@ -394,6 +396,7 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, Failure> {
         catches: engine::Catches::default(),
         exclude_tests: Vec::new(),
         configured_tests: Vec::new(),
+        timeout_ceiling: None,
         each_mutant: false,
         shard: None,
         from_shards: None,
@@ -829,6 +832,7 @@ fn configure(command: &str, parsed: &mut Parsed) -> Result<(), Failure> {
     parsed.gate_configured = config.gate_operators;
     parsed.gate_configured_from = config.gate_operators_from;
     parsed.configured_tests = config.exclude_tests;
+    parsed.timeout_ceiling = config.timeout_ceiling;
     match &parsed.operators_given {
         Some(given) => {
             parsed.operators = operators(given)?;
@@ -1106,6 +1110,7 @@ fn options(parsed: &Parsed, only: Vec<String>) -> Options {
         catches: parsed.catches,
         exclude_tests: engine::LeftOut::listed(&parsed.configured_tests, &parsed.exclude_tests),
         audit_arid: std::env::var("MUTASTIC_ARID").is_ok_and(|value| value == "audit"),
+        timeout_ceiling: parsed.timeout_ceiling,
     }
 }
 
@@ -1733,7 +1738,10 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, Failure> {
 fn fate(result: &engine::MutantResult, project: &workspace::Project) -> String {
     match result.status {
             Status::Killed => caught(result, project),
-            Status::Timeout => "is caught by a timeout".to_string(),
+            Status::Timeout => match crate::limits::at_ceiling(result) {
+                Some(note) => format!("is caught by a timeout: its tests {note}"),
+                None => "is caught by a timeout".to_string(),
+            },
             Status::Survived => "is still missed".to_string(),
             Status::NoCoverage => "isn't reached by any test".to_string(),
             Status::Ignored => format!(

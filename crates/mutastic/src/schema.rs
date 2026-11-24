@@ -358,6 +358,47 @@ pub(crate) mod __mutastic {{
     static HIT: [AtomicBool; SITES + 1] = [const {{ AtomicBool::new(false) }}; SITES + 1];
     static OUT: std::sync::OnceLock<std::sync::Mutex<Option<std::fs::File>>> = std::sync::OnceLock::new();
     static SEEN: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<std::string::String>>> = std::sync::OnceLock::new();
+    /// Once `SEEN` holds as many lines as are kept, a call has nothing left to record.
+    static FULL: AtomicBool = AtomicBool::new(false);
+    const KEPT: usize = 4096;
+    /// Twice as many slots as lines kept, so a thread's table is never more than half full.
+    const SLOTS: usize = 2 * KEPT;
+    std::thread_local! {{
+        /// The calls this thread has recorded, by a hash of their numbers, in a table of `SLOTS`
+        /// with 0 for none: a call seen before is passed over without writing its line or taking
+        /// the lock.
+        static MINE: std::cell::RefCell<std::vec::Vec<u64>> = const {{ std::cell::RefCell::new(std::vec::Vec::new()) }};
+        /// How many calls this thread has recorded, up to `BUSY`.
+        static CALLS: std::cell::Cell<u32> = const {{ std::cell::Cell::new(0) }};
+    }}
+    /// After this many calls on one thread, the recording has cost the test enough time that its
+    /// own time is measured without it: the line `b` says so, once.
+    const BUSY: u32 = 100_000;
+
+    /// Whether this thread meets the call with `hash` for the first time; yes when it can't tell.
+    fn first_here(hash: u64) -> bool {{
+        MINE.try_with(|mine| {{
+            let Ok(mut mine) = mine.try_borrow_mut() else {{
+                return true;
+            }};
+            if mine.is_empty() {{
+                mine.resize(SLOTS, 0);
+            }}
+            let mut at = hash as usize % SLOTS;
+            for _ in 0..SLOTS {{
+                if mine[at] == hash {{
+                    return false;
+                }}
+                if mine[at] == 0 {{
+                    mine[at] = hash;
+                    return true;
+                }}
+                at = (at + 1) % SLOTS;
+            }}
+            true
+        }})
+        .unwrap_or(true)
+    }}
 
     /// The live mutant's number, 0 for none; in the coverage pass, records that the site whose
     /// first mutant is `site` was reached, and gives 0. Inlined even in a debug build, since it
@@ -413,7 +454,9 @@ pub(crate) mod __mutastic {{
     #[cold]
     fn hit(id: u32) {{
         if let Some(flag) = HIT.get(id as usize) {{
-            if !flag.swap(true, Relaxed) {{
+            // Read first: a site reached again, as most are, is a load, not a write every thread
+            // waits on.
+            if !flag.load(Relaxed) && !flag.swap(true, Relaxed) {{
                 write(&std::format!("h {{id}}\n"));
             }}
         }}
@@ -470,13 +513,37 @@ pub(crate) mod __mutastic {{
         }}
     }}
 
-    /// Records the whole numbers a function was called with, in the coverage pass only.
+    /// Records the whole numbers a function was called with, in the coverage pass only, up to
+    /// `KEPT` lines. A test can call a function millions of times: a call this thread has seen
+    /// costs a hash, and once the lines are all kept, a load.
     pub(crate) fn seen(function: u32, values: &[(&str, i128)]) {{
         let mut active = ACTIVE.load(Relaxed);
         if active == UNREAD {{
             active = read();
         }}
         if active != COVERING {{
+            return;
+        }}
+        let _ = CALLS.try_with(|calls| {{
+            if calls.get() < BUSY {{
+                calls.set(calls.get() + 1);
+                if calls.get() == BUSY {{
+                    write("b\n");
+                }}
+            }}
+        }});
+        if FULL.load(Relaxed) {{
+            return;
+        }}
+        // A multiply-and-rotate hash, cheap even unoptimised; two calls that share one only
+        // lose the second's line.
+        let mut hash = u64::from(function) ^ 0x9e37_79b9_7f4a_7c15;
+        for (_, value) in values {{
+            for half in [*value as u64, (*value >> 64) as u64] {{
+                hash = (hash.rotate_left(5) ^ half).wrapping_mul(0x517c_c1b7_2722_0a95);
+            }}
+        }}
+        if !first_here(hash.max(1)) {{
             return;
         }}
         let mut line = std::format!("s {{function}}");
@@ -486,8 +553,11 @@ pub(crate) mod __mutastic {{
         line.push('\n');
         let seen = SEEN.get_or_init(Default::default);
         if let Ok(mut seen) = seen.lock() {{
-            if seen.len() < 4096 && seen.insert(line.clone()) {{
+            if seen.len() < KEPT && seen.insert(line.clone()) {{
                 write(&line);
+            }}
+            if seen.len() >= KEPT {{
+                FULL.store(true, Relaxed);
             }}
         }}
     }}

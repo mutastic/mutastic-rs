@@ -2036,8 +2036,9 @@ fn fate(view: &View, result: &MutantResult, style: Style) -> String {
             view.catch_said(result)
         )),
         Status::Timeout => detected(format!(
-            "{id} is {}: its tests stopped finishing in time",
-            words.detected()
+            "{id} is {}: {}",
+            words.detected(),
+            timed_out(result)
         )),
         Status::Survived => red(
             words.undetected(),
@@ -2819,12 +2820,7 @@ fn agent_fates(view: &View, words: Vocabulary) -> String {
                     untrusted::value(result.killed_by.as_deref().unwrap_or("a test")),
                     view.catch_said(result)
                 ),
-                Status::Timeout => {
-                    format!(
-                        "is {}: its tests stopped finishing in time",
-                        words.detected()
-                    )
-                }
+                Status::Timeout => format!("is {}: {}", words.detected(), timed_out(result)),
                 Status::Survived => format!("is still {}", words.undetected()),
                 Status::NoCoverage => "isn't reached by any test".to_string(),
                 Status::Ignored => format!(
@@ -3287,7 +3283,13 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
             .map_or(fields.len(), |operator| operator + 1);
         fields.shift_insert(at, "docs".to_string(), json!(docs));
     }
-    if let Some(reason) = &result.reason {
+    // A timeout's note is the cards' and the report's: the events say why only of the statuses
+    // their schema names.
+    if let Some(reason) = result
+        .reason
+        .as_ref()
+        .filter(|_| result.status != Status::Timeout)
+    {
         event["statusReason"] = json!(reason);
         if result.status == Status::Ignored {
             event["skipKind"] = json!(skip_kind(result));
@@ -3499,6 +3501,15 @@ fn explained_result(report: &Report) -> Option<&MutantResult> {
     )
 }
 
+/// How a timed-out mutant's tests ran out of time: they stopped finishing in time, or ran for as
+/// long as the ceiling lets one mutant's tests run ([`crate::limits`]).
+pub fn timed_out(result: &MutantResult) -> String {
+    match crate::limits::at_ceiling(result) {
+        Some(note) => format!("its tests {note}"),
+        None => "its tests stopped finishing in time".to_string(),
+    }
+}
+
 /// `explain`: one mutant in full whatever became of it, as the Java edition explains it: a miss
 /// gets its card; anything else a card that says what happened instead, without help or a test to
 /// add; then what the change is, its operator, its id, its site and how the last full run went.
@@ -3555,7 +3566,7 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
                 &format!("✓ {}", style.words.detected().to_uppercase()),
                 GREEN,
             ),
-            "its tests stopped finishing in time, which counts as caught".to_string(),
+            format!("{}, which counts as caught", timed_out(result)),
         ),
         Status::NoCoverage => (
             style.label("○ NOT COVERED", CYAN),

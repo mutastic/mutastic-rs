@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use crate::compile::{self, Binary};
 use crate::failure::{Code, Failure};
+use crate::limits::Limits;
 use crate::sites::{self, Crate, UnsafeMode};
 use crate::testrun::{self, Outcome, Test};
 use crate::workspace::Project;
@@ -315,6 +316,9 @@ pub struct Options {
     /// `MUTASTIC_ARID=audit`: run the mutants mutastic's arid rules skip anyway, and say what
     /// happened to them, out of the score.
     pub audit_arid: bool,
+    /// mutastic.yaml's `timeout-ceiling:`: the most one mutant's tests may take in all, in place
+    /// of the ceiling the suite's own time gives ([`crate::limits`]).
+    pub timeout_ceiling: Option<Duration>,
 }
 
 /// How a caught mutant's tests run, as the Java edition's `Catches`: each catch run once more to
@@ -347,10 +351,23 @@ pub struct Scope {
 /// What the coverage pass found for one test.
 #[derive(Clone, Debug, Default)]
 struct Reach {
+    /// How long its recorded run took.
     took: Duration,
+    /// How long it took run plainly, with nothing recorded, when recording cost it enough to be run
+    /// again ([`crate::limits`]).
+    plain: Option<Duration>,
+    /// Whether it made so many calls that recording them cost it time: the switch's line `b`.
+    busy: bool,
     hits: BTreeSet<u32>,
     /// Function ordinal → parameter → values.
     seen: BTreeMap<u32, BTreeMap<String, BTreeSet<i128>>>,
+}
+
+impl Reach {
+    /// The test's own time: run plainly, or its recorded run when that was short.
+    fn own(&self) -> Duration {
+        self.plain.unwrap_or(self.took)
+    }
 }
 
 pub fn find(project: &Project, operators: &[&str]) -> Crate {
@@ -422,13 +439,14 @@ pub enum Progress<'a> {
     /// No mutant is there to run, so nothing is built and no test runs.
     NothingToRun,
     /// A worker starts a mutant, expected to take `expected`, as its covering tests did; it's
-    /// slow past `slow`.
+    /// slow past `slow`, and timed out at `limit`.
     MutantStarted {
         worker: usize,
         found: &'a Crate,
         mutant: usize,
         expected: Duration,
         slow: Duration,
+        limit: Duration,
         /// The tests that cover it.
         tests: usize,
     },
@@ -643,11 +661,23 @@ fn run_from(
     let coverage_took = coverage_started.elapsed();
     let rustc = rustc_version();
     let order: Vec<usize> = selected.iter().copied().collect();
+    // No more workers than mutants, as the Java edition starts them: `--only` on one is one.
+    let workers = options.workers.min(order.len().max(1));
+    let limits = limits_for(workers, options, &reach);
     let first = first_at_site(&found, &built_set, &built);
     let sites_measured = measured(&found, &built_set, &built, &tests, &reach, false);
     let costs: Vec<Cost> = order
         .iter()
-        .map(|&mutant| cost(&found, mutant, first[mutant], &built, &tests, &reach))
+        .map(|&mutant| {
+            cost(
+                &found,
+                mutant,
+                first[mutant],
+                (&built, &limits),
+                &tests,
+                &reach,
+            )
+        })
         .collect();
     progress(Progress::Covered {
         tests: tests.len(),
@@ -662,8 +692,6 @@ fn run_from(
     let suggester = Suggester::new(project, &found, &built, options);
     let files = Files::new(&found, &order);
     let indexed: Vec<(usize, &Cost)> = order.iter().copied().zip(&costs).collect();
-    // No more workers than mutants, as the Java edition starts them: `--only` on one is one.
-    let workers = options.workers.min(order.len().max(1));
     let suite = Suite {
         built: &built,
         tests: &tests,
@@ -671,6 +699,7 @@ fn run_from(
         cwd: &cwd,
         catches: options.catches,
         shrink: !options.only.is_empty(),
+        limits,
     };
     let ran = testrun::parallel_on(&indexed, workers, |worker, &(mutant, cost)| {
         if cost.expected > Duration::ZERO {
@@ -680,6 +709,7 @@ fn run_from(
                 mutant,
                 expected: cost.expected,
                 slow: cost.slow,
+                limit: cost.limit,
                 tests: cost.tests,
             });
         }
@@ -718,6 +748,7 @@ fn run_from(
         cwd: &cwd,
         workers: options.workers,
         catches: options.catches,
+        limits,
     };
     let guarded = crate::guard::check(&mut results, &runs);
     let mut flaky = flaky;
@@ -883,6 +914,7 @@ fn estimate_from(
     let (tests, reach) = steady(listed, covered);
     let sites = measured(&found, &live, &built, &tests, &reach, true);
     let first = first_at_site(&found, &live, &built);
+    let limits = limits_for(options.workers, options, &reach);
     progress(Progress::Covered {
         tests: tests.len(),
         rustc: &rustc_version(),
@@ -891,7 +923,7 @@ fn estimate_from(
         flaky,
         cost: live
             .iter()
-            .map(|&m| cost(&found, m, first[m], &built, &tests, &reach).expected)
+            .map(|&m| cost(&found, m, first[m], (&built, &limits), &tests, &reach).expected)
             .sum(),
     });
     Ok(sites)
@@ -1313,7 +1345,8 @@ struct Covered {
 }
 
 /// Runs each test alone, with the switches recording which sites it reaches and the whole
-/// numbers each function was called with. A test that fails runs again on its own, up to
+/// numbers each function was called with, and again plainly, for its own time, when recording
+/// cost it time ([`crate::limits`]). A test that fails runs again on its own, up to
 /// [`crate::flaky::RERUNS`] times: one that passes is flaky, and left out of the run, as in the
 /// Java edition. One that fails every time stops the run, since a test that fails with no mutant
 /// in would look as if it caught every mutant it met.
@@ -1340,7 +1373,11 @@ fn coverage(
             Duration::from_secs(300),
         );
         let text = std::fs::read_to_string(&file).unwrap_or_default();
-        (outcome, read_reach(&text))
+        let mut reach = read_reach(&text);
+        if outcome.passed && reach.busy && outcome.took >= crate::limits::PLAIN_FROM {
+            reach.plain = plain_time(&binaries[test.binary], &cwd, test, outcome.took);
+        }
+        (outcome, reach)
     };
     let indexed: Vec<(usize, &Test)> = tests.iter().enumerate().collect();
     let tested = std::sync::atomic::AtomicUsize::new(0);
@@ -1441,6 +1478,19 @@ fn coverage(
     Ok(Covered { reach, flaky })
 }
 
+/// How long `test` takes run plainly, with no mutant in and nothing recorded: none when it doesn't
+/// pass that way in twice its recorded time and ten seconds, and the recorded time stands.
+fn plain_time(
+    binary: &Binary,
+    cwd: &std::path::Path,
+    test: &Test,
+    recorded: Duration,
+) -> Option<Duration> {
+    let limit = recorded * 2 + Duration::from_secs(10);
+    let outcome = testrun::run(binary, cwd, &[&test.name], &[], limit);
+    outcome.passed.then_some(outcome.took.min(recorded))
+}
+
 /// The package has tests, and every one is `#[ignore]`d, so none ran: as the Java edition stops a
 /// run whose module has test classes none of which ran. Scored, that would be every mutant not
 /// covered, a 0% that reads as tests that don't reach the code. A package with no tests at all
@@ -1498,6 +1548,7 @@ fn read_reach(text: &str) -> Reach {
     for line in text.lines() {
         let mut words = line.split(' ');
         match words.next() {
+            Some("b") => reach.busy = true,
             Some("h") => {
                 if let Some(id) = words.next().and_then(|id| id.parse().ok()) {
                     reach.hits.insert(id);
@@ -1546,12 +1597,13 @@ fn first_at_site(found: &Crate, selected: &BTreeSet<usize>, built: &compile::Bui
         .collect()
 }
 
-/// What a mutant should take, and when it's slow: the time its covering tests took in the coverage
-/// pass, and three times that or half its timeout, whichever comes first. One no test reaches, or
-/// that isn't run, costs nothing.
+/// What a mutant should take, and when it's slow: its covering tests' own time, and three times
+/// that or half its limit, whichever comes first; and its limit, each binary's added up, under the
+/// ceiling. One no test reaches, or that isn't run, costs nothing.
 pub(crate) struct Cost {
     expected: Duration,
     slow: Duration,
+    limit: Duration,
     tests: usize,
 }
 
@@ -1559,42 +1611,63 @@ fn cost(
     found: &Crate,
     index: usize,
     site: u32,
-    built: &compile::Built,
+    (built, limits): (&compile::Built, &Limits),
     tests: &[Test],
     reach: &[Reach],
 ) -> Cost {
     let none = Cost {
         expected: Duration::ZERO,
         slow: Duration::ZERO,
+        limit: Duration::ZERO,
         tests: 0,
     };
-    if found.mutants[index].skipped.is_some() || built.unviable.contains_key(&index) {
+    let mutant = &found.mutants[index];
+    if mutant.skipped.is_some() || built.unviable.contains_key(&index) {
         return none;
     }
     let (by_binary, covering) = covering_time(site, tests, reach);
-    let expected: Duration = by_binary.values().sum();
-    let timeout: Duration = by_binary.values().map(|&baseline| timeout(baseline)).sum();
     if by_binary.is_empty() {
         return none;
     }
+    let expected: Duration = by_binary.values().flatten().sum();
+    let limit: Duration = by_binary
+        .values()
+        .map(|own| limits.group(own.iter().copied(), mutant.near_unsafe.is_some()))
+        .sum::<Duration>()
+        .min(limits.ceiling);
     Cost {
         expected,
-        slow: (expected * 3).min(timeout / 2),
+        slow: (expected * 3).min(limit / 2),
+        limit,
         tests: covering,
     }
 }
 
-/// What the tests that reach `site` took in the coverage pass, by binary, and how many there are.
-fn covering_time(site: u32, tests: &[Test], reach: &[Reach]) -> (BTreeMap<usize, Duration>, usize) {
-    let mut by_binary: BTreeMap<usize, Duration> = BTreeMap::new();
+/// The own times of the tests that reach `site`, by binary, and how many there are.
+fn covering_time(
+    site: u32,
+    tests: &[Test],
+    reach: &[Reach],
+) -> (BTreeMap<usize, Vec<Duration>>, usize) {
+    let mut by_binary: BTreeMap<usize, Vec<Duration>> = BTreeMap::new();
     let mut covering = 0;
     for (t, test) in tests.iter().enumerate() {
         if reach[t].hits.contains(&site) {
-            *by_binary.entry(test.binary).or_default() += reach[t].took;
+            by_binary
+                .entry(test.binary)
+                .or_default()
+                .push(reach[t].own());
             covering += 1;
         }
     }
     (by_binary, covering)
+}
+
+/// The run's limits: for `workers` at once, under `timeout-ceiling:` or the one the suite's own
+/// time gives.
+fn limits_for(workers: usize, options: &Options, reach: &[Reach]) -> Limits {
+    let suite = reach.iter().map(Reach::own).sum();
+    Limits::new(workers, options.timeout_ceiling, suite)
 }
 
 /// Each site the coverage pass measured ([`crate::test_times::site`]), with what a mutant there
@@ -1617,18 +1690,12 @@ fn measured(
         let site = crate::test_times::site(mutant);
         if !built.unviable.contains_key(&index) {
             let (by_binary, _) = covering_time(first[index], tests, reach);
-            sites.insert(site, by_binary.values().sum());
+            sites.insert(site, by_binary.values().flatten().sum());
         } else if every {
             sites.entry(site).or_insert(Duration::ZERO);
         }
     }
     sites
-}
-
-/// How long a binary's covering tests may run against a mutant: five times what they took, and a
-/// second, or ten seconds.
-fn timeout(baseline: Duration) -> Duration {
-    (baseline * 5 + Duration::from_secs(1)).max(Duration::from_secs(10))
 }
 
 /// What a mutant runs against: the build, the tests the coverage pass kept with what each reaches,
@@ -1642,6 +1709,7 @@ struct Suite<'a> {
     /// Whether the input a property caught a mutant with is shrunk, by running that test once
     /// more with shrinking on: in a run of mutants named by id, whose cards are read one by one.
     shrink: bool,
+    limits: Limits,
 }
 
 fn result(found: &Crate, index: usize, site: u32, suite: &Suite) -> MutantResult {
@@ -1652,6 +1720,7 @@ fn result(found: &Crate, index: usize, site: u32, suite: &Suite) -> MutantResult
         cwd,
         catches,
         shrink,
+        limits,
     } = *suite;
     let mutant = &found.mutants[index];
     let function = &found.functions[mutant.function];
@@ -1729,9 +1798,13 @@ fn result(found: &Crate, index: usize, site: u32, suite: &Suite) -> MutantResult
     for &t in &covering {
         by_binary.entry(tests[t].binary).or_default().push(t);
     }
+    let one_at_a_time = mutant.near_unsafe.is_some();
     let mut groups: Vec<(Duration, usize, Vec<usize>)> = by_binary
         .into_iter()
-        .map(|(binary, group)| (group.iter().map(|&t| reach[t].took).sum(), binary, group))
+        .map(|(binary, group)| {
+            let own = group.iter().map(|&t| reach[t].own());
+            (limits.group(own, one_at_a_time), binary, group)
+        })
         .collect();
     groups.sort_by_key(|(_, binary, _)| {
         let built = &built.binaries[*binary];
@@ -1768,10 +1841,15 @@ fn result(found: &Crate, index: usize, site: u32, suite: &Suite) -> MutantResult
             .filter(|test| failures.contains(&test.name))
             .collect()
     };
+    // A group's limit, or what's left under the ceiling when that's less, and whether it is.
+    let under_ceiling = |limit: Duration| {
+        let left = limits.ceiling.saturating_sub(started.elapsed());
+        (limit.min(left), left < limit)
+    };
     let mut groups = groups.into_iter();
-    for (baseline, binary, group) in groups.by_ref() {
+    for (limit, binary, group) in groups.by_ref() {
         let mut names = named(&group);
-        let timeout = timeout(baseline);
+        let (timeout, ceilinged) = under_ceiling(limit);
         let run =
             |names: &[&str]| testrun::run(&built.binaries[binary], cwd, names, &active, timeout);
         let mut outcome: Outcome = run(&names);
@@ -1791,6 +1869,9 @@ fn result(found: &Crate, index: usize, site: u32, suite: &Suite) -> MutantResult
         }
         if outcome.timed_out {
             result.status = Status::Timeout;
+            if ceilinged {
+                result.reason = Some(crate::limits::ceiling_note(limits.ceiling));
+            }
             break;
         }
         if outcome.passed {
@@ -1884,9 +1965,10 @@ fn result(found: &Crate, index: usize, site: u32, suite: &Suite) -> MutantResult
         if result.killed_by_all.is_empty() {
             result.killed_by_all.extend(result.killed_by.clone());
         }
-        for (baseline, binary, group) in groups {
+        for (limit, binary, group) in groups {
             let binary = &built.binaries[binary];
-            let outcome = testrun::run(binary, cwd, &named(&group), &active, timeout(baseline));
+            let (timeout, _) = under_ceiling(limit);
+            let outcome = testrun::run(binary, cwd, &named(&group), &active, timeout);
             let failed = failing(&group, &outcome.failures);
             if failed.is_empty() && !outcome.passed {
                 break;
@@ -1933,6 +2015,7 @@ struct BuildRuns<'a> {
     cwd: &'a std::path::Path,
     workers: usize,
     catches: Catches,
+    limits: Limits,
 }
 
 impl BuildRuns<'_> {
@@ -1944,7 +2027,7 @@ impl BuildRuns<'_> {
 impl crate::guard::Runs for BuildRuns<'_> {
     fn time_of(&self, test: &str) -> Duration {
         self.test(test)
-            .map_or(Duration::ZERO, |index| self.reach[index].took)
+            .map_or(Duration::ZERO, |index| self.reach[index].own())
     }
 
     /// On its own, with no mutant active, under the time limit a mutant's run of it has. A process
@@ -1954,7 +2037,7 @@ impl crate::guard::Runs for BuildRuns<'_> {
             return false;
         };
         let test = &self.tests[index];
-        let limit = timeout(self.reach[index].took);
+        let limit = self.limits.group([self.reach[index].own()], true);
         let outcome = testrun::run(
             &self.built.binaries[test.binary],
             self.cwd,
@@ -1987,6 +2070,7 @@ impl crate::guard::Runs for BuildRuns<'_> {
             cwd: self.cwd,
             catches: self.catches,
             shrink: false,
+            limits: self.limits,
         };
         testrun::parallel(&mutants, self.workers, |&mutant| {
             let again = result(self.found, mutant, self.first[mutant], &suite);
