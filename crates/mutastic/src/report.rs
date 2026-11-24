@@ -3878,10 +3878,18 @@ mod tests {
         let file = std::path::PathBuf::from(format!("/work/a\x1b[2Jb/{long}.json"));
         let other = std::path::PathBuf::from("/work/target/mutastic/mutation.html");
 
-        assert_eq!(
-            reports_row(&[file, other], Style::default()),
-            format!("/work/a\\x1b[2Jb/{long}.json · /work/target/mutastic/mutation.html")
+        // Where the path starts depends on the platform (`/work` gains a drive on Windows): what's
+        // held here is that what can't be seen is escaped, and that nothing is cut.
+        let row = reports_row(&[file, other], Style::default());
+        assert!(
+            row.contains(&format!("/work/a\\x1b[2Jb/{long}.json · ")),
+            "{row}"
         );
+        assert!(
+            row.ends_with("/work/target/mutastic/mutation.html"),
+            "{row}"
+        );
+        assert!(!row.contains('\x1b'), "{row}");
     }
 
     /// The lines a card shows for `claimed` replaced by `with` in `text`.
