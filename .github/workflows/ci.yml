@@ -54,9 +54,10 @@ jobs:
           EVENT: ${{ github.event_name }}
           NUMBER: ${{ github.event.pull_request.number }}
           COUNT: ${{ github.event.pull_request.changed_files }}
-          # What neither reads: the changelog's entries and script, the citation, the templates and
-          # picture under .github, the workflows other than this one, and the hooks.
-          UNREAD: '^(changes/.*|scripts/changelog\.sh|CITATION\.cff|\.github/(ISSUE_TEMPLATE/.*|PULL_REQUEST_TEMPLATE\.md|pip\.webp|workflows/(audit|commits|release)\.yml)|\.githooks/.*)$'
+          # What neither reads: the changelog's entries and scripts, the release's check, the
+          # citation, the templates and picture under .github, the workflows other than this one,
+          # and the hooks.
+          UNREAD: '^(changes/.*|scripts/(changelog|test-changelog|release-check)\.sh|CITATION\.cff|\.github/(ISSUE_TEMPLATE/.*|PULL_REQUEST_TEMPLATE\.md|pip\.webp|workflows/(audit|commits|release)\.yml)|\.githooks/.*)$'
         run: |
           code=true
           if [ "$EVENT" = pull_request ] &&
@@ -103,6 +104,14 @@ jobs:
         if: needs.changes.outputs.code == 'true'
         env:
           MUTASTIC_DOCS_COVERAGE: "1"
+      # A release, "chore(release): version X.Y.Z": its ids all kept (scripts/release-check.sh,
+      # with the test binary just built; Commits checks the rest). In the merge queue, from the
+      # squash commit's subject.
+      - name: A release's ids
+        if: needs.changes.outputs.code == 'true' && matrix.os == 'ubuntu-latest' && github.event_name != 'push'
+        run: sh scripts/release-check.sh --build --subject "${TITLE:-$(git log -1 --format=%s)}"
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
 
   # Windows, on its own so the other platforms don't wait for it: clippy, as `#[cfg(windows)]` code
   # is linted nowhere else, and the tests; format runs above.
