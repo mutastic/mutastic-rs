@@ -59,10 +59,10 @@ it. Call `cargo` directly only for a job no recipe covers.
 
 CI calls the same recipes: `just lint` and `just test` on Linux and macOS, `just clippy` and `just
 test --no-fail-fast` on Windows, `just msrv`, and the scheduled runs' `just fuzz`, `just miri`,
-`just asan`, `just contract` and the `ci` group's `self-` recipes, so a job that fails can be run
-here as CI ran it. Commits checks the justfile's format and that its verbs are those
-[.github/just-verbs.txt](.github/just-verbs.txt) lists: after adding or removing a recipe, run
-`just --summary | tr ' ' '\n' > .github/just-verbs.txt`.
+`just asan`, `just contract`, and the `ci` group's `self-` recipes and `just corpus`, so a job
+that fails can be run here as CI ran it. Commits checks the justfile's format and that its verbs
+are those [.github/just-verbs.txt](.github/just-verbs.txt) lists: after adding or removing a
+recipe, run `just --summary | tr ' ' '\n' > .github/just-verbs.txt`.
 
 ## Making a change
 
@@ -120,6 +120,30 @@ in the Java repository says how it works.
 - **A new edition** built on this one (Swift) starts from `tests/contract.rs` and its own port of
   the pricing fixture, adds itself to the contract's `editions`, and records each failure as a
   difference.
+
+## The corpus
+
+The fixtures hold the shapes we thought of. The bugs that matter turn up in the ones people write:
+a crate its own dev-dependencies pull in again, modules declared inside a macro, a mutant no time
+limit stopped. So every night, and before every release, mutastic runs on a corpus of real crates,
+[corpus/corpus.yaml](corpus/corpus.yaml), each pinned to a commit
+([.github/workflows/corpus.yml](.github/workflows/corpus.yml)). Each crate's job clones it, runs
+its own `cargo test`, then a share of its mutants as events and again for an agent, and passes
+when what the corpus expects of it holds: a score, or the refusal it names. The run's page has a
+table of every crate against the last good night, and the run is red when a crate that passed then
+fails now.
+
+- **Adding a crate:** pick one for a shape the others don't cover, and say which in `shapes`. Pin a
+  commit, the whole hash. Set `shard` so a share is 30 to 60 mutants. Set `expect` to `score`, or to
+  `refused:<code>` with a `note` saying why refusing it is right. Then run the workflow on your
+  branch for it alone: `gh workflow run corpus.yml --ref <branch> -f only=<name>`. The header of
+  corpus.yaml says the same.
+- **Every corpus failure becomes a fixture.** The pull request that fixes one adds the smallest
+  crate that shows it to `fixtures/`, so the tests catch it from then on, not only the nightly.
+- **Corpus crates are other people's code:** they're cloned, built and run in GitHub Actions only.
+  `just corpus <name>` runs one as its job does, and on your machine it runs only an entry whose
+  `git` is a `file://` URL, a fixture standing in for a crate, from a corpus file `CORPUS_FILE`
+  names.
 
 ## Pull requests
 

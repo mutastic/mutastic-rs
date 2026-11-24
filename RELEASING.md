@@ -93,6 +93,11 @@ scripts/candidate-run.sh             # --of=N for a smaller share, or name fixtu
 ```
 Don't tag a candidate that fails: its run's summary and artifact say which fixture, and how.
 
+Then run the corpus on the release's branch, real crates each pinned to a commit
+([CONTRIBUTING.md](CONTRIBUTING.md#the-corpus)), an hour or so: `gh workflow run corpus.yml --ref
+<branch>`. Its summary compares each crate with the last good nightly; don't tag while a crate that
+passed there fails.
+
 ## After a release
 
 `release-verify.yml` checks the release as a person gets it, on Linux, macOS and Windows, on a
