@@ -161,6 +161,17 @@
         "unsafe": {
           "enum": ["skip", "enclosing", "all"],
           "description": "The Rust edition only: which code near `unsafe` was mutated. `skip`: neither unsafe code nor a safe function holding an `unsafe` block; `enclosing`: those functions too, but not the code inside the block; `all`: everything. See `nearUnsafe`, and `run-finished`'s `notMutated`."
+        },
+        "propertyTests": {
+          "type": "object",
+          "description": "For a project whose tests use a property-testing framework (decision 25): which, and the seed the run drew their inputs from, so runs can be compared: a run with another seed is another draw.",
+          "required": ["frameworks"],
+          "properties": {
+            "frameworks": { "type": "array", "items": { "type": "string" }, "description": "The frameworks the project's tests use, by name: in Rust `proptest`, `quickcheck`, `arbtest`, `bolero`; in Java `junit-quickcheck`, `quicktheories`, `kotest`, `jqwik`." },
+            "seed": { "type": "string", "pattern": "^[0-9]+$", "description": "The seed every test process of the run was given, in decimal: the person's, else `0`. Only when a framework took it." },
+            "seeded": { "type": "array", "items": { "type": "string" }, "description": "The frameworks that drew from `seed`." },
+            "unseeded": { "type": "array", "items": { "type": "string" }, "description": "The frameworks whose seed can't be set from outside the test: their inputs are their own draw's, and the run's note on stderr names them." }
+          }
         }
       }
     },
@@ -307,6 +318,10 @@
             "index": { "type": "integer", "minimum": 1, "description": "Its position among its test's cases in this run, from 1: JUnit's invocation number, rstest's `case_2`, test-case's `test_case_2`." },
             "name": { "type": "string", "description": "What it's called: in Java its display name, `[2] 2, 3, 5` by default; in Rust its row as written, `#[case(2, 3, 5)]`." }
           }
+        },
+        "caughtInput": {
+          "type": "string",
+          "description": "The input the property test that caught it failed on, on one line as its framework prints it, `xs = [0, 0]`, at most 300 characters then `…` (decision 25): as evidence of this run. In a run of every mutant the first that failed, as shrinking is off; in a run of mutants named by id, the one the framework shrinks it to. Only when a property caught it and its framework names an input."
         },
         "nearUnsafe": {
           "type": "string",

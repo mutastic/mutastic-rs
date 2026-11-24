@@ -371,7 +371,7 @@ pub fn failed_message(failing: &[Red], log: &Path) -> String {
         lines.push(format!(
             "proptest drew its cases from the seed mutastic sets, PROPTEST_RNG_SEED={}: the \
              command sets it too, so the test fails as it did here.",
-            crate::testrun::PROPTEST_SEED
+            crate::properties::PROPTEST_SEED
         ));
     }
     lines.join("\n")

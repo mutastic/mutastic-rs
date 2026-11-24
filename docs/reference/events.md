@@ -96,9 +96,11 @@ them.
 | every event | `edition` | `rust`. The schema asks the Java edition's own field, `run-finished`'s `jdk`, only of events whose `edition` is `java` |
 | `run-started` | `profile` | How mutastic's build was made: `name`, `optLevel`, `overflowChecks`, `debugAssertions`, as Cargo reports them; with nothing built, `optLevel` is left out. See [Profiles](../concepts/profiles.md#what-the-run-records) |
 | `run-started` | `unsafe` | `skip`, `enclosing` or `all`: how unsafe code was treated |
+| `run-started` | `propertyTests` | For a package that depends on a property-testing framework: its `frameworks` (`proptest`, `quickcheck`, `arbtest`, `bolero`), the `seed` mutastic drew proptest's cases from and the frameworks it `seeded`, and those it can't seed, `unseeded`. The Java edition has it to come |
 | `mutant-finished` | `status: "RuntimeError"` | Crashed where a crash proves nothing; out of the score. See [Unsafe code](../concepts/unsafe.md) |
 | `mutant-finished` | `nearUnsafe` | Why the mutant is near unsafe code: `called from unsafe code`, `in a module with unsafe code`, and, with `--unsafe`, `in a function with an unsafe block` or `inside unsafe code` |
 | `mutant-finished` | `caughtWith` | How the test failed: `panic`, `panic: attempt to subtract with overflow` for a panic the language raised, or `crash: SIGABRT` when the process died and no test is named |
+| `mutant-finished` | `caughtInput` | The input the property that caught it failed on, on one line, `xs = [0, 0]`: the first case that failed in a run of every mutant, the shrunk one in a run of mutants named by id. Also `mutastic.caughtInput` in `mutation.json`. The Java edition has it to come |
 | `mutant-finished` | `location.column` | The column of the change, from 1 |
 | `run-finished` | `toolchain` | `{"name": "rustc", "version": …}`, the compiler that built the tests, where the Java edition also writes `jdk` |
 | `run-finished` | `runtimeError` | How many crashed where a crash proves nothing |

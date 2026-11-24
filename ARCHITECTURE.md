@@ -79,6 +79,7 @@ All the code is in `crates/mutastic/src`:
 | `compile` | Builds the copy, blames compile errors on mutants, withdraws the unviable ones |
 | `wrapper` | mutastic as Cargo's `RUSTC_WORKSPACE_WRAPPER`, adding flags to the user's crate only |
 | `testrun` | Lists and runs libtest binaries' tests, with a time limit, and runs work side by side |
+| `properties` | Property tests: the frameworks a package uses, the seed and settings each test process gets, the frameworks that can't be seeded, and the input a failing property names |
 | `flaky` | Flaky tests: how many reruns, what a test reaches that varies, and the words for a test that always fails |
 | `guard` | The false-catch guard: each catching test run again on its own after the mutants, and what a test that fails there reached run again without it |
 | `engine` | A run: finds, builds, records coverage, runs each mutant, and decides its status |
@@ -121,6 +122,7 @@ editions' contract names. Every event says `"edition": "rust"`. Where the editio
 | `#[cfg(test)]` modules in `src/` | Unit tests, beside the code |
 | `tests/samples.rs` | `mutastic run` on the fixtures, through the binary, as a person runs it |
 | `tests/truth.rs` | A card says what its mutant does: each claim written into the source behaves as the mutant does |
+| `tests/properties.rs` | Property tests: two runs with one seed are the same run, a catch names its input, a named mutant's is shrunk, and the frameworks mutastic can't seed are noted |
 | `tests/shares.rs` | Two shares of the pricing fixture, put back together, are the whole run, in every format; shares that aren't one run's are refused |
 | `tests/ids.rs` | Every mutant of every fixture, under every operator, held to `tests/ids/ids.tsv` |
 | `tests/contract.rs` | The editions' contract, pinned from the Java repository by the newest of `contract/pins`: the command line, help, error codes, the summary, the agent format, events and mutation.json, each as the contract says or a recorded difference |
@@ -131,7 +133,7 @@ editions' contract names. Every event says `"edition": "rust"`. Where the editio
 (each shape a mutated expression can take), `unsafety`, `loops`, `places`, `platforms`, `ranking`,
 `suggestions`, `unreached` (code no test reaches, for the assertion to start with), `repeats`
 (identical lines in one function), `flaky` (a test that fails on its first
-try, and passes after), `false-catches` (a test that passes before any mutant and fails on its own
+try, and passes after), `properties` (proptest and quickcheck properties, one boundary only some draws catch), `false-catches` (a test that passes before any mutant and fails on its own
 after them) and `workspace`. `samples.rs` and
 `truth.rs` run mutastic on them in place, so its copy goes in each fixture's own `target/`;
 `docs.rs` copies them to the system's temporary directory first, so the commands it captures read

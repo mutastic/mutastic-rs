@@ -75,7 +75,10 @@ table is written:
   which row failed. Put the row in the assertion's message,
   `assert_eq!(subtract(a, b), difference, "subtract({a}, {b})")`, so the test's own output does.
 - **A proptest property draws the same cases every run,** as mutastic seeds it, so it catches a
-  mutant in every run or in none. A card's `inputs seen` shows its smallest and largest few values.
+  mutant in every run or in none. A card's `inputs seen` shows its smallest and largest few values,
+  and a caught mutant's card names the input that caught it, ``with `xs = [0]` ``, as
+  `mutant-finished`'s `caughtInput` does. quickcheck, arbtest and bolero seed themselves, and a run
+  of a package that uses them says so.
 
 See [Tables of cases and property tests](../troubleshooting.md#tables-of-cases-and-property-tests).
 
@@ -417,6 +420,7 @@ how it went:
 |---|---|---|
 | `is caught by tests::discount_at_the_total_edge` | a test failed | yes |
 | `is caught by run::totals, through a panic: attempt to subtract with overflow` | a test failed through a panic the language raised | yes |
+| ``is caught by props::reverses_twice with `xs = [0]` `` | a property test failed, on the input named | yes |
 | `is caught only because the test process crashed (SIGABRT): no test's check caught it` | no test failed: the process died, in safe code | yes |
 | `is caught by a timeout` | the tests ran out of time | yes |
 | `is still missed` | every test that reaches it passed | no |

@@ -1331,6 +1331,10 @@ fn finish(
     if let Some(choosing) = choosing(parsed).filter(|_| reports_named(parsed)) {
         stderr_line!("{}", reports_left_out_with(choosing));
     }
+    // Property tests mutastic couldn't seed: their results can change from run to run.
+    if let Some(note) = crate::properties::note(&report.project).filter(|_| report.built) {
+        stderr_line!("{note}");
+    }
     if !report.failing_alone().is_empty() {
         // A test fails on the code with no mutant in, as one that fails before any mutant does.
         return Ok(ExitCode::from(TESTS_FAIL));
@@ -2824,6 +2828,7 @@ fn caught(result: &engine::MutantResult, project: &workspace::Project) -> String
         crate::cases::caught(project, result)
             .map(|case| case.said())
             .unwrap_or_default()
+            + &crate::properties::said(result.killed_input.as_deref())
     );
     match how.strip_prefix("panic: ") {
         Some(message) => format!(

@@ -34,6 +34,12 @@ the code. See [Troubleshooting](troubleshooting.md#a-workspace).
   test, `caughtCase` in the events: here it's the row as written, `#[case(30, 0, 30)]`, where the
   Java edition gives JUnit's display name, `[2] 2, 3, 5`, after the method. See [Tables of cases
   and property tests](troubleshooting.md#tables-of-cases-and-property-tests).
+- **Property tests** run seeded where the framework takes a seed from outside, proptest's
+  `PROPTEST_RNG_SEED`, with shrinking off on a mutant's run, and a catch names the input it failed
+  on, `caughtInput` in the events and `mutation.json`, and `run-started`'s `propertyTests`. The
+  Java edition doesn't have them yet. quickcheck, arbtest and bolero can't be seeded from outside,
+  and a run says so. See [Tables of cases and property
+  tests](troubleshooting.md#tables-of-cases-and-property-tests).
 - **A test that fails with no mutant in** runs again on its own, in both: one that then passes is
   flaky, left out of the run and reported, and one that fails every time stops the run. What a
   flaky test reaches that varies is read from source: calls such as `SystemTime::now`,

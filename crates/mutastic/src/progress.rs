@@ -430,6 +430,7 @@ impl Inner {
                 rounds,
                 withdrawn,
                 profile,
+                properties,
             } => {
                 self.phase_event(state, None);
                 if let Some(events) = &state.events {
@@ -439,6 +440,7 @@ impl Inner {
                         events.unsafe_mode,
                         events.share.clone(),
                         &events.at,
+                        properties.clone(),
                     );
                     self.event(&started);
                     state.started_sent = true;
@@ -450,6 +452,7 @@ impl Inner {
                         record.events.unsafe_mode,
                         record.events.share.clone(),
                         &record.events.at,
+                        properties.clone(),
                     );
                     record.line(&started);
                 }
