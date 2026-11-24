@@ -1111,6 +1111,16 @@ fn run(parsed: &Parsed) -> Result<ExitCode, Failure> {
             share: share.as_ref().map(crate::shares::Tag::json),
         });
     }
+    // A share's events as the run goes, so a share stopped part way keeps what it finished.
+    if let (Some(tag), Some(folder)) = (&share, &folder) {
+        progress.keep_live(
+            &folder.join(EVENTS),
+            crate::progress::Events {
+                unsafe_mode: parsed.unsafe_mode,
+                share: Some(tag.json()),
+            },
+        );
+    }
     let mut report = engine::run(&project, &options, &|step| progress.step(step))?;
     report.share = share;
     progress.finished();

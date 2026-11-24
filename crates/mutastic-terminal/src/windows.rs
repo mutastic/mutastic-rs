@@ -114,6 +114,7 @@ mod ffi {
 
     /// Returns FALSE, so the next handler, the default, still ends the process.
     extern "system" fn on_leave(_: u32) -> c_int {
+        crate::STOPPING.store(true, std::sync::atomic::Ordering::Relaxed);
         super::leave(&crate::TAB, &mut std::io::stderr());
         0
     }

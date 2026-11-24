@@ -198,6 +198,10 @@ fn on_ask() {
 
 /// Ctrl-C, a kill, Ctrl-Z and a continue, the handler `ffi::on_leave`'s.
 fn on_leave(signum: c_int) {
+    if signum == SIGINT || signum == SIGTERM {
+        // Only an atomic store, first: the run keeps nothing more once it's stopping.
+        super::STOPPING.store(true, Ordering::Relaxed);
+    }
     on_signal(&C, &MODES, &super::TAB, signum);
 }
 

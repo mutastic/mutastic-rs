@@ -82,6 +82,16 @@ pub fn asked() -> bool {
     ASKED.swap(false, Ordering::Relaxed)
 }
 
+/// Set once Ctrl-C or a kill (SIGINT, SIGTERM, or Windows's Ctrl-C and close) reaches the run, by
+/// the handler, before it ends the process: from then on, nothing the run is doing is finished.
+static STOPPING: AtomicBool = AtomicBool::new(false);
+
+/// Whether Ctrl-C or a kill has reached the run. A test killed by the same signal has failed, and
+/// what's kept from here on would count it a catch.
+pub fn stopping() -> bool {
+    STOPPING.load(Ordering::Relaxed)
+}
+
 /// Set while the tab shows progress: every way out clears it, Ctrl-C and kills included.
 static TAB: AtomicBool = AtomicBool::new(false);
 

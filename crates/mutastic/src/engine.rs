@@ -1929,6 +1929,26 @@ fn exiting(run: &impl Fn(&[&str]) -> Outcome, names: &[&str]) -> Option<String> 
 /// What a crash means. A safe mutant that crashes the process was caught, but by the crash, not a
 /// test's check, so no test is named. Near unsafe code a crash may be undefined behaviour, and a
 /// crash in std's own check of an unsafe precondition is std's catch: neither is in the score.
+/// Whether `result` is a catch by a test that a signal from outside the run ended: a hang-up,
+/// Ctrl-C or a kill (SIGHUP, SIGINT, SIGTERM), which `timeout` and Ctrl-C send the run's tests
+/// with the run. That's the run being stopped, not the mutant caught, so what's kept of a stopped
+/// run leaves it out; the run's own result, if it gets one, judges it as ever.
+pub fn stopped_from_outside(result: &MutantResult) -> bool {
+    result
+        .killed_with
+        .as_deref()
+        .is_some_and(ended_from_outside)
+}
+
+/// Whether a catch's `killed_with`, `crash: signal 15`, is a signal from outside the run's.
+fn ended_from_outside(with: &str) -> bool {
+    with.starts_with("crash:")
+        && ["signal 1", "signal 2", "signal 15"].iter().any(|signal| {
+            with.match_indices(signal)
+                .any(|(at, _)| !with[at + signal.len()..].starts_with(|c: char| c.is_ascii_digit()))
+        })
+}
+
 fn crashed(result: &mut MutantResult, near_unsafe: Option<&str>, first: &Outcome, again: &Outcome) {
     let signal = first
         .signal
@@ -1996,6 +2016,24 @@ pub fn not_a_mutant(id: &str, package: &str, dir: &str, found: &Crate) -> Failur
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A test a hang-up, Ctrl-C or a kill ended stopped with the run; any other crash, and a signal
+    /// whose number only starts the same, is the mutant's.
+    #[test]
+    fn a_test_stopped_from_outside_is_told_from_a_crash() {
+        for stopped in ["crash: signal 15", "crash: signal 2", "crash: signal 1"] {
+            assert!(ended_from_outside(stopped), "{stopped}");
+        }
+        for crash in [
+            "crash: SIGSEGV",
+            "crash: signal 16",
+            "crash: signal 13",
+            "exit: 15",
+            "panic",
+        ] {
+            assert!(!ended_from_outside(crash), "{crash}");
+        }
+    }
 
     /// `--exclude-tests` takes a test by the name a run shows, or a module of tests, whole: never
     /// part of a name.

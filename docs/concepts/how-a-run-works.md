@@ -234,6 +234,12 @@ reads, shares of another package, or a share that ran only a change's lines with
 together on the same commit, with the same options and `mutastic.yaml`. A share also fails on its
 own, even with `--threshold=0`, when a test fails with no mutant in, as the whole run would.
 
+A share writes its `events.jsonl` as it goes: `run-started` once the build is done, then each
+mutant's `mutant-finished` as it finishes. A share stopped part way, by Ctrl-C, a job's time limit,
+`timeout` or the machine running out of memory, keeps what it finished, with no `run-finished`, so
+`--from-shards` refuses it as one that didn't finish, and says how many mutants it holds. A
+mutant whose tests the same Ctrl-C or kill ended isn't kept: that's the run stopping, not a catch.
+
 In GitHub Actions, a matrix of shares, then one job that puts them together:
 
 ```yaml
