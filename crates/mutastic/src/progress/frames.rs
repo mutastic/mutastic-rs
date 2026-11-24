@@ -4,7 +4,8 @@
 
 use std::time::Duration;
 
-use crate::report::{self, Style};
+use crate::amounts::count;
+use crate::report::Style;
 
 /// What the run is doing now.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -122,11 +123,6 @@ pub fn left(remaining: Duration) -> String {
     } else {
         format!("~{}s left", (((seconds / 5.0).round() * 5.0) as u64).max(5))
     }
-}
-
-/// `1 test`, `3 tests`: a count with its noun, plural unless it is one.
-pub fn count(number: usize, noun: &str) -> String {
-    format!("{number} {noun}{}", if number == 1 { "" } else { "s" })
 }
 
 /// The fates in words, `✓ 2610 caught · ✗ 41 missed · ○ 214 not covered · ⏱ 6 timed out`, or
@@ -519,7 +515,7 @@ pub fn built_line(mutants: usize, took: Duration, rounds: &[&str], withdrawn: us
         "{}{} in {} · {rounds}, {withdrawn}",
         word("built"),
         count(mutants, "mutant"),
-        report::duration(took)
+        crate::amounts::duration(took)
     )
 }
 
@@ -529,7 +525,7 @@ pub fn ran_line(counts: &Counts, took: Duration, style: Style) -> String {
         "{}{} in {} · {}",
         word("ran"),
         count(counts.done, "mutant"),
-        report::duration(took),
+        crate::amounts::duration(took),
         fates(counts, style, 0)
     )
 }
@@ -545,7 +541,7 @@ pub fn checked_line(missed: usize, took: Duration, found: usize) -> String {
         "{}{} in {} · {found}",
         word("checked"),
         count(missed, "missed mutant"),
-        report::duration(took)
+        crate::amounts::duration(took)
     )
 }
 

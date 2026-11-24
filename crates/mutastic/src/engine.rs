@@ -395,18 +395,19 @@ pub fn find_all(project: &Project) -> Crate {
     find_with(project, &all, UnsafeMode::All)
 }
 
+/// `progress`, told where Cargo is as the build goes.
+fn compiling<'a>(
+    progress: &'a (dyn Fn(Progress) + Sync),
+) -> impl Fn(compile::Compiling) + Sync + 'a {
+    move |compiling| progress(Progress::Compiling(compiling))
+}
+
 /// What a run tells the person watching, as it goes.
 pub enum Progress<'a> {
     /// The one build of every mutant is starting.
     Building { mutants: usize },
-    /// Cargo is at work: its step (`check` or `build`), the round, the crates finished in it, and
-    /// its latest `Checking`/`Compiling` line.
-    Compiling {
-        step: &'a str,
-        round: usize,
-        crates: usize,
-        last: &'a str,
-    },
+    /// Cargo is at work on the build.
+    Compiling(compile::Compiling<'a>),
     /// The build is done: each round's step, the mutants withdrawn as they didn't compile, and
     /// the profile Cargo built with.
     Built {
@@ -586,7 +587,15 @@ fn run_from(
         mutants: selected.len(),
     });
     let building = Instant::now();
-    let build = || compile::build(project, &found, &built_set, &recorders, progress);
+    let build = || {
+        compile::build(
+            project,
+            &found,
+            &built_set,
+            &recorders,
+            &compiling(progress),
+        )
+    };
     let mut built = build()?;
     if judge {
         match found_again(
@@ -880,7 +889,15 @@ fn estimate_from(
     });
     let building = Instant::now();
     // No recorder or probe: the pass measures only where each test goes, not what it passes.
-    let build = || compile::build(project, &found, &live, &BTreeSet::new(), progress);
+    let build = || {
+        compile::build(
+            project,
+            &found,
+            &live,
+            &BTreeSet::new(),
+            &compiling(progress),
+        )
+    };
     let mut built = build()?;
     if judge
         && matches!(
@@ -1460,7 +1477,7 @@ fn coverage(
             .collect();
         // From where the person is, as they'd open it.
         let here = std::env::current_dir().unwrap_or_else(|_| project.workspace.clone());
-        let shown = crate::report::files::shown(&here, &log);
+        let shown = crate::workspace::shown(&here, &log);
         return Err(
             crate::flaky::code(&named).with(crate::flaky::failed_message(
                 &named,
@@ -2272,7 +2289,7 @@ pub fn not_a_mutant(id: &str, package: &str, dir: &str, found: &Crate) -> Failur
             .correcting(id, close),
         None => Code::UnknownId.with(format!(
             "{id} isn't a mutant of {package}. To see its mutants:\n  mutastic mutants {}",
-            crate::report::shell_word(dir)
+            crate::untrusted::shell_word(dir)
         )),
     }
 }

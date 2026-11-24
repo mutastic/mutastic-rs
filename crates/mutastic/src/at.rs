@@ -310,7 +310,7 @@ pub fn on(
 /// the command that lists them; or, with none in the file, the command that lists the package's.
 fn none(lines: &Lines, in_file: &[&Mutant], dir: &str) -> Failure {
     let asked = lines.at.typed(&lines.name());
-    let dir = crate::report::shell_word(dir);
+    let dir = crate::untrusted::shell_word(dir);
     if in_file.is_empty() {
         return Code::NoMutantAt.with(format!(
             "no mutant on {asked}, nor on any other line of {}. To see the package's mutants:\n  \
@@ -334,7 +334,7 @@ fn none(lines: &Lines, in_file: &[&Mutant], dir: &str) -> Failure {
     let command = format!("--at={}", around.typed(&lines.shown));
     Code::NoMutantAt.with(format!(
         "no mutant on {asked}; {there}. To see {them}:\n  mutastic mutants {} {dir}",
-        crate::report::shell_word(&command)
+        crate::untrusted::shell_word(&command)
     ))
 }
 
