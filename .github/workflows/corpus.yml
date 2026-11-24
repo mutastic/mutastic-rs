@@ -27,7 +27,7 @@ on:
         required: false
         type: string
         default: ""
-  # TEMPORARY, to try the workflow from its branch before it's on main: two cheap crates.
+  # TEMPORARY, to try the workflow from its branch before it's on main: every crate.
   push:
     branches: [ci/corpus-nightly]
 
@@ -58,7 +58,7 @@ jobs:
           tool: just@1.59.0
       - id: names
         env:
-          ONLY: ${{ inputs.only || (github.event_name == 'push' && 'errno itoa') || '' }}
+          ONLY: ${{ inputs.only }}
         run: |
           names=$(just corpus --matrix "$ONLY")
           echo "names=$names" >> "$GITHUB_OUTPUT"
