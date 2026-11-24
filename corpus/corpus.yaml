@@ -1,0 +1,51 @@
+# The corpus: real crates mutastic runs on every night, and before every release
+# (.github/workflows/corpus.yml, scripts/corpus-run.sh). The fixtures hold the shapes we thought
+# of; these hold the ones people write, where the bugs that matter turned up (a dev-dependency
+# that pulls the crate in again, modules declared in a macro, a mutant no limit stopped).
+#
+# One crate a line:
+#   name     what the results call it, unique
+#   git      the repository, quoted
+#   commit   the full commit it runs at: a pin, never a branch or tag, so a night that fails
+#            is mutastic's change, not the crate's
+#   package  the package's directory, relative to the clone
+#   shard    N for --shard=1/N: a share of about 30 to 60 mutants (64 is the most N can be)
+#   shapes   what it covers that the others don't
+#   expect   score: a run that ends with a report and a score; or refused:<code>, when refusing
+#            it is right today: it passes when that code comes back
+#   note     why, for a refusal or a known gap
+#
+# To add a crate:
+# 1. Pick it for a shape the others don't cover, and say which in shapes.
+# 2. Pin a commit, the whole hash.
+# 3. Set shard so a share is 30 to 60 mutants (`mutastic mutants <pkg>` counts them, on its last
+#    line), and the job fits in its 30 minutes.
+# 4. Set expect: score, or refused:<code> with a note saying why the refusal is right.
+# Then run the workflow on your branch with only: <name>.
+#
+# Surveyed 23 Nov 2026 (mutastic-rs 1.3.0, rustc 1.99.1). A failure here becomes a fixture in
+# the pull request that fixes it.
+- {name: semver, git: "https://github.com/dtolnay/semver", commit: 7625c7aa3f0e8ba21e099d1765bcebcb72aa8816, package: ., shard: 12, shapes: [build-rs, doctests, helper-only-test-modules, feature-flags, unsafe], expect: score}
+- {name: httparse, git: "https://github.com/seanmonstar/httparse", commit: 9f29e79f9832dbd0ae5220acb17c1866745bdecd, package: ., shard: 4, shapes: [build-rs-rustc-cfg, custom-cfg, unsafe-simd, no_std, edition-2018, doctests], expect: score}
+- {name: num-traits, git: "https://github.com/rust-num/num-traits", commit: 7ec3d41d39b28190ec1d42db38021107b3951f3a, package: ., shard: 6, shapes: [no_std, autocfg, old-msrv, doctest-only-coverage, feature-flags, macro-impls], expect: score}
+- {name: anyhow, git: "https://github.com/dtolnay/anyhow", commit: c89c9b82b155f701a20eb4a9d3609ad09df5a62f, package: ., shard: 2, shapes: [tests-common-helper-only, build-rs-nightly-probe, rust-toolchain-toml, unsafe, doctests, feature-flags], expect: score}
+- {name: errno, git: "https://github.com/lambda-fairy/rust-errno", commit: 4e3a9fc63211c0a958036dce5f9dbbeae54f8bc9, package: ., shard: 1, shapes: [ffi-libc, no_std, edition-2018, old-msrv], expect: score}
+- {name: mime_guess, git: "https://github.com/abonander/mime_guess", commit: 90f3d09696f7c08dcac94ca2bb2a279383bb20ce, package: ., shard: 1, shapes: [build-rs-generated-include], expect: score}
+- {name: tictactoe-native, git: "https://github.com/briancorbinxyz/overengineering-tictactoe", commit: 640622bf591beff3f46229a50e0ca353cd2391b5, package: native/src/main/rust, shard: 2, shapes: [mixed-gradle-cargo, cdylib, ffi, unsafe], expect: score}
+- {name: base64, git: "https://github.com/marshallpierce/rust-base64", commit: 069bf7067b949f5c0a92b6ceb82492920502f2c2, package: ., shard: 7, shapes: [rstest, rstest_reuse, feature-flags, no_std-alloc, doctests, slow-random-tests], expect: score, note: "m2901ec23 was never timed out (A5): fails until a run always ends"}
+- {name: itoa, git: "https://github.com/dtolnay/itoa", commit: 9339ca99a43c550b5ee36e2afe524d1c90413461, package: ., shard: 1, shapes: [no_std, unsafe, dev-dep-cycle], expect: score}
+- {name: memchr, git: "https://github.com/BurntSushi/memchr", commit: 5fdb40c054e1fff359a2f7bdf7f87a13b34b465d, package: ., shard: 13, shapes: [unsafe-simd, no_std, cfg-target-arch, quickcheck, old-msrv], expect: score}
+- {name: typenum, git: "https://github.com/paholg/typenum", commit: 0db9a0f731981f29266b63586c29fa07e4477b1a, package: ., shard: 3, shapes: [checked-in-generated-code, old-msrv, edition-2018, no_std, workspace, many-tests], expect: score}
+- {name: bytes, git: "https://github.com/tokio-rs/bytes", commit: 67edc2b999d669eb4f471aff576e213dbcb58871, package: ., shard: 11, shapes: [no_std, unsafe, cfg-loom, old-msrv], expect: score}
+- {name: serde_json, git: "https://github.com/serde-rs/json", commit: 20572a6d066958542d79cdd6cf1a7cd9f0c8e1f8, package: ., shard: 18, shapes: [feature-flags, cfg-gated-tests, build-rs, doctests, dev-dep-cycle], expect: score}
+- {name: async-stream, git: "https://github.com/tokio-rs/async-stream", commit: b0b2f22df8e87b7fed7b2fa234509797adbff7db, package: async-stream, shard: 1, shapes: [tokio-test, workspace, proc-macro-sibling, trybuild], expect: "refused:red-baseline", note: "its trybuild UI test is red on rustc 1.99.1; --exclude-tests=stream::test gives a score"}
+- {name: thiserror, git: "https://github.com/dtolnay/thiserror", commit: b1827ee06f81a7d7f954e676771e19a97f9f8e3b, package: ., shard: 1, shapes: [derive-consumer, build-rs, rust-toolchain-toml, workspace], expect: score}
+- {name: thiserror-impl, git: "https://github.com/dtolnay/thiserror", commit: b1827ee06f81a7d7f954e676771e19a97f9f8e3b, package: impl, shard: 1, shapes: [proc-macro], expect: "refused:proc-macro", note: "proc-macro crates are refused, documented"}
+- {name: serde_core, git: "https://github.com/serde-rs/serde", commit: 7fc3b4c30c94f73a96ebd1553f2b090d928fc3a8, package: serde_core, shard: 1, shapes: [mods-in-macro, build-rs-rustc-cfg, no_std, feature-flags, workspace], expect: score, note: "modules declared in a macro give 0 mutants (A3, mutastic-rs #176): fails until that lands"}
+- {name: serde_derive, git: "https://github.com/serde-rs/serde", commit: 7fc3b4c30c94f73a96ebd1553f2b090d928fc3a8, package: serde_derive, shard: 1, shapes: [proc-macro, derive], expect: "refused:proc-macro", note: "proc-macro crates are refused, documented"}
+- {name: clap_lex, git: "https://github.com/clap-rs/clap", commit: 487474f013d3e0cbffc911934575f7ebcc72a6d4, package: clap_lex, shard: 3, shapes: [workspace-7, edition-2024], expect: score}
+- {name: clap_builder, git: "https://github.com/clap-rs/clap", commit: 487474f013d3e0cbffc911934575f7ebcc72a6d4, package: clap_builder, shard: 64, shapes: [workspace, edition-2024, tests-in-another-member, feature-flags], expect: score}
+- {name: globset, git: "https://github.com/BurntSushi/ripgrep", commit: 669cb4c755db20b26c3af3d923c042ae224c7496, package: crates/globset, shard: 15, shapes: [workspace-9, edition-2024, cfg-unix, feature-flags], expect: score}
+- {name: winnow, git: "https://github.com/winnow-rs/winnow", commit: 21b3ab2535a675768a170a851efda83253b9eb21, package: ., shard: 30, shapes: [proptest, feature-flags, doctests, workspace-fuzz], expect: score}
+- {name: rand, git: "https://github.com/rust-random/rand", commit: c03e547d051fee1e7c8b1217ff04b11bf0ea5138, package: ., shard: 12, shapes: [edition-2024, feature-flags, no_std, unsafe], expect: score}
+- {name: time, git: "https://github.com/time-rs/time", commit: 857d9c404c5b6f6cb64d1bfa604c695be3369e12, package: time, shard: 12, shapes: [edition-2024, rstest, quickcheck, proc-macro-sibling, needs-all-features], expect: "refused:build-failed", note: "its tests need --all-features, which mutastic can't pass yet"}

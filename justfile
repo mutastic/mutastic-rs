@@ -154,6 +154,11 @@ self-merge DIR:
 self-terminal:
     {{ self-bin }} run crates/mutastic-terminal --workers=2 --threshold=0 --format=concise --progress=counter
 
+# Runs a crate of corpus/corpus.yaml as the nightly does, in CI; here, only a file:// fixture's entry
+[group('ci')]
+corpus *args:
+    MUTASTIC_BIN="{{ self-bin }}" bash scripts/corpus-run.sh "$@"
+
 # Checks the justfile's format, and that its verbs are those .github/just-verbs.txt lists
 [group('ci')]
 [script('bash')]
