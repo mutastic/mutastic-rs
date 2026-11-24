@@ -8,7 +8,8 @@
 # fetches and runs the Java edition on a Gradle project. Run by hand, it builds the archives, checks
 # them the same way and keeps them as the run's artifacts, with no release. install.sh installs the
 # macOS and Linux builds the same way, and the installed command runs a crate. Each binary is built
-# with cargo-auditable on one pinned toolchain, and the release carries a CycloneDX SBOM. Linux builds are static
+# with cargo-auditable on one pinned toolchain, and the release carries a CycloneDX SBOM. Every asset
+# of a release, and the SBOM as what its archives are made of, is attested. Linux builds are static
 # (musl), and Windows builds link the C runtime statically, so nothing else needs installing.
 # Actions are pinned to a commit: a tag can be moved. Nothing is built until the Java edition this
 # release runs, the newest X.Y.*, is published: a Rust X.Y.Z tagged before it fails in a minute.
@@ -120,11 +121,16 @@ jobs:
 
   # `SHA256SUMS`, on a tag or by hand, so the installers are checked against it before a release;
   # Scoop's manifest for the release, `mutastic.json`, with its hashes; and what the release is made
-  # of, as a CycloneDX SBOM, `mutastic-<version>.cdx.json`.
+  # of, as a CycloneDX SBOM, `mutastic-<version>.cdx.json`. On a tag, every one of them attested.
   checksums:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      # The attestations: an OIDC token to sign them with, and leave to keep them in the repository.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, 16 Oct 2026
@@ -143,11 +149,37 @@ jobs:
           sh scripts/scoop-manifest.sh "$version" archives/SHA256SUMS > archives/mutastic.json
           cat archives/mutastic.json
       - name: SBOM
+        id: sbom
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
           cargo install cargo-cyclonedx --version 0.5.10 --locked
           cargo cyclonedx --manifest-path crates/mutastic/Cargo.toml --format json
           mv crates/mutastic/mutastic.cdx.json "archives/mutastic-$version.cdx.json"
+          echo "path=archives/mutastic-$version.cdx.json" >> "$GITHUB_OUTPUT"
+      # On a tag, GitHub's signed record of where each asset was built: this workflow, at the tag's
+      # commit, so a download can be checked against more than a SHA256SUMS made beside it
+      # (`gh attestation verify`, RELEASING.md's *Checking a download*). Every archive SHA256SUMS
+      # lists; the files beside them; and the SBOM, as what the archives are made of. A hand run
+      # attests nothing: its archives are never a release.
+      - name: Attest the archives
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: archives/SHA256SUMS
+      - name: Attest SHA256SUMS, Scoop's manifest and the SBOM
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            archives/SHA256SUMS
+            archives/mutastic.json
+            ${{ steps.sbom.outputs.path }}
+      - name: Attest the SBOM, for the archives
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: archives/SHA256SUMS
+          sbom-path: ${{ steps.sbom.outputs.path }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: SHA256SUMS
@@ -317,11 +349,14 @@ jobs:
           mutastic run fixtures/pricing --threshold=0
           cargo mutastic run fixtures/pricing --threshold=0
 
+  # The only job that can write to the repository. It runs in the `release` environment, so once
+  # that has a required reviewer, nothing is drafted until they approve the run.
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [checksums, install-windows, install-unix]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: release
     permissions:
       contents: write
     steps:
