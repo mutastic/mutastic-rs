@@ -1,0 +1,47 @@
+# The release candidate, before it's tagged: the native mutastic built from the tree, run over a
+# share of every fixture (scripts/candidate-run.sh), failing when a run crashes, can't run, or finds
+# the tests fail without any mutant. A minute or two, so a release pull request can afford it. Run
+# by hand on the branch to tag:
+#   gh workflow run candidate-run.yml --ref <branch>
+# or from another workflow, as a job of its own:
+#   candidate:
+#     uses: ./.github/workflows/candidate-run.yml
+# Actions are pinned to a commit: a tag can be moved.
+name: Candidate run
+
+on:
+  workflow_dispatch:
+    inputs:
+      of:
+        description: How many shares each fixture's mutants are dealt into; the first one runs.
+        required: false
+        type: number
+        default: 4
+  workflow_call:
+    inputs:
+      of:
+        required: false
+        type: number
+        default: 4
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable, 16 Oct 2026
+      - run: scripts/candidate-run.sh --of=${{ inputs.of || 4 }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: candidate-run
+          path: |
+            ${{ runner.temp }}/candidate-run/*.jsonl
+            ${{ runner.temp }}/candidate-run/*.log
