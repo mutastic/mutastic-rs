@@ -1158,6 +1158,7 @@ fn run(parsed: &Parsed) -> Result<ExitCode, Failure> {
             crate::progress::Events {
                 unsafe_mode: parsed.unsafe_mode,
                 share: Some(tag.json()),
+                at: at.iter().map(crate::at::Lines::typed).collect(),
             },
         );
     }

@@ -449,6 +449,7 @@ impl Inner {
                         profile,
                         record.events.unsafe_mode,
                         record.events.share.clone(),
+                        &record.events.at,
                     );
                     record.line(&started);
                 }
