@@ -10,7 +10,7 @@
 //! source as the card claims it, the fixture's tests still pass.
 //!
 //! To write the docs' copy again, after a change to what mutastic prints:
-//! `MUTASTIC_DOCS_WRITE=1 cargo test --test docs`, then read the diff.
+//! `just docs-output` (`MUTASTIC_DOCS_WRITE=1 cargo test --test docs`), then read the diff.
 
 #![allow(
     clippy::unwrap_used,
@@ -1630,7 +1630,8 @@ fn check(shown: &BTreeMap<String, String>) {
     }
     assert!(
         stale.is_empty(),
-        "mutastic prints something else now: MUTASTIC_DOCS_WRITE=1 cargo test --test docs\n{}",
+        "mutastic prints something else now: just docs-output \
+         (MUTASTIC_DOCS_WRITE=1 cargo test --test docs)\n{}",
         stale.join("\n")
     );
 }
@@ -2598,7 +2599,8 @@ fn the_commands_reference_is_the_parsers_declarations() {
         if kept != *text {
             assert!(
                 writing(),
-                "docs/{name} isn't what the CLI declares: MUTASTIC_DOCS_WRITE=1 cargo test --test docs"
+                "docs/{name} isn't what the CLI declares: just docs-output \
+                 (MUTASTIC_DOCS_WRITE=1 cargo test --test docs)"
             );
             std::fs::write(&file, text).unwrap();
         }

@@ -4,8 +4,8 @@
 
 ## Checked
 
-- [ ] `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test` pass
+- [ ] `just check` passes
 - [ ] A test that fails without the change
 - [ ] A file in `changes/` if someone using mutastic would notice, not an edit to `CHANGELOG.md`
-- [ ] Docs updated, and `MUTASTIC_DOCS_WRITE=1 cargo test --test docs` run if what mutastic prints changed
-- [ ] `MUTASTIC_IDS_WRITE=1 cargo test --test ids` run if mutants were added, with only lines added to the list
+- [ ] Docs updated, and `just docs-output` run if what mutastic prints changed
+- [ ] `just ids` run if mutants were added, with only lines added to the list

@@ -140,7 +140,7 @@ test first. `mutastic mutants` lists the mutants without building or running any
   [differences from the Java edition](docs/differences-from-java.md).
 
 Every output those pages and this one show comes from a run on the repository's fixtures, and
-`cargo test` fails when it no longer matches what mutastic prints.
+the tests (`just test`) fail when it no longer matches what mutastic prints.
 
 ## Status
 
@@ -154,9 +154,10 @@ to crates.io yet, where the names are reserved.
 
 ## Contributing
 
-Issues and pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). In short,
-`cargo test` runs the tests CI runs; [AGENTS.md](AGENTS.md) has the conventions the code is held
-to, and [ARCHITECTURE.md](ARCHITECTURE.md) how it's built. To report a vulnerability, see
+Issues and pull requests are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). In short, the
+build's commands are [just](https://just.systems) recipes (`just --list`), and `just check` runs
+everything a pull request needs to pass; [AGENTS.md](AGENTS.md) has the conventions the code is
+held to, and [ARCHITECTURE.md](ARCHITECTURE.md) how it's built. To report a vulnerability, see
 [SECURITY.md](SECURITY.md). Everyone taking part agrees to the
 [Code of Conduct](CODE_OF_CONDUCT.md).
 
