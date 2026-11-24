@@ -20,7 +20,11 @@ day.
    on a moved mutant id (`tests/ids.rs`), on an event the schema doesn't describe (the schema is
    pinned in `crates/mutastic/tests/schema/`), and, from 1.0.0, on a command, option, variable,
    exit status, `mutastic.yaml` or rules file the last 1.0+ release took and this one doesn't
-   (`tests/compat.rs`). These are left to you:
+   (`tests/compat.rs`). `scripts/release-check.sh X.Y.Z` checks what a release needs beyond that,
+   all at once, and lists what's wrong: the changelog's rules, the version, the contract's pins and
+   the ids. It writes nothing tracked and publishes nothing, so run it as often as you like; CI
+   runs it on the release pull request too, the part that needs no build in Commits and the ids in
+   CI. What it can't judge is left to you:
    - **Scores.** Read the *Scoring changes* and *Score corrections* that
      `scripts/changelog.sh preview` prints, the entries waiting in `changes/`. A patch release
      (`X.Y.Z+1`) may have score corrections, which only drop mutants that could never run, such as
@@ -28,15 +32,16 @@ day.
      could lower a score, add a mutant or fail a run that passed. It has no scoring changes:
      anything else that moves a score (an operator into or out of the default set, a filter that
      skips more or less, a change to timeouts, mutants newly found) waits for a minor release. A
-     minor release's changelog says which scores move, and how.
-   - **Ids.** Run `MUTASTIC_IDS_WRITE=1 cargo test --test ids`. If `tests/ids/ids.tsv` changes, only
-     by lines added for an operator new since the last release, commit it, so its ids are held
-     from this release on.
+     minor release's changelog says which scores move, and how. `release-check` fails a patch with
+     a scoring change, and a release with no entries at all.
+   - **Ids.** When `release-check` says `MUTASTIC_IDS_WRITE=1 cargo test --test ids` changed
+     `tests/ids/ids.tsv`, only by lines added for an operator new since the last release, commit
+     it, so its ids are held from this release on.
    - **The Java edition.** From 1.0.0, for a minor release (`X.Y.0`), the Java edition's `X.Y.0`
      is ready to publish after this one's release commit (the Java repository's `RELEASING.md`).
      A patch needs nothing from it.
    - **The contract's pins.** `scripts/pin-contract.sh prune` deletes all but the newest
-     ([contract/README.md](contract/README.md)).
+     ([contract/README.md](contract/README.md)); `release-check` fails until it's run.
 2. **The release commit,** `chore(release): version X.Y.Z`: the version in `Cargo.toml` (and
    `Cargo.lock`), the changelog's section for it, and the docs' kept outputs that print the
    version, written again with `MUTASTIC_DOCS_WRITE=1 cargo test --test docs`. Each entry since the
@@ -53,13 +58,15 @@ day.
    ```sh
    MUTASTIC_RELEASED_WRITE=1 cargo test --test compat   # writes crates/mutastic/tests/released/X.Y.Z
    ```
-   Before 1.0.0 skip that: anything may change, and there's nothing to hold the next to.
+   Before 1.0.0 skip that: anything may change, and there's nothing to hold the next to. Then
+   check the commit: `scripts/release-check.sh X.Y.Z` says it's ready, or lists what isn't.
 3. **Move the docs site's pin** (`docs/rust-edition.json` in the Java repository) to the release
-   commit, by its full hash, with `main` green: the docs a Java tag deploys keep the pin as it is
-   at that tag, so for `X.Y.0` the pin moves before the Java edition's `vX.Y.0` is tagged, and
-   names this commit, as its tag doesn't exist yet (the Java `RELEASING.md` says how, with the
-   shared pages' stamps). For a Rust patch alone, the pin reaches docs.mutastic.io with the next
-   Java release.
+   commit, with `main` green: in the Java repository, `scripts/docs-pin-rust.sh <release commit>`
+   sets it and stamps the shared pages whose Rust sources changed (its `RELEASING.md` says what to
+   read before committing). The docs a Java tag deploys keep the pin as it is at that tag, so for
+   `X.Y.0` the pin moves before the Java edition's `vX.Y.0` is tagged, and names this commit, as
+   its tag doesn't exist yet. For a Rust patch alone, the pin reaches docs.mutastic.io with the
+   next Java release.
 4. For `X.Y.0`, wait for the Java edition's `vX.Y.0` to be published with its CLI attached. Then,
    with `main` green, tag the release commit and push the tag:
    ```sh
@@ -68,7 +75,9 @@ day.
    Tagged too early, the workflow's `java` job fails within a minute and builds nothing: once the
    Java release is published, re-run the workflow.
 5. **Read the draft release the workflow makes** (each target's archive, `SHA256SUMS` and Scoop's
-   `mutastic.json`), then publish it.
+   `mutastic.json`), then publish it. Its notes are the release's section of `CHANGELOG.md`
+   (`scripts/changelog.sh notes X.Y.Z`): a tag whose commit has no section fails within a minute,
+   before anything is built.
 
 ## Withdrawing a release
 

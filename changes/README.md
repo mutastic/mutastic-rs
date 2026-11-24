@@ -42,10 +42,13 @@ one, is a paragraph above its entries.
 
 ```sh
 scripts/changelog.sh check                     # each file is in a section and shaped as an entry
+scripts/changelog.sh check --for X.Y.Z         # and X.Y.Z has entries, a patch no scoring change
 scripts/changelog.sh preview                   # the next release's section, as it would read
 scripts/changelog.sh release X.Y.Z             # writes it into CHANGELOG.md, deletes the files
+scripts/changelog.sh notes X.Y.Z               # its section, the notes for its GitHub release
+sh scripts/test-changelog.sh                   # tests notes and check --for
 ```
 
 CI runs `check` on every pull request, and fails one that edits CHANGELOG.md unless it's a
-release, its subject `chore(release): version X.Y.Z`. [RELEASING.md](../RELEASING.md) has the
-release's steps.
+release, its subject `chore(release): version X.Y.Z`; on that one, `scripts/release-check.sh
+X.Y.Z` runs `check --for X.Y.Z`. [RELEASING.md](../RELEASING.md) has the release's steps.
