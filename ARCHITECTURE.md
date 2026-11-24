@@ -15,7 +15,9 @@ for the conventions the code is held to, [AGENTS.md](AGENTS.md).
    taken as off. Once the copy is built, a run whose build's `cfg`s leave out code it mutated
    finds the mutants again with them and builds again.
 2. **Mutants.** `sites` parses every file reachable from the package's targets with
-   rust-analyzer's parser (`ra_ap_syntax`), from syntax alone, with no type information. It finds
+   rust-analyzer's parser (`ra_ap_syntax`), from syntax alone, with no type information: by each
+   `mod name;`, including one in the expansion of a `macro_rules!` of the crate's that a module
+   calls as an item, as serde's `crate_root!()` declares its modules. It finds
    each site for each operator the run uses: the defaults in `sites.rs`, and `stronger` and
    `extended` in `sites/stronger.rs`, `sites/rollback.rs`, `sites/operators.rs` and
    `sites/extended.rs`. Only function bodies are mutated, and never test code. Unsafe code is
@@ -139,7 +141,7 @@ editions' contract names. Every event says `"edition": "rust"`. Where the editio
 judge), `unreached` (code no test reaches, for the assertion to start with), `repeats`
 (identical lines in one function), `flaky` (a test that fails on its first
 try, and passes after), `properties` (proptest and quickcheck properties, one boundary only some draws catch), `false-catches` (a test that passes before any mutant and fails on its own
-after them) and `workspace`. `samples.rs` and
+after them), `mod-in-macro` (a module a macro declares) and `workspace`. `samples.rs` and
 `truth.rs` run mutastic on them in place, so its copy goes in each fixture's own `target/`;
 `docs.rs` copies them to the system's temporary directory first, so the commands it captures read
 as a person types them at the repository's root. The tests keep their copies there warm for the

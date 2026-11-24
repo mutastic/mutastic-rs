@@ -588,6 +588,17 @@ fn code_the_build_doesnt_have_is_not_built_here() {
     }
 }
 
+/// A crate's modules declared by a macro of its own, as serde's are by `crate_root!()`: their
+/// files are mutated, where a run that didn't follow the macro found no mutant and passed.
+#[test]
+fn a_module_a_macro_declares_is_mutated() {
+    let dir = fixture("mod-in-macro");
+    let (code, stdout) = mutastic(&["run", &dir]);
+    assert_eq!(code, 0, "{stdout}");
+    assert!(stdout.contains("✓ 2 caught (2)"), "{stdout}");
+    assert!(stdout.contains("Score  100.0%"), "{stdout}");
+}
+
 /// A test that calls what `main` calls, in the tests' own process, where a mutant makes it call
 /// `process::exit`. Status 2 fails `cargo test`, so the test that was running caught it, by the
 /// exit, not a crash; status 0 passes it, so it's no catch, and the tests after it decide. A loop
