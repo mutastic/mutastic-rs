@@ -536,3 +536,69 @@ fn shares_that_arent_one_run_are_refused() {
     let (code, out, err) = mutastic(&dir, &["run", "--from-shards=cases/both", "--format=jsonl"]);
     assert_eq!(code, 0, "the cases' own shares put together: {out}{err}");
 }
+
+/// A share stopped part way, by a kill as `timeout` sends one, keeps what it finished: its events
+/// file has `run-started` and a `mutant-finished` for each mutant done, and no `run-finished`, so
+/// `--from-shards` refuses it as a share that didn't finish, and says to run it again.
+#[cfg(unix)]
+#[test]
+fn a_share_stopped_part_way_keeps_what_it_finished() {
+    let dir = common::own_copy("sleepy", "shares-stopped");
+    let kept = dir.join("target/mutastic/shares/1-of-1/events.jsonl");
+    // One worker, so the fixture's three-second test finishes one mutant at a time.
+    let mut run = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+        .args(["run", ".", "--shard=1/1", "--workers=1"])
+        .current_dir(&dir)
+        .env("MUTASTIC_PROGRESS", "none")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let finished = |text: &str| text.matches(r#""reason":"mutant-finished""#).count();
+    let waited = std::time::Instant::now();
+    while finished(&std::fs::read_to_string(&kept).unwrap_or_default()) == 0 {
+        assert!(
+            waited.elapsed() < std::time::Duration::from_secs(300),
+            "no mutant finished"
+        );
+        assert!(run.try_wait().unwrap().is_none(), "the run ended first");
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let killed = Command::new("kill")
+        .args(["-TERM", &run.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(killed.success());
+    let status = run.wait().unwrap();
+    assert!(!status.success(), "{status:?}");
+
+    let text = std::fs::read_to_string(&kept).unwrap();
+    let events = events(&text);
+    assert_eq!(events[0]["reason"], "run-started", "{text}");
+    assert_eq!(events[0]["share"]["number"], 1, "{text}");
+    let done = finished(&text);
+    assert!(done >= 1, "{text}");
+    assert!(
+        events
+            .iter()
+            .all(|event| event["reason"] == "run-started" || event["reason"] == "mutant-finished"),
+        "{text}"
+    );
+    let schema = schema();
+    for event in &events {
+        assert!(schema.is_valid(event), "{event}");
+    }
+
+    let (code, _, stderr) = mutastic(&dir, &["run", "--from-shards=target/mutastic/shares"]);
+    assert_eq!(code, 2, "{stderr}");
+    let after = if done == 1 {
+        "after 1 mutant".to_string()
+    } else {
+        format!("after {done} mutants")
+    };
+    assert!(
+        stderr.contains("didn't finish: its events stop before run-finished")
+            && stderr.contains(&format!("{after}; run that share again")),
+        "{stderr}"
+    );
+}

@@ -295,8 +295,10 @@ impl Shares {
         for read in &self.shares {
             if read.finished.is_none() {
                 return Err(format!(
-                    "{} didn't finish: its events stop before run-finished",
-                    read.named()
+                    "{} didn't finish: its events stop before run-finished, after {}; run that share \
+                     again",
+                    read.named(),
+                    crate::progress::count(read.results.len(), "mutant")
                 ));
             }
             if let Some(partial) = read.partial() {

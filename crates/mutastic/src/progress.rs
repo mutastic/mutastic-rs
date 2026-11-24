@@ -167,6 +167,9 @@ struct State {
     red: bool,
     /// The live events on stdout, for `--format=jsonl`, once asked for.
     events: Option<Events>,
+    /// A share's events file, written as the run goes: what's finished is kept however the run
+    /// ends, Ctrl-C, a kill or the machine running out of memory included.
+    record: Option<Record>,
     /// The phase the events last said started, and when.
     event_phase: Option<(&'static str, Instant)>,
     /// Whether `run-started` has gone out: `progress` events wait for it.
@@ -180,6 +183,22 @@ struct State {
 pub struct Events {
     pub unsafe_mode: crate::sites::UnsafeMode,
     pub share: Option<serde_json::Value>,
+}
+
+/// A share's events file as the run writes it: `run-started` once the build is done, then each
+/// mutant's `mutant-finished` as it finishes, each line written whole as it comes. A run that
+/// ends with its result writes the file again, whole; one stopped first leaves this, with no
+/// `run-finished`, so `--from-shards` won't take it for a finished share.
+struct Record {
+    file: std::fs::File,
+    events: Events,
+}
+
+impl Record {
+    fn line(&mut self, event: &serde_json::Value) {
+        // Each line whole in one write: a kill between two writes leaves no line cut short.
+        let _ = self.file.write_all(format!("{event}\n").as_bytes());
+    }
 }
 
 struct Inner {
@@ -244,6 +263,7 @@ impl Progress {
                 package: String::new(),
                 red: false,
                 events: None,
+                record: None,
                 event_phase: None,
                 started_sent: false,
                 evented: now,
@@ -281,6 +301,18 @@ impl Progress {
             if let Some((_, at)) = state.event_phase.as_mut() {
                 *at = started;
             }
+        }
+    }
+
+    /// Keeps the run's `run-started` and each `mutant-finished` in `file` as they happen, for a
+    /// share (see [`Record`]). Nothing is kept when the file can't be made.
+    pub fn keep_live(&self, file: &std::path::Path, events: Events) {
+        let made = file
+            .parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|()| std::fs::File::create(file));
+        if let (Ok(file), Some(mut state)) = (made, self.inner.lock()) {
+            state.record = Some(Record { file, events });
         }
     }
 
@@ -409,6 +441,15 @@ impl Inner {
                     self.event(&started);
                     state.started_sent = true;
                 }
+                if let Some(record) = &mut state.record {
+                    let started = report::run_started(
+                        &state.package,
+                        profile,
+                        record.events.unsafe_mode,
+                        record.events.share.clone(),
+                    );
+                    record.line(&started);
+                }
                 self.phase_event(state, Some("coverage"));
                 self.enter(state, Phase::Coverage { done: 0, total: 0 });
                 self.write(state, &frames::built_line(mutants, took, rounds, withdrawn));
@@ -493,6 +534,13 @@ impl Inner {
                 // Live, as the mutant finishes: before the phase it ran in ends (decision 7).
                 if state.events.is_some() {
                     self.event(&report::mutant_finished(found, project, result));
+                }
+                // Not once Ctrl-C or a kill has reached the run, nor a catch the same signal made:
+                // a stopped run's record holds only what finished before it was stopped.
+                if let Some(record) = &mut state.record {
+                    if !terminal::stopping() && !engine::stopped_from_outside(result) {
+                        record.line(&report::mutant_finished(found, project, result));
+                    }
                 }
                 state.counts.add(result.status);
                 state.cost_done += cost;
