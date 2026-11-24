@@ -6405,3 +6405,37 @@ fn next_confirms_a_watched_tests_catches() {
     assert!(queued.contains(edge), "{queued}");
     assert_eq!(watch(&dir).as_deref(), Some(kept));
 }
+
+/// A mutant only a likely flaky test reached isn't said to be out of every test's reach: once that
+/// test is left out nothing else reaches it, and every format says which test did, and why its
+/// catch didn't count.
+#[test]
+fn a_mutant_only_a_likely_flaky_test_reached_says_so() {
+    let dir = copy_of("pricing", "only-flaky");
+    let lib = dir.join("src/lib.rs");
+    let text = std::fs::read_to_string(&lib).unwrap();
+    std::fs::write(
+        &lib,
+        format!("{text}\npub fn double(x: u32) -> u32 {{\n    x * 2\n}}\n"),
+    )
+    .unwrap();
+    std::fs::write(dir.join("tests/lucky.rs"), DOUBLES_ONCE).unwrap();
+    let said = "only lucky::doubles_now_and_then reached it, and it's likely flaky: its catch didn't count";
+
+    let (_, agent) = mutastic_in(&dir, &["run", "--format=agent", "--confirm-catches"]);
+    assert!(agent.contains(&format!("  {said}\n")), "{agent}");
+    let (_, full) = mutastic_in(
+        &dir,
+        &["run", "--format=full", "--confirm-catches", "--report=none"],
+    );
+    assert!(full.contains(said), "{full}");
+    assert!(!full.contains("no test reaches this line"), "{full}");
+
+    // `x * 2` becomes `x / 2`: one of `double()`'s two mutants. The run watches the lucky test
+    // now, so `verify` confirms its catch, which doesn't repeat.
+    let id = "m005640bd";
+    assert!(agent.contains(id), "{agent}");
+    let (code, verified) = mutastic_in(&dir, &["verify", id]);
+    assert_eq!(code, 1, "{verified}");
+    assert_eq!(verified, format!("mutastic: {id} isn't covered: {said}\n"));
+}

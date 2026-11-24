@@ -139,6 +139,14 @@ pub(crate) fn run_again_without(
         let before = &results[index];
         revised.false_catch_by = before.false_catch_by.clone();
         revised.flaky_catch_by = before.flaky_catch_by.clone();
+        revised.reached_only_by = before.reached_only_by.clone();
+        if revised.status == Status::NoCoverage && revised.reached_only_by.is_none() {
+            revised.reached_only_by = before
+                .covered_by
+                .iter()
+                .find(|test| failing.contains(*test))
+                .cloned();
+        }
         if let Some(test) = caught_by_one_of(before, failing) {
             marked(&mut revised, &test);
         }
@@ -239,6 +247,7 @@ mod tests {
             failure_origin: by.map(|_| "assertion".to_string()),
             false_catch_by: None,
             flaky_catch_by: None,
+            reached_only_by: None,
             tests_run: 1,
             took: Duration::ZERO,
             inputs: BTreeMap::new(),

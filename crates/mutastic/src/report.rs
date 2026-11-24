@@ -894,6 +894,15 @@ fn false_catch(test: &str) -> String {
     )
 }
 
+/// What's said of a mutant only a test the run couldn't trust reached, in place of "no test
+/// reaches it": `only tests::lucky reached it, and it's likely flaky: its catch didn't count`.
+pub fn only_flaky(test: &str) -> String {
+    format!(
+        "only {} reached it, and it's likely flaky: its catch didn't count",
+        untrusted::value(test)
+    )
+}
+
 /// What a mutant's card says of the likely flaky test whose catch of it didn't count, as the Java
 /// edition says it.
 fn flaky_catch(test: &str) -> String {
@@ -1108,23 +1117,31 @@ pub fn file_finished(
             ))
         );
     }
-    let mut by_line: Vec<((String, usize), usize)> = Vec::new();
+    // A function and line no test reaches, with the one untrusted test that did, if one did.
+    type Place = (String, usize, Option<String>);
+    let mut by_line: Vec<(Place, usize)> = Vec::new();
     for result in uncovered {
         let mutant = &found.mutants[result.mutant];
-        let place = (method(found, mutant), mutant.line);
+        let place = (
+            method(found, mutant),
+            mutant.line,
+            result.reached_only_by.clone(),
+        );
         match by_line.iter_mut().find(|(seen, _)| *seen == place) {
             Some((_, count)) => *count += 1,
             None => by_line.push((place, 1)),
         }
     }
-    for ((name, line), count) in by_line {
+    for ((name, line, only), count) in by_line {
         let _ = writeln!(
             out,
             "   {} {name} {} {}",
             style.amber("○"),
             style.dim(&format!(":{line}")),
             style.dim(&format!(
-                "no test reaches this line{}",
+                "{}{}",
+                only.as_deref()
+                    .map_or_else(|| "no test reaches this line".to_string(), only_flaky),
                 if count > 1 {
                     format!(" ({count} mutants)")
                 } else {
@@ -1939,6 +1956,15 @@ fn is_main(f: &crate::sites::Function) -> bool {
 
 /// `Not covered (no test reaches these lines)`, then each function with mutants no test reaches:
 /// `○ src/lib.rs:18-20 tier() (4 mutants)`, in the order found, as the Java edition shows them.
+/// The tests the run couldn't trust that were all that reached some of `mutants`, each once.
+fn reached_only_by<'a>(view: &View<'a>, mutants: &[(usize, String)]) -> BTreeSet<&'a str> {
+    view.results
+        .iter()
+        .filter(|result| mutants.iter().any(|(_, id)| *id == view.mutant(result).id))
+        .filter_map(|result| result.reached_only_by.as_deref())
+        .collect()
+}
+
 fn not_covered(out: &mut String, view: &View, or_only_flaky: &str, style: Style) {
     let places = not_covered_places(view);
     if places.is_empty() {
@@ -1968,6 +1994,9 @@ fn not_covered(out: &mut String, view: &View, or_only_flaky: &str, style: Style)
         );
         if let Some(advice) = advice {
             let _ = writeln!(out, "     {}", style.code(advice));
+        }
+        for test in reached_only_by(view, mutants) {
+            let _ = writeln!(out, "     {}", style.dim(&only_flaky(test)));
         }
     }
     if places.len() > NOT_COVERED_SHOWN {
@@ -2093,7 +2122,10 @@ fn fate(view: &View, result: &MutantResult, style: Style) -> String {
         ),
         Status::NoCoverage => red(
             words.not_covered(),
-            format!("{id}: no test reaches its line"),
+            match &result.reached_only_by {
+                Some(test) => format!("{id}: {}", only_flaky(test)),
+                None => format!("{id}: no test reaches its line"),
+            },
         ),
         Status::Ignored => format!("{} {id} is skipped: {reason}", style.label("SKIPPED", CYAN)),
         Status::RuntimeError => format!(
@@ -2802,6 +2834,9 @@ fn agent(report: &Report, style: Style) -> String {
             if let Some(advice) = advice {
                 let _ = writeln!(quoted, "  {advice}");
             }
+            for test in reached_only_by(&view, &mutants) {
+                let _ = writeln!(quoted, "  {}", only_flaky(test));
+            }
             // An agent decides a line no test reaches can't be reached as it decides a missed
             // mutant's case can't happen: so each id, by line, with how to propose it.
             let mut lines: Vec<usize> = mutants.iter().map(|(line, _)| *line).collect();
@@ -2874,7 +2909,10 @@ fn agent_fates(view: &View, words: Vocabulary) -> String {
                 ),
                 Status::Timeout => format!("is {}: {}", words.detected(), timed_out(result)),
                 Status::Survived => format!("is still {}", words.undetected()),
-                Status::NoCoverage => "isn't reached by any test".to_string(),
+                Status::NoCoverage => match &result.reached_only_by {
+                    Some(test) => format!("isn't covered: {}", only_flaky(test)),
+                    None => "isn't reached by any test".to_string(),
+                },
                 Status::Ignored => format!(
                     "is skipped: {}",
                     untrusted::value(result.reason.as_deref().unwrap_or_default())
@@ -3632,7 +3670,10 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
         ),
         Status::NoCoverage => (
             style.label("○ NOT COVERED", CYAN),
-            "no test reaches this line".to_string(),
+            result
+                .reached_only_by
+                .as_deref()
+                .map_or_else(|| "no test reaches this line".to_string(), only_flaky),
         ),
         Status::RuntimeError => (
             style.label("SKIPPED", CYAN),

@@ -1822,7 +1822,10 @@ fn fate(result: &engine::MutantResult, project: &workspace::Project) -> String {
                 None => "is caught by a timeout".to_string(),
             },
             Status::Survived => "is still missed".to_string(),
-            Status::NoCoverage => "isn't reached by any test".to_string(),
+            Status::NoCoverage => match &result.reached_only_by {
+                Some(test) => format!("isn't covered: {}", report::only_flaky(test)),
+                None => "isn't reached by any test".to_string(),
+            },
             Status::Ignored => format!(
                 "is skipped ({}), so it isn't run and needs no test",
                 untrusted::value(result.reason.as_deref().unwrap_or("skipped"))

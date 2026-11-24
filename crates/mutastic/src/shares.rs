@@ -695,6 +695,8 @@ fn result_of(index: usize, event: &Value) -> Option<MutantResult> {
         failure_origin: text("failureOrigin"),
         false_catch_by: text("falseCatchBy"),
         flaky_catch_by: text("flakyCatchBy"),
+        // The events don't say it: put together, such a mutant is said as not covered.
+        reached_only_by: None,
         tests_run: event["testsRun"].as_u64().unwrap_or(0) as usize,
         took: Duration::from_millis(event["durationMs"].as_u64().unwrap_or(0)),
         inputs: event["inputs"]
