@@ -49,6 +49,18 @@ cargo run --bin mutastic -- run fixtures/pricing
 [ARCHITECTURE.md](ARCHITECTURE.md) explains how the pieces fit, and `fixtures/` holds the small
 crates the tests run mutastic on.
 
+## Commands
+
+A job spelled in cargo's words is spelled differently in the Java edition, and again after a
+change of build tool. So the everyday ones are also recipes in the [justfile](justfile), a word
+each, meaning the same in both editions: `just` lists them, `just check` runs everything a pull
+request needs to pass (the format, clippy and the tests), and `just ci` what CI runs. Each is one
+line over cargo or a script, so the commands above still work without it.
+
+Install [just](https://just.systems) 1.59.0 or later with `brew install just`,
+`scoop install just`, `winget install --id Casey.Just` or `cargo install just --locked`. On
+Windows, recipes run in Git Bash's `sh`.
+
 ## Making a change
 
 - **Follow [AGENTS.md](AGENTS.md).** It's the conventions the code is held to and why. Most are
