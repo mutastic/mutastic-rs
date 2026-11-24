@@ -127,20 +127,21 @@ pub const COMMANDS: &[Command] = &[
         summary: "Mutate the package and run its tests against each mutant",
         detail: "DIR is the package's directory, here unless given; in a workspace, a member's. The \
                  run passes when the score reaches the threshold, or with --fail-on-new when every \
-                 mutant no test catches is in the baseline. A full run, one without --only, \
-                 writes report files, and offers the commands to work on each missed mutant. Its \
+                 mutant no test catches is in the baseline. A full run, one without --only or \
+                 --at, writes report files, and offers the commands to work on each missed mutant. Its \
                  progress goes to stderr, so stdout holds only the result. --shard runs one share \
                  of the mutants, for splitting a run across CI jobs, and --from-shards puts the \
                  shares back together as the whole run.",
         exits: "0 when the score reaches the threshold, 1 when it doesn't; with --fail-on-new, 0 \
                 when every mutant no test catches is in the baseline, 1 when one isn't; with \
-                --only, 0 when each mutant named is caught or skipped, as verify judges it, and 1 \
-                while one is still missed or not covered.",
+                --only or --at, 0 when each mutant named is caught or skipped, as verify judges \
+                it, and 1 while one is still missed or not covered.",
         takes_mutant_id: false,
         examples: &[
             "mutastic run",
             "mutastic run fixtures/pricing --threshold=70",
             "mutastic run --since=main",
+            "mutastic run fixtures/pricing --at=src/lib.rs:26-29",
             "mutastic run --fail-on-new",
             "mutastic run fixtures/pricing --operators=stronger",
             "mutastic run --shard=2/4 --threshold=0",
@@ -300,6 +301,7 @@ pub const COMMANDS: &[Command] = &[
         examples: &[
             "mutastic mutants",
             "mutastic mutants fixtures/pricing --operators=stronger",
+            "mutastic mutants fixtures/pricing --at=src/lib.rs:26",
         ],
     },
 ];
@@ -352,6 +354,19 @@ pub const OPTIONS: &[CliOption] = &[
         commands: &["run"],
         environment: "",
         example: "--only=mb2f8ae57",
+    },
+    CliOption {
+        name: "at",
+        value: "PATH:LINE",
+        kind: Kind::Repeated,
+        group: "Running",
+        choices: &[],
+        help: "Run, or list, only the mutants on a line of a source file, or with :FROM-TO on those \
+               lines, under the run's operators; several split by commas. The run passes when each \
+               is caught or skipped",
+        commands: &["run", "mutants"],
+        environment: "",
+        example: "--at=src/lib.rs:26",
     },
     CliOption {
         name: "workers",

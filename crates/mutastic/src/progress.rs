@@ -179,10 +179,11 @@ struct State {
 }
 
 /// What `run-started` says besides the build's profile, for the live events: how unsafe code is
-/// treated, and the share, for `--shard`.
+/// treated, the share, for `--shard`, and the lines asked for, for `--at`.
 pub struct Events {
     pub unsafe_mode: crate::sites::UnsafeMode,
     pub share: Option<serde_json::Value>,
+    pub at: Vec<String>,
 }
 
 /// A share's events file as the run writes it: `run-started` once the build is done, then each
@@ -437,6 +438,7 @@ impl Inner {
                         profile,
                         events.unsafe_mode,
                         events.share.clone(),
+                        &events.at,
                     );
                     self.event(&started);
                     state.started_sent = true;
@@ -447,6 +449,7 @@ impl Inner {
                         profile,
                         record.events.unsafe_mode,
                         record.events.share.clone(),
+                        &record.events.at,
                     );
                     record.line(&started);
                 }

@@ -20,21 +20,22 @@ Every command `mutastic` takes, with its options, the environment it reads and t
 
 `mutastic run [DIR] [OPTIONS]`
 
-Mutate the package and run its tests against each mutant. DIR is the package's directory, here unless given; in a workspace, a member's. The run passes when the score reaches the threshold, or with --fail-on-new when every mutant no test catches is in the baseline. A full run, one without --only, writes report files, and offers the commands to work on each missed mutant. Its progress goes to stderr, so stdout holds only the result. --shard runs one share of the mutants, for splitting a run across CI jobs, and --from-shards puts the shares back together as the whole run.
+Mutate the package and run its tests against each mutant. DIR is the package's directory, here unless given; in a workspace, a member's. The run passes when the score reaches the threshold, or with --fail-on-new when every mutant no test catches is in the baseline. A full run, one without --only or --at, writes report files, and offers the commands to work on each missed mutant. Its progress goes to stderr, so stdout holds only the result. --shard runs one share of the mutants, for splitting a run across CI jobs, and --from-shards puts the shares back together as the whole run.
 
 ```sh
 mutastic run
 mutastic run fixtures/pricing --threshold=70
 mutastic run --since=main
+mutastic run fixtures/pricing --at=src/lib.rs:26-29
 mutastic run --fail-on-new
 mutastic run fixtures/pricing --operators=stronger
 mutastic run --shard=2/4 --threshold=0
 mutastic run --from-shards=shares --threshold=70
 ```
 
-**Options:** [`--threshold=N`](#--threshold), [`--fail-on-new`](#--fail-on-new), [`--since[=REF]`](#--since), [`--only=ID`](#--only), [`--workers=N`](#--workers), [`--confirm-catches`](#--confirm-catches), [`--kill-matrix`](#--kill-matrix), [`--shard=N/M`](#--shard), [`--from-shards=DIR`](#--from-shards), [`--no-suggestions`](#--no-suggestions), [`--force-coverage`](#--force-coverage), [`--exclude-tests=TEST`](#--exclude-tests), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--report=KIND[:PATH]`](#--report), [`--format=FORMAT`](#--format), [`--each-mutant`](#--each-mutant), [`--vocabulary=WORDS`](#--vocabulary), [`--color=WHEN`](#--color), [`--hyperlinks=WHEN`](#--hyperlinks), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
+**Options:** [`--threshold=N`](#--threshold), [`--fail-on-new`](#--fail-on-new), [`--since[=REF]`](#--since), [`--only=ID`](#--only), [`--at=PATH:LINE`](#--at), [`--workers=N`](#--workers), [`--confirm-catches`](#--confirm-catches), [`--kill-matrix`](#--kill-matrix), [`--shard=N/M`](#--shard), [`--from-shards=DIR`](#--from-shards), [`--no-suggestions`](#--no-suggestions), [`--force-coverage`](#--force-coverage), [`--exclude-tests=TEST`](#--exclude-tests), [`--operators=OPERATORS`](#--operators), [`--unsafe=MODE`](#--unsafe), [`--report=KIND[:PATH]`](#--report), [`--format=FORMAT`](#--format), [`--each-mutant`](#--each-mutant), [`--vocabulary=WORDS`](#--vocabulary), [`--color=WHEN`](#--color), [`--hyperlinks=WHEN`](#--hyperlinks), [`--progress=STYLE`](#--progress), [`--edition=EDITION`](#--edition).
 
-**Exit status:** 0 when the score reaches the threshold, 1 when it doesn't; with --fail-on-new, 0 when every mutant no test catches is in the baseline, 1 when one isn't; with --only, 0 when each mutant named is caught or skipped, as verify judges it, and 1 while one is still missed or not covered.
+**Exit status:** 0 when the score reaches the threshold, 1 when it doesn't; with --fail-on-new, 0 when every mutant no test catches is in the baseline, 1 when one isn't; with --only or --at, 0 when each mutant named is caught or skipped, as verify judges it, and 1 while one is still missed or not covered.
 
 ## verify
 
@@ -169,9 +170,10 @@ List the mutants, without building or running anything. One line each: its id, p
 ```sh
 mutastic mutants
 mutastic mutants fixtures/pricing --operators=stronger
+mutastic mutants fixtures/pricing --at=src/lib.rs:26
 ```
 
-**Options:** [`--operators=OPERATORS`](#--operators), [`--estimate`](#--estimate), [`--unsafe=MODE`](#--unsafe), [`--edition=EDITION`](#--edition).
+**Options:** [`--at=PATH:LINE`](#--at), [`--operators=OPERATORS`](#--operators), [`--estimate`](#--estimate), [`--unsafe=MODE`](#--unsafe), [`--edition=EDITION`](#--edition).
 
 **Exit status:** 0 once they're listed.
 
@@ -208,6 +210,15 @@ mutastic run --since=main
 
 ```sh
 mutastic run --only=mb2f8ae57
+```
+
+### `--at`
+
+`--at=PATH:LINE`, for [`mutants`](#mutants), [`run`](#run). Run, or list, only the mutants on a line of a source file, or with :FROM-TO on those lines, under the run's operators; several split by commas. The run passes when each is caught or skipped.
+
+```sh
+mutastic mutants --at=src/lib.rs:26
+mutastic run --at=src/lib.rs:26
 ```
 
 ### `--workers`

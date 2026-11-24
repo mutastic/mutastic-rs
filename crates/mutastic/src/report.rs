@@ -1966,6 +1966,19 @@ fn summary(out: &mut String, report: &Report, style: Style) {
     write_rows(out, &rows, style);
     if report.only {
         out.push('\n');
+        if !report.at.is_empty() {
+            let named: Vec<String> = report
+                .at
+                .iter()
+                .map(|lines| untrusted::value(&lines.named()))
+                .collect();
+            let _ = writeln!(
+                out,
+                " {}: {}",
+                crate::at::listed(&named, "and"),
+                counted(report, style.words)
+            );
+        }
         if report.results.is_empty() {
             let _ = writeln!(out, " {}", verdict(report, style));
         }
@@ -1973,6 +1986,30 @@ fn summary(out: &mut String, report: &Report, style: Style) {
             let _ = writeln!(out, " {}", fate(&View::of(report, true), result, style));
         }
     }
+}
+
+/// `6 mutants, 5 caught, 1 missed`: how many a run of some mutants had, then how many had each
+/// fate, in the run's words, the fates none had left out.
+fn counted(report: &Report, words: Vocabulary) -> String {
+    let fates = [
+        (
+            report.count(Status::Killed) + report.count(Status::Timeout),
+            words.detected(),
+        ),
+        (report.count(Status::Survived), words.undetected()),
+        (report.count(Status::NoCoverage), words.not_covered()),
+        (report.count(Status::Ignored), "skipped"),
+        (report.count(Status::RuntimeError), "crashed"),
+    ];
+    std::iter::once(crate::progress::count(report.results.len(), "mutant"))
+        .chain(
+            fates
+                .iter()
+                .filter(|(count, _)| *count > 0)
+                .map(|(count, fate)| format!("{count} {fate}")),
+        )
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// `[MISSED] mb2f8ae57 is still missed · done when mutastic verify mb2f8ae57 fixtures/pricing
@@ -2919,6 +2956,7 @@ pub fn run_started(
     profile: &serde_json::Value,
     unsafe_mode: crate::sites::UnsafeMode,
     share: Option<serde_json::Value>,
+    at: &[String],
 ) -> serde_json::Value {
     let mut started = json!({
         "schema": SCHEMA,
@@ -2943,7 +2981,15 @@ pub fn run_started(
     if let Some(share) = share {
         started["share"] = share;
     }
+    if !at.is_empty() {
+        started["at"] = json!(at);
+    }
     started
+}
+
+/// With `--at`, the lines asked for, each `PATH:LINE` or `PATH:FROM-TO` from the workspace.
+fn at_typed(report: &Report) -> Vec<String> {
+    report.at.iter().map(crate::at::Lines::typed).collect()
 }
 
 /// The `mutastic.events/v1` stream.
@@ -2957,6 +3003,7 @@ fn jsonl(report: &Report) -> String {
             &report.profile,
             report.unsafe_mode,
             report.share.as_ref().map(crate::shares::Tag::json),
+            &at_typed(report),
         ));
     }
     // A mutant run again without a test that fails on its own gives its first result here, and its
@@ -3006,8 +3053,11 @@ fn jsonl(report: &Report) -> String {
         finished["newMisses"] = json!(judged.new_misses(report));
         finished["inBaseline"] = json!(judged.in_baseline(report));
     }
-    // A run of mutants asked for by id: the first one found, as the Java edition gives it.
-    if report.only {
+    // A run of the mutants on some lines: the lines asked for. One of mutants asked for by id: the
+    // first one found, as the Java edition gives it.
+    if !report.at.is_empty() {
+        finished["at"] = json!(at_typed(report));
+    } else if report.only {
         finished["only"] = report
             .results
             .first()

@@ -522,6 +522,7 @@ impl Shares {
             fail_on_new: None,
             built: true,
             only: false,
+            at: Vec::new(),
             audited: Vec::new(),
             left_out: options.exclude_tests.clone(),
             // The shares measured their own sites: put together, no coverage pass ran here.

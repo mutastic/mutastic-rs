@@ -1644,6 +1644,33 @@ fn section(name: &str, fixtures: &[&str], run: fn(&Path, &mut BTreeMap<String, S
     check(&shown);
 }
 
+/// The scoping page's lines: what `mutants --at` lists on `discount`'s lines, and what `run --at`
+/// says of them, a line that counts them before each one's fate.
+fn scoping(work: &Path, shown: &mut BTreeMap<String, String>) {
+    let at = "--at=src/lib.rs:26-29";
+    let listed = ran(work, &["mutants", "fixtures/pricing", at]);
+    assert_eq!(listed.code, 0, "{}", listed.stderr);
+    assert!(
+        listed.stdout.ends_with("\n6 mutants\n"),
+        "{}",
+        listed.stdout
+    );
+    shown.insert("scoping/at-mutants".into(), listed.stdout);
+    let run = ran(work, &["run", "fixtures/pricing", at]);
+    assert_eq!(run.code, 1, "one is missed: {}", run.stdout);
+    assert!(
+        plain(&run.stdout).contains("\n lines 26–29 of lib.rs: 6 mutants, 5 caught, 1 missed\n"),
+        "{}",
+        run.stdout
+    );
+    shown.insert("scoping/at-run".into(), run.stdout);
+}
+
+#[test]
+fn the_docs_show_what_scoping_prints() {
+    section("scoping", &["pricing"], scoping);
+}
+
 #[test]
 fn the_docs_show_what_getting_started_prints() {
     section("getting-started", &["pricing"], getting_started);
@@ -1695,6 +1722,16 @@ const ERRORS: &[Error] = &[
     (
         "unknown-id",
         &["verify", "mb2f8ae58", "fixtures/pricing"],
+        &[],
+    ),
+    (
+        "no-mutant-at",
+        &["run", "fixtures/pricing", "--at=src/lib.rs:24"],
+        &[],
+    ),
+    (
+        "outside-sources",
+        &["run", "fixtures/pricing", "--at=tests/pricing.rs:3"],
         &[],
     ),
     ("config", &["run", "configured"], &[]),

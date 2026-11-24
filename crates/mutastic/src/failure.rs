@@ -23,6 +23,10 @@ pub enum Code {
     ExtraWords,
     NeedsId,
     UnknownId,
+    /// `--at` asked for lines with no mutant on them.
+    NoMutantAt,
+    /// `--at` named a file that isn't one of the package's sources.
+    OutsideSources,
     Config,
     Environment,
     NoBaseline,
@@ -65,6 +69,8 @@ impl Code {
         Code::ExtraWords,
         Code::NeedsId,
         Code::UnknownId,
+        Code::NoMutantAt,
+        Code::OutsideSources,
         Code::Config,
         Code::Environment,
         Code::NoBaseline,
@@ -99,6 +105,8 @@ impl Code {
             Code::ExtraWords => "extra-words",
             Code::NeedsId => "needs-id",
             Code::UnknownId => "unknown-id",
+            Code::NoMutantAt => "no-mutant-at",
+            Code::OutsideSources => "outside-sources",
             Code::Config => "config",
             Code::Environment => "environment",
             Code::NoBaseline => "no-baseline",

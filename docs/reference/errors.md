@@ -204,6 +204,39 @@ mutastic: mb2f8ae58 isn't a mutant of pricing. There's one called mb2f8ae57.
   mutastic verify mb2f8ae57 fixtures/pricing
 ```
 
+## `no-mutant-at`
+
+`--at` asked for lines with no mutant on them, under the operators the run chooses and, with
+`--since`, on the change. A run of none would pass and say nothing, so it's refused: the message
+names the nearest lines that have one, and ends in the `mutants --at` command that lists them. The
+lines are read from the file as it is on disk, so save an editor's changes first.
+
+```sh
+mutastic run fixtures/pricing --at=src/lib.rs:24
+```
+
+<!-- output: errors/no-mutant-at -->
+```text
+mutastic: no mutant on lib.rs:24; there are on 26, 27, 29, 34 and 35. To see them:
+  mutastic mutants --at=src/lib.rs:26-35 fixtures/pricing
+```
+
+## `outside-sources`
+
+`--at` named a file that isn't one of the package's sources, a test say: only the code mutastic
+mutates has mutants. The message names the directories of the package's crate roots. At a
+workspace's root, the file picks its member; a member named stays, so another member's file is
+outside its sources.
+
+```sh
+mutastic run fixtures/pricing --at=tests/pricing.rs:3
+```
+
+<!-- output: errors/outside-sources -->
+```text
+mutastic: tests/pricing.rs isn't in the package's sources: --at takes a line of the code mutastic mutates, in src
+```
+
 ## `config`
 
 A `mutastic.yaml`, a rules file, or `.mutastic/ignores.yaml` that mutastic can't read: the file and

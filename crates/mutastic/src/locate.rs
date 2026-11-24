@@ -85,6 +85,13 @@ pub fn resolve(given: &str, line: &Line) -> Result<Located, Failure> {
     }
 }
 
+/// Where mutastic runs, with its links resolved, as the paths it compares are.
+pub fn here() -> PathBuf {
+    std::env::current_dir()
+        .and_then(std::fs::canonicalize)
+        .unwrap_or_default()
+}
+
 /// Whether `dir` or a directory above it has one of the build files named.
 fn any_above(dir: &Path, builds: &[&str]) -> bool {
     dir.ancestors()
@@ -99,7 +106,7 @@ fn is_package(dir: &Path) -> bool {
 
 /// `dir` as the person would type it where they are: from the current directory, or whole when
 /// they gave a whole path.
-fn shown(given: &str, cwd: &Path, dir: &Path) -> String {
+pub fn shown(given: &str, cwd: &Path, dir: &Path) -> String {
     if Path::new(given).is_absolute() {
         return workspace::slashed(dir);
     }
