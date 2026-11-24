@@ -276,6 +276,8 @@ fn versions() -> String {
 struct Parsed {
     positional: Vec<String>,
     only: Vec<String>,
+    /// `--at`: the lines of source files whose mutants run, or are listed, as typed.
+    at: Vec<crate::at::At>,
     format: Option<Format>,
     threshold: f64,
     operators: Vec<&'static str>,
@@ -359,6 +361,7 @@ fn parse(command: &str, args: &[String]) -> Result<Parsed, Failure> {
     let mut parsed = Parsed {
         positional: Vec::new(),
         only: Vec::new(),
+        at: Vec::new(),
         format: None,
         vocabulary: None,
         color: None,
@@ -481,6 +484,7 @@ fn set(parsed: &mut Parsed, name: &str, value: &str) -> Result<bool, String> {
             }
             parsed.only.extend(ids(value))
         }
+        "at" => parsed.at.extend(crate::at::parse(value)?),
         "format" => {
             parsed.format = Some(Format::parse(value).ok_or_else(|| {
                 crate::mistyped::not_one_of(
@@ -671,12 +675,17 @@ fn arguments(command: &str, parsed: &Parsed) -> Result<(), Failure> {
             .with("--propose records a proposal: not with --accept, --remove or --prune"));
     }
     if command == "run" {
-        sharing(parsed)?;
-        if parsed.fail_on_new && !parsed.only.is_empty() {
+        if !parsed.only.is_empty() && !parsed.at.is_empty() {
             return Err(Code::OptionNotTaken.with(
-                "--fail-on-new judges a run of the package on its new misses: not with --only, \
-                 whose mutants each pass when they're caught",
+                "--only and --at both choose the mutants that run: give one, the ids or the lines",
             ));
+        }
+        sharing(parsed)?;
+        if let Some(choosing) = choosing(parsed).filter(|_| parsed.fail_on_new) {
+            return Err(Code::OptionNotTaken.with(format!(
+                "--fail-on-new judges a run of the package on its new misses: not with \
+                 {choosing}, whose mutants each pass when they're caught"
+            )));
         }
     }
     if takes_id {
@@ -696,6 +705,23 @@ fn arguments(command: &str, parsed: &Parsed) -> Result<(), Failure> {
     }
 }
 
+/// The option that chose some of the mutants, `--only` or `--at`; none when neither did.
+fn choosing(parsed: &Parsed) -> Option<&'static str> {
+    if !parsed.only.is_empty() {
+        Some("--only")
+    } else if !parsed.at.is_empty() {
+        Some("--at")
+    } else {
+        None
+    }
+}
+
+/// Whether the run is of some mutants, asked for by id (`--only`) or by their lines (`--at`): each
+/// one's fate is its result, not a score, and it keeps no record and writes no report.
+fn partial(parsed: &Parsed) -> bool {
+    choosing(parsed).is_some()
+}
+
 /// A run is a share or made of them, not both; made of them, it runs no mutants itself, so the
 /// options for what runs are the shares'.
 fn sharing(parsed: &Parsed) -> Result<(), Failure> {
@@ -705,6 +731,7 @@ fn sharing(parsed: &Parsed) -> Result<(), Failure> {
     let given = [
         ("--shard", parsed.shard.is_some()),
         ("--only", !parsed.only.is_empty()),
+        ("--at", !parsed.at.is_empty()),
         ("--since", parsed.since.is_some()),
         ("--force-coverage", parsed.force_coverage),
     ];
@@ -849,7 +876,17 @@ fn locate(command: &str, args: &[String], parsed: &mut Parsed) -> Result<(), Fai
     let Some(slot) = dir_slot(command, parsed) else {
         return Ok(());
     };
-    let given = parsed.positional.get(slot).map_or(".", String::as_str);
+    let typed = parsed
+        .positional
+        .get(slot)
+        .map_or(".", String::as_str)
+        .to_string();
+    // At a workspace's root, `--at`'s file picks the member, as a directory inside one does.
+    let picked = matches!(command, "run" | "mutants")
+        .then(|| crate::at::member(&typed, &parsed.at))
+        .flatten()
+        .map(|member| crate::locate::shown(&typed, &crate::locate::here(), &member));
+    let given = picked.as_deref().unwrap_or(&typed);
     let before: Vec<&str> = std::iter::once(command)
         .chain(parsed.positional.iter().take(slot).map(String::as_str))
         .collect();
@@ -864,7 +901,7 @@ fn locate(command: &str, args: &[String], parsed: &mut Parsed) -> Result<(), Fai
     if let Some(note) = &located.note {
         stderr_line!("{note}");
     }
-    if located.dir != given {
+    if located.dir != typed {
         match parsed.positional.get_mut(slot) {
             Some(word) => *word = located.dir,
             None => parsed.positional.push(located.dir),
@@ -1056,6 +1093,7 @@ fn start(parsed: &Parsed, files: bool) -> Progress {
 fn options(parsed: &Parsed, only: Vec<String>) -> Options {
     Options {
         only,
+        among: None,
         operators: parsed.operators.clone(),
         threshold: parsed.threshold,
         workers: parsed.workers,
@@ -1105,10 +1143,12 @@ fn run(parsed: &Parsed) -> Result<ExitCode, Failure> {
             since,
         )?);
     }
+    let at = on_the_lines(parsed, &project, &mut options)?;
     if format == Format::Jsonl {
         progress.stream(crate::progress::Events {
             unsafe_mode: parsed.unsafe_mode,
             share: share.as_ref().map(crate::shares::Tag::json),
+            at: at.iter().map(crate::at::Lines::typed).collect(),
         });
     }
     // A share's events as the run goes, so a share stopped part way keeps what it finished.
@@ -1123,15 +1163,39 @@ fn run(parsed: &Parsed) -> Result<ExitCode, Failure> {
     }
     let mut report = engine::run(&project, &options, &|step| progress.step(step))?;
     report.share = share;
+    report.at = at;
     progress.finished();
     // Only a whole run of every test measured every site its mutants are at, as `mutants`
     // estimates from them.
-    let whole = parsed.only.is_empty() && parsed.since.is_none() && parsed.shard.is_none();
+    let whole = !partial(parsed) && parsed.since.is_none() && parsed.shard.is_none();
     if whole && parsed.exclude_tests.is_empty() && report.built {
         keep_test_times(&report);
     }
     report.streamed = progress.streamed();
     finish(parsed, report, format, folder.as_deref())
+}
+
+/// With `--at`, the lines asked for, and `options` choosing only the mutants on them, of those the
+/// run would have: under its operators, and with `--since` on the change. Lines with none on them
+/// are refused.
+fn on_the_lines(
+    parsed: &Parsed,
+    project: &workspace::Project,
+    options: &mut Options,
+) -> Result<Vec<crate::at::Lines>, Failure> {
+    if parsed.at.is_empty() {
+        return Ok(Vec::new());
+    }
+    let (found, _) = engine::find_for_run(project, options)?;
+    let lines = crate::at::files(&parsed.at, project, &found)?;
+    let on_the_change = |mutant: &crate::sites::Mutant| {
+        options.since.as_ref().is_none_or(|changed| {
+            changed.touches(&project.workspace.join(&mutant.file), mutant.line)
+        })
+    };
+    let ids = crate::at::on(&lines, &found, on_the_change, &project.given)?;
+    options.among = Some(ids);
+    Ok(lines)
 }
 
 /// `--fail-on-new` with no baseline to tell new misses from: every miss would be new, or none, and
@@ -1196,13 +1260,13 @@ fn finish(
     let kept = report.built || report.share.is_some();
     // Only a run of every mutant compares with the last one and is kept for the next: a run of one
     // says nothing about the others, and a change's score says nothing about the whole package's.
-    if parsed.only.is_empty() && report.scope.is_none() && kept {
+    if !partial(parsed) && report.scope.is_none() && kept {
         report.comparison = recorded(&report, &folder)?;
     }
     // Before the reports, whose `passed` says what the exit code will.
     report.fail_on_new = judged_on_new(parsed);
     // Only a full run writes reports: a run of some mutants would leave out the rest.
-    if parsed.only.is_empty() && (kept || parsed.reports.is_some()) {
+    if !partial(parsed) && (kept || parsed.reports.is_some()) {
         let writing = std::time::Instant::now();
         let reports = parsed.reports.clone().unwrap_or_else(|| {
             report::files::DEFAULT
@@ -1260,11 +1324,11 @@ fn finish(
         )
     );
     to_github(&report)?;
-    if format != Format::Jsonl && parsed.only.is_empty() && report.scope.is_none() {
+    if format != Format::Jsonl && !partial(parsed) && report.scope.is_none() {
         baseline_note(&report, &parsed.operators_chosen);
     }
-    if reports_left_out(parsed) {
-        stderr_line!("{REPORTS_LEFT_OUT}");
+    if let Some(choosing) = choosing(parsed).filter(|_| reports_named(parsed)) {
+        stderr_line!("{}", reports_left_out_with(choosing));
     }
     if !report.failing_alone().is_empty() {
         // A test fails on the code with no mutant in, as one that fails before any mutant does.
@@ -1347,14 +1411,20 @@ fn catches(caught: usize, scored: usize) -> String {
 pub const REPORTS_LEFT_OUT: &str = "note: --report is left out with --only: a run of some mutants \
      writes no reports, as it says nothing about the rest; run without --only to write them";
 
-/// With `--only`, the reports `--report` named aren't written, and a note on stderr says why, so one
-/// asked for isn't missed in silence. A note, not a failure: the run's exit code is its own.
-fn reports_left_out(parsed: &Parsed) -> bool {
-    !parsed.only.is_empty()
-        && parsed
-            .reports
-            .as_ref()
-            .is_some_and(|named| !named.is_empty())
+/// What a run of some mutants, chosen by `option` (`--only` or `--at`), says of the reports
+/// `--report` named, as the Java edition says it.
+pub fn reports_left_out_with(option: &str) -> String {
+    REPORTS_LEFT_OUT.replace("--only", option)
+}
+
+/// Whether `--report` named a report. With `--only` or `--at` none is written, and a note on
+/// stderr says why, so one asked for isn't missed in silence. A note, not a failure: the run's exit
+/// code is its own.
+fn reports_named(parsed: &Parsed) -> bool {
+    parsed
+        .reports
+        .as_ref()
+        .is_some_and(|named| !named.is_empty())
 }
 
 /// After a full run, how many of the baseline's mutants it found caught: they can be pruned. Not
@@ -2774,7 +2844,18 @@ fn mutants(parsed: &Parsed) -> Result<ExitCode, Failure> {
         Vec::new()
     };
     let found = engine::find_with(&project, &parsed.operators, parsed.unsafe_mode);
-    for mutant in &found.mutants {
+    let listed: Vec<&crate::sites::Mutant> = if parsed.at.is_empty() {
+        found.mutants.iter().collect()
+    } else {
+        let lines = crate::at::files(&parsed.at, &project, &found)?;
+        let on = crate::at::on(&lines, &found, |_| true, &project.given)?;
+        found
+            .mutants
+            .iter()
+            .filter(|mutant| on.contains(&mutant.id))
+            .collect()
+    };
+    for mutant in &listed {
         let function = &found.functions[mutant.function];
         stdout_line!(
             "{} {}:{}:{} {} {} in {}{}",
@@ -2796,7 +2877,11 @@ fn mutants(parsed: &Parsed) -> Result<ExitCode, Failure> {
     for estimate in &estimates {
         stdout_line!("{estimate}");
     }
-    stdout_line!("{}", crate::progress::count(found.mutants.len(), "mutant"));
+    stdout_line!("{}", crate::progress::count(listed.len(), "mutant"));
+    // What wasn't mutated is counted over the package, not the lines `--at` asked for.
+    if !parsed.at.is_empty() {
+        return Ok(ExitCode::SUCCESS);
+    }
     if found.not_mutated_unsafe > 0 {
         stdout_line!(
             "not mutated: unsafe ({}): --unsafe=enclosing or --unsafe=all includes them",
@@ -3006,6 +3091,59 @@ mod tests {
         assert_eq!(
             check(&words("run --only=mb2f8ae57,,m1a2b3c4d")).unwrap_err(),
             "--only=mb2f8ae57,,m1a2b3c4d has an empty id between its commas: --only=ID,ID"
+        );
+    }
+
+    /// `--at` is given again, or split by commas, on `run` and `mutants` and no other command.
+    #[test]
+    fn run_and_mutants_take_lines_and_no_other_command_does() {
+        let given = parse("run", &words("--at=a.rs:1 --at=b.rs:2-3")[..]).unwrap();
+        let split = parse("run", &words("--at=a.rs:1,b.rs:2-3")[..]).unwrap();
+        assert_eq!(given.at, split.at);
+        assert_eq!(given.at.len(), 2);
+        assert!(partial(&given));
+        assert_eq!(check(&words("mutants --at=src/lib.rs:26")), Ok(()));
+        assert_eq!(
+            check(&words("verify mb2f8ae57 --at=src/lib.rs:26")).unwrap_err(),
+            "verify doesn't take --at: mutastic verify ID... [DIR]"
+        );
+        assert_eq!(
+            check(&words("run --at=src/lib.rs:0")).unwrap_err(),
+            "--at=src/lib.rs:0: a file's lines are numbered from 1, as an editor shows them"
+        );
+    }
+
+    /// `--at` chooses the mutants, as `--only` does: not both, and not with what judges or puts
+    /// together a whole run.
+    #[test]
+    fn lines_arent_given_with_ids_new_misses_or_shares() {
+        assert_eq!(
+            check(&words("run --at=src/lib.rs:26 --only=mb2f8ae57")).unwrap_err(),
+            "--only and --at both choose the mutants that run: give one, the ids or the lines"
+        );
+        assert_eq!(
+            check(&words("run --at=src/lib.rs:26 --fail-on-new")).unwrap_err(),
+            "--fail-on-new judges a run of the package on its new misses: not with --at, whose \
+             mutants each pass when they're caught"
+        );
+        let shares = checked(&words("run --at=src/lib.rs:26 --from-shards=shares")).unwrap_err();
+        assert_eq!(shares.code, Code::Shards);
+        assert!(
+            shares
+                .message
+                .ends_with("not with --at, which the shares run with"),
+            "{}",
+            shares.message
+        );
+    }
+
+    #[test]
+    fn the_note_on_reports_names_the_option_that_chose() {
+        assert_eq!(reports_left_out_with("--only"), REPORTS_LEFT_OUT);
+        assert_eq!(
+            reports_left_out_with("--at"),
+            "note: --report is left out with --at: a run of some mutants writes no reports, as \
+             it says nothing about the rest; run without --at to write them"
         );
     }
 

@@ -7,8 +7,8 @@
       "page": "run",
       "synopsis": "mutastic run [DIR] [OPTIONS]",
       "summary": "Mutate the package and run its tests against each mutant",
-      "detail": "DIR is the package's directory, here unless given; in a workspace, a member's. The run passes when the score reaches the threshold, or with --fail-on-new when every mutant no test catches is in the baseline. A full run, one without --only, writes report files, and offers the commands to work on each missed mutant. Its progress goes to stderr, so stdout holds only the result. --shard runs one share of the mutants, for splitting a run across CI jobs, and --from-shards puts the shares back together as the whole run.",
-      "exits": "0 when the score reaches the threshold, 1 when it doesn't; with --fail-on-new, 0 when every mutant no test catches is in the baseline, 1 when one isn't; with --only, 0 when each mutant named is caught or skipped, as verify judges it, and 1 while one is still missed or not covered.",
+      "detail": "DIR is the package's directory, here unless given; in a workspace, a member's. The run passes when the score reaches the threshold, or with --fail-on-new when every mutant no test catches is in the baseline. A full run, one without --only or --at, writes report files, and offers the commands to work on each missed mutant. Its progress goes to stderr, so stdout holds only the result. --shard runs one share of the mutants, for splitting a run across CI jobs, and --from-shards puts the shares back together as the whole run.",
+      "exits": "0 when the score reaches the threshold, 1 when it doesn't; with --fail-on-new, 0 when every mutant no test catches is in the baseline, 1 when one isn't; with --only or --at, 0 when each mutant named is caught or skipped, as verify judges it, and 1 while one is still missed or not covered.",
       "takesMutantId": false,
       "examples": [
         {
@@ -22,6 +22,10 @@
         {
           "commandLine": "mutastic run --since=main",
           "cargo": "cargo mutastic run --since=main"
+        },
+        {
+          "commandLine": "mutastic run fixtures/pricing --at=src/lib.rs:26-29",
+          "cargo": "cargo mutastic run fixtures/pricing --at=src/lib.rs:26-29"
         },
         {
           "commandLine": "mutastic run --fail-on-new",
@@ -45,6 +49,7 @@
         "--fail-on-new",
         "--since",
         "--only",
+        "--at",
         "--workers",
         "--confirm-catches",
         "--kill-matrix",
@@ -318,9 +323,14 @@
         {
           "commandLine": "mutastic mutants fixtures/pricing --operators=stronger",
           "cargo": "cargo mutastic mutants fixtures/pricing --operators=stronger"
+        },
+        {
+          "commandLine": "mutastic mutants fixtures/pricing --at=src/lib.rs:26",
+          "cargo": "cargo mutastic mutants fixtures/pricing --at=src/lib.rs:26"
         }
       ],
       "options": [
+        "--at",
         "--operators",
         "--estimate",
         "--unsafe",
@@ -407,6 +417,30 @@
         "run": {
           "commandLine": "mutastic run --only=mb2f8ae57",
           "cargo": "cargo mutastic run --only=mb2f8ae57"
+        }
+      }
+    },
+    {
+      "name": "--at",
+      "synopsis": "--at=PATH:LINE",
+      "kind": "repeated",
+      "group": "Running",
+      "value": "PATH:LINE",
+      "choices": [],
+      "help": "Run, or list, only the mutants on a line of a source file, or with :FROM-TO on those lines, under the run's operators; several split by commas. The run passes when each is caught or skipped",
+      "commands": [
+        "mutants",
+        "run"
+      ],
+      "environment": "",
+      "examples": {
+        "mutants": {
+          "commandLine": "mutastic mutants --at=src/lib.rs:26",
+          "cargo": "cargo mutastic mutants --at=src/lib.rs:26"
+        },
+        "run": {
+          "commandLine": "mutastic run --at=src/lib.rs:26",
+          "cargo": "cargo mutastic run --at=src/lib.rs:26"
         }
       }
     },

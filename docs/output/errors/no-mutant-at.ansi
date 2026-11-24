@@ -1,0 +1,2 @@
+mutastic: no mutant on lib.rs:24; there are on 26, 27, 29, 34 and 35. To see them:
+  mutastic mutants --at=src/lib.rs:26-35 fixtures/pricing

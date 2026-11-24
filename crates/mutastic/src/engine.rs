@@ -176,9 +176,12 @@ pub struct Report {
     /// Whether the build and the coverage pass ran: not when no mutant was there to run, unless
     /// `--force-coverage` asked for them anyway.
     pub built: bool,
-    /// Whether the run was of mutants asked for by id (`--only`): each one's fate is the verdict,
-    /// not a score, as the Java edition judges it.
+    /// Whether the run was of some mutants, asked for by id (`--only`) or by their lines (`--at`):
+    /// each one's fate is the verdict, not a score, as the Java edition judges it.
     pub only: bool,
+    /// With `--at`, the lines asked for: the count line names them, and `run-started` and
+    /// `run-finished` carry them.
+    pub at: Vec<crate::at::Lines>,
     /// In an audit of the arid rules (`MUTASTIC_ARID=audit`), each arid mutant's result when run
     /// anyway, in the order found; none otherwise. Never in `results`, the counts or the score.
     pub audited: Vec<MutantResult>,
@@ -274,9 +277,18 @@ impl Report {
     }
 }
 
+impl Options {
+    /// Whether the run is of some mutants: asked for by id, or by their lines.
+    pub fn partial(&self) -> bool {
+        !self.only.is_empty() || self.among.is_some()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Options {
     pub only: Vec<String>,
+    /// `--at`: only these of the mutants the run finds run, those on its lines.
+    pub among: Option<BTreeSet<String>>,
     pub operators: Vec<&'static str>,
     pub threshold: f64,
     pub workers: usize,
@@ -456,6 +468,7 @@ pub fn run(
         .mutants
         .iter()
         .filter(|m| options.only.is_empty() || options.only.contains(&m.id))
+        .filter(|m| options.among.as_ref().is_none_or(|ids| ids.contains(&m.id)))
         .filter(|m| {
             options
                 .since
@@ -580,7 +593,7 @@ pub fn run(
         .collect();
     let (tests, reach) = steady(listed, covered);
     // Only a run of every mutant: tests that reach none of some of them can be the honest answer.
-    let whole = options.only.is_empty()
+    let whole = !options.partial()
         && options.since.is_none()
         && options.shard.is_none_or(|shard| shard.of == 1);
     let with_mutants: BTreeSet<usize> = live
@@ -748,7 +761,8 @@ pub fn run(
         comparison: None,
         fail_on_new: None,
         built: true,
-        only: !options.only.is_empty(),
+        only: options.partial(),
+        at: Vec::new(),
         audited,
         left_out: options.exclude_tests.clone(),
         measured: sites_measured,
@@ -908,7 +922,8 @@ fn nothing_to_run(
         comparison: None,
         fail_on_new: None,
         built: false,
-        only: !options.only.is_empty(),
+        only: options.partial(),
+        at: Vec::new(),
         audited: Vec::new(),
         left_out: options.exclude_tests.clone(),
         measured: BTreeMap::new(),

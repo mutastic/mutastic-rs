@@ -132,6 +132,14 @@ counter while mutants run, the report files, `explain`, `ignore` and `--since`. 
   share writes its report files in its own folder, `target/mutastic/shares/N-of-M/`, beside its
   events, so `explain` never reads a share as the whole run. Each share makes the one build. See
   [One run across CI jobs](concepts/how-a-run-works.md#one-run-across-ci-jobs).
+- **`--at`** runs or lists the mutants on some lines, as in the Java edition, in the same words and
+  events. A mutant is on the lines its claim covers, from where its change starts to where it
+  ends, as `mutation.json`'s `location` has them, where Java reads javac's line for its statement.
+  The path is from the workspace, as a card prints it, and the sources it must be in are the
+  files the package's crate roots reach; at a workspace's root, the file picks its member. The
+  count line names a crash that proves nothing, `1 crashed`, a fate the Java edition doesn't
+  have. `mutants --at` leaves out the package's `not mutated` lines, which count the package, not
+  the lines. See [One line](scoping.md#one-line).
 - **`mutastic.yaml` and rules files** are the Java edition's, with Rust paths for classes
   (`shop::generated::**`) and Rust types as owners. A rules file's operator matches a call by its
   method's name, since mutastic reads source without types; a rewrite that doesn't fit doesn't

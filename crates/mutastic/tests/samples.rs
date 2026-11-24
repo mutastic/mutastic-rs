@@ -1457,6 +1457,240 @@ fn a_run_of_mutants_by_id_is_judged_on_each_ones_fate() {
     assert_eq!(events(&alone).pop().unwrap()["passed"], true);
 }
 
+/// `mutastic` run in `dir`, with stderr: for a run that must stop, as one with `--at` on lines
+/// with no mutant does.
+fn mutastic_in_err(dir: &Path, args: &[&str]) -> (i32, String, String) {
+    let output = Command::new(env!("CARGO_BIN_EXE_mutastic"))
+        .args(args)
+        .current_dir(dir)
+        .env_remove("MUTASTIC_FORMAT")
+        .env_remove("MUTASTIC_AGENT")
+        .env("NO_COLOR", "1")
+        .output()
+        .unwrap();
+    (
+        output.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
+/// `--at` lists, or runs, the mutants on some lines of a source file, as the Java edition does:
+/// `discount`'s lines 26 to 29 have 6, one missed. The run is of some mutants, as `--only`'s is:
+/// no Score row, no reports, each one's fate after a line that counts them, and `at` on
+/// `run-started` and `run-finished` in place of `only`. Lines with none are refused, naming the
+/// nearest with one, and the command it gives lists them.
+#[test]
+fn a_run_of_a_lines_mutants_is_judged_on_each_ones_fate() {
+    let dir = copy_of("pricing", "at-lines");
+    let (code, listed) = mutastic_in(&dir, &["mutants", "--at=src/lib.rs:26-29"]);
+    assert_eq!(code, 0, "{listed}");
+    let ids: Vec<&str> = listed
+        .lines()
+        .filter_map(|line| line.split_whitespace().next())
+        .filter(|word| word.starts_with('m'))
+        .collect();
+    assert_eq!(
+        ids,
+        [
+            "mc9e13290",
+            "mb2f8ae57",
+            "md56e8c39",
+            "m1636f6d5",
+            "m6d05659f",
+            "m95f96847"
+        ],
+        "{listed}"
+    );
+    assert!(listed.ends_with("\n6 mutants\n"), "{listed}");
+
+    let mutation_json = dir.join("target/mutastic/mutation.json");
+    let _ = std::fs::remove_file(&mutation_json);
+    let (code, human) = mutastic_in(&dir, &["run", "--at=src/lib.rs:26-29", "--format=concise"]);
+    assert_eq!(code, 1, "one still missed fails the run: {human}");
+    assert!(
+        human.contains(
+            "\n\n lines 26–29 of lib.rs: 6 mutants, 5 caught, 1 missed\n [CAUGHT] mc9e13290 "
+        ),
+        "{human}"
+    );
+    assert!(
+        human.contains("\n [MISSED] mb2f8ae57 is still missed · done when "),
+        "{human}"
+    );
+    assert!(!human.contains("Score"), "{human}");
+    assert!(!human.contains("Next:"), "{human}");
+    assert!(
+        !mutation_json.exists(),
+        "a run of some mutants writes no report"
+    );
+
+    let (code, jsonl, stderr) = mutastic_in_err(
+        &dir,
+        &[
+            "run",
+            "--at=src/lib.rs:27,src\\lib.rs:35",
+            "--format=jsonl",
+            "--report=json",
+        ],
+    );
+    assert_eq!(code, 0, "{stderr}");
+    let all = events(&jsonl);
+    let validator = schema();
+    for event in &all {
+        assert!(validator.is_valid(event), "{event}");
+    }
+    let at = serde_json::json!(["src/lib.rs:27", "src/lib.rs:35"]);
+    let started = all
+        .iter()
+        .find(|event| event["reason"] == "run-started")
+        .unwrap();
+    assert_eq!(started["at"], at, "{started}");
+    let finished = all.last().unwrap();
+    assert_eq!(finished["at"], at, "{finished}");
+    assert!(finished.get("only").is_none(), "{finished}");
+    assert_eq!(finished["passed"], true, "{finished}");
+    assert_eq!(finished["mutants"], 3, "{finished}");
+    assert!(
+        stderr.ends_with(&format!(
+            "{}\n",
+            mutastic::cli::reports_left_out_with("--at")
+        )),
+        "{stderr}"
+    );
+    assert!(!mutation_json.exists(), "--report is left out");
+
+    let (code, line, _) = mutastic_in_err(&dir, &["run", "--at=src/lib.rs:35", "--format=brief"]);
+    assert_eq!(code, 0, "{line}");
+    assert!(
+        line.contains("\n line 35 of lib.rs: 1 mutant, 1 caught\n"),
+        "{line}"
+    );
+
+    let (code, _, refused) = mutastic_in_err(&dir, &["run", "--at=src/lib.rs:24"]);
+    assert_eq!(code, 2, "{refused}");
+    assert!(
+        refused.ends_with(
+            "mutastic: no mutant on lib.rs:24; there are on 26, 27, 29, 34 and 35. To see them:\n  \
+             mutastic mutants --at=src/lib.rs:26-35 .\n"
+        ),
+        "{refused}"
+    );
+    let (code, nearest) = mutastic_in(&dir, &["mutants", "--at=src/lib.rs:26-35", "."]);
+    assert_eq!(code, 0, "{nearest}");
+    assert!(nearest.ends_with("\n10 mutants\n"), "{nearest}");
+
+    let (code, jsonl, _) =
+        mutastic_in_err(&dir, &["run", "--at=tests/pricing.rs:3", "--format=jsonl"]);
+    assert_eq!(code, 2);
+    let failed = events(&jsonl).pop().unwrap();
+    assert_eq!(failed["code"], "outside-sources", "{failed}");
+    assert_eq!(
+        failed["message"],
+        "tests/pricing.rs isn't in the package's sources: --at takes a line of the code mutastic \
+         mutates, in src",
+        "{failed}"
+    );
+    let (_, jsonl, _) = mutastic_in_err(&dir, &["run", "--at=src/lib.rs:24", "--format=jsonl"]);
+    assert_eq!(events(&jsonl).pop().unwrap()["code"], "no-mutant-at");
+}
+
+/// With `--since`, `--at` chooses among the mutants on the change: lines 26 to 37 hold both
+/// functions' mutants, and only `shipping`'s condition, on line 34, changed.
+#[test]
+fn lines_and_a_change_choose_the_mutants_on_both() {
+    let dir = copy_of("pricing", "at-since");
+    let git = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(&dir)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .unwrap()
+            .status;
+        assert!(status.success(), "git {args:?}");
+    };
+    std::fs::remove_dir_all(dir.join(".git")).ok();
+    git(&["init", "-q"]);
+    std::fs::write(dir.join(".gitignore"), "target\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "start"]);
+    let lib = dir.join("src/lib.rs");
+    let text = std::fs::read_to_string(&lib).unwrap();
+    std::fs::write(
+        &lib,
+        text.replace(
+            "if total < self.free_shipping_from {",
+            "if total < self.free_shipping_from  {",
+        ),
+    )
+    .unwrap();
+    let (code, jsonl) = mutastic_in(
+        &dir,
+        &[
+            "run",
+            "--since=HEAD",
+            "--at=src/lib.rs:26-37",
+            "--format=jsonl",
+        ],
+    );
+    assert_eq!(code, 0, "{jsonl}");
+    let lines: BTreeSet<i64> = events(&jsonl)
+        .iter()
+        .filter(|event| event["reason"] == "mutant-finished")
+        .map(|event| event["location"]["line"].as_i64().unwrap())
+        .collect();
+    assert_eq!(lines, BTreeSet::from([34]), "{jsonl}");
+
+    let (code, _, refused) =
+        mutastic_in_err(&dir, &["run", "--since=HEAD", "--at=src/lib.rs:26-29"]);
+    assert_eq!(code, 2, "{refused}");
+    assert!(
+        refused.ends_with(
+            "mutastic: no mutant on lib.rs:26-29; there's one on 34. To see it:\n  \
+             mutastic mutants --at=src/lib.rs:34 .\n"
+        ),
+        "{refused}"
+    );
+}
+
+/// At a workspace's root, `--at`'s file picks the member, as a directory inside one does; a member
+/// named stays, so another member's file is outside its sources.
+#[test]
+fn a_lines_file_picks_its_workspace_member() {
+    let root = copy_of("workspace", "at-member");
+    let (code, shop) = mutastic_in(&root, &["mutants", "--at=shop/src/lib.rs:4"]);
+    assert_eq!(code, 0, "{shop}");
+    assert!(
+        shop.starts_with("mab03c186 shop/src/lib.rs:4:5 ") && shop.ends_with("\n1 mutant\n"),
+        "{shop}"
+    );
+    let (code, billing) = mutastic_in(&root, &["mutants", ".", "--at=billing/src/lib.rs:4"]);
+    assert_eq!(code, 0, "{billing}");
+    assert!(billing.contains(" billing/src/lib.rs:4:"), "{billing}");
+    let (code, from_member) = mutastic_in(&root.join("shop"), &["mutants", "--at=src/lib.rs:4"]);
+    assert_eq!(code, 0, "{from_member}");
+    assert!(from_member.starts_with("mab03c186 "), "{from_member}");
+
+    let (code, _, refused) =
+        mutastic_in_err(&root, &["mutants", "shop", "--at=billing/src/lib.rs:4"]);
+    assert_eq!(code, 2, "{refused}");
+    assert!(
+        refused.ends_with(
+            "mutastic: billing/src/lib.rs isn't in the package's sources: --at takes a line of \
+             the code mutastic mutates, in shop/src\n"
+        ),
+        "{refused}"
+    );
+    let (_, jsonl) = mutastic_in(&root, &["run", "--at=shop/src/lib.rs:4", "--format=jsonl"]);
+    let finished = events(&jsonl).pop().unwrap();
+    assert_eq!(finished["at"], serde_json::json!(["shop/src/lib.rs:4"]));
+    assert_eq!(finished["mutants"], 1, "{finished}");
+}
+
 /// A copy of a fixture this test process has to itself, to change.
 fn copy_of(name: &str, label: &str) -> std::path::PathBuf {
     common::own_copy(name, &format!("samples-{label}"))
