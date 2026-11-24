@@ -1795,11 +1795,11 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, Failure> {
                 "mutastic: {} is the same as {}, which {}",
                 mutant.id,
                 report.found.mutants[runs.mutant].id,
-                fate(runs, &report.project)
+                fate(runs, &report)
             );
         } else if only.contains(&mutant.id) {
             settled &= result.status.settled();
-            stdout_line!("mutastic: {} {}", mutant.id, fate(result, &report.project));
+            stdout_line!("mutastic: {} {}", mutant.id, fate(result, &report));
         }
     }
     if !report.failing_alone().is_empty() {
@@ -1814,7 +1814,10 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, Failure> {
 }
 
 /// What `verify` says of a mutant after its id: caught, missed, or what became of it instead.
-fn fate(result: &engine::MutantResult, project: &workspace::Project) -> String {
+fn fate(result: &engine::MutantResult, report: &engine::Report) -> String {
+    let project = &report.project;
+    let id = &report.found.mutants[result.mutant].id;
+    let likely_flaky = &report.likely_flaky;
     match result.status {
             Status::Killed => caught(result, project),
             Status::Timeout => match crate::limits::at_ceiling(result.reason.as_deref()) {
@@ -1822,8 +1825,8 @@ fn fate(result: &engine::MutantResult, project: &workspace::Project) -> String {
                 None => "is caught by a timeout".to_string(),
             },
             Status::Survived => "is still missed".to_string(),
-            Status::NoCoverage => match &result.reached_only_by {
-                Some(test) => format!("isn't covered: {}", report::only_flaky(test)),
+            Status::NoCoverage => match report::only_flaky(likely_flaky, id, result) {
+                Some(said) => format!("isn't covered: {said}"),
                 None => "isn't reached by any test".to_string(),
             },
             Status::Ignored => format!(

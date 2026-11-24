@@ -245,7 +245,6 @@ mod tests {
             failure_origin: None,
             false_catch_by: None,
             flaky_catch_by: None,
-            reached_only_by: None,
             tests_run: 1,
             took: Duration::ZERO,
             inputs: BTreeMap::new(),

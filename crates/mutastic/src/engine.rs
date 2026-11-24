@@ -104,10 +104,6 @@ pub struct MutantResult {
     /// the mutant ran again without it, and this result is what the other covering tests made of it
     /// (decision 27). `false_catch_by` instead when the test failed on its own.
     pub flaky_catch_by: Option<String>,
-    /// For a mutant no test reaches once a test the run couldn't trust (likely flaky, or failing
-    /// on its own) was left out: that test, which was all that reached it. Its output says so
-    /// rather than that no test reaches it.
-    pub reached_only_by: Option<String>,
     pub tests_run: usize,
     pub took: Duration,
     /// The whole numbers its function was called with, by parameter.
@@ -1019,7 +1015,6 @@ fn nothing_to_run(
                 failure_origin: None,
                 false_catch_by: None,
                 flaky_catch_by: None,
-                reached_only_by: None,
                 tests_run: 0,
                 took: Duration::ZERO,
                 inputs: BTreeMap::new(),
@@ -1791,7 +1786,6 @@ fn result(found: &Crate, index: usize, site: u32, suite: &Suite) -> MutantResult
             failure_origin: None,
             false_catch_by: None,
             flaky_catch_by: None,
-            reached_only_by: None,
             tests_run: 0,
             took: Duration::ZERO,
             inputs: BTreeMap::new(),
@@ -1823,7 +1817,6 @@ fn result(found: &Crate, index: usize, site: u32, suite: &Suite) -> MutantResult
         failure_origin: None,
         false_catch_by: None,
         flaky_catch_by: None,
-        reached_only_by: None,
         tests_run: 0,
         took: Duration::ZERO,
         inputs: function
