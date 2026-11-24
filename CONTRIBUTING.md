@@ -57,6 +57,13 @@ request needs to pass, and `just ci` what CI runs. Each is one line over cargo o
 the justfile shows (`just test` is `cargo test --locked`), so the work can still be done without
 it. Call `cargo` directly only for a job no recipe covers.
 
+CI calls the same recipes: `just lint` and `just test` on Linux and macOS, `just clippy` and `just
+test --no-fail-fast` on Windows, `just msrv`, and the scheduled runs' `just fuzz`, `just miri`,
+`just asan`, `just contract` and the `ci` group's `self-` recipes, so a job that fails can be run
+here as CI ran it. Commits checks the justfile's format and that its verbs are those
+[.github/just-verbs.txt](.github/just-verbs.txt) lists: after adding or removing a recipe, run
+`just --summary | tr ' ' '\n' > .github/just-verbs.txt`.
+
 ## Making a change
 
 - **Follow [AGENTS.md](AGENTS.md).** It's the conventions the code is held to and why. Most are

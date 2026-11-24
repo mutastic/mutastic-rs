@@ -7,6 +7,9 @@ set default-list
 # isn't split or expanded again.
 set positional-arguments
 
+# The mutastic that self-shard and self-merge run: self-build's, or CI's download of it.
+self-bin := env('MUTASTIC_SELF_BIN', 'target/release/mutastic')
+
 # Turns on the commit message hook
 [group('setup')]
 setup:
@@ -34,8 +37,12 @@ fmt:
 
 # Checks the format and every lint, as errors, without the tests
 [group('check')]
-lint:
+lint: && clippy
     cargo fmt --all --check
+
+# Lints every target, warnings as errors
+[group('check')]
+clippy:
     cargo clippy --all-targets --locked -- -D warnings
 
 # Runs the tests, or those the arguments pick: just test --test docs
@@ -115,7 +122,47 @@ ids:
 changelog-preview *args:
     sh scripts/changelog.sh preview "$@"
 
+# Checks the changelog's entries, and that only a release edits CHANGELOG.md
+[group('merge')]
+changelog-check *args:
+    sh scripts/changelog.sh check "$@"
+
 # Merges a pull request through the merge queue: just merge 59 body.txt [--wait]
 [group('merge')]
 merge N *body:
     sh .githooks/merge-pr "$@"
+
+# CI's jobs that `just ci` doesn't cover, so a job can be run here as CI runs it.
+
+# Builds the release mutastic that self-shard and self-merge run on mutastic
+[group('ci')]
+self-build:
+    cargo build --release --locked --bin mutastic
+
+# Runs a share of mutastic's mutants on itself, no threshold: just self-shard 1/28
+[group('ci')]
+self-shard SHARE:
+    {{ self-bin }} run crates/mutastic --shard="$1" --workers=2 --threshold=0 --format=concise --progress=counter
+
+# Puts the shares in DIR together as mutastic's whole run on itself
+[group('ci')]
+self-merge DIR:
+    {{ self-bin }} run crates/mutastic --from-shards="$1" --threshold=0 --format=concise
+
+# Runs mutastic on the terminal crate, whole, no threshold
+[group('ci')]
+self-terminal:
+    {{ self-bin }} run crates/mutastic-terminal --workers=2 --threshold=0 --format=concise --progress=counter
+
+# Checks the justfile's format, and that its verbs are those .github/just-verbs.txt lists
+[group('ci')]
+[script('bash')]
+justfile-check:
+    set -euo pipefail
+    just="{{ just_executable() }}"
+    "$just" --justfile justfile --fmt --check
+    if ! "$just" --justfile justfile --summary | tr ' ' '\n' | diff -u .github/just-verbs.txt -; then
+      echo "The verbs aren't those .github/just-verbs.txt lists (-), but the justfile's (+)." >&2
+      echo "People and agents type them: keep a verb, or say it's gone in the list and the docs." >&2
+      exit 1
+    fi

@@ -55,9 +55,10 @@ jobs:
           NUMBER: ${{ github.event.pull_request.number }}
           COUNT: ${{ github.event.pull_request.changed_files }}
           # What neither reads: the changelog's entries and scripts, the release's check, the
-          # citation, the templates and picture under .github, the workflows other than this one,
-          # and the hooks.
-          UNREAD: '^(changes/.*|scripts/(changelog|test-changelog|release-check)\.sh|CITATION\.cff|\.github/(ISSUE_TEMPLATE/.*|PULL_REQUEST_TEMPLATE\.md|pip\.webp|workflows/(audit|commits|release)\.yml)|\.githooks/.*)$'
+          # citation, the templates and picture under .github, the justfile's verb list (Commits
+          # reads it), the workflows other than this one, and the hooks. The justfile isn't one:
+          # every job here runs the build through it.
+          UNREAD: '^(changes/.*|scripts/(changelog|test-changelog|release-check)\.sh|CITATION\.cff|\.github/(ISSUE_TEMPLATE/.*|PULL_REQUEST_TEMPLATE\.md|pip\.webp|just-verbs\.txt|workflows/(audit|commits|release)\.yml)|\.githooks/.*)$'
         run: |
           code=true
           if [ "$EVENT" = pull_request ] &&
@@ -96,11 +97,14 @@ jobs:
         if: needs.changes.outputs.code == 'true'
         with:
           tool: cargo-llvm-cov
-      - run: cargo fmt --all --check
+      - uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
         if: needs.changes.outputs.code == 'true'
-      - run: cargo clippy --all-targets --locked -- -D warnings
+        with:
+          tool: just@1.59.0
+      # The format, then clippy.
+      - run: just lint
         if: needs.changes.outputs.code == 'true'
-      - run: cargo test --locked
+      - run: just test
         if: needs.changes.outputs.code == 'true'
         env:
           MUTASTIC_DOCS_COVERAGE: "1"
@@ -114,7 +118,8 @@ jobs:
           TITLE: ${{ github.event.pull_request.title }}
 
   # Windows, on its own so the other platforms don't wait for it: clippy, as `#[cfg(windows)]` code
-  # is linted nowhere else, and the tests; format runs above.
+  # is linted nowhere else, and the tests; format runs above. The recipes run in Git Bash's sh, as
+  # the justfile assumes on Windows.
   windows:
     needs: changes
     if: needs.changes.outputs.code == 'true'
@@ -126,8 +131,13 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: cargo clippy --all-targets --locked -- -D warnings
-      - run: cargo test --locked --no-fail-fast
+      - uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
+        with:
+          tool: just@1.59.0
+      - run: just clippy
+        shell: bash
+      - run: just test --no-fail-fast
+        shell: bash
 
   # The oldest toolchain that builds mutastic, as `rust-version` in Cargo.toml says.
   msrv:
@@ -143,4 +153,7 @@ jobs:
         with:
           toolchain: ${{ steps.msrv.outputs.version }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: cargo build --all-targets --locked
+      - uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
+        with:
+          tool: just@1.59.0
+      - run: just msrv
