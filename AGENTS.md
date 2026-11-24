@@ -9,6 +9,10 @@ Use `just <verb>`: `just --list` shows them. Run `just check` before a pull requ
 what CI runs. Call `cargo` directly only when no recipe exists. The words are the same in the Java
 edition, so a command learned here works there.
 
+Releases go through the `release` recipes, in [RELEASING.md](RELEASING.md)'s order. An agent may
+run `release-prepare`, `release-check`, `release-verify` and `candidate`; `release` pushes the tag
+that publishes, and is Brian's alone.
+
 ## Build
 
 ```sh

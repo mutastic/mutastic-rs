@@ -41,6 +41,31 @@ train waits for the next one.
 - **Who decides.** Brian decides a patch. Agents never cut a release on their own: when asked,
   they prepare the release commit.
 
+## The release, in order
+
+Each step is a recipe in `just --list`'s `release` group. **Brian's** publishes, so only Brian runs
+it; an agent may run the rest. The sections below say what each does.
+
+1. `just release-prepare X.Y.Z`, from `main`: the release commit on `release-X.Y.Z` and its pull
+   request, `chore(release): version X.Y.Z`. Read the section and the diff.
+2. `just release-check X.Y.Z` on that branch: ready, or a list of what isn't.
+3. `just candidate`: the native `mutastic` from the release commit over every fixture, then the
+   corpus (`gh workflow run corpus.yml --ref release-X.Y.Z`). Then merge the pull request
+   (`just merge`).
+4. For `X.Y.0`: in the Java repository, `just release-prepare X.Y.0 <this release commit>` moves
+   its docs' pin here, and the Java `X.Y.0` is published with its CLI (its `RELEASING.md`).
+5. **Brian's:** `just release X.Y.Z`, which tags `main`'s release commit and pushes the tag.
+6. **Brian's:** read the draft release and the run's summary, then approve the `publish` job
+   (*Review deployments*): it publishes the draft once it has checked the paired Java release.
+
+`release-verify.yml` then checks the release by itself; `just release-verify X.Y.Z` runs it again.
+
+`just release` asks before it runs (`[confirm]`), but that isn't a safety boundary: `just --yes` or
+`JUST_YES` skips the question, and an agent's permission rules match only a command's text. What
+stands between a tag and a published release is the `release` environment's required reviewer:
+the `publish` job, which undrafts the release, runs only once approved, and refuses while the
+environment has no reviewer.
+
 ## Each release
 
 The release commit's pull request, then the tag, then the summary to read, one approval, and
@@ -91,6 +116,9 @@ The release commit's pull request, then the tag, then the summary to read, one a
    ```
    Before 1.0.0 skip that: anything may change, and there's nothing to hold the next to. Then
    check the commit: `scripts/release-check.sh X.Y.Z` says it's ready, or lists what isn't.
+   `just release-prepare X.Y.Z` (`scripts/release-prepare.sh`) does all of this step, with the
+   pruning of step 1, on a branch, checks it with `release-check --no-build` and opens the pull
+   request; `--dry-run` does it all here and stops before the push.
 3. **Move the docs site's pin** (`docs/rust-edition.json` in the Java repository) to the release
    commit, with `main` green: in the Java repository, `scripts/docs-pin-rust.sh <release commit>`
    sets it and stamps the shared pages whose Rust sources changed (its `RELEASING.md` says what to
@@ -103,6 +131,9 @@ The release commit's pull request, then the tag, then the summary to read, one a
    ```sh
    git tag vX.Y.Z <release commit> && git push origin vX.Y.Z
    ```
+   `just release X.Y.Z`, Brian's, does that (`scripts/release-tag.sh`): it finds the release
+   commit on `main` by its subject, and for `X.Y.0` asks the Java releases' feed first, as the
+   workflow's `java` job does. `--dry-run` on the script checks it all and tags nothing.
    Tagged too early, the workflow's `java` job fails within a minute and builds nothing: once the
    Java release is published, re-run the workflow.
 5. **Read the summary.** The workflow builds and checks every target, drafts the release, and
@@ -135,6 +166,8 @@ fixtures built to. Run it on the release's branch, or locally:
 gh workflow run candidate-run.yml --ref <branch>
 scripts/candidate-run.sh             # --of=N for a smaller share, or name fixtures to run
 ```
+`just candidate` runs the script here, with the same arguments: the machine that prepared the
+release commit checks it, and `gh workflow run` covers a branch from anywhere.
 Don't tag a candidate that fails: its run's summary and artifact say which fixture, and how.
 
 Then run the corpus on the release's branch, real crates each pinned to a commit
@@ -152,7 +185,8 @@ edition it pairs with fetched and run on that release's `samples/pricing`. The p
 it once the draft is published, as a draft published by hand does: look at it in *Actions*. To
 check a release again:
 ```sh
-gh workflow run release-verify.yml -f version=X.Y.Z   # -f java=X.Y.Z for another Java edition
+gh workflow run release-verify.yml -f version=X.Y.Z   # just release-verify X.Y.Z; -f java=X.Y.Z
+                                                      # for another Java edition
 ```
 A failure's summary says what failed and where. Anyone who installed it has it, so fix forward:
 card it, withdraw the release if it can't be used (below), and release `X.Y.Z+1`.
