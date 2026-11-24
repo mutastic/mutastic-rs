@@ -411,6 +411,11 @@ pub fn environment(command: &mut Command, project: &Project) {
         .env("CARGO_TARGET_DIR", project.build_dir())
         .env("RUSTC_WORKSPACE_WRAPPER", wrapper)
         .env(crate::wrapper::MARKER, "1")
+        .env(crate::cfg::RECORD, project.cfg_record())
+        .env(
+            crate::cfg::PACKAGE,
+            project.copy_dir().join(&project.package_dir),
+        )
         .env(
             "CARGO_INCREMENTAL",
             std::env::var("MUTASTIC_INCREMENTAL").unwrap_or_else(|_| "1".into()),

@@ -1,0 +1,13 @@
+[package]
+name = "cfg-off-counted"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+
+[features]
+nope = []
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(my_flag)", "cfg(note, values(\"x\"))"] }

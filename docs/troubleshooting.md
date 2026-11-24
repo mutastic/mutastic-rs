@@ -249,14 +249,20 @@ pub fn is_absolute(path: &str) -> bool {
      Score  100.0%   PASS  Every mutant was caught.
 ```
 
-What's off is decided as the build decides it: the platform's settings come from `rustc --print cfg`
-for the target Cargo builds for (`CARGO_BUILD_TARGET`, and the flags in `RUSTFLAGS`), the features
-from your `Cargo.toml` (the default ones, and what they turn on), and `debug_assertions` is on,
-because mutastic's build turns it on. A `cfg` mutastic can't judge, such as one a build script or
-`RUSTFLAGS` sets (`docsrs`, `tokio_unstable`), counts as built, so its code is still mutated: code
-left out by mistake would hide a gap, where code kept by mistake only shows as not covered. A
-`.cargo/config.toml` that sets the target or the flags isn't read: set them in the environment
-instead.
+What's off is what the build left out. As mutastic's build compiles your package, it asks the same
+rustc which `cfg`s that compile has (`rustc --print cfg`, with the target and every `--cfg` it was
+given: the features Cargo turned on, what your build script printed with `cargo::rustc-cfg`, and
+what `RUSTFLAGS` and `.cargo/config.toml` add), and judges each `cfg` as rustc does: a name nothing
+set is off. So code under `cfg(docsrs)`, `cfg(loom)`, or a build script's `cfg` it didn't set, isn't
+built here, and code under `cfg(not(..))` of them is. `debug_assertions` is on, because mutastic's
+build turns it on, and `cfg(test)` code is test code.
+
+Until a build has said, as on the first run, the platform's settings come from `rustc --print cfg`
+for the target Cargo builds for (`CARGO_BUILD_TARGET`, and the flags in `RUSTFLAGS`) and the
+features from your `Cargo.toml` (the default ones, and what they turn on), and a `cfg` that only a
+build script or flags could set counts as built. Once the build has said, and it left out code
+that was mutated, the mutants are found again with what it said, and built again, before any test
+runs.
 
 To judge the tests of code for another platform, run mutastic on that platform. For a feature,
 make it a default one while you run, or run on a package that turns it on.

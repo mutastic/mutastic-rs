@@ -53,6 +53,14 @@ impl Project {
         self.mutastic_dir().join("target")
     }
 
+    /// Where the wrapper keeps the `cfg`s the package's last build in the copy had: in the build's
+    /// directory, so it goes when the build does.
+    pub fn cfg_record(&self) -> PathBuf {
+        self.build_dir()
+            .join("mutastic-cfg")
+            .join(format!("{}.txt", self.package))
+    }
+
     /// The package as `-p` names it to Cargo in the workspace at `workspace` (the person's, or
     /// mutastic's copy): `path+file:///…/itoa#itoa@1.0.19`. Its name alone is ambiguous when a
     /// dependency pulls the same package from a registry, as itoa's and serde_json's dev-dependencies

@@ -14,8 +14,10 @@ pub fn active(args: &[OsString]) -> bool {
 }
 
 /// Runs rustc with the copy's flags: lints capped, so a `deny(warnings)` in the project doesn't
-/// fail a build whose rewritten code it was never meant to judge.
+/// fail a build whose rewritten code it was never meant to judge. For the package under test, it
+/// first keeps the `cfg`s the compile has, as the build's own word on what code it has.
 pub fn run(args: &[OsString]) -> ExitCode {
+    crate::cfg::record(&args[1..]);
     let mut command = Command::new(&args[1]);
     command.args(&args[2..]).env_remove(MARKER);
     if args.iter().any(|arg| arg == "--crate-name") {
