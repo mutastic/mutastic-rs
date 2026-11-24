@@ -9,11 +9,12 @@ use std::io::{IsTerminal as _, Write as _};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+use crate::amounts::count;
 use crate::engine::{self, Status};
 use crate::report::{self, Style};
 use crate::terminal;
 
-pub use frames::{count, Counts, Phase, View, Worker};
+pub use frames::{Counts, Phase, View, Worker};
 
 /// How progress is shown: `bar`, a live block redrawn in place on a terminal; `counter`, a plain
 /// line at each phase and a heartbeat between, for logs, CI and agents; or `none`.
@@ -418,18 +419,18 @@ impl Inner {
                 let line = format!(
                     "{}{} in one build · {}",
                     frames::word("building"),
-                    frames::count(mutants, "mutant"),
+                    count(mutants, "mutant"),
                     // No more workers than mutants run, as the run starts.
-                    frames::count(self.workers.min(mutants.max(1)), "worker")
+                    count(self.workers.min(mutants.max(1)), "worker")
                 );
                 self.write(state, &line);
             }
-            engine::Progress::Compiling {
+            engine::Progress::Compiling(crate::compile::Compiling {
                 step,
                 round,
                 crates,
                 last,
-            } => {
+            }) => {
                 state.phase = Phase::Building {
                     step: step.to_string(),
                     round,
@@ -504,14 +505,14 @@ impl Inner {
                 let line = format!(
                     "{}{} on rustc {rustc} in {}{} · {}",
                     frames::word("coverage"),
-                    frames::count(tests, "test"),
-                    report::duration(took),
+                    count(tests, "test"),
+                    crate::amounts::duration(took),
                     if flaky == 0 {
                         String::new()
                     } else {
                         format!(" ({flaky} flaky, left out)")
                     },
-                    frames::count(mutants, "mutant")
+                    count(mutants, "mutant")
                 );
                 self.write(state, &line);
             }

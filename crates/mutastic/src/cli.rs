@@ -116,7 +116,7 @@ fn failed(args: &[String], failure: &Failure) -> ExitCode {
     if streams_events(args) {
         stdout_line!(
             "{}",
-            crate::failure::event(&failure, &directory_typed(args), exit)
+            report::run_failed(&failure, &directory_typed(args), exit)
         );
     }
     ExitCode::from(exit)
@@ -1308,7 +1308,7 @@ fn finish(
         let given = std::path::Path::new(&report.project.given);
         // Written empty first, so its path is shown as the reports' are.
         crate::shares::keep(&events, "")?;
-        report.reports.push(report::files::shown(given, &events));
+        report.reports.push(crate::workspace::shown(given, &events));
         report.written.push(report::files::whole(&events));
         // Whole, `run-started` included, even when it went out live.
         // A share is judged with the whole run, not on its own.
@@ -1499,7 +1499,7 @@ fn baseline_command(parsed: &Parsed) -> Result<ExitCode, Failure> {
         stdout_line!(
             "mutastic: {} no test catches {} in {}: commit it. A miss that isn't in it is new: the \
              gate holds only new misses, and next offers them first",
-            crate::progress::count(entries.len(), "mutant"),
+            crate::amounts::count(entries.len(), "mutant"),
             if entries.len() == 1 { "is" } else { "are" },
             baseline::FILE
         );
@@ -1629,7 +1629,7 @@ fn listed(report: &engine::Report) -> Vec<String> {
     report
         .written
         .iter()
-        .map(|file| report::files::shown(given, file))
+        .map(|file| crate::workspace::shown(given, file))
         .collect()
 }
 
@@ -1738,7 +1738,7 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, Failure> {
 fn fate(result: &engine::MutantResult, project: &workspace::Project) -> String {
     match result.status {
             Status::Killed => caught(result, project),
-            Status::Timeout => match crate::limits::at_ceiling(result) {
+            Status::Timeout => match crate::limits::at_ceiling(result.reason.as_deref()) {
                 Some(note) => format!("is caught by a timeout: its tests {note}"),
                 None => "is caught by a timeout".to_string(),
             },
@@ -1845,7 +1845,7 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, Failure> {
     let after = if crate::report::files::is_here(here) {
         String::new()
     } else {
-        format!(" {}", crate::report::shell_word(&dir))
+        format!(" {}", crate::untrusted::shell_word(&dir))
     };
     let command = |words: &[&str]| {
         let words: Vec<String> = words.iter().map(|word| shell(word)).collect();
@@ -2100,7 +2100,7 @@ fn prune(dir: &str) -> Result<ExitCode, Failure> {
         if stale.len() == 1 { "holds" } else { "hold" },
         ids.join(", "),
         from_here(here, ignores::FILE),
-        crate::report::shell_word(&from_here(here, ignores::FILE))
+        crate::untrusted::shell_word(&from_here(here, ignores::FILE))
     );
     Ok(ExitCode::SUCCESS)
 }
@@ -2109,7 +2109,7 @@ fn prune(dir: &str) -> Result<ExitCode, Failure> {
 /// single quotes, where nothing in it is run, and with what can't be seen escaped. As the Java
 /// edition's `Invocation.quoted`.
 fn shell(word: &str) -> String {
-    crate::report::shell_word(word)
+    crate::untrusted::shell_word(word)
 }
 
 /// `gate open`, `gate check` or `gate close`, as the Java edition's: see [`gate`].
@@ -2891,7 +2891,7 @@ fn mutants(parsed: &Parsed) -> Result<ExitCode, Failure> {
     for estimate in &estimates {
         stdout_line!("{estimate}");
     }
-    stdout_line!("{}", crate::progress::count(listed.len(), "mutant"));
+    stdout_line!("{}", crate::amounts::count(listed.len(), "mutant"));
     // What wasn't mutated is counted over the package, not the lines `--at` asked for.
     if !parsed.at.is_empty() {
         return Ok(ExitCode::SUCCESS);

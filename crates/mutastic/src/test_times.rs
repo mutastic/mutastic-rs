@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use sha2::{Digest, Sha256};
 
-use crate::progress::count;
+use crate::amounts::count;
 use crate::sites::{Crate, Mutant};
 
 /// The file's name, in the work directory.
@@ -209,7 +209,7 @@ impl TestTimes {
         format!(
             "estimate: {} than {base}, up to {} more of tests, from {source}",
             count(extra.len(), "more mutant"),
-            crate::report::duration(more)
+            crate::amounts::duration(more)
         )
     }
 
@@ -220,7 +220,7 @@ impl TestTimes {
         format!(
             "estimate: {name}, {}, up to {} of tests, from {}",
             count(mutants.len(), "mutant"),
-            crate::report::duration(total),
+            crate::amounts::duration(total),
             self.source()
         )
     }

@@ -35,7 +35,7 @@ pub fn noticed(clock: Duration, awake: Duration) -> Duration {
 pub fn line(slept: Duration) -> String {
     format!(
         "The machine slept for {} during the run, which Duration leaves out.",
-        crate::report::duration(slept)
+        crate::amounts::duration(slept)
     )
 }
 

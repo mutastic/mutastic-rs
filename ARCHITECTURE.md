@@ -112,6 +112,28 @@ the unsafe code there. It's `publish = false`, as `mutastic` is.
 `crates/cargo-mutastic` and `crates/mutastic-rs` hold the other two names reserved on crates.io.
 They're empty, and `publish = false`.
 
+## Layers
+
+All of mutastic is one crate, so nothing in Cargo stops the engine from reaching up into the
+report, or the project's model from reaching into the engine; and once one module reaches up, the
+two can only change together. So each module is in a layer, and uses only the modules in its own
+layer and those below it. Modules in one layer may use each other. `tests/layers.rs` reads this
+table and every `crate::` path in each module's files, and fails on one that reaches up, naming
+the file and line, and on a module the table doesn't place. A new module goes in the lowest layer
+that has everything it uses.
+
+| Layer | Modules | What they are |
+|---|---|---|
+| command | `cli`, `environment`, `gate`, `gate_budget`, `gate_count` | The commands, the variables that stand in for options, and `gate`, which holds an agent's task |
+| output | `report`, `progress`, `nextrun`, `records`, `help`, `operator_docs` | What a run prints and writes: the formats, the progress line, `next`'s queue, help and the operators' docs |
+| run | `engine`, `guard`, `suggest`, `baseline`, `cases`, `flaky`, `record`, `shares` | A run: coverage, the mutants side by side, the false-catch guard, suggested tests, and what a run keeps and compares |
+| build and tests | `compile`, `testrun`, `schema`, `wrapper`, `test_times`, `test_files`, `words`, `origin`, `at` | The one build, the test binaries and their times, and what a card says of a mutant |
+| project | `workspace`, `sites`, `arid`, `callrules`, `cfg`, `config`, `edition`, `locate`, `properties`, `java`, `since` | The package, its mutants, its settings and the frameworks it uses |
+| base | `failure`, `commands`, `mistyped`, `ignores`, `similar`, `untrusted`, `amounts`, `id`, `limits`, `slept` | Errors, the commands' declarations, and text, ids and times as mutastic writes them |
+
+`commands` is in the base, not beside `cli`: every error that names an option, and the help, read
+its declarations.
+
 ## What it shares with the Java edition
 
 The two editions share a contract, not code: the operators' ids (`mutastic/boundary` means the same
@@ -132,6 +154,7 @@ editions' contract names. Every event says `"edition": "rust"`. Where the editio
 | `tests/shares.rs` | Two shares of the pricing fixture, put back together, are the whole run, in every format; shares that aren't one run's are refused |
 | `tests/ids.rs` | Every mutant of every fixture, under every operator, held to `tests/ids/ids.tsv` |
 | `tests/contract.rs` | The editions' contract, pinned from the Java repository by the newest of `contract/pins`: the command line, help, error codes, the summary, the agent format, events and mutation.json, each as the contract says or a recorded difference |
+| `tests/layers.rs` | Each module uses only its own layer and those below, as [Layers](#layers) has them |
 | `tests/docs.rs` | Every output block in the docs and the README is what mutastic prints; every link, command, id and Rust example in them is checked; every missed card on the operators fixture is true |
 
 `fixtures/` holds the crates they run on, each a package of its own outside mutastic's workspace:

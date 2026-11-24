@@ -16,7 +16,6 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use crate::engine::Progress;
 use crate::failure::{Code, Failure};
 use crate::schema::{self, Emitted};
 use crate::sites::Crate;
@@ -25,6 +24,15 @@ use crate::workspace::{self, Overrides, Project};
 /// The rounds a build may take before giving up. Generous: a round is a warm rebuild, and
 /// stopping early loses the whole run.
 pub const MAX_ROUNDS: usize = 100;
+
+/// Where Cargo is in a build: its step (`check` or `build`), the round, the crates finished in it,
+/// and its latest `Checking`/`Compiling` line.
+pub struct Compiling<'a> {
+    pub step: &'a str,
+    pub round: usize,
+    pub crates: usize,
+    pub last: &'a str,
+}
 
 #[derive(Clone, Debug)]
 pub struct Round {
@@ -67,7 +75,7 @@ pub fn build(
     found: &Crate,
     live: &BTreeSet<usize>,
     recorders: &BTreeSet<usize>,
-    progress: &(dyn Fn(Progress) + Sync),
+    progress: &(dyn Fn(Compiling) + Sync),
 ) -> Result<Built, Failure> {
     let mut live = live.clone();
     let mut probes: BTreeSet<usize> = recorders
@@ -157,7 +165,7 @@ fn cargo(
     project: &Project,
     phase: &'static str,
     round: usize,
-    progress: &(dyn Fn(Progress) + Sync),
+    progress: &(dyn Fn(Compiling) + Sync),
 ) -> Result<(bool, String), Failure> {
     let mut command = Command::new(workspace::cargo());
     match phase {
@@ -185,7 +193,7 @@ fn cargo(
         if let Ok(mut seen) = seen.lock() {
             seen.0 = crates.map_or(seen.0, |more| seen.0 + more);
             seen.1 = last.unwrap_or_else(|| seen.1.clone());
-            progress(Progress::Compiling {
+            progress(Compiling {
                 step: phase,
                 round,
                 crates: seen.0,
@@ -232,7 +240,7 @@ fn unbuilt(project: &Project, copy_errors: &[String]) -> Failure {
              mutastic, not in your code. The copy is in {copy}. Its first error:\n{first}\n\
              To report it, with the error above:\n  https://github.com/mutastic/mutastic-rs/issues",
             package = project.package,
-            copy = crate::report::files::shown(
+            copy = crate::workspace::shown(
                 &std::env::current_dir().unwrap_or_else(|_| project.workspace.clone()),
                 &project.copy_dir()
             ),

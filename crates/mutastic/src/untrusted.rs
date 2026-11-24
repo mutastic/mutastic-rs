@@ -183,6 +183,23 @@ pub fn code_fence(code: &str) -> String {
     "`".repeat((longest + 1).max(3))
 }
 
+/// A directory, or another word typed into a command mutastic offers, as a shell takes it: as it
+/// is when it's plain (letters, digits and `_./:@%+=,-`, and on Windows `\` and `~`), else in
+/// single quotes, a quote in it written `'\''`, and what can't be seen [`escape`]d.
+/// As the Java edition's `Invocation.quoted`.
+pub fn shell_word(word: &str) -> String {
+    let plain = |c: char| {
+        c.is_ascii_alphanumeric()
+            || "_./:@%+=,-".contains(c)
+            || (cfg!(windows) && (c == '\\' || c == '~'))
+    };
+    if !word.is_empty() && word.chars().all(plain) {
+        word.to_string()
+    } else {
+        format!("'{}'", escape(word).replace('\'', "'\\''"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

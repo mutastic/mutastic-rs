@@ -298,7 +298,7 @@ impl Shares {
                     "{} didn't finish: its events stop before run-finished, after {}; run that share \
                      again",
                     read.named(),
-                    crate::progress::count(read.results.len(), "mutant")
+                    crate::amounts::count(read.results.len(), "mutant")
                 ));
             }
             if let Some(partial) = read.partial() {

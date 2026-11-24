@@ -525,6 +525,20 @@ pub fn slashed(path: &Path) -> String {
     }
 }
 
+/// `target/mutastic/mutation.json`, from `given`, or the whole path when it's outside.
+pub fn shown(given: &Path, file: &Path) -> String {
+    // As given first: on Windows a path that isn't there yet can't be made real, and the real
+    // directory it's in is a `\\?\` path it would never match.
+    if let Ok(inside) = file.strip_prefix(given) {
+        return slashed(inside);
+    }
+    let real = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    match real(file).strip_prefix(real(given)) {
+        Ok(inside) => slashed(inside),
+        Err(_) => file.display().to_string(),
+    }
+}
+
 pub fn write_if_changed(path: &Path, text: &str) -> std::io::Result<()> {
     if std::fs::read_to_string(path).ok().as_deref() != Some(text) {
         if let Some(parent) = path.parent() {

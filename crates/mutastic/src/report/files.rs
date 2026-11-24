@@ -161,7 +161,7 @@ pub fn from_here(file: &Path) -> String {
     let file = whole(file);
     match std::env::current_dir() {
         Ok(here) if real(&file) != real(&here) => {
-            let shown = shown(&here, &file);
+            let shown = crate::workspace::shown(&here, &file);
             if Path::new(&shown).is_absolute() {
                 file.display().to_string()
             } else {
@@ -212,20 +212,6 @@ pub fn is_here(dir: &Path) -> bool {
 
 fn real(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
-}
-
-/// `target/mutastic/mutation.json`, from `given`, or the whole path when it's outside.
-pub fn shown(given: &Path, file: &Path) -> String {
-    // As given first: on Windows a path that isn't there yet can't be made real, and the real
-    // directory it's in is a `\\?\` path it would never match.
-    if let Ok(inside) = file.strip_prefix(given) {
-        return crate::workspace::slashed(inside);
-    }
-    let real = |path: &Path| std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    match real(file).strip_prefix(real(given)) {
-        Ok(inside) => crate::workspace::slashed(inside),
-        Err(_) => file.display().to_string(),
-    }
 }
 
 /// The report-schema document. Statuses are the schema's (`Killed`, `Survived`, …); locations are
@@ -466,7 +452,7 @@ fn status_reason(result: &MutantResult, headline: &str) -> String {
         Status::Ignored | Status::RuntimeError => result.reason.clone().unwrap_or_default(),
         Status::Killed => result.killed_with.clone().unwrap_or_default(),
         Status::Survived => headline.to_string(),
-        Status::Timeout => match crate::limits::at_ceiling(result) {
+        Status::Timeout => match crate::limits::at_ceiling(result.reason.as_deref()) {
             Some(note) => format!("the tests {note}"),
             None => "the tests didn't finish in time".into(),
         },

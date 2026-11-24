@@ -117,21 +117,17 @@ pub fn parse_ceiling(text: &str) -> Result<Duration, String> {
 pub fn ceiling_note(ceiling: Duration) -> String {
     format!(
         "{CEILING}ran for the most a mutant's tests may, {} (timeout-ceiling:)",
-        crate::report::duration(ceiling)
+        crate::amounts::duration(ceiling)
     )
 }
 
 /// What starts a ceiling's note.
 const CEILING: &str = "ceiling: ";
 
-/// What a mutant timed out at the ceiling says of its tests, `ran for the most a mutant's tests
-/// may, 10m00s (timeout-ceiling:)`; none for any other.
-pub fn at_ceiling(result: &crate::engine::MutantResult) -> Option<&str> {
-    result
-        .reason
-        .as_deref()
-        .filter(|_| result.status == crate::engine::Status::Timeout)
-        .and_then(|reason| reason.strip_prefix(CEILING))
+/// What a timed-out mutant's reason says of its tests when the ceiling stopped them, `ran for the
+/// most a mutant's tests may, 10m00s (timeout-ceiling:)`; none when they stopped finishing in time.
+pub fn at_ceiling(reason: Option<&str>) -> Option<&str> {
+    reason.and_then(|reason| reason.strip_prefix(CEILING))
 }
 
 #[cfg(test)]

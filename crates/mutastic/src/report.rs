@@ -7,11 +7,13 @@ use std::ops::Range;
 
 use serde_json::{json, Value};
 
+use crate::amounts::duration;
 use crate::engine::{MutantResult, Report, Status};
+use crate::failure::Failure;
 use crate::ignores;
 use crate::sites::{self, Change, Crate, Mutant};
 use crate::suggest::{self, SuggestedTest};
-use crate::untrusted;
+use crate::untrusted::{self, shell_word};
 use crate::words::{self, Advice};
 
 pub mod audit;
@@ -732,23 +734,6 @@ pub fn next_command(dir: &str) -> String {
     format!("mutastic next {}", shell_word(dir))
 }
 
-/// A directory, or another word typed into a command mutastic offers, as a shell takes it: as it
-/// is when it's plain (letters, digits and `_./:@%+=,-`, and on Windows `\` and `~`), else in
-/// single quotes, a quote in it written `'\''`, and what can't be seen [`untrusted::escape`]d.
-/// As the Java edition's `Invocation.quoted`.
-pub fn shell_word(word: &str) -> String {
-    let plain = |c: char| {
-        c.is_ascii_alphanumeric()
-            || "_./:@%+=,-".contains(c)
-            || (cfg!(windows) && (c == '\\' || c == '~'))
-    };
-    if !word.is_empty() && word.chars().all(plain) {
-        word.to_string()
-    } else {
-        format!("'{}'", untrusted::escape(word).replace('\'', "'\\''"))
-    }
-}
-
 /// Where an entry stands in the order a run ranks its misses, as the Java edition's `Finding.ranked`
 /// orders them and `mutastic next` queues them.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -959,16 +944,37 @@ fn percent(score: Option<f64>) -> String {
     score.map_or("none".into(), |s| format!("{s:.1}%"))
 }
 
-/// `340ms`, `2.1s`, `1m39s`, as the Java edition writes them.
-pub fn duration(took: std::time::Duration) -> String {
-    let millis = took.as_millis();
-    if millis < 1000 {
-        format!("{millis}ms")
-    } else if millis < 60_000 {
-        format!("{:.1}s", millis as f64 / 1000.0)
-    } else {
-        format!("{}m{:02}s", millis / 60_000, (millis / 1000) % 60)
-    }
+/// The `run-failed` event for `failure`, whose message mutastic prints after `mutastic: `, which
+/// ended a command run on `directory`, as typed, with `exit` as its status.
+pub fn run_failed(failure: &Failure, directory: &str, exit: u8) -> Value {
+    let message = failure.message.as_str();
+    // Windows canonicalizes to a verbatim path, `\\?\C:\…`, which no one types.
+    let path = std::fs::canonicalize(directory).ok().map(|path| {
+        let shown = crate::workspace::slashed(&path);
+        shown
+            .strip_prefix("//?/")
+            .map_or_else(|| shown.clone(), str::to_string)
+    });
+    let help: Vec<Value> = crate::failure::help(message)
+        .into_iter()
+        .map(|command| {
+            json!({
+                "applicability": crate::failure::applicability(&command, message),
+                "command": command,
+            })
+        })
+        .collect();
+    json!({
+        "schema": SCHEMA,
+        "edition": EDITION,
+        "reason": "run-failed",
+        "code": failure.code.name(),
+        "message": message.lines().next().unwrap_or_default(),
+        "where": {"directory": directory, "path": path},
+        "help": help,
+        "exitCode": exit,
+        "rendered": format!("mutastic: {message}\n"),
+    })
 }
 
 /// The whole result in `format`.
@@ -2003,7 +2009,7 @@ fn counted(report: &Report, words: Vocabulary) -> String {
         (report.count(Status::Ignored), "skipped"),
         (report.count(Status::RuntimeError), "crashed"),
     ];
-    std::iter::once(crate::progress::count(report.results.len(), "mutant"))
+    std::iter::once(crate::amounts::count(report.results.len(), "mutant"))
         .chain(
             fates
                 .iter()
@@ -2618,7 +2624,7 @@ fn agent(report: &Report, style: Style) -> String {
         words.not_covered(),
         report.count(Status::Killed) + report.count(Status::Timeout),
         words.detected(),
-        crate::progress::count(report.results.len() - skipped, "mutant"),
+        crate::amounts::count(report.results.len() - skipped, "mutant"),
         if skipped == 0 {
             String::new()
         } else {
@@ -3504,7 +3510,7 @@ fn explained_result(report: &Report) -> Option<&MutantResult> {
 /// How a timed-out mutant's tests ran out of time: they stopped finishing in time, or ran for as
 /// long as the ceiling lets one mutant's tests run ([`crate::limits`]).
 pub fn timed_out(result: &MutantResult) -> String {
-    match crate::limits::at_ceiling(result) {
+    match crate::limits::at_ceiling(result.reason.as_deref()) {
         Some(note) => format!("its tests {note}"),
         None => "its tests stopped finishing in time".to_string(),
     }
@@ -3879,6 +3885,35 @@ pub fn explained_jsonl(report: &Report, last: Option<LastRun>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A failed run's event says its code, its first line, where it ran, and each command its
+    /// message offers, with whether it runs as it is.
+    #[test]
+    fn a_failed_run_is_an_event_with_its_commands() {
+        use crate::failure::Code;
+
+        let bug =
+            "internal error: index out of bounds, at src/engine.rs:12. That's a bug in mutastic";
+        let event = run_failed(&Code::Internal.with(bug), ".", 2);
+        assert_eq!(event["code"], "internal");
+        assert_eq!(event["help"], json!([]));
+        let guessed = "run has no option --formt. There's one called --format.\n  mutastic run --format=agent";
+        let event = run_failed(&Code::UnknownOption.with(guessed), "no/such/dir", 2);
+        assert_eq!(event["code"], "unknown-option");
+        assert_eq!(
+            event["message"],
+            "run has no option --formt. There's one called --format."
+        );
+        assert_eq!(
+            event["help"],
+            json!([{"command": "mutastic run --format=agent", "applicability": "maybe"}])
+        );
+        assert_eq!(
+            event["where"],
+            json!({"directory": "no/such/dir", "path": null})
+        );
+        assert_eq!(event["rendered"], format!("mutastic: {guessed}\n"));
+    }
 
     /// `MUTASTIC_PILLS` draws labels as the Java edition's `Style` does: square, rounded ends in
     /// the label's colour, or only the words in it.
