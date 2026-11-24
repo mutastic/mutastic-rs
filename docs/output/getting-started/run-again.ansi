@@ -3,8 +3,8 @@
  [2m  Mutants[0m  [32m✓ [1m11 caught[0m[0m[2m (11)[0m
  [2m    Build[0m  one build of every mutant, 2 rounds (check and build)
  [2mTest runs[0m  14[2m (44 without coverage selection)[0m
- [2m Start at[0m  01:27:49
- [2m Duration[0m  2.4s [2m(setup 1.4s, build 981ms, coverage 7ms, mutants 42ms)[0m
- [2m    Tests[0m  4 on rustc 1.94.0 · 4 workers
+ [2m Start at[0m  18:54:27
+ [2m Duration[0m  416ms [2m(setup 28ms, build 347ms, coverage 3ms, mutants 10ms, reports 2ms)[0m
+ [2m    Tests[0m  4 on rustc 1.99.1 · 4 workers
  [2m  Reports[0m  fixtures/pricing/target/mutastic/mutation.json[2m · [0mfixtures/pricing/target/mutastic/mutation.html
  [2m    Score[0m  [32m[1m100.0%[0m[0m  [42;30;1m PASS [0m [32mEvery mutant was caught.[0m  [32m▲ 9.1 vs last run[0m[2m (code changed)[0m

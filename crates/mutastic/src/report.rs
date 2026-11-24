@@ -2191,6 +2191,9 @@ fn phases(report: &Report) -> String {
     if let Some(checking) = report.checking {
         parts.push(format!("checking {}", duration(checking)));
     }
+    if let Some(reporting) = report.reporting {
+        parts.push(format!("reports {}", duration(reporting)));
+    }
     parts.join(", ")
 }
 

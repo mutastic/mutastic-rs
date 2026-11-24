@@ -127,6 +127,8 @@ pub struct Report {
     pub mutants: Duration,
     /// Checking each catch on the code as it is, after the mutants, when there was a miss.
     pub checking: Option<Duration>,
+    /// Writing the report files, after the run, when there were any to write: `took` counts it.
+    pub reporting: Option<Duration>,
     /// Whether `run-started` and each `mutant-finished` went out live, with the run's progress,
     /// rather than with the rest.
     pub streamed: bool,
@@ -726,6 +728,7 @@ pub fn run(
         coverage: coverage_took,
         mutants: mutants_took,
         checking,
+        reporting: None,
         streamed: false,
         took,
         slept: crate::slept::since(started_wall, took),
@@ -884,6 +887,7 @@ fn nothing_to_run(
         coverage: Duration::ZERO,
         mutants: Duration::ZERO,
         checking: None,
+        reporting: None,
         streamed: false,
         took: setup,
         slept: crate::slept::since(unbuilt.started_wall, setup),
