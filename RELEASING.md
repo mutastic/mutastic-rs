@@ -14,6 +14,32 @@ either edition: a Rust `X.Y.1` keeps running the newest Java `X.Y.*`, and a Java
 everyone on Rust `X.Y.*` within a day, as `mutastic` looks up the Java releases at most once a
 day.
 
+## The release train
+
+From 1.4.0, a minor release leaves every second Tuesday, both editions together for `X.Y.0`, the
+Java edition first, then this one, as above; the Java edition's
+[RELEASING.md](https://github.com/mutastic/mutastic/blob/main/RELEASING.md#the-release-train) has
+this same section. Tuesday is a proposal: the day is Brian's to change. A change that misses a
+train waits for the next one.
+
+- **The cut-off.** A train takes the `changes/` entries merged by the day before it.
+- **The gates.** It leaves only when this repository's nightly corpus (`corpus.yml`) is green, the
+  Java edition's corpus to come; `scripts/release-check.sh X.Y.0` passes in both editions
+  ([Each release](#each-release)); and the candidate run passes (`candidate-run.yml`,
+  [Before tagging](#before-tagging)).
+- **A release candidate,** `vX.Y.0-rc1`, is a GitHub pre-release only, never a Central release:
+  each one costs about 244 files of Central's monthly budget. The native `mutastic` already skips
+  `-rc` tags, as they aren't plain versions ([A bad Java patch](#a-bad-java-patch)), so nobody is
+  moved onto one. Here its tag starts no release workflow, which takes only `vX.Y.Z` tags, and
+  `release-verify.yml` skips a pre-release.
+- **Patches,** between trains, only for a regression or a security fix, never a feature.
+- **Central's budget.** This edition has nothing on Central, but its `X.Y.0` waits on the Java
+  edition's. Before a second release in a month, check the
+  [Usage Center](https://central.sonatype.com/publishing/usage). Before an urgent release that
+  would go over a limit, write to central-support first.
+- **Who decides.** Brian decides a patch. Agents never cut a release on their own: when asked,
+  they prepare the release commit.
+
 ## Each release
 
 1. **Check the promises** ([Compatibility](docs/reference/compatibility.md)). The tests already fail
