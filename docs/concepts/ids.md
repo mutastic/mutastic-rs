@@ -61,7 +61,7 @@ in your line with the id corrected:
 
 <!-- output: concepts/unknown-id -->
 ```text
-mutastic 1.2.1 · reading the Cargo package…
+mutastic 1.3.1 · reading the Cargo package…
 mutastic: m00000000 isn't a mutant of pricing. To see its mutants:
   mutastic mutants fixtures/pricing
 ```

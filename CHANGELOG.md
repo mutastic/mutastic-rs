@@ -8,6 +8,54 @@ newest come first.
 What's merged since the last release waits in [`changes/`](changes/), one file for each entry,
 until the next release gathers it here.
 
+## 1.3.1 (2026-11-23)
+
+### Security
+
+- **The summary's `Reports` row escapes what can't be seen in a path.** A report's path with an ANSI
+  escape or a bidi control in it went to the terminal as it was, free to rewrite the screen; it's
+  now shown escaped, as every other value from the project is.
+- **The agent format quotes a cfg the build doesn't have inside the fence.** A cfg's value is free
+  text, so `#[cfg(target_os = "…")]` could put a sentence of the project's on the `not built here:`
+  line, which came before `<<mutastic-data …>>`, where an agent reads mutastic's own words. The
+  line is now inside the fence, which opens for it alone when nothing was missed
+  ([docs/concepts/output.md](docs/concepts/output.md#agent-output-and-untrusted-text)). The person's
+  format and `mutastic mutants` show it as before.
+
+### Changes
+
+- **Patches may correct a score upward, and never lower one.** A patch release used to promise
+  never to move a score. It now promises never to lower a score, never to add a mutant and never
+  to turn a passing run into a failing one: the one score change it may make is a correction that
+  drops mutants that could never run, such as code the build never compiles counted by mistake, so
+  a score can only rise. Its changelog lists each under a new section, *Score corrections*.
+  Anything else that moves a score still waits for a minor release's *Scoring changes*. See
+  [Compatibility](docs/reference/compatibility.md#scores).
+
+### Fixes
+
+- **The agent format names the report files a run wrote.** It never said there were any, so an
+  agent took it there was no report and ran again with `--report=html`. A `reports:` line after the
+  verdict names them as the summary's Reports row does,
+  `reports: target/mutastic/mutation.json · target/mutastic/mutation.html`, and with `--report=none`
+  there's no such line.
+- **A run with `--only` says it writes no report when one is asked for.** `--report` with `--only`
+  was passed over in silence, so a person or an agent asking for `mutation.json` got none and no
+  reason. A note on stderr now says why: a run of some mutants says nothing about the rest. The
+  exit code is as it was.
+- **Writing the reports takes as long as the tests are many, not their square, and the run's
+  Duration counts it.** Each test that covers a mutant is placed in its file for
+  `mutation.json` and the HTML report, and each was found by reading and parsing its file again:
+  with typenum's 1,800 tests, the reports took 74 of the run's 80 seconds, while the Duration row
+  said 6.1s. Each file is now read once per report, and the Duration row has a `reports` phase, in
+  its total.
+- **A package whose name a dependency also has, from crates.io, is built.** When a dev-dependency
+  pulls the package itself from crates.io, as itoa's and serde_json's do through criterion and
+  trybuild, Cargo has two packages of that name, and the bare `-p itoa` that mutastic built with
+  was ambiguous: the run stopped with `build-failed` before any mutant ran. mutastic now names the
+  package by its spec, `path+file:///…/itoa#itoa@1.0.19`, and so does a command it shows when the
+  name alone would be ambiguous.
+
 ## 1.3.0 (2026-11-23)
 
 ### Card changes
