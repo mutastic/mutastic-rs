@@ -77,7 +77,9 @@ day.
 5. **Read the draft release the workflow makes** (each target's archive, `SHA256SUMS` and Scoop's
    `mutastic.json`), then publish it. Its notes are the release's section of `CHANGELOG.md`
    (`scripts/changelog.sh notes X.Y.Z`): a tag whose commit has no section fails within a minute,
-   before anything is built.
+   before anything is built. The job that drafts it runs in the `release` environment, so once
+   that has a required reviewer, approve the run (*Review deployments*) for the draft to appear.
+   Every asset is attested before the draft is made ([Checking a download](#checking-a-download)).
 
 ## Before tagging
 
@@ -95,15 +97,27 @@ Don't tag a candidate that fails: its run's summary and artifact say which fixtu
 
 `release-verify.yml` checks the release as a person gets it, on Linux, macOS and Windows, on a
 machine that never had mutastic: installed by the `install.sh` and `install.ps1` mutastic.io
-serves and from Scoop's `mutastic.json`, each asset held to GitHub's record of it, `mutastic
---version` naming both editions, a run on `fixtures/pricing`, and the Java edition it pairs with
-fetched and run on that release's `samples/pricing`. It starts on its own when the draft is
+serves and from Scoop's `mutastic.json`, each asset held to GitHub's record of it and to its
+attestation, `mutastic --version` naming both editions, a run on `fixtures/pricing`, and the Java
+edition it pairs with fetched and run on that release's `samples/pricing`. It starts on its own when the draft is
 published: look at it in *Actions*. To check a release again:
 ```sh
 gh workflow run release-verify.yml -f version=X.Y.Z   # -f java=X.Y.Z for another Java edition
 ```
 A failure's summary says what failed and where. Anyone who installed it has it, so fix forward:
 card it, withdraw the release if it can't be used (below), and release `X.Y.Z+1`.
+
+## Checking a download
+
+`SHA256SUMS` is made beside the archives, so a file swapped along with it still matches. Each
+asset of every release after 1.3.1 is also attested: GitHub's signed record that the release
+workflow built it, at the release's tag. Check one with the GitHub CLI:
+```sh
+gh attestation verify mutastic-X.Y.Z-<target>.tar.gz --repo mutastic/mutastic-rs
+```
+`--signer-workflow mutastic/mutastic-rs/.github/workflows/release.yml --source-ref
+refs/tags/vX.Y.Z` holds it to that workflow and tag, as `release-verify.yml` does, and
+`--predicate-type https://cyclonedx.org/bom` checks the archive's SBOM attestation instead.
 
 ## Withdrawing a release
 

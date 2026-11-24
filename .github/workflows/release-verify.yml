@@ -3,8 +3,9 @@
 # a machine that never had mutastic. The installed command must say it's this release, run a crate
 # (fixtures/pricing, as the release's tag has it), and, as the front door to the Java edition, fetch
 # the Java release it pairs with and run it on that release's samples/pricing, printing the score
-# line its PricingSampleTest expects. Every asset is held to GitHub's record of it, too. The
-# release workflow checks the archives before they're a release; this checks what people download.
+# line its PricingSampleTest expects. Every asset is held to GitHub's record of it, too, and to its
+# attestation from release.yml at the release's tag. The release workflow checks the archives
+# before they're a release; this checks what people download.
 #
 # It starts on its own when a release is published. Run by hand, it checks one already out:
 #   gh workflow run release-verify.yml -f version=X.Y.Z [-f java=X.Y.Z]
@@ -37,6 +38,10 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      # `gh attestation verify`, which reads the release's attestations.
+      attestations: read
     outputs:
       version: ${{ steps.version.outputs.version }}
       java: ${{ steps.version.outputs.java }}
