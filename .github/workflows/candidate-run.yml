@@ -10,9 +10,6 @@
 name: Candidate run
 
 on:
-  # TEMPORARY: to try it before it's on main; taken out before review.
-  push:
-    branches: [ci/release-verify]
   workflow_dispatch:
     inputs:
       of:
