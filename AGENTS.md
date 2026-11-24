@@ -25,7 +25,7 @@ just run run fixtures/pricing
 
 `just ci` is what CI runs: the checks, on Linux and macOS; a build on the oldest toolchain
 `rust-version` names (`just msrv`); and the dependencies checked with cargo-deny (`just audit`,
-`deny.toml`).
+`deny.toml`). Each CI job calls the recipes, so a job runs here as it runs there.
 
 ## Code conventions
 

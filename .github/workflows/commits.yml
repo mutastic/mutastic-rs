@@ -77,6 +77,9 @@ jobs:
   # A release, "chore(release): version X.Y.Z", is checked as one before it can merge, by
   # scripts/release-check.sh: here what takes seconds, the changelog's rules for that version, the
   # version and the contract's pins; the ids, which need a build, in ci.yml.
+  #
+  # And the justfile, whose recipes CI runs: formatted as `just --fmt` writes it, and with the
+  # verbs .github/just-verbs.txt lists, so none goes or comes unseen.
   changelog:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -84,7 +87,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - run: sh scripts/changelog.sh check "$BASE" "$HEAD_SHA" "$TITLE"
+      - uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
+        with:
+          tool: just@1.59.0
+      - run: just justfile-check
+      - run: just changelog-check "$BASE" "$HEAD_SHA" "$TITLE"
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
