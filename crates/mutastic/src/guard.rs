@@ -139,7 +139,13 @@ pub(crate) fn run_again_without(
         let before = &results[index];
         revised.false_catch_by = before.false_catch_by.clone();
         revised.flaky_catch_by = before.flaky_catch_by.clone();
-        if let Some(test) = caught_by_one_of(before, failing) {
+        // A catch that didn't repeat failed against the mutant once all the same, as the Java
+        // edition marks it.
+        let unconfirmed = before
+            .unconfirmed
+            .clone()
+            .filter(|test| failing.contains(test));
+        if let Some(test) = caught_by_one_of(before, failing).or(unconfirmed) {
             marked(&mut revised, &test);
         }
         first.entry(index).or_insert_with(|| before.clone());

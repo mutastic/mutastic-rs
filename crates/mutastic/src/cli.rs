@@ -1222,6 +1222,15 @@ fn history(
     })
 }
 
+/// `options` confirming each catch a watched test makes [`crate::watch::CONFIRMATIONS`] more times,
+/// as every command that runs mutants does (decision 27). Only `run` of every mutant compares with
+/// the last run's results too ([`history`]); none but `run` writes the watch.
+fn watching(options: &mut Options, project: &workspace::Project) {
+    options.history.watched = crate::watch::read(&project.mutastic_dir())
+        .into_keys()
+        .collect();
+}
+
 /// The watch of likely flaky tests after `report` (decision 27), and what became of each test it
 /// watched: a full run of the package, or the `--from-shards` merge, keeps the watch it leaves; a
 /// share or a run of some mutants confirms against it and leaves it as it was.
@@ -1547,9 +1556,9 @@ fn baseline_command(parsed: &Parsed) -> Result<ExitCode, Failure> {
     let progress = start(parsed, false);
     let project = workspace::read(dir)?;
     progress.package(&project.package);
-    let report = engine::run(&project, &options(parsed, Vec::new()), &|step| {
-        progress.step(step)
-    })?;
+    let mut options = options(parsed, Vec::new());
+    watching(&mut options, &project);
+    let report = engine::run(&project, &options, &|step| progress.step(step))?;
     progress.finished();
     if parsed.prune {
         let caught = baseline::caught_now(&report, &baseline::ids(here));
@@ -1673,6 +1682,8 @@ fn next_pass(
             since,
         )?);
     }
+    // A watched test's catches are confirmed here as in `run`; `next` keeps no watch of its own.
+    watching(&mut options, project);
     let mut report = engine::run(project, &options, &|step| progress.step(step))?;
     progress.finished();
     if whole && report.scope.is_none() && report.built {
@@ -1764,9 +1775,7 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, Failure> {
     progress.package(&project.package);
     let mut options = options(parsed, only.clone());
     // A watched test's catches are confirmed here too, so `verify` never passes on a lucky one.
-    options.history.watched = crate::watch::read(&project.mutastic_dir())
-        .into_keys()
-        .collect();
+    watching(&mut options, &project);
     let report = engine::run(&project, &options, &|step| progress.step(step))?;
     progress.finished();
     let mut settled = true;
@@ -1786,11 +1795,11 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, Failure> {
                 "mutastic: {} is the same as {}, which {}",
                 mutant.id,
                 report.found.mutants[runs.mutant].id,
-                fate(runs, &report.project)
+                fate(runs, &report)
             );
         } else if only.contains(&mutant.id) {
             settled &= result.status.settled();
-            stdout_line!("mutastic: {} {}", mutant.id, fate(result, &report.project));
+            stdout_line!("mutastic: {} {}", mutant.id, fate(result, &report));
         }
     }
     if !report.failing_alone().is_empty() {
@@ -1805,7 +1814,10 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, Failure> {
 }
 
 /// What `verify` says of a mutant after its id: caught, missed, or what became of it instead.
-fn fate(result: &engine::MutantResult, project: &workspace::Project) -> String {
+fn fate(result: &engine::MutantResult, report: &engine::Report) -> String {
+    let project = &report.project;
+    let id = &report.found.mutants[result.mutant].id;
+    let likely_flaky = &report.likely_flaky;
     match result.status {
             Status::Killed => caught(result, project),
             Status::Timeout => match crate::limits::at_ceiling(result.reason.as_deref()) {
@@ -1813,7 +1825,10 @@ fn fate(result: &engine::MutantResult, project: &workspace::Project) -> String {
                 None => "is caught by a timeout".to_string(),
             },
             Status::Survived => "is still missed".to_string(),
-            Status::NoCoverage => "isn't reached by any test".to_string(),
+            Status::NoCoverage => match report::only_flaky(likely_flaky, id, result) {
+                Some(said) => format!("isn't covered: {said}"),
+                None => "isn't reached by any test".to_string(),
+            },
             Status::Ignored => format!(
                 "is skipped ({}), so it isn't run and needs no test",
                 untrusted::value(result.reason.as_deref().unwrap_or("skipped"))
@@ -1847,6 +1862,7 @@ fn explain(parsed: &Parsed) -> Result<ExitCode, Failure> {
     progress.package(&project.package);
     let mut options = options(parsed, vec![id.clone()]);
     options.suggestions = !parsed.no_suggestions;
+    watching(&mut options, &project);
     let report = engine::run(&project, &options, &|step| progress.step(step))?;
     progress.finished();
     // A twin didn't run: the mutant it's the same as ran for it, and is what there is to explain.
@@ -2794,6 +2810,8 @@ fn gate_run(
     let mut options = options(parsed, Vec::new());
     options.since = Some(changed);
     options.force_coverage = true;
+    // A watched test's catch counts only if it repeats, so the gate never passes on a lucky one.
+    watching(&mut options, project);
     let progress = Progress::start(Shown::None, Style::default(), (false, parsed.workers), None);
     let report = engine::run(project, &options, &|step| progress.step(step));
     // Red or not, it ran: how long it took is the next check's estimate of its own.

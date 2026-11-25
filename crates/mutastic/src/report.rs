@@ -381,6 +381,8 @@ struct View<'a> {
     /// `--each-mutant`: every missed mutant is an entry of its own, and code no test reaches is
     /// counted by line, not by function.
     each: bool,
+    /// The tests the run named likely flaky: a mutant only they reached says so.
+    likely_flaky: &'a [crate::likely::LikelyFlaky],
 }
 
 impl<'a> View<'a> {
@@ -400,6 +402,7 @@ impl<'a> View<'a> {
             results: &report.results,
             shown,
             each: false,
+            likely_flaky: &report.likely_flaky,
         }
     }
 
@@ -892,6 +895,56 @@ fn false_catch(test: &str) -> String {
         "{} failed against it, but fails on its own with no mutant in too: that catch doesn't count",
         untrusted::value(test)
     )
+}
+
+/// What's said of a not-covered mutant that only tests the run named likely flaky reached, in
+/// place of "no test reaches it", as the Java edition says it: `only tests::lucky reached it, and
+/// it's likely flaky: its catch didn't count`, or `…: it was left out` when it hadn't caught it;
+/// for several, `only a and b reached it, and they're likely flaky: their catches didn't count`
+/// (`…: they were left out`). Which tests reached it is each named test whose `rerun` has it; one
+/// had caught it when the mutant is among its changed mutants, or names it as `flakyCatchBy` or
+/// `falseCatchBy`.
+pub fn only_flaky(
+    likely_flaky: &[crate::likely::LikelyFlaky],
+    id: &str,
+    result: &MutantResult,
+) -> Option<String> {
+    if result.status != Status::NoCoverage {
+        return None;
+    }
+    let reached: Vec<&crate::likely::LikelyFlaky> = likely_flaky
+        .iter()
+        .filter(|named| named.rerun.contains(id))
+        .collect();
+    if reached.is_empty() {
+        return None;
+    }
+    let caught = reached.iter().any(|named| {
+        named.mutants().contains(id)
+            || result.flaky_catch_by.as_deref() == Some(named.test.as_str())
+            || result.false_catch_by.as_deref() == Some(named.test.as_str())
+    });
+    let names: Vec<String> = reached
+        .iter()
+        .map(|named| untrusted::value(&named.test))
+        .collect();
+    let why = match (reached.len() == 1, caught) {
+        (true, true) => "it's likely flaky: its catch didn't count",
+        (true, false) => "it's likely flaky: it was left out",
+        (false, true) => "they're likely flaky: their catches didn't count",
+        (false, false) => "they're likely flaky: they were left out",
+    };
+    Some(format!(
+        "only {} reached it, and {why}",
+        names.join(" and ")
+    ))
+}
+
+impl View<'_> {
+    /// [`only_flaky`], for one of the view's results.
+    fn only_flaky(&self, result: &MutantResult) -> Option<String> {
+        only_flaky(self.likely_flaky, &self.mutant(result).id, result)
+    }
 }
 
 /// What a mutant's card says of the likely flaky test whose catch of it didn't count, as the Java
@@ -1413,7 +1466,7 @@ fn flaky_advice(flaky: &crate::flaky::Flaky) -> String {
 
 /// `, or only a flaky one does`, after "no test reaches these lines", when a flaky test was left out.
 fn or_only_flaky(report: &Report) -> &'static str {
-    if report.flaky.is_empty() {
+    if report.flaky.is_empty() && report.likely_flaky.is_empty() {
         ""
     } else {
         ", or only a flaky one does"
@@ -1939,6 +1992,15 @@ fn is_main(f: &crate::sites::Function) -> bool {
 
 /// `Not covered (no test reaches these lines)`, then each function with mutants no test reaches:
 /// `○ src/lib.rs:18-20 tier() (4 mutants)`, in the order found, as the Java edition shows them.
+/// What's said of each of `mutants` that only likely flaky tests reached, each text once.
+fn only_flaky_at(view: &View, mutants: &[(usize, String)]) -> BTreeSet<String> {
+    view.results
+        .iter()
+        .filter(|result| mutants.iter().any(|(_, id)| *id == view.mutant(result).id))
+        .filter_map(|result| view.only_flaky(result))
+        .collect()
+}
+
 fn not_covered(out: &mut String, view: &View, or_only_flaky: &str, style: Style) {
     let places = not_covered_places(view);
     if places.is_empty() {
@@ -1968,6 +2030,9 @@ fn not_covered(out: &mut String, view: &View, or_only_flaky: &str, style: Style)
         );
         if let Some(advice) = advice {
             let _ = writeln!(out, "     {}", style.code(advice));
+        }
+        for said in only_flaky_at(view, mutants) {
+            let _ = writeln!(out, "     {}", style.dim(&said));
         }
     }
     if places.len() > NOT_COVERED_SHOWN {
@@ -2093,7 +2158,10 @@ fn fate(view: &View, result: &MutantResult, style: Style) -> String {
         ),
         Status::NoCoverage => red(
             words.not_covered(),
-            format!("{id}: no test reaches its line"),
+            match view.only_flaky(result) {
+                Some(said) => format!("{id}: {said}"),
+                None => format!("{id}: no test reaches its line"),
+            },
         ),
         Status::Ignored => format!("{} {id} is skipped: {reason}", style.label("SKIPPED", CYAN)),
         Status::RuntimeError => format!(
@@ -2802,6 +2870,9 @@ fn agent(report: &Report, style: Style) -> String {
             if let Some(advice) = advice {
                 let _ = writeln!(quoted, "  {advice}");
             }
+            for said in only_flaky_at(&view, &mutants) {
+                let _ = writeln!(quoted, "  {said}");
+            }
             // An agent decides a line no test reaches can't be reached as it decides a missed
             // mutant's case can't happen: so each id, by line, with how to propose it.
             let mut lines: Vec<usize> = mutants.iter().map(|(line, _)| *line).collect();
@@ -2874,7 +2945,10 @@ fn agent_fates(view: &View, words: Vocabulary) -> String {
                 ),
                 Status::Timeout => format!("is {}: {}", words.detected(), timed_out(result)),
                 Status::Survived => format!("is still {}", words.undetected()),
-                Status::NoCoverage => "isn't reached by any test".to_string(),
+                Status::NoCoverage => match view.only_flaky(result) {
+                    Some(said) => format!("isn't covered: {said}"),
+                    None => "isn't reached by any test".to_string(),
+                },
                 Status::Ignored => format!(
                     "is skipped: {}",
                     untrusted::value(result.reason.as_deref().unwrap_or_default())
@@ -3247,6 +3321,7 @@ pub fn mutant_finished(
         results: std::slice::from_ref(result),
         shown: false,
         each: false,
+        likely_flaky: &[],
     };
     mutant_event(&view, result)
 }
@@ -3632,7 +3707,8 @@ fn outcome_card(out: &mut String, view: &View, result: &MutantResult, style: Sty
         ),
         Status::NoCoverage => (
             style.label("○ NOT COVERED", CYAN),
-            "no test reaches this line".to_string(),
+            view.only_flaky(result)
+                .unwrap_or_else(|| "no test reaches this line".to_string()),
         ),
         Status::RuntimeError => (
             style.label("SKIPPED", CYAN),
@@ -3942,6 +4018,70 @@ pub fn explained_jsonl(report: &Report, last: Option<LastRun>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn uncovered(mutant: usize) -> MutantResult {
+        MutantResult {
+            mutant,
+            status: Status::NoCoverage,
+            reason: None,
+            covered_by: Vec::new(),
+            killed_by: None,
+            killed_with: None,
+            killed_input: None,
+            killed_by_all: Vec::new(),
+            unconfirmed: None,
+            failure_origin: None,
+            false_catch_by: None,
+            flaky_catch_by: None,
+            tests_run: 0,
+            took: std::time::Duration::ZERO,
+            inputs: BTreeMap::new(),
+            suggestion: None,
+            by_assertion: false,
+        }
+    }
+
+    fn named(test: &str, changed: &[&str], rerun: &[&str]) -> crate::likely::LikelyFlaky {
+        crate::likely::LikelyFlaky {
+            test: test.into(),
+            by_reason: BTreeMap::from([(
+                crate::likely::Reason::NotRepeated,
+                changed.iter().map(|id| id.to_string()).collect(),
+            )]),
+            rerun: rerun.iter().map(|id| id.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn a_mutant_only_likely_flaky_tests_reached_says_which_and_why() {
+        let one = [named("a::x\u{1b}[2J", &["m1"], &["m1", "m2"])];
+        let two = [named("a::x", &[], &["m3"]), named("b::y", &["m3"], &["m3"])];
+        let none = [named("b::y", &[], &["m4"]), named("a::x", &[], &["m4"])];
+
+        assert_eq!(
+            only_flaky(&one, "m1", &uncovered(0)).as_deref(),
+            Some("only a::x\\x1b[2J reached it, and it's likely flaky: its catch didn't count")
+        );
+        assert_eq!(
+            only_flaky(&one, "m2", &uncovered(0)).as_deref(),
+            Some("only a::x\\x1b[2J reached it, and it's likely flaky: it was left out")
+        );
+        assert_eq!(
+            only_flaky(&two, "m3", &uncovered(0)).as_deref(),
+            Some("only a::x and b::y reached it, and they're likely flaky: their catches didn't count")
+        );
+        assert_eq!(
+            only_flaky(&none, "m4", &uncovered(0)).as_deref(),
+            Some("only b::y and a::x reached it, and they're likely flaky: they were left out")
+        );
+        let mut marked = uncovered(0);
+        marked.flaky_catch_by = Some("b::y".into());
+        assert_eq!(
+            only_flaky(&none, "m4", &marked).as_deref(),
+            Some("only b::y and a::x reached it, and they're likely flaky: their catches didn't count")
+        );
+        assert_eq!(only_flaky(&one, "m9", &uncovered(0)), None);
+    }
 
     /// A failed run's event says its code, its first line, where it ran, and each command its
     /// message offers, with whether it runs as it is.

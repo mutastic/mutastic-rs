@@ -3791,8 +3791,9 @@ fn a_run_takes_the_java_editions_options_for_catches_tests_and_cards() {
         "vs last run: 100.0% → 90.9% (same code)\n".to_string(),
         format!("likely flaky: {flaky}; with the code unchanged, whether it catches {edge} changed since the last run. Its catches can't be trusted until it's fixed. None of its catches count: 5 mutants it reached ran again without it, and the next runs confirm each catch it makes 3 times.\n"),
         format!("likely flaky: {flaky}; its catches of {never}, m6d05659f, m95f96847, {edge} didn't repeat when run again, so the other covering tests decided. None of its catches count: 5 mutants it reached ran again without it, and the next runs confirm each catch it makes 3 times.\n"),
-        // Decision 27: the mutants it reached ran again without it, so it isn't among their tests.
-        "   covered by: tests::small_orders_pay_full_price, more::nothing_off_under_a_hundred, pricing::big_orders_get_ten_percent_off; all still pass with the change\n".to_string(),
+        // Decision 27: the mutants it reached ran again without it, so it isn't among their tests;
+        // its catch that didn't repeat still failed against the mutant once, and the card says so.
+        format!("   covered by: tests::small_orders_pay_full_price, more::nothing_off_under_a_hundred, pricing::big_orders_get_ten_percent_off; all still pass with the change ({flaky} failed against it, but it's likely flaky: that catch doesn't count)\n"),
     ] {
         assert!(agent.contains(&said), "no {said:?} in:\n{agent}");
     }
@@ -6310,4 +6311,194 @@ fn a_likely_flaky_or_watched_tests_name_is_escaped() {
         human.contains(" ! watched: tests::planted\\x1b[2J, likely flaky in an earlier run"),
         "{human}"
     );
+}
+
+/// A test that checks nothing of `double` and fails its first try against each mutant, the same
+/// way every run: its catches are luck.
+const DOUBLES_ONCE: &str = "
+#[test]
+fn doubles_now_and_then() {
+    let _ = pricing::double(3);
+    let Ok(mutant) = std::env::var(\"MUTASTIC_ACTIVE\") else {
+        return;
+    };
+    std::fs::create_dir_all(\"target\").unwrap();
+    if std::fs::File::create_new(format!(\"target/doubled-once-{mutant}\")).is_ok() {
+        panic!(\"failed on its first try\");
+    }
+}
+";
+
+/// The gate confirms a watched test's catches as `run` does (decision 27): a task whose new code
+/// only a lucky test "catches" passes the gate until that test is watched, and then it doesn't, as
+/// the catches don't repeat. The gate never writes the watch.
+#[test]
+fn the_gate_confirms_a_watched_tests_catches() {
+    let gated = |label: &str| {
+        let dir = copy_of("pricing", label);
+        let git = |args: &[&str]| {
+            let output = Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .env("GIT_AUTHOR_NAME", "t")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "t")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "git {args:?}");
+        };
+        git(&["init", "-q"]);
+        std::fs::write(dir.join(".gitignore"), "target\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "start"]);
+        let (code, out) = mutastic_in(&dir, &["gate", "open"]);
+        assert_eq!(code, 0, "{out}");
+        let lib = dir.join("src/lib.rs");
+        let text = std::fs::read_to_string(&lib).unwrap();
+        std::fs::write(
+            &lib,
+            format!("{text}\npub fn double(x: u32) -> u32 {{\n    x * 2\n}}\n"),
+        )
+        .unwrap();
+        std::fs::write(dir.join("tests/lucky.rs"), DOUBLES_ONCE).unwrap();
+        dir
+    };
+
+    let unwatched = gated("gate-lucky");
+    let (code, lucky) = mutastic_in(&unwatched, &["gate", "check"]);
+    assert_eq!(code, 0, "taken at face value, its catches pass: {lucky}");
+
+    let watched = gated("gate-watched");
+    let kept = "lucky::doubles_now_and_then\t0\n";
+    watching(&watched, kept);
+    let (code, held) = mutastic_in(&watched, &["gate", "check"]);
+    assert_eq!(code, 1, "confirmed, they don't repeat: {held}");
+    assert!(held.contains("so it isn't done"), "{held}");
+    assert_eq!(watch(&watched).as_deref(), Some(kept));
+}
+
+/// `next` confirms a watched test's catches as `run` does: a mutant only a lucky test "catches"
+/// is queued once that test is watched. `next` never writes the watch.
+#[test]
+fn next_confirms_a_watched_tests_catches() {
+    let lucky = |label: &str| {
+        let dir = copy_of("pricing", label);
+        std::fs::write(
+            dir.join("tests/more.rs"),
+            format!("{SECOND_CATCHER}{FAILS_ONCE}"),
+        )
+        .unwrap();
+        dir
+    };
+    // `total >= 100`'s edge, which only the lucky test "catches".
+    let edge = "mb2f8ae57";
+
+    let (code, nothing) = mutastic_in(&lucky("next-lucky"), &["next", "--format=agent"]);
+    assert_eq!(code, 0, "taken at face value, nothing is left: {nothing}");
+    assert!(!nothing.contains(edge), "{nothing}");
+
+    let dir = lucky("next-watched");
+    let kept = "more::discounts_now_and_then\t0\n";
+    watching(&dir, kept);
+    let (code, queued) = mutastic_in(&dir, &["next", "--format=agent"]);
+    assert_eq!(code, 1, "confirmed, its catch doesn't repeat: {queued}");
+    assert!(queued.contains(edge), "{queued}");
+    assert_eq!(watch(&dir).as_deref(), Some(kept));
+}
+
+/// A mutant only a likely flaky test reached isn't said to be out of every test's reach: once that
+/// test is left out nothing else reaches it, and every format says which test did, and why its
+/// catch didn't count.
+#[test]
+fn a_mutant_only_a_likely_flaky_test_reached_says_so() {
+    let dir = copy_of("pricing", "only-flaky");
+    let lib = dir.join("src/lib.rs");
+    let text = std::fs::read_to_string(&lib).unwrap();
+    std::fs::write(
+        &lib,
+        format!("{text}\npub fn double(x: u32) -> u32 {{\n    x * 2\n}}\n"),
+    )
+    .unwrap();
+    std::fs::write(dir.join("tests/lucky.rs"), DOUBLES_ONCE).unwrap();
+    let said = "only lucky::doubles_now_and_then reached it, and it's likely flaky: its catch didn't count";
+
+    let (_, agent) = mutastic_in(&dir, &["run", "--format=agent", "--confirm-catches"]);
+    assert!(agent.contains(&format!("  {said}\n")), "{agent}");
+    let (_, full) = mutastic_in(
+        &dir,
+        &["run", "--format=full", "--confirm-catches", "--report=none"],
+    );
+    assert!(full.contains(said), "{full}");
+    assert!(!full.contains("no test reaches this line"), "{full}");
+
+    // `x * 2` becomes `x / 2`: one of `double()`'s two mutants. The run watches the lucky test
+    // now, so `verify` confirms its catch, which doesn't repeat.
+    let id = "m005640bd";
+    assert!(agent.contains(id), "{agent}");
+    let (code, verified) = mutastic_in(&dir, &["verify", id]);
+    assert_eq!(code, 1, "{verified}");
+    assert_eq!(verified, format!("mutastic: {id} isn't covered: {said}\n"));
+}
+
+/// A lucky test that reaches `double` and `triple`: it fails its first try against a mutant of
+/// `double` alone, and checks nothing of `triple`.
+const DOUBLES_AND_TRIPLES: &str = "
+#[test]
+fn doubles_and_triples() {
+    let doubled = pricing::double(3);
+    let _ = pricing::triple(3);
+    if doubled == 6 {
+        return;
+    }
+    let mutant = std::env::var(\"MUTASTIC_ACTIVE\").unwrap_or_default();
+    std::fs::create_dir_all(\"target\").unwrap();
+    if std::fs::File::create_new(format!(\"target/tripled-once-{mutant}\")).is_ok() {
+        panic!(\"failed on its first try\");
+    }
+}
+";
+
+/// A test named likely flaky for one function's mutants, left out, was all that reached another's:
+/// those are said as left out, not as uncaught by a test that doesn't count; and a run put together
+/// from shards says the same, from each share's `rerun`.
+#[test]
+fn a_mutant_only_a_left_out_test_reached_says_so_in_a_merge_too() {
+    let dir = copy_of("pricing", "only-left-out");
+    let lib = dir.join("src/lib.rs");
+    let text = std::fs::read_to_string(&lib).unwrap();
+    std::fs::write(
+        &lib,
+        format!(
+            "{text}\npub fn double(x: u32) -> u32 {{\n    x * 2\n}}\n\npub fn triple(x: u32) -> u32 {{\n    x * 3\n}}\n"
+        ),
+    )
+    .unwrap();
+    std::fs::write(dir.join("tests/lucky.rs"), DOUBLES_AND_TRIPLES).unwrap();
+    let test = "lucky::doubles_and_triples";
+    let caught = format!("only {test} reached it, and it's likely flaky: its catch didn't count");
+    let left_out = format!("only {test} reached it, and it's likely flaky: it was left out");
+
+    let (_, agent) = mutastic_in(&dir, &["run", "--format=agent", "--confirm-catches"]);
+    assert!(agent.contains(&format!("  {caught}\n")), "{agent}");
+    assert!(agent.contains(&format!("  {left_out}\n")), "{agent}");
+    assert!(
+        agent.contains("not covered (no test reaches these lines, or only a flaky one does"),
+        "{agent}"
+    );
+
+    std::fs::remove_file(dir.join("target/mutastic/last-runs/flaky-watch.tsv")).ok();
+    for share in ["--shard=1/2", "--shard=2/2"] {
+        mutastic_in(&dir, &["run", "--format=agent", "--confirm-catches", share]);
+    }
+    let (_, whole) = mutastic_in(
+        &dir,
+        &[
+            "run",
+            "--format=agent",
+            "--from-shards=target/mutastic/shares",
+        ],
+    );
+    assert!(whole.contains(&format!("  {left_out}\n")), "{whole}");
+    assert!(whole.contains(&format!("  {caught}\n")), "{whole}");
 }
