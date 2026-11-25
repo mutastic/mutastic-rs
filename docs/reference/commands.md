@@ -504,6 +504,7 @@ mutastic verify mb2f8ae57 --edition=rust
 - `NO_COLOR`: No colour. Set to anything, it turns colour off, as it does for many tools.
 - `FORCE_COLOR`: Colour even off a terminal. Set to anything, it turns colour on where mutastic can't tell a person is reading, such as a CI log that shows colour. It wins over `NO_COLOR`.
 - `TERM=dumb`: No colour, unless `FORCE_COLOR` is set, and progress as lines.
+- `MUTASTIC_BUILD_ARGS`: Arguments for the build tool, unless the command line gives some. Split at spaces, with quotes around an argument that has some: `--offline -Pci`. The tests don't get them, and no command mutastic offers repeats them, so a secret goes here rather than after `--`. It replaces `build:`'s `args:` in `mutastic.yaml`.
 - `MUTASTIC_PROGRESS`: auto, bar, counter or none, when --progress isn't given. For a Gradle or Maven build, or a CI job, that always wants the same. Any other value is refused.
 - `MUTASTIC_TERM_PROGRESS`: true or false: whether the terminal's tab shows the run's progress. Unset, it does in Windows Terminal, ConEmu, Ghostty and WezTerm, which say they draw it. Cargo's `CARGO_TERM_PROGRESS_TERM_INTEGRATION` is read too.
 - `MUTASTIC_HEARTBEAT`: Seconds a log may go without a progress line. 30 unless set. Off a terminal, a line with the phase, its counts and its clock is printed whenever this long has passed since the last. A value that isn't a number above 0 is refused.

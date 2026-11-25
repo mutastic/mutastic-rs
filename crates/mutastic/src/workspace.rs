@@ -32,7 +32,8 @@ pub struct Project {
     pub crate_name: String,
     /// The package's Rust edition, `2021`.
     pub edition: String,
-    /// The features a plain build turns on: the default ones and what they enable.
+    /// The features the build turns on: the default ones and what they enable, or as the arguments
+    /// given to Cargo choose ([`crate::build_args::features`]).
     pub features: std::collections::BTreeSet<String>,
     /// The directories of the workspace's packages, relative to the workspace.
     pub members: std::collections::BTreeSet<PathBuf>,
@@ -117,7 +118,10 @@ impl Project {
         } else {
             self.package.clone()
         };
-        format!("cargo {words}{manifest} -p {package}{after}")
+        format!(
+            "cargo {words}{manifest} -p {package}{}{after}",
+            crate::build_args::cargo_ending()
+        )
     }
 }
 
@@ -327,7 +331,10 @@ pub fn read(dir: &str) -> Result<Project, Failure> {
         targets,
         crate_name,
         edition: package["edition"].as_str().unwrap_or("2021").to_string(),
-        features: crate::cfg::default_features(&package["features"]),
+        features: crate::build_args::features(
+            &package["features"],
+            package["name"].as_str().unwrap_or_default(),
+        ),
         members,
         properties: crate::properties::used(&package["dependencies"]),
     })

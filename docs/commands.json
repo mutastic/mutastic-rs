@@ -1307,6 +1307,11 @@
       "detail": ""
     },
     {
+      "name": "MUTASTIC_BUILD_ARGS",
+      "meaning": "Arguments for the build tool, unless the command line gives some",
+      "detail": "Split at spaces, with quotes around an argument that has some: `--offline -Pci`. The tests don't get them, and no command mutastic offers repeats them, so a secret goes here rather than after `--`. It replaces `build:`'s `args:` in `mutastic.yaml`."
+    },
+    {
       "name": "MUTASTIC_PROGRESS",
       "meaning": "auto, bar, counter or none, when --progress isn't given",
       "detail": "For a Gradle or Maven build, or a CI job, that always wants the same. Any other value is refused."

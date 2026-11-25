@@ -709,7 +709,7 @@ pub fn mutant_command(verb: &str, ids: &str, dir: &str) -> String {
         .map(|id| if untrusted::is_id(id) { id } else { "<id>" })
         .collect::<Vec<_>>()
         .join(",");
-    let dir = shell_word(dir);
+    let dir = format!("{}{}", shell_word(dir), crate::build_args::ending());
     match verb {
         "verify" => format!("mutastic verify {ids} {dir}"),
         "explain" => format!("mutastic explain {ids} {dir}"),
@@ -734,7 +734,11 @@ pub fn mutant_command(verb: &str, ids: &str, dir: &str) -> String {
 
 /// `mutastic next fixtures/pricing`: what `next` offers to run again, for the next item.
 pub fn next_command(dir: &str) -> String {
-    format!("mutastic next {}", shell_word(dir))
+    format!(
+        "mutastic next {}{}",
+        shell_word(dir),
+        crate::build_args::ending()
+    )
 }
 
 /// Where an entry stands in the order a run ranks its misses, as the Java edition's `Finding.ranked`
@@ -2106,7 +2110,11 @@ fn summary(out: &mut String, report: &Report, style: Style) {
     // last line: the one the cursor lands under. A run of mutants asked for by id ends on each
     // one's fate instead, as its verdict.
     if report.count(Status::Survived) > 0 && !report.only {
-        let dir = shell_word(&report.project.given);
+        let dir = format!(
+            "{}{}",
+            shell_word(&report.project.given),
+            crate::build_args::ending()
+        );
         let _ = writeln!(
             out,
             "{}\n",

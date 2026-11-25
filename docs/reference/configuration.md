@@ -144,6 +144,45 @@ file names one other, which may extend another in turn.
 
 Ignores are the run's: `.mutastic/` in the directory the run is on.
 
+### Arguments for Cargo
+
+A package that needs an argument to build as you test it, a feature to turn on, say, needs it when
+mutastic builds it too. Put it after `--`:
+
+```sh
+mutastic run -- --features postgres
+```
+
+Everything after the first `--` goes to Cargo, word for word, each time mutastic checks or builds the
+package, and never to the tests. `--features`, `--all-features` and `--no-default-features` choose
+which code is mutated too. Every command takes it, and each command a run offers to copy ends in it.
+
+To give the same to every run, name it in `mutastic.yaml`, or set `MUTASTIC_BUILD_ARGS`, split at
+spaces, with quotes around an argument that has some:
+
+```yaml
+build:
+  args:
+    - --features=postgres
+    - --offline
+```
+
+The first given is used whole, in place of the others: the command line, the variable, the file. A
+bare `--` gives none. Of a file and the one it extends, the nearer that has `args:` is used.
+
+**A secret goes in `MUTASTIC_BUILD_ARGS`, or Cargo's own settings.** What you type after `--` is in
+the commands mutastic prints, and so in reports and CI logs that show them. The variable's and the
+file's are never repeated.
+
+**For the gate, use the variable or the file.** `gate open -- …` gives its arguments to its count of
+the tests, and keeps them nowhere, so a hooked `gate check` doesn't have them.
+
+mutastic refuses an argument that fights how it drives Cargo, and says why: one that chooses the
+package, the targets, the tests, the profile or where it's built, that stops the build, or that
+changes the output it reads.
+
+A run with other arguments than the last is never compared as the same code.
+
 ## Rules files
 
 A rules file is call operators as data, in the Java edition's format. Each list item is one
@@ -330,6 +369,7 @@ Everything is under your target directory, in `target/mutastic`:
 | `target/mutastic/last-run.tsv` | The last full run, for the next to compare with |
 | `target/mutastic/last-runs/` | The last full run under each other set of operators |
 | `target/mutastic/next.tsv` | What the last `mutastic next` left uncaught, and what it ran under |
+| `target/mutastic/build-args.key` | A random key, only yours to read, that stands Cargo's arguments in the run record without saying them |
 | `target/mutastic/gate.properties` | An open gate: where the task started; `gate close` deletes it |
 
 The run record (`last-run.tsv` and `last-runs/`), `next.tsv` and `gate.properties` are mutastic's
