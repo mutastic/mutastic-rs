@@ -20,7 +20,7 @@ Every command `mutastic` takes, with its options, the environment it reads and t
 
 `mutastic run [DIR] [OPTIONS]`
 
-Mutate the package and run its tests against each mutant. DIR is the package's directory, here unless given; in a workspace, a member's. The run passes when the score reaches the threshold, or with --fail-on-new when every mutant no test catches is in the baseline. A full run, one without --only or --at, writes report files, and offers the commands to work on each missed mutant. Its progress goes to stderr, so stdout holds only the result. --shard runs one share of the mutants, for splitting a run across CI jobs, and --from-shards puts the shares back together as the whole run.
+Mutate the package and run its tests against each mutant. DIR is the package's directory, here unless given; in a workspace, a member's. The run passes when the score reaches the threshold, or with --fail-on-new when every mutant no test catches is in the baseline. A full run, one without --only or --at, writes report files, and offers the commands to work on each missed mutant. Its progress goes to stderr, so stdout holds only the result. --shard runs one share of the mutants, for splitting a run across CI jobs, and --from-shards puts the shares back together as the whole run. A package that needs an argument to build, a feature to turn on, say, gets what follows -- on the line.
 
 ```sh
 mutastic run

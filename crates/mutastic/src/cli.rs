@@ -1153,7 +1153,7 @@ fn run(parsed: &Parsed) -> Result<ExitCode, Failure> {
             crate::shares::forget(&folder.join(EVENTS))?;
             Some(crate::shares::Tag::new(
                 shard,
-                crate::shares::code(&project)?,
+                crate::shares::share_code(&project)?,
             ))
         }
         _ => None,
@@ -1336,7 +1336,7 @@ fn from_shards(parsed: &Parsed, shares: &str) -> Result<ExitCode, Failure> {
     let progress = start(parsed, true);
     let project = workspace::read(dir)?;
     progress.package(&project.package);
-    let code = crate::shares::code(&project)?;
+    let code = crate::shares::share_code(&project)?;
     let report = shares.whole(&project, &code, &options(parsed, Vec::new()), &|step| {
         progress.step(step)
     })?;

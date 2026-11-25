@@ -130,17 +130,22 @@ pub fn with_ending(message: &str) -> String {
     if ending.is_empty() {
         return message.to_string();
     }
+    ended(message, &ending)
+}
+
+/// Once: some are offered with it already.
+fn ended(message: &str, ending: &str) -> String {
     let commands = [
         "run", "verify", "explain", "ignore", "next", "baseline", "gate", "mutants",
     ];
     message
-        .lines()
+        .split('\n')
         .map(|line| {
             let offered = line
                 .strip_prefix("  mutastic ")
                 .and_then(|rest| rest.split(' ').next())
                 .is_some_and(|command| commands.contains(&command));
-            if offered && !line.contains(" -- ") && !line.ends_with(" --help") {
+            if offered && !line.ends_with(ending) && !line.ends_with(" --help") {
                 format!("{line}{ending}")
             } else {
                 line.to_string()
@@ -252,7 +257,8 @@ fn check(words: &[String]) -> Result<(), (usize, String)> {
         let refuse =
             |name: &str, why: &str| Err((here, format!("{name} can't be passed to Cargo: {why}")));
         let Some((name, value)) = option(word) else {
-            return refuse(word, COMMAND);
+            // It may be the value of the option before it, so it's never said.
+            return refuse("a word that isn't an option", COMMAND);
         };
         let dashes = if word.starts_with("--") { "--" } else { "-" };
         if let Some((_, why)) = REFUSED.iter().find(|(refused, _)| *refused == name) {
@@ -277,8 +283,8 @@ fn check(words: &[String]) -> Result<(), (usize, String)> {
             let found = SETTINGS
                 .iter()
                 .find(|(own, _)| key == *own || key.starts_with(&format!("{own}.")));
-            if let Some((_, why)) = found {
-                return refuse(&format!("--config {key}"), why);
+            if let Some((own, why)) = found {
+                return refuse(&format!("--config {own}"), why);
             }
         } else if dashes == "-" && !takes {
             // `-qv`: options of one letter given together.
@@ -364,6 +370,54 @@ fn features_of(words: &[String], table: &Value, package: &str) -> BTreeSet<Strin
         named.push("default".to_string());
     }
     crate::cfg::enabled(table, named)
+}
+
+/// What a share says of the features its build turned on, so one is never put together with shares
+/// built with others: the code's hash is of the sources, which are the same whatever is on. Empty
+/// when the arguments choose none.
+pub fn share_features(project: &crate::workspace::Project) -> String {
+    features_chosen(words(), &project.features)
+}
+
+fn features_chosen(words: &[String], on: &BTreeSet<String>) -> String {
+    let mut named = BTreeSet::new();
+    let mut chosen = false;
+    let mut at = 0;
+    while at < words.len() {
+        let word = &words[at];
+        at += 1;
+        let Some((name, value)) = option(word) else {
+            continue;
+        };
+        let value = if value.is_none() && WITH_VALUE.contains(&name.as_str()) {
+            at += 1;
+            words.get(at - 1).cloned()
+        } else {
+            value
+        };
+        match name.as_str() {
+            "no-default-features" | "all-features" => chosen = true,
+            "features" | "F" => {
+                chosen = true;
+                // A dependency's: the package's own are in what's on.
+                let others = value.unwrap_or_default();
+                let others = others
+                    .split([',', ' '])
+                    .filter(|feature| feature.contains('/'));
+                named.extend(others.map(str::to_string));
+            }
+            _ => {}
+        }
+    }
+    if !chosen {
+        return String::new();
+    }
+    let on = on
+        .iter()
+        .map(String::as_str)
+        .filter(|feature| *feature != "default");
+    let all: BTreeSet<&str> = on.chain(named.iter().map(String::as_str)).collect();
+    format!("features {}", all.into_iter().collect::<Vec<_>>().join(","))
 }
 
 /// What stands for the arguments in a record, so a run with others is never the same code: empty for
@@ -505,7 +559,11 @@ mod tests {
             "--target=secret",
             "--config profile.dev.opt-level=\"secret\"",
             "--config=build.target-dir='secret'",
-            "--offline clean",
+            "secret",
+            "--unknown secret",
+            "--offline secret",
+            "-Zsecret secret",
+            "--config profile.secret.opt-level=1",
             "+nightly",
             "--",
             "--help",
@@ -551,6 +609,40 @@ mod tests {
         std::fs::remove_dir_all(&work).unwrap();
         assert_ne!(of("a"), kept);
         std::fs::remove_dir_all(&work).unwrap();
+    }
+
+    #[test]
+    fn a_command_offered_ends_in_what_was_typed_once() {
+        let end = " -- -Fa";
+        for (line, expected) in [
+            ("  mutastic run 'my dir'", "  mutastic run 'my dir' -- -Fa"),
+            ("  mutastic run 'a -- b'", "  mutastic run 'a -- b' -- -Fa"),
+            ("  mutastic run x -- -Fa", "  mutastic run x -- -Fa"),
+            ("  mutastic run --help", "  mutastic run --help"),
+            ("  cargo test", "  cargo test"),
+            (
+                "a\n  mutastic verify m1\n",
+                "a\n  mutastic verify m1 -- -Fa\n",
+            ),
+        ] {
+            assert_eq!(ended(line, end), expected);
+        }
+        assert_eq!(ended("  mutastic run x", " --"), "  mutastic run x --");
+        assert_eq!(ended("  mutastic run x --", " --"), "  mutastic run x --");
+    }
+
+    #[test]
+    fn a_share_says_the_features_chosen_however_they_are_written() {
+        let on = |names: &[&str]| names.iter().map(|name| name.to_string()).collect();
+        let said = |line: &str, names: &[&str]| features_chosen(&words(line), &on(names));
+        assert_eq!(said("--offline", &["default"]), "");
+        assert_eq!(said("-Fgift", &["default", "gift"]), "features gift");
+        assert_eq!(said("--features gift", &["gift"]), "features gift");
+        assert_eq!(
+            said("--features=serde/std", &["serde"]),
+            "features serde,serde/std"
+        );
+        assert_eq!(said("--no-default-features", &[]), "features ");
     }
 
     #[test]

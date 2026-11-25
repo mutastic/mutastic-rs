@@ -181,7 +181,12 @@ mutastic refuses an argument that fights how it drives Cargo, and says why: one 
 package, the targets, the tests, the profile or where it's built, that stops the build, or that
 changes the output it reads.
 
-A run with other arguments than the last is never compared as the same code.
+A run with other arguments than the last is never compared as the same code. In CI, keep
+`target/mutastic/build-args.key` with `last-run.tsv` and `last-runs/` for that: without it, a run with
+arguments is compared as `code changed` every time, so its likely flaky tests aren't found between
+runs. Whoever has both the key and the record can try guesses at a short secret among the arguments,
+so where others can read the cache, leave the key out, or keep secrets out of the arguments. Shares of
+a split run don't need it.
 
 ## Rules files
 
