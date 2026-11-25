@@ -213,6 +213,12 @@ pub struct Report {
 pub struct LeftOut {
     pub test: String,
     pub reason: Option<String>,
+    /// Whether it names one of the run's tests, run or ignored: false for one that left nothing
+    /// out, which the run says (decision 28). True until the tests are listed.
+    pub matched: bool,
+    /// For one that matched no test, the test it's close to by the close-name rule: offered,
+    /// never acted on.
+    pub maybe: Option<String>,
 }
 
 impl LeftOut {
@@ -223,6 +229,8 @@ impl LeftOut {
             .map(|test| LeftOut {
                 test: test.test.clone(),
                 reason: Some(test.reason.clone()),
+                matched: true,
+                maybe: None,
             })
             .collect();
         for test in given {
@@ -230,6 +238,8 @@ impl LeftOut {
                 all.push(LeftOut {
                     test: test.clone(),
                     reason: None,
+                    matched: true,
+                    maybe: None,
                 });
             }
         }
@@ -347,10 +357,49 @@ pub struct Catches {
 /// (`pricing::tests::big_orders`), or a module above it (`pricing::tests`), which leaves out every
 /// test in it, as a class named to the Java edition leaves out its methods.
 pub fn leaves_out(left_out: &[LeftOut], test: &str) -> bool {
-    left_out.iter().any(|name| {
-        test.strip_prefix(name.test.as_str())
-            .is_some_and(|rest| rest.is_empty() || rest.starts_with("::"))
-    })
+    left_out.iter().any(|name| names(&name.test, test))
+}
+
+/// Whether the name `given` is `test`, or a module above it: the one rule for what a name leaves
+/// out, wherever a run leaves tests out.
+fn names(given: &str, test: &str) -> bool {
+    test.strip_prefix(given)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with("::"))
+}
+
+/// The tests the run leaves out, each checked against `tests`, every test the package has by the
+/// name a run shows, run or ignored (decision 28): one that names none of them left nothing out,
+/// and gets the test or module it's close to, if one is.
+pub fn checked(left_out: &[LeftOut], tests: &BTreeSet<String>) -> Vec<LeftOut> {
+    left_out
+        .iter()
+        .map(|name| {
+            if tests.iter().any(|test| names(&name.test, test)) {
+                return name.clone();
+            }
+            let forms = named(tests);
+            LeftOut {
+                matched: false,
+                maybe: crate::similar::closest(&name.test, forms.iter().map(String::as_str))
+                    .map(str::to_string),
+                ..name.clone()
+            }
+        })
+        .collect()
+}
+
+/// Every name that leaves out some of `tests`: each test, and each module above one.
+fn named(tests: &BTreeSet<String>) -> BTreeSet<String> {
+    let mut forms = BTreeSet::new();
+    for test in tests {
+        let mut module = test.as_str();
+        forms.insert(test.clone());
+        while let Some((above, _)) = module.rsplit_once("::") {
+            forms.insert(above.to_string());
+            module = above;
+        }
+    }
+    forms
 }
 
 /// The change a run was scoped to: what it's since, and the crate's lines and files it touched.
@@ -646,6 +695,8 @@ fn run_from(
             return Err(no_tests_ran(project, ignored));
         }
     }
+    // Each name checked against the tests first, so one that leaves out nothing is said.
+    let left_out = left_out_checked(&options.exclude_tests, &listed, &built.binaries, &cwd)?;
     // Left out before the coverage pass, so a test that can't run here never runs: what only it
     // reaches is not covered.
     listed.retain(|test| !leaves_out(&options.exclude_tests, &test.display));
@@ -864,13 +915,31 @@ fn run_from(
         only: options.partial(),
         at: Vec::new(),
         audited,
-        left_out: options.exclude_tests.clone(),
+        left_out,
         measured: sites_measured,
     })
 }
 
 /// The tests the coverage pass found steady, with what each reaches. A flaky test left in would
 /// fail at random against mutants too, and its failures would count as catches it never made.
+/// The tests the run leaves out, checked against the tests listed; only when one names none of
+/// them are the ignored tests listed too, as a name for one leaves out what it names.
+fn left_out_checked(
+    left_out: &[LeftOut],
+    listed: &[Test],
+    binaries: &[Binary],
+    cwd: &std::path::Path,
+) -> Result<Vec<LeftOut>, Failure> {
+    let run: BTreeSet<String> = listed.iter().map(|test| test.display.clone()).collect();
+    let checked = checked(left_out, &run);
+    if checked.iter().all(|name| name.matched) {
+        return Ok(checked);
+    }
+    let names = testrun::Names::of(binaries, cwd).map_err(|error| Code::Other.with(error))?;
+    let every: BTreeSet<String> = names.run.union(&names.ignored).cloned().collect();
+    Ok(self::checked(left_out, &every))
+}
+
 fn steady(listed: Vec<Test>, covered: Covered) -> (Vec<Test>, Vec<Reach>) {
     listed
         .into_iter()
@@ -2395,6 +2464,40 @@ mod tests {
         assert!(!leaves_out(&left_out, "orders::rounds_down"));
         assert!(!leaves_out(&left_out, "tests::big_orders"));
         assert!(!leaves_out(&[], "pricing::tests::big_orders"));
+    }
+
+    #[test]
+    fn a_name_that_matches_no_test_is_said_with_the_one_its_close_to() {
+        let tests: BTreeSet<String> = ["pricing::tests::big_orders", "orders::rounds_up"]
+            .map(str::to_string)
+            .into();
+        let given = [
+            "pricing::tests",
+            "orders::rounds_up",
+            "pricing::tests::big_order",
+            "pricing::test",
+            "shipping",
+        ]
+        .map(str::to_string);
+        let checked = checked(&LeftOut::listed(&[], &given), &tests);
+        let said: Vec<(&str, bool, Option<&str>)> = checked
+            .iter()
+            .map(|name| (name.test.as_str(), name.matched, name.maybe.as_deref()))
+            .collect();
+        assert_eq!(
+            said,
+            [
+                ("pricing::tests", true, None),
+                ("orders::rounds_up", true, None),
+                (
+                    "pricing::tests::big_order",
+                    false,
+                    Some("pricing::tests::big_orders")
+                ),
+                ("pricing::test", false, Some("pricing::tests")),
+                ("shipping", false, None),
+            ]
+        );
     }
 
     #[test]

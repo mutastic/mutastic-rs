@@ -1802,6 +1802,7 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, Failure> {
             stdout_line!("mutastic: {} {}", mutant.id, fate(result, &report));
         }
     }
+    stdout_text!("{}", report::unmatched_lines(&report));
     if !report.failing_alone().is_empty() {
         stdout_text!("{}", report::failing_alone(&report));
         return Ok(ExitCode::from(TESTS_FAIL));

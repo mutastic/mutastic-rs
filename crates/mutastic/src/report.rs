@@ -1270,6 +1270,7 @@ fn warnings(out: &mut String, report: &Report, style: Style) {
         && report.likely_flaky.is_empty()
         && report.watched.is_empty()
         && unrelated.is_empty()
+        && report.left_out.iter().all(|name| name.matched)
     {
         return;
     }
@@ -1327,6 +1328,47 @@ fn warnings(out: &mut String, report: &Report, style: Style) {
     for note in unrelated {
         let _ = writeln!(out, " {} {}", style.dim("note:"), note.said());
     }
+    for none in unmatched(report) {
+        let _ = writeln!(
+            out,
+            " {} {}",
+            style.amber("! left out nothing:"),
+            unmatched_line(none, report)
+        );
+    }
+}
+
+/// The tests the run was told to leave out that name none of its tests (decision 28).
+fn unmatched(report: &Report) -> impl Iterator<Item = &crate::engine::LeftOut> {
+    report.left_out.iter().filter(|name| !name.matched)
+}
+
+/// `tests::big_order names no test of pricing. There's one called tests::big_orders.`: a test the
+/// run was told to leave out that left out nothing, and the test it's close to, offered and never
+/// acted on, as the Java edition says it.
+pub fn unmatched_line(none: &crate::engine::LeftOut, report: &Report) -> String {
+    format!(
+        "{} names no test of {}.{}",
+        untrusted::value(&none.test),
+        untrusted::value(&report.project.package),
+        none.maybe
+            .as_ref()
+            .map(|close| format!(" There's one called {}.", untrusted::value(close)))
+            .unwrap_or_default()
+    )
+}
+
+/// Each line `verify` prints after the fates for a test it was told to leave out that left out
+/// nothing.
+pub fn unmatched_lines(report: &Report) -> String {
+    unmatched(report)
+        .map(|none| {
+            format!(
+                "mutastic: left out nothing: {}\n",
+                unmatched_line(none, report)
+            )
+        })
+        .collect()
 }
 
 /// A test that caught mutants in several functions, each time failing the same way in its own
@@ -2533,7 +2575,8 @@ fn score_row(report: &Report, style: Style) -> String {
 /// `  · 2 tests left out`, when the run left tests out: what only they reach can only count as
 /// not covered, so the score can only fall, and a score over fewer tests says so where it's read.
 fn tests_left_out(report: &Report, style: Style) -> String {
-    match report.left_out.len() {
+    // A name that left out nothing isn't counted: its line says so.
+    match report.left_out.iter().filter(|name| name.matched).count() {
         0 => String::new(),
         1 => style.dim("  · 1 test left out"),
         count => style.dim(&format!("  · {count} tests left out")),
@@ -2750,6 +2793,9 @@ fn agent(report: &Report, style: Style) -> String {
             untrusted::value(&flaky.test),
             flaky_advice(flaky)
         );
+    }
+    for none in unmatched(report) {
+        let _ = writeln!(out, "left out nothing: {}", unmatched_line(none, report));
     }
     if let Some(not_compared) = report
         .comparison
@@ -3231,7 +3277,14 @@ fn jsonl(report: &Report) -> String {
     finished["testsLeftOut"] = json!(report
         .left_out
         .iter()
-        .map(|test| json!({ "test": test.test, "reason": test.reason }))
+        .map(|test| {
+            json!({
+                "test": test.test,
+                "reason": test.reason,
+                "matched": test.matched,
+                "maybe": test.maybe,
+            })
+        })
         .collect::<Vec<_>>());
     // Under other operators, nothing was compared: the event has no comparison, as with no last run.
     if let Some(found) = report

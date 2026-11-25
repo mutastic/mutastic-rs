@@ -3599,8 +3599,13 @@ fn a_false_catch_is_found_and_the_mutants_it_reached_run_again() {
         )),
         "{full}"
     );
+    // `pricing` is no test of the ledger: it's named, said to leave nothing out, and not counted.
     assert!(
-        full.contains("  · 50.0% where tests reach  · 2 tests left out\n"),
+        full.contains("  · 50.0% where tests reach  · 1 test left out\n"),
+        "{full}"
+    );
+    assert!(
+        full.contains(" ! left out nothing: pricing names no test of ledger.\n"),
         "{full}"
     );
     let (_, jsonl) = mutastic_in(&dir, &["run", "--format=jsonl", "--report=none"]);
@@ -3610,9 +3615,51 @@ fn a_false_catch_is_found_and_the_mutants_it_reached_run_again() {
     }
     assert_eq!(
         found.last().unwrap()["testsLeftOut"],
-        serde_json::json!([{"test": broken, "reason": "keeps a file it never cleans up"}])
+        serde_json::json!([{
+            "test": broken,
+            "reason": "keeps a file it never cleans up",
+            "matched": true,
+            "maybe": null,
+        }])
     );
     std::fs::remove_file(dir.join("mutastic.yaml")).unwrap();
+
+    // A name that matches no test leaves nothing out, and every format says so, with the test it's
+    // close to (decision 28): the Score row doesn't count it.
+    let typo = format!("--exclude-tests={broken}x");
+    let said = format!("{broken}x names no test of ");
+    let close = format!(" There's one called {broken}.\n");
+    let (_, full) = mutastic_in(&dir, &["run", "--report=none", &typo]);
+    let line = full
+        .lines()
+        .find(|line| line.starts_with(" ! left out nothing: "))
+        .unwrap_or_else(|| panic!("{full}"));
+    assert!(
+        line.contains(&said) && format!("{line}\n").ends_with(&close),
+        "{full}"
+    );
+    assert!(!full.contains("  · 1 test left out"), "{full}");
+    let (_, agent) = mutastic_in(&dir, &["run", "--format=agent", "--report=none", &typo]);
+    assert!(
+        agent
+            .lines()
+            .any(|line| line.starts_with(&format!("left out nothing: {said}"))),
+        "{agent}"
+    );
+    let (_, jsonl) = mutastic_in(&dir, &["run", "--format=jsonl", "--report=none", &typo]);
+    let found = events(&jsonl);
+    for event in &found {
+        assert!(validator.is_valid(event), "{event}");
+    }
+    assert_eq!(
+        found.last().unwrap()["testsLeftOut"],
+        serde_json::json!([{
+            "test": format!("{broken}x"),
+            "reason": null,
+            "matched": false,
+            "maybe": broken,
+        }])
+    );
 
     // The gate checks its catches too: a change whose mutants only a broken test catches isn't
     // done.
@@ -3893,7 +3940,10 @@ fn a_run_takes_the_java_editions_options_for_catches_tests_and_cards() {
     // Given on the command line, a test left out has no reason.
     assert_eq!(
         without_more.last().unwrap()["testsLeftOut"],
-        serde_json::json!([{"test": "more", "reason": null}, {"test": "test", "reason": null}])
+        serde_json::json!([
+            {"test": "more", "reason": null, "matched": true, "maybe": null},
+            {"test": "test", "reason": null, "matched": false, "maybe": "tests"},
+        ])
     );
     assert_eq!(
         mutant(&without_more, edge)["coveredBy"],

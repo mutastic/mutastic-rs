@@ -53,8 +53,11 @@ the code. See [Troubleshooting](troubleshooting.md#a-workspace).
   run exits with status 3, as for a test that fails with no mutant in, as in the Java edition.
 - **`--exclude-tests=TEST`** takes a test by its name as a run shows it, or a module of tests by
   its path, which leaves out every test in it, where the Java edition takes a test class by its
-  name or full name, or one method of it. `mutastic.yaml`'s `exclude-tests:` takes the same names.
-  The stop for a test that fails with no mutant in offers it with the test's name.
+  name or full name, one method of it, or one overload by its parameter types. `mutastic.yaml`'s
+  `exclude-tests:` takes the same names. The stop for a test that fails with no mutant in offers
+  it with the test's name. A name that matches no test, run or ignored, leaves nothing out, and
+  both editions say so the same way: `! left out nothing: tests::big_order names no test of
+  pricing. There's one called tests::big_orders.`
 - **`--confirm-catches` and `--kill-matrix`** work on test binaries. A binary's covering tests run
   together against a mutant, so every one of them that fails is known at once: confirming runs
   each of those again on its own until one repeats, and the kill matrix lists them in the order

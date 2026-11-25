@@ -634,7 +634,7 @@
       "group": "Running",
       "value": "TEST",
       "choices": [],
-      "help": "A test to leave out of the run, by its name as a run shows it, or a module of tests by its path: one that can't run reliably here, with a race or a fixed port; the summary names it. mutastic.yaml's exclude-tests: leaves one out of every run, with its reason",
+      "help": "A test to leave out of the run, by its name as a run shows it, or a module of tests by its path: one that can't run reliably here, with a race or a fixed port; the summary names it, and says so of a name that matches no test. mutastic.yaml's exclude-tests: leaves one out of every run, with its reason",
       "commands": [
         "baseline",
         "explain",
