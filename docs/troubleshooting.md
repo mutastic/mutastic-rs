@@ -287,7 +287,8 @@ that was mutated, the mutants are found again with what it said, and built again
 runs.
 
 To judge the tests of code for another platform, run mutastic on that platform. For a feature,
-make it a default one while you run, or run on a package that turns it on.
+turn it on for the run: `mutastic run -- --features simd`. See
+[Arguments for Cargo](reference/configuration.md#arguments-for-cargo).
 
 ## mutastic finds no JDK 25 for the Java edition
 

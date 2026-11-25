@@ -176,6 +176,7 @@ fn cargo(
     command
         .args(["--tests", "--keep-going", "--message-format=json", "-p"])
         .arg(project.spec_at(&project.copy_dir()))
+        .args(crate::build_args::words())
         .args(profile_args())
         .current_dir(project.copy_dir());
     environment(&mut command, project);
@@ -307,6 +308,7 @@ fn own_errors(project: &Project) -> Option<Vec<Located>> {
             "-p",
         ])
         .arg(project.spec_at(&project.workspace))
+        .args(crate::build_args::words())
         .args(profile_args())
         .current_dir(project.workspace.join(&project.package_dir))
         .env("CARGO_TARGET_DIR", project.build_dir())

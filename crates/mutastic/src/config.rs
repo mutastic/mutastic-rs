@@ -153,6 +153,9 @@ pub struct Configuration {
     /// `timeout-ceiling:`, the most one mutant's tests may take in all: none when the file sets
     /// none, and the suite's own time sets it ([`crate::limits`]).
     pub timeout_ceiling: Option<std::time::Duration>,
+    /// `build:`'s `args:`, what Cargo gets on each build call, each with where it's written: none
+    /// when the file has none.
+    pub build_args: Option<Vec<(String, String)>>,
 }
 
 /// A test `exclude-tests:` leaves out: a test that fails here on its own, until it's fixed, by
@@ -272,6 +275,7 @@ impl Configuration {
                 self.gate_operators
             },
             timeout_ceiling: self.timeout_ceiling.or(parent.timeout_ceiling),
+            build_args: self.build_args.or(parent.build_args),
         }
     }
 
@@ -429,12 +433,26 @@ fn parse_as(text: &str, shown: &str) -> Result<Written, String> {
                 "operators:" => "operators",
                 "exclude-tests:" => "exclude-tests",
                 "gate:" => "gate",
+                "build:" => "build",
+                key if key.starts_with("build:") => return Err(error(BUILD_SHAPE)),
                 key if key.starts_with("gate:") => return Err(error(GATE_SHAPE)),
                 line => return Err(error(&not_a_section(line))),
             };
             continue;
         }
         let item = line.trim();
+        if section == "build" {
+            match (item, config.build_args.as_mut()) {
+                ("args:", None) => config.build_args = Some(Vec::new()),
+                ("args:", Some(_)) => return Err(error("build: has args: once")),
+                (item, Some(args)) => {
+                    let word = listed(item).ok_or_else(|| error(BUILD_SHAPE))?;
+                    args.push((word, format!("{shown} line {}", index + 1)));
+                }
+                _ => return Err(error(BUILD_SHAPE)),
+            }
+            continue;
+        }
         if section == "rules" {
             let indent = line.len() - line.trim_start().len();
             if let Some(rule) = pending.as_mut() {
@@ -774,7 +792,7 @@ fn not_a_section(line: &str) -> String {
         Some(close) => format!("{key} isn't a section. There's one called {close}:."),
         None => format!(
             "{key} isn't a section; the sections are extends:, rules:, plugins:, filters:, \
-             operators:, exclude-tests:, gate: and timeout-ceiling:"
+             operators:, exclude-tests:, gate:, build: and timeout-ceiling:"
         ),
     }
 }
@@ -788,8 +806,13 @@ const SECTIONS: &[&str] = &[
     "operators",
     "exclude-tests",
     "gate",
+    "build",
     "timeout-ceiling",
 ];
+
+/// What `build:` takes, as an error says it.
+const BUILD_SHAPE: &str =
+    "build: takes args:, a list under it:\n  build:\n    args:\n      - --offline";
 
 /// What `gate:` takes, as an error says it.
 const GATE_SHAPE: &str =
@@ -871,7 +894,7 @@ mod tests {
     fn what_it_doesnt_understand_is_an_error_that_names_the_line() {
         for (text, error) in [
             ("rule:\n", "mutastic.yaml line 1: rule: isn't a section. There's one called rules:."),
-            ("colour:\n", "mutastic.yaml line 1: colour: isn't a section; the sections are extends:, rules:, plugins:, filters:, operators:, exclude-tests:, gate: and timeout-ceiling:"),
+            ("colour:\n", "mutastic.yaml line 1: colour: isn't a section; the sections are extends:, rules:, plugins:, filters:, operators:, exclude-tests:, gate:, build: and timeout-ceiling:"),
             ("operators: [stronger]\n", "mutastic.yaml line 1: operators: takes a list, an item a line under it:\n  operators:\n    - stronger"),
             ("rules:\n  - skp: a\n", "mutastic.yaml line 2: skp: isn't a rule. There's one called skip:."),
             ("extends: a.yaml\nextends: b.yaml\n", "mutastic.yaml line 2: a file extends one other file, once"),
@@ -932,6 +955,22 @@ mod tests {
                 ("shop::all", vec![]),
             ]
         );
+    }
+
+    /// `build:`'s `args:` are kept in order, each with its line; the nearer file's replace the one it
+    /// extends's, and nothing else goes under `build:`.
+    #[test]
+    fn the_build_gets_its_arguments() {
+        let read = parse("build:\n  args:\n    - --offline\n    - '--config=a=\"b\"'\n").unwrap();
+        let args = read.build_args.unwrap();
+        let words: Vec<&str> = args.iter().map(|(word, _)| word.as_str()).collect();
+        assert_eq!(words, ["--offline", "--config=a=\"b\""]);
+        assert!(args[1].1.ends_with("line 4"), "{}", args[1].1);
+        assert_eq!(parse("rules:\n").unwrap().build_args, None);
+        assert_eq!(parse("build:\n  args:\n").unwrap().build_args, Some(vec![]));
+        for text in ["build: {}\n", "build:\n  - x\n", "build:\n  argz:\n"] {
+            assert!(parse(text).unwrap_err().contains(BUILD_SHAPE), "{text}");
+        }
     }
 
     /// `timeout-ceiling:` sets the most one mutant's tests may take, quoted or not, and a file's

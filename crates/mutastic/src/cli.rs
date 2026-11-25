@@ -34,11 +34,16 @@ pub fn main(args: Vec<OsString>) -> ExitCode {
     if args.first().is_some_and(|arg| arg == "mutastic") {
         args.remove(0);
     }
-    let args = joined(args);
+    // Nothing after `--` is mutastic's own: not its edition's choice, nor the directory it's on.
+    let (own, build) = crate::build_args::split_line(&args);
+    let args = joined(own);
+    if let Some(build) = &build {
+        crate::build_args::typed(build.clone());
+    }
     hook_panics(&args);
-    let args = match edition::chosen(&args)
-        .and_then(|(chosen, args)| front_door(chosen, &args).map(|forwarded| (forwarded, args)))
-    {
+    let args = match edition::chosen(&args).and_then(|(chosen, args)| {
+        front_door(chosen, &args, build.as_deref()).map(|forwarded| (forwarded, args))
+    }) {
         Ok((Some(code), _)) => return code,
         Ok((None, args)) => args,
         Err(failure) => return failed(&args, &failure),
@@ -101,6 +106,7 @@ fn joined(args: Vec<String>) -> Vec<String> {
 /// stream's last event, `run-failed`, on stdout, which is all a tool reading the stream reads.
 fn failed(args: &[String], failure: &Failure) -> ExitCode {
     let mut failure = failure.clone();
+    failure.message = crate::build_args::with_ending(&failure.message);
     let exit = if failure.code == Code::RedBaseline {
         failure.message = way_past(&failure.message, agent_format(args));
         TESTS_FAIL
@@ -229,7 +235,11 @@ fn directory_typed(args: &[String]) -> String {
 
 /// Hands the command to the Java edition when the project it points at is a Maven or Gradle
 /// project, or `--edition=java` says, and returns its exit status. `None` when this edition runs it.
-fn front_door(chosen: Option<Edition>, args: &[String]) -> Result<Option<ExitCode>, Failure> {
+fn front_door(
+    chosen: Option<Edition>,
+    args: &[String],
+    build: Option<&[String]>,
+) -> Result<Option<ExitCode>, Failure> {
     let Some(command) = args.first() else {
         return Ok(None);
     };
@@ -256,7 +266,12 @@ fn front_door(chosen: Option<Edition>, args: &[String]) -> Result<Option<ExitCod
     if route.edition == Edition::Rust {
         return Ok(None);
     }
-    Ok(Some(java::forward(&java::engine()?, args)))
+    let mut line = args.to_vec();
+    if let Some(build) = build {
+        line.push("--".to_string());
+        line.extend_from_slice(build);
+    }
+    Ok(Some(java::forward(&java::engine()?, &line)))
 }
 
 /// This command's version, and each edition's: the Rust edition is this one, and the Java
@@ -629,6 +644,8 @@ fn short_option(command: &str, word: &str) -> String {
 /// Whether `args` (without the program's name) is a command mutastic takes, with options it knows,
 /// without running it: for checking the commands the docs show.
 pub fn check(args: &[String]) -> Result<(), String> {
+    let (args, _) = crate::build_args::split_line(args);
+    let args = args.as_slice();
     checked(args).map_err(|failure| failure.message)
 }
 
@@ -824,6 +841,7 @@ fn configure(command: &str, parsed: &mut Parsed) -> Result<(), Failure> {
         rules.extend(crate::callrules::read(plugin, from)?);
     }
     crate::callrules::load(rules);
+    crate::build_args::settle(config.build_args.as_deref())?;
     parsed.rules = config.rules;
     if !config.operators.is_empty() {
         parsed.run_operators =
@@ -1135,7 +1153,7 @@ fn run(parsed: &Parsed) -> Result<ExitCode, Failure> {
             crate::shares::forget(&folder.join(EVENTS))?;
             Some(crate::shares::Tag::new(
                 shard,
-                crate::shares::code(&project)?,
+                crate::shares::share_code(&project)?,
             ))
         }
         _ => None,
@@ -1207,6 +1225,8 @@ fn history(
         &crate::shares::code(project)?,
         &engine::LeftOut::names(&options.exclude_tests),
     );
+    let code =
+        crate::record::code_built_with(&code, &crate::build_args::key(&project.mutastic_dir())?);
     let now = crate::record::RunRecord::before(
         project,
         &options.operators,
@@ -1316,7 +1336,7 @@ fn from_shards(parsed: &Parsed, shares: &str) -> Result<ExitCode, Failure> {
     let progress = start(parsed, true);
     let project = workspace::read(dir)?;
     progress.package(&project.package);
-    let code = crate::shares::code(&project)?;
+    let code = crate::shares::share_code(&project)?;
     let report = shares.whole(&project, &code, &options(parsed, Vec::new()), &|step| {
         progress.step(step)
     })?;
@@ -1602,7 +1622,11 @@ fn next(parsed: &Parsed) -> Result<ExitCode, Failure> {
         &crate::nextrun::code_under_test(&found),
         &parsed.operators,
         parsed.unsafe_mode.name(),
-        parsed.since.as_deref().unwrap_or("-"),
+        &format!(
+            "{}{}",
+            parsed.since.as_deref().unwrap_or("-"),
+            crate::build_args::key(&folder)?
+        ),
         &crate::record::tool(),
     );
     let last = crate::nextrun::NextRun::read(&folder, &key);
@@ -1721,6 +1745,10 @@ fn recorded(
     let code = crate::record::code_without(
         &crate::shares::code(&report.project)?,
         &engine::LeftOut::names(&report.left_out),
+    );
+    let code = crate::record::code_built_with(
+        &code,
+        &crate::build_args::key(&report.project.mutastic_dir())?,
     );
     let record = crate::record::RunRecord::of(report, &code, &crate::record::tool());
     let records = crate::records::RunRecords::new(folder);
@@ -1936,7 +1964,11 @@ fn ignore(parsed: &Parsed) -> Result<ExitCode, Failure> {
     };
     let command = |words: &[&str]| {
         let words: Vec<String> = words.iter().map(|word| shell(word)).collect();
-        format!("mutastic ignore {}{after}", words.join(" "))
+        format!(
+            "mutastic ignore {}{after}{}",
+            words.join(" "),
+            crate::build_args::ending()
+        )
     };
     if parsed.accept {
         return accept(&id, here, &command);
@@ -2388,8 +2420,9 @@ fn gate_open(
         format!(" --operators={operators}")
     };
     stdout_line!(
-        "mutastic gate: this task is gated from {} (operators: {operators}): before you finish, check the lines it changes with `mutastic run --since={base}{run_flag} --format=agent`; {}. {}",
+        "mutastic gate: this task is gated from {} (operators: {operators}): before you finish, check the lines it changes with `mutastic run --since={base}{run_flag} --format=agent{}`; {}. {}",
         &base[..base.len().min(7)],
+        crate::build_args::ending(),
         if hooked {
             "the gate checks them when you finish, so you needn't run `mutastic gate check` yourself"
         } else {

@@ -131,7 +131,8 @@ pub const COMMANDS: &[Command] = &[
                  --at, writes report files, and offers the commands to work on each missed mutant. Its \
                  progress goes to stderr, so stdout holds only the result. --shard runs one share \
                  of the mutants, for splitting a run across CI jobs, and --from-shards puts the \
-                 shares back together as the whole run.",
+                 shares back together as the whole run. A package that needs an argument to build, \
+                 a feature to turn on, say, gets what follows -- on the line.",
         exits: "0 when the score reaches the threshold, 1 when it doesn't; with --fail-on-new, 0 \
                 when every mutant no test catches is in the baseline, 1 when one isn't; with \
                 --only or --at, 0 when each mutant named is caught or skipped, as verify judges \
@@ -770,6 +771,14 @@ pub const ENVIRONMENT: &[Entry] = &[
         name: "TERM=dumb",
         meaning: "No colour, unless `FORCE_COLOR` is set, and progress as lines",
         detail: "",
+    },
+    Entry {
+        name: "MUTASTIC_BUILD_ARGS",
+        meaning: "Arguments for the build tool, unless the command line gives some",
+        detail: "Split at spaces, with quotes around an argument that has some: `--offline -Pci`. \
+                 The tests don't get them, and no command mutastic offers repeats them, so a \
+                 secret goes here rather than after `--`. It replaces `build:`'s `args:` in \
+                 `mutastic.yaml`.",
     },
     Entry {
         name: "MUTASTIC_PROGRESS",
