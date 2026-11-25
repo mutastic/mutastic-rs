@@ -1111,6 +1111,7 @@ fn options(parsed: &Parsed, only: Vec<String>) -> Options {
         exclude_tests: engine::LeftOut::listed(&parsed.configured_tests, &parsed.exclude_tests),
         audit_arid: std::env::var("MUTASTIC_ARID").is_ok_and(|value| value == "audit"),
         timeout_ceiling: parsed.timeout_ceiling,
+        history: crate::watch::History::default(),
     }
 }
 
@@ -1149,6 +1150,8 @@ fn run(parsed: &Parsed) -> Result<ExitCode, Failure> {
         )?);
     }
     let at = on_the_lines(parsed, &project, &mut options)?;
+    let records = folder.clone().unwrap_or_else(|| project.mutastic_dir());
+    options.history = history(parsed, &project, &options, &records)?;
     if format == Format::Jsonl {
         progress.stream(crate::progress::Events {
             unsafe_mode: parsed.unsafe_mode,
@@ -1179,6 +1182,69 @@ fn run(parsed: &Parsed) -> Result<ExitCode, Failure> {
     }
     report.streamed = progress.streamed();
     finish(parsed, report, format, folder.as_deref())
+}
+
+/// What earlier runs say of the tests' catches (decision 27): the package's watch, and, for a run of
+/// every mutant (or a share), the last comparable run's results in `records` when nothing it ran
+/// has changed since. A run of some mutants, or of a change, is compared with no run, as its record
+/// isn't kept.
+fn history(
+    parsed: &Parsed,
+    project: &workspace::Project,
+    options: &Options,
+    records: &std::path::Path,
+) -> Result<crate::watch::History, Failure> {
+    let watched = crate::watch::read(&project.mutastic_dir())
+        .into_keys()
+        .collect();
+    if partial(parsed) || parsed.since.is_some() {
+        return Ok(crate::watch::History {
+            same_code: std::collections::BTreeMap::new(),
+            watched,
+        });
+    }
+    let code = crate::record::code_without(
+        &crate::shares::code(project)?,
+        &engine::LeftOut::names(&options.exclude_tests),
+    );
+    let now = crate::record::RunRecord::before(
+        project,
+        &options.operators,
+        &code,
+        &crate::record::tool(),
+    );
+    let last = crate::records::RunRecords::new(records)
+        .comparable_to(&now)
+        .filter(|last| now.same_code_and_tool_as(last));
+    Ok(crate::watch::History {
+        same_code: last.map(|last| last.results).unwrap_or_default(),
+        watched,
+    })
+}
+
+/// The watch of likely flaky tests after `report` (decision 27), and what became of each test it
+/// watched: a full run of the package, or the `--from-shards` merge, keeps the watch it leaves; a
+/// share or a run of some mutants confirms against it and leaves it as it was.
+fn watched(parsed: &Parsed, report: &mut engine::Report) -> Result<(), Failure> {
+    let folder = report.project.mutastic_dir();
+    let before = crate::watch::read(&folder);
+    let keeps =
+        report.share.is_none() && !partial(parsed) && report.scope.is_none() && report.built;
+    if !keeps {
+        report.watched = crate::watch::unchanged(&before, report);
+        return Ok(());
+    }
+    let (after, watched) = crate::watch::after(&before, report);
+    if after != before {
+        crate::watch::write(&folder, &after).map_err(|error| {
+            crate::failure::disk(format!(
+                "couldn't keep the watch of likely flaky tests in {}: {error}",
+                folder.display()
+            ))
+        })?;
+    }
+    report.watched = watched;
+    Ok(())
 }
 
 /// With `--at`, the lines asked for, and `options` choosing only the mutants on them, of those the
@@ -1269,6 +1335,7 @@ fn finish(
     if !partial(parsed) && report.scope.is_none() && kept {
         report.comparison = recorded(&report, &folder)?;
     }
+    watched(parsed, &mut report)?;
     // Before the reports, whose `passed` says what the exit code will.
     report.fail_on_new = judged_on_new(parsed);
     // Only a full run writes reports: a run of some mutants would leave out the rest.
@@ -1695,9 +1762,12 @@ fn verify(parsed: &Parsed) -> Result<ExitCode, Failure> {
     let progress = start(parsed, false);
     let project = workspace::read(dir)?;
     progress.package(&project.package);
-    let report = engine::run(&project, &options(parsed, only.clone()), &|step| {
-        progress.step(step)
-    })?;
+    let mut options = options(parsed, only.clone());
+    // A watched test's catches are confirmed here too, so `verify` never passes on a lucky one.
+    options.history.watched = crate::watch::read(&project.mutastic_dir())
+        .into_keys()
+        .collect();
+    let report = engine::run(&project, &options, &|step| progress.step(step))?;
     progress.finished();
     let mut settled = true;
     let result_of = |id: &str| {

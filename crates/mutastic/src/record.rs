@@ -17,6 +17,7 @@ use std::path::Path;
 use sha2::{Digest, Sha256};
 
 use crate::engine::{Report, Status};
+use crate::workspace::Project;
 
 /// One mutant's result, as the next run compares with it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -150,6 +151,11 @@ fn unscored(status: Status) -> bool {
     matches!(status, Status::Ignored | Status::RuntimeError)
 }
 
+/// Caught in one run and not the other, as a comparison of the two runs counts it.
+pub(crate) fn flipped(before: Status, now: Status) -> bool {
+    detected(before) != detected(now) && !unscored(before) && !unscored(now)
+}
+
 impl RunRecord {
     /// The record of `report`, run on code whose hash is `code` by a mutastic whose hash is `tool`.
     pub fn of(report: &Report, code: &str, tool: &str) -> RunRecord {
@@ -167,13 +173,34 @@ impl RunRecord {
         let mut operators: Vec<&str> = report.operators.clone();
         operators.sort_unstable();
         RunRecord {
-            project: project_of(report),
+            project: project_of(&report.project),
             operators: operators.join(","),
             code: code.to_string(),
             tool: tool.to_string(),
             score: report.score(),
             results,
         }
+    }
+
+    /// What a run of `project` under `operators` will be compared by, before it runs: its code and
+    /// mutastic, with no results yet. What an earlier run found is then known before this one's
+    /// mutants run.
+    pub fn before(project: &Project, operators: &[&str], code: &str, tool: &str) -> RunRecord {
+        let mut operators = operators.to_vec();
+        operators.sort_unstable();
+        RunRecord {
+            project: project_of(project),
+            operators: operators.join(","),
+            code: code.to_string(),
+            tool: tool.to_string(),
+            score: None,
+            results: BTreeMap::new(),
+        }
+    }
+
+    /// Whether nothing `previous` ran has changed since: the code, the tests and mutastic.
+    pub fn same_code_and_tool_as(&self, previous: &RunRecord) -> bool {
+        self.code == previous.code && self.tool == previous.tool
     }
 
     /// Whether `previous` is of the same package, in the same place: else comparing the two says
@@ -197,10 +224,7 @@ impl RunRecord {
             .iter()
             .filter_map(|(id, now)| {
                 let before = previous.results.get(id)?;
-                let flipped = detected(before.status) != detected(now.status)
-                    && !unscored(before.status)
-                    && !unscored(now.status);
-                flipped.then(|| {
+                flipped(before.status, now.status).then(|| {
                     let caught = if detected(now.status) { now } else { before };
                     Flip {
                         id: id.clone(),
@@ -304,8 +328,7 @@ fn status_named(name: &str) -> Option<Status> {
 }
 
 /// `/code/shop`: which package a record is of, by its directory.
-fn project_of(report: &Report) -> String {
-    let project = &report.project;
+fn project_of(project: &Project) -> String {
     // Rebuilt from its parts, so a package at the workspace's root has no `/` at the end.
     project
         .workspace

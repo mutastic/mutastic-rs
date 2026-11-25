@@ -513,6 +513,8 @@ impl Shares {
             stale_ignores,
             scope: None,
             flaky: self.flaky(),
+            likely_flaky: self.likely_flaky(),
+            watched: Vec::new(),
             // A share's `mutant-revised` has replaced its `mutant-finished`: the whole run's
             // events give each mutant's last result once.
             revised: BTreeMap::new(),
@@ -528,6 +530,43 @@ impl Shares {
             // The shares measured their own sites: put together, no coverage pass ran here.
             measured: BTreeMap::new(),
         }
+    }
+
+    /// The tests any share named likely flaky, once each: what named it in each share, and every
+    /// mutant it changed or that ran again without it, in all of them. A share's events don't say
+    /// which reason changed which mutant, so each reason has all of them.
+    fn likely_flaky(&self) -> Vec<crate::likely::LikelyFlaky> {
+        let mut by_test: BTreeMap<String, crate::likely::LikelyFlaky> = BTreeMap::new();
+        for read in &self.shares {
+            let named = read
+                .finished
+                .as_ref()
+                .and_then(|finished| finished["likelyFlaky"].as_array().cloned())
+                .unwrap_or_default();
+            for found in named {
+                let test = found["test"].as_str().unwrap_or_default().to_string();
+                let mutants = strings(&found["mutants"]);
+                let entry =
+                    by_test
+                        .entry(test.clone())
+                        .or_insert_with(|| crate::likely::LikelyFlaky {
+                            test,
+                            by_reason: BTreeMap::new(),
+                            rerun: BTreeSet::new(),
+                        });
+                for reason in strings(&found["reasons"]) {
+                    if let Some(reason) = crate::likely::Reason::named(&reason) {
+                        entry
+                            .by_reason
+                            .entry(reason)
+                            .or_default()
+                            .extend(mutants.iter().cloned());
+                    }
+                }
+                entry.rerun.extend(strings(&found["rerun"]));
+            }
+        }
+        by_test.into_values().collect()
     }
 
     /// Every share's flaky tests, each once.
@@ -655,6 +694,7 @@ fn result_of(index: usize, event: &Value) -> Option<MutantResult> {
         unconfirmed: text("unconfirmedCatchBy"),
         failure_origin: text("failureOrigin"),
         false_catch_by: text("falseCatchBy"),
+        flaky_catch_by: text("flakyCatchBy"),
         tests_run: event["testsRun"].as_u64().unwrap_or(0) as usize,
         took: Duration::from_millis(event["durationMs"].as_u64().unwrap_or(0)),
         inputs: event["inputs"]

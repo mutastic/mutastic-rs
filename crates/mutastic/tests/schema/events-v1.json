@@ -333,7 +333,11 @@
         },
         "unconfirmedCatchBy": {
           "$ref": "#/$defs/test",
-          "description": "A test whose catch didn't repeat when run again (`--confirm-catches`): likely flaky, and its catch doesn't count."
+          "description": "A test whose catch didn't repeat when run again (`--confirm-catches`, or 3 more times while it's watched): likely flaky, and its catch doesn't count."
+        },
+        "flakyCatchBy": {
+          "$ref": "#/$defs/test",
+          "description": "A test named likely flaky in this run that had caught the mutant, so its catch doesn't count (decision 27): the mutant ran again without it, and this result is what the other covering tests made of it. In `mutant-revised`; `falseCatchBy` instead when the test failed on its own."
         },
         "falseCatchBy": {
           "$ref": "#/$defs/test",
@@ -534,7 +538,7 @@
     },
     "likelyFlaky": {
       "type": "object",
-      "description": "A test that's likely flaky, the mutants whose results it changed, and what named it.",
+      "description": "A test that's likely flaky, the mutants whose results it changed, and what named it. None of its catches count in the run that names it (decision 27): each mutant it reached ran again without it.",
       "required": ["test", "mutants", "reasons"],
       "properties": {
         "test": { "$ref": "#/$defs/test" },
@@ -544,9 +548,26 @@
         },
         "reasons": {
           "type": "array",
-          "items": { "enum": ["changed-since-last-run", "catch-not-repeated"] },
-          "description": "`changed-since-last-run`: with the same code and mutastic, a mutant it caught changed result. `catch-not-repeated`: its catch didn't repeat under `--confirm-catches`."
+          "items": { "enum": ["changed-since-last-run", "catch-not-repeated", "fails-alone"] },
+          "description": "`changed-since-last-run`: with the same code and mutastic, a mutant it caught changed result. `catch-not-repeated`: its catch didn't repeat when confirmed, under `--confirm-catches` or while it's watched. `fails-alone`: run again after the mutants on its own with no mutant in, it failed."
+        },
+        "rerun": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/mutantId" },
+          "description": "The mutants it reached that ran again without it, so that none of its catches count (decision 27)."
         }
+      }
+    },
+    "watched": {
+      "type": "object",
+      "description": "A test named likely flaky in an earlier run and remembered in `last-runs/flaky-watch.tsv` (decision 27): each catch it makes counts only if it repeats `confirmations` more times.",
+      "required": ["test", "held", "needed", "confirmations"],
+      "properties": {
+        "test": { "$ref": "#/$defs/test" },
+        "held": { "type": "integer", "minimum": 0, "description": "Full runs (or `--from-shards` merges) in a row, this one included, in which it caught mutants and every catch held. A share never adds to it." },
+        "needed": { "const": 3, "description": "How many such runs before it's forgotten." },
+        "confirmations": { "const": 3, "description": "How many more times each of its catches is run." },
+        "released": { "const": true, "description": "It held for `needed` runs, so it's forgotten after this run. Only there when it was." }
       }
     },
     "unrelatedCatch": {
@@ -714,7 +735,12 @@
         "likelyFlaky": {
           "type": "array",
           "items": { "$ref": "#/$defs/likelyFlaky" },
-          "description": "Tests that are likely flaky, and why."
+          "description": "Tests that are likely flaky, and why: none of their catches count."
+        },
+        "watched": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/watched" },
+          "description": "Tests named likely flaky in an earlier run, whose catches this run confirmed 3 more times each (decision 27). Only when there are any."
         },
         "unrelatedCatches": {
           "type": "array",

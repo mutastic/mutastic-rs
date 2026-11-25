@@ -3789,9 +3789,10 @@ fn a_run_takes_the_java_editions_options_for_catches_tests_and_cards() {
     for said in [
         "mutastic: PASS · score 90.9% (threshold 80) · 1 missed, 0 not covered, 10 caught of 11 mutants\n".to_string(),
         "vs last run: 100.0% → 90.9% (same code)\n".to_string(),
-        format!("likely flaky: {flaky}; with the code unchanged, whether it catches {edge} changed since the last run. Its catches can't be trusted until it's fixed\n"),
-        format!("likely flaky: {flaky}; its catches of {edge}, {never}, m6d05659f, m95f96847 didn't repeat when run again, so the other covering tests decided\n"),
-        format!("   covered by: tests::small_orders_pay_full_price, {flaky}, more::nothing_off_under_a_hundred, pricing::big_orders_get_ten_percent_off; all still pass with the change ({flaky} failed once, then passed: flaky)\n"),
+        format!("likely flaky: {flaky}; with the code unchanged, whether it catches {edge} changed since the last run. Its catches can't be trusted until it's fixed. None of its catches count: 5 mutants it reached ran again without it, and the next runs confirm each catch it makes 3 times.\n"),
+        format!("likely flaky: {flaky}; its catches of {never}, m6d05659f, m95f96847, {edge} didn't repeat when run again, so the other covering tests decided. None of its catches count: 5 mutants it reached ran again without it, and the next runs confirm each catch it makes 3 times.\n"),
+        // Decision 27: the mutants it reached ran again without it, so it isn't among their tests.
+        "   covered by: tests::small_orders_pay_full_price, more::nothing_off_under_a_hundred, pricing::big_orders_get_ten_percent_off; all still pass with the change\n".to_string(),
     ] {
         assert!(agent.contains(&said), "no {said:?} in:\n{agent}");
     }
@@ -3831,6 +3832,7 @@ fn a_run_takes_the_java_editions_options_for_catches_tests_and_cards() {
             "test": flaky,
             "mutants": [never, "m6d05659f", "m95f96847", edge],
             "reasons": ["catch-not-repeated"],
+            "rerun": [never, "m6d05659f", "m95f96847", edge, always],
         }])
     );
 
@@ -3840,14 +3842,13 @@ fn a_run_takes_the_java_editions_options_for_catches_tests_and_cards() {
     );
     assert!(
         full.contains(&format!(
-            " ! likely flaky: {flaky}; its catches of {edge}, {never}, m6d05659f, m95f96847 didn't repeat when run again\n"
+            " ! likely flaky: {flaky}; its catches of {never}, m6d05659f, m95f96847, {edge} didn't repeat when run again. None of its catches count: 5 mutants it reached ran again without it, and the next runs confirm each catch it makes 3 times.\n"
         )),
         "{full}"
     );
+    // Decision 27: the mutant ran again without it, so its card has the other three.
     assert!(
-        full.contains(&format!(
-            "(all 4 covering tests still pass); {flaky} failed once, then passed: flaky\n"
-        )),
+        full.contains("(all 3 covering tests still pass)\n"),
         "{full}"
     );
 
@@ -6147,5 +6148,166 @@ fn a_mutant_stopped_at_the_ceiling_says_so() {
     assert_eq!(
         reasons,
         ["the tests ran for the most a mutant's tests may, 2.0s (timeout-ceiling:)"]
+    );
+}
+
+/// The watch of likely flaky tests a package's runs keep (decision 27), as a test sets it up.
+fn watching(dir: &Path, lines: &str) {
+    let file = dir.join("target/mutastic/last-runs/flaky-watch.tsv");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(file, lines).unwrap();
+}
+
+fn watch(dir: &Path) -> Option<String> {
+    std::fs::read_to_string(dir.join("target/mutastic/last-runs/flaky-watch.tsv")).ok()
+}
+
+/// Decision 27, as the Java edition has it: the run that names a test likely flaky counts none of
+/// its catches, as what it reached runs again without it, and remembers it; the next run, without
+/// `--confirm-catches`, confirms each of its catches 3 times, and names it again.
+#[test]
+fn a_likely_flaky_tests_catches_dont_count_and_the_next_runs_confirm_them() {
+    let dir = copy_of("pricing", "likely-flaky");
+    std::fs::write(
+        dir.join("tests/more.rs"),
+        format!("{SECOND_CATCHER}{FAILS_ONCE}"),
+    )
+    .unwrap();
+    let flaky = "more::discounts_now_and_then";
+
+    let (_, lucky) = mutastic_in(&dir, &["run", "--format=agent"]);
+    assert!(lucky.contains("score 100.0%"), "{lucky}");
+    assert!(watch(&dir).is_none());
+    let (code, naming) = mutastic_in(&dir, &["run", "--format=agent", "--confirm-catches"]);
+    assert_eq!(code, 0, "{naming}");
+    assert!(
+        naming.contains(&format!(
+            "likely flaky: {flaky}; its catches of m1636f6d5, m6d05659f, m95f96847, mb2f8ae57 didn't repeat when run again, so the other covering tests decided. None of its catches count: 5 mutants it reached ran again without it, and the next runs confirm each catch it makes 3 times.\n"
+        )),
+        "{naming}"
+    );
+    assert_eq!(
+        watch(&dir).as_deref(),
+        Some(format!("{flaky}\t0\n").as_str())
+    );
+
+    let (_, watched) = mutastic_in(&dir, &["run", "--format=jsonl", "--report=none"]);
+    let finished = events(&watched).pop().unwrap();
+    assert_eq!(
+        finished["likelyFlaky"][0]["reasons"],
+        serde_json::json!(["catch-not-repeated"]),
+        "{finished}"
+    );
+    assert_eq!(finished["score"], 90.9, "{finished}");
+    assert!(finished.get("watched").is_none(), "{finished}");
+    let revised: Vec<Value> = events(&watched)
+        .into_iter()
+        .filter(|event| event["reason"] == "mutant-revised")
+        .collect();
+    assert!(!revised.is_empty(), "{watched}");
+    assert_eq!(
+        watch(&dir).as_deref(),
+        Some(format!("{flaky}\t0\n").as_str())
+    );
+}
+
+/// A watched test whose every catch repeats has held a run; at the third, it's forgotten, and the
+/// watch with it.
+#[test]
+fn a_watched_test_whose_catches_hold_is_forgotten_at_its_third_run() {
+    let dir = copy_of("pricing", "watched-held");
+    watching(&dir, "tests::small_orders_pay_full_price\t2\n");
+
+    let (code, agent) = mutastic_in(&dir, &["run", "--format=agent"]);
+
+    assert_eq!(code, 0, "{agent}");
+    assert!(
+        agent.contains(
+            "watched: tests::small_orders_pay_full_price, likely flaky in an earlier run: each catch it made had to repeat 3 times; 3 of 3 runs held, so it's no longer watched\n"
+        ),
+        "{agent}"
+    );
+    assert!(watch(&dir).is_none());
+}
+
+/// Shares may run side by side on one work directory, and each sees only part of a test's
+/// catches: a share confirms against the watch, and leaves it as it was. Put together, the shares'
+/// run moves it on.
+#[test]
+fn a_share_confirms_against_the_watch_and_never_writes_it() {
+    let dir = copy_of("pricing", "watched-shares");
+    let kept = "tests::nothing_watched_catches\t1\ntests::small_orders_pay_full_price\t2\n";
+    watching(&dir, kept);
+
+    for share in ["--shard=1/2", "--shard=2/2"] {
+        let (_, out) = mutastic_in(&dir, &["run", "--format=agent", share]);
+        assert!(out.contains("watched: tests::"), "{out}");
+    }
+
+    assert_eq!(watch(&dir).as_deref(), Some(kept));
+    let (_, whole) = mutastic_in(
+        &dir,
+        &[
+            "run",
+            "--format=agent",
+            "--from-shards=target/mutastic/shares",
+        ],
+    );
+    assert!(
+        whole.contains("watched: tests::small_orders_pay_full_price, likely flaky in an earlier run: each catch it made had to repeat 3 times; 3 of 3 runs held, so it's no longer watched\n"),
+        "{whole}"
+    );
+    assert_eq!(
+        watch(&dir).as_deref(),
+        Some("tests::nothing_watched_catches\t1\n")
+    );
+}
+
+/// A test's name in a likely-flaky or watched line is the project's text: a Rust test's name can't
+/// hold an escape, but the watch and a share's events are files, read back. Shown escaped in both
+/// lines, never sent.
+#[test]
+fn a_likely_flaky_or_watched_tests_name_is_escaped() {
+    let dir = copy_of("pricing", "watched-escaped");
+    let planted = "tests::planted\u{1b}[2J";
+    watching(&dir, &format!("{planted}\t1\n"));
+    for share in ["--shard=1/2", "--shard=2/2"] {
+        mutastic_in(&dir, &["run", "--format=agent", share]);
+    }
+    let events_file = dir.join("target/mutastic/shares/1-of-2/events.jsonl");
+    let text = std::fs::read_to_string(&events_file).unwrap();
+    let mut lines: Vec<Value> = events(&text);
+    let last = lines.last_mut().unwrap();
+    last["likelyFlaky"] = serde_json::json!([{
+        "test": planted,
+        "mutants": ["mb2f8ae57"],
+        "reasons": ["catch-not-repeated"],
+        "rerun": ["mb2f8ae57"],
+    }]);
+    let rewritten: String = lines.iter().map(|line| format!("{line}\n")).collect();
+    std::fs::write(&events_file, rewritten).unwrap();
+
+    let (_, agent) = mutastic_in(
+        &dir,
+        &[
+            "run",
+            "--format=agent",
+            "--from-shards=target/mutastic/shares",
+        ],
+    );
+    watching(&dir, &format!("{planted}\t1\n"));
+    let (_, human) = mutastic_in(&dir, &["run", "--format=full", "--shard=1/2"]);
+
+    for out in [&agent, &human] {
+        assert!(!out.contains('\u{1b}'), "{out}");
+    }
+    assert!(
+        agent
+            .contains("likely flaky: tests::planted\\x1b[2J; its catch of mb2f8ae57 didn't repeat"),
+        "{agent}"
+    );
+    assert!(
+        human.contains(" ! watched: tests::planted\\x1b[2J, likely flaky in an earlier run"),
+        "{human}"
     );
 }

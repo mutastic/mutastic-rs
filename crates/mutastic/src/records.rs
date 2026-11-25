@@ -85,6 +85,11 @@ impl RunRecords {
             .filter_map(Result::ok)
             .map(|entry| entry.path())
             .filter(|path| path.extension().is_some_and(|extension| extension == "tsv"))
+            // The watch of likely flaky tests lives beside the records, and isn't one.
+            .filter(|path| {
+                path.file_name()
+                    .is_none_or(|name| name != crate::watch::FILE)
+            })
             .map(|path| {
                 let modified = std::fs::metadata(&path)
                     .and_then(|metadata| metadata.modified())
@@ -144,6 +149,31 @@ mod tests {
         assert_eq!(defaults.map(|r| r.score), Some(Some(80.0)));
         assert_eq!(stronger.map(|r| r.score), Some(Some(60.0)));
         assert_eq!(other, None);
+    }
+
+    /// The watch of likely flaky tests lives beside the records, so a cache that keeps one keeps
+    /// both: it's neither read as a record nor dropped as the oldest of them.
+    #[test]
+    fn the_flaky_watch_beside_the_records_is_no_record_and_stays() {
+        let folder = folder("watch");
+        let records = RunRecords::new(&folder);
+        let watched = BTreeMap::from([("tests::a".to_string(), 1)]);
+        crate::watch::write(&folder, &watched).unwrap();
+        // Older than every record, so it would go first if it were one.
+        std::fs::File::options()
+            .write(true)
+            .open(crate::watch::file(&folder))
+            .unwrap()
+            .set_modified(std::time::UNIX_EPOCH)
+            .unwrap();
+        for set in 0..KEPT_BESIDE_THE_LATEST + 3 {
+            records.keep(&record(&format!("set{set}"), 1.0)).unwrap();
+        }
+        let set_aside = records.others_oldest_first().len();
+        let kept = crate::watch::read(&folder);
+        std::fs::remove_dir_all(&folder).ok();
+        assert_eq!(kept, watched);
+        assert_eq!(set_aside, KEPT_BESIDE_THE_LATEST);
     }
 
     #[test]
