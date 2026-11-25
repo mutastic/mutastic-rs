@@ -289,7 +289,7 @@ mutastic run --since --force-coverage
 
 ### `--exclude-tests`
 
-`--exclude-tests=TEST`, for [`baseline`](#baseline), [`explain`](#explain), [`next`](#next), [`run`](#run), [`verify`](#verify). A test to leave out of the run, by its name as a run shows it, or a module of tests by its path: one that can't run reliably here, with a race or a fixed port; the summary names it. mutastic.yaml's exclude-tests: leaves one out of every run, with its reason.
+`--exclude-tests=TEST`, for [`baseline`](#baseline), [`explain`](#explain), [`next`](#next), [`run`](#run), [`verify`](#verify). A test to leave out of the run, by its name as a run shows it, or a module of tests by its path: one that can't run reliably here, with a race or a fixed port; the summary names it, and says so of a name that matches no test. mutastic.yaml's exclude-tests: leaves one out of every run, with its reason.
 
 ```sh
 mutastic baseline --exclude-tests=tests::small_orders_pay_full_price
