@@ -6162,10 +6162,7 @@ fn a_run_on_github_actions_annotates_its_misses_and_summarises_the_job() {
 fn a_mutant_stopped_at_the_ceiling_says_so() {
     let dir = copy_of("spin", "ceiling");
     std::fs::write(dir.join("mutastic.yaml"), "timeout-ceiling: 2s\n").unwrap();
-    let started = Instant::now();
     let (code, out) = mutastic_in(&dir, &["run", ".", "--only=m8228fb96", "--format=full"]);
-    let took = started.elapsed();
-    assert!(took < Duration::from_secs(10), "{took:?}");
     assert_eq!(code, 0, "{out}");
     let note = "its tests ran for the most a mutant's tests may, 2.0s (timeout-ceiling:)";
     assert!(
@@ -6186,6 +6183,14 @@ fn a_mutant_stopped_at_the_ceiling_says_so() {
     assert_eq!(finished.len(), 1, "{jsonl}");
     assert_eq!(finished[0]["status"], "Timeout");
     assert!(finished[0].get("statusReason").is_none(), "{}", finished[0]);
+    // The mutant's own time, not the run's: the run builds the crate first, which on a slow
+    // runner took most of ten seconds by itself. Stopped at the 2s ceiling, the mutant's tests
+    // ran at least that long and far short of the 10s floor the ceiling goes under.
+    let took = Duration::from_millis(finished[0]["durationMs"].as_u64().unwrap());
+    assert!(
+        took >= Duration::from_secs(2) && took < Duration::from_secs(10),
+        "{took:?}"
+    );
     let report: Value = serde_json::from_str(
         &std::fs::read_to_string(dir.join("target/mutastic/mutation.json")).unwrap(),
     )
