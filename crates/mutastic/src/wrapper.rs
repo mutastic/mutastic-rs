@@ -2,6 +2,8 @@
 //! copy's own crates only, so a flag added here never reaches a dependency, and the project's own
 //! rustflags still apply.
 
+#![expect(clippy::disallowed_methods, reason = "runs rustc as Cargo's wrapper")]
+
 use std::ffi::OsString;
 use std::process::{Command, ExitCode};
 

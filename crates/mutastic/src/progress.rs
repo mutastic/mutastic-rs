@@ -3,6 +3,11 @@
 //! never silent. `PROGRESS.md` at the repository's root is the contract, shared with the Java
 //! edition word for word.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "whether a CI, an agent or a dumb terminal is watching"
+)]
+
 mod frames;
 
 use std::io::{IsTerminal as _, Write as _};

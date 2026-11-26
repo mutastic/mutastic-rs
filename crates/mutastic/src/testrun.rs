@@ -1,6 +1,11 @@
 //! Running the project's tests: libtest binaries, run by mutastic itself with `--exact`, each in a
 //! process of its own, so a mutant that loops forever can be killed.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "runs the project's test binaries, and stops them"
+)]
+
 use std::io::Read;
 use std::path::Path;
 use std::process::{Command, Stdio};

@@ -16,6 +16,11 @@
 //! target is not known, and its code is mutated until the build says. Wrongly leaving code out
 //! would hide a gap, where wrongly keeping it only shows it as not covered.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "asks rustc for its cfgs, with the target and flags Cargo gives it"
+)]
+
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::Path;

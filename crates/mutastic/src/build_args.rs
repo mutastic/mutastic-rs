@@ -3,6 +3,11 @@
 //! place of the others. Only those typed after `--` are repeated in the commands mutastic offers: one
 //! from the variable or the file applies by itself, and may be a secret.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "reads the build arguments the user and the gate pass in the environment"
+)]
+
 use std::collections::BTreeSet;
 use std::hash::{BuildHasher as _, Hasher as _};
 use std::path::Path;

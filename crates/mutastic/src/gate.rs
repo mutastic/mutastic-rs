@@ -14,6 +14,8 @@
 //! ignore the person accepts between turns, after a check let the agent stop and before the next
 //! prompt, joins where the task starts; one made while the agent has the turn stays the agent's.
 
+#![expect(clippy::disallowed_methods, reason = "the gate asks git what changed")]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 

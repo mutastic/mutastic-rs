@@ -1,5 +1,10 @@
 //! What the integration tests share.
 
+#![allow(
+    clippy::disallowed_methods,
+    reason = "where the Java edition is kept; an allow, as not every test crate uses this module"
+)]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fs::File;

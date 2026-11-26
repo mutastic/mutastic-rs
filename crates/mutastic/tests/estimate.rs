@@ -2,6 +2,7 @@
 //! before its count: from the last whole run, or from a coverage pass `--estimate` runs, and never
 //! from a record of other code or other operators.
 
+#![expect(clippy::disallowed_methods, reason = "runs mutastic as a user does")]
 #![allow(
     clippy::unwrap_used,
     reason = "a helper here asserts as the tests it serves do: a value that isn't there fails the test"

@@ -3,6 +3,7 @@
 //! of the source, builds all those copies in one crate, and checks each behaves as the mutant does
 //! in mutastic's own build, over a range of inputs.
 
+#![expect(clippy::disallowed_methods, reason = "runs the fixture's tests")]
 #![allow(
     clippy::unwrap_used,
     reason = "a helper here asserts as the tests it serves do: a value that isn't there fails the test"
@@ -289,6 +290,10 @@ fn every_card_claim_behaves_as_its_mutant_does() {
 /// and that one's result is its own, so a twin that isn't one would hide a mutant a test could
 /// catch. The same code made by two operators, and the changes to a comparison of an unsigned
 /// value with 0 that agree for 0 and above, are each found.
+#[expect(
+    clippy::expect_used,
+    reason = "a test's helper: its expect is the test's assertion"
+)]
 fn twins_behave_as_the_one_they_are_the_same_as(
     found: &sites::Crate,
     compared: &[(u32, Probed, Probed)],
@@ -361,6 +366,10 @@ fn twins_behave_as_the_one_they_are_the_same_as(
 /// boundaries where both sides give the same value at the edge, and theirs (a branch that isn't a
 /// side, a store of more, floats). So are the zero checks on values proved unsigned, and a signed
 /// one's runs; and `cfg!(debug_assertions)` forced true, and forced false runs.
+#[expect(
+    clippy::expect_used,
+    reason = "a test's helper: its expect is the test's assertion"
+)]
 fn skipped_as_equivalent_behave_as_the_original(
     found: &sites::Crate,
     compared: &[(u32, Probed, Probed)],

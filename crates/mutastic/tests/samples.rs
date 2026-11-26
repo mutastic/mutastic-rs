@@ -1,5 +1,6 @@
 //! `mutastic run` on the samples, through the binary as a person runs it.
 
+#![expect(clippy::disallowed_methods, reason = "runs mutastic as a user does")]
 #![allow(
     clippy::unwrap_used,
     reason = "a helper here asserts as the tests it serves do: a value that isn't there fails the test"

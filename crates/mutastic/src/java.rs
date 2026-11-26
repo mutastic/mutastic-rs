@@ -20,6 +20,11 @@
 //!   `JAVA_HOME` and those installed where JDKs are kept, else the `java` on the `PATH`: see [`jdk`].
 //!   The project's build keeps the `JAVA_HOME` and `PATH` it was given.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "finds, fetches and starts the Java edition"
+)]
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 

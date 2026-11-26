@@ -87,6 +87,10 @@ pub(super) fn mark(mutants: &mut [Mutant]) {
         }
     }
     for twins in members.values().filter(|twins| twins.len() > 1) {
+        #[expect(
+            clippy::expect_used,
+            reason = "the filter keeps sets of two or more, so there is a least"
+        )]
         let runs = *twins
             .iter()
             .min_by_key(|&&index| (tier(mutants[index].operator), index))

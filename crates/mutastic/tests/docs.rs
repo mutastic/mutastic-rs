@@ -12,6 +12,10 @@
 //! To write the docs' copy again, after a change to what mutastic prints:
 //! `just docs-output` (`MUTASTIC_DOCS_WRITE=1 cargo test --test docs`), then read the diff.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "runs mutastic as the docs show it"
+)]
 #![allow(
     clippy::unwrap_used,
     reason = "a helper here asserts as the tests it serves do: a value that isn't there fails the test"
@@ -400,6 +404,10 @@ fn blocks(text: &str) -> Vec<Block> {
 
 /// The getting-started tour, in order: a run that misses one mutant, the test the page adds,
 /// `verify` passing, and the run after it.
+#[expect(
+    clippy::expect_used,
+    reason = "a test's helper: its expect is the test's assertion"
+)]
 fn getting_started(work: &Path, shown: &mut BTreeMap<String, String>) {
     let page = docs().join("getting-started.md");
     let text = std::fs::read_to_string(&page).unwrap();
@@ -461,6 +469,10 @@ fn getting_started(work: &Path, shown: &mut BTreeMap<String, String>) {
 
 /// What the README shows of the getting-started run: the card for `id`, then the score and the
 /// verdict, as the Java edition's README shows its own.
+#[expect(
+    clippy::expect_used,
+    reason = "a test's helper: its expect is the test's assertion"
+)]
 fn readme_card(output: &str, id: &str) -> String {
     let card = card(output, &BTreeSet::from([id.to_string()])).expect("the run has a card");
     let verdict: String = output
@@ -511,6 +523,10 @@ fn mutation_json(work: &Path) -> String {
     }))
 }
 
+#[expect(
+    clippy::expect_used,
+    reason = "a test's helper: its expect is the test's assertion"
+)]
 fn reference(work: &Path, shown: &mut BTreeMap<String, String>) {
     for format in ["brief", "concise", "grouped", "agent", "jsonl"] {
         // Each a first run, as the Java edition shows each format from a fresh copy.
@@ -773,6 +789,10 @@ fn operators(work: &Path, shown: &mut BTreeMap<String, String>) {
 
 /// What the troubleshooting page shows: a mutant withdrawn because it doesn't compile, loop
 /// counters that never end, code this build doesn't have, and a workspace's root.
+#[expect(
+    clippy::expect_used,
+    reason = "a test's helper: its expect is the test's assertion"
+)]
 fn troubleshooting(work: &Path, shown: &mut BTreeMap<String, String>) {
     let jsonl = ran(
         work,
@@ -930,6 +950,10 @@ fn red_and_broken(work: &Path, shown: &mut BTreeMap<String, String>) {
 }
 
 /// The suggested-tests page's card: a test written out for `late_fee`'s boundary.
+#[expect(
+    clippy::expect_used,
+    reason = "a test's helper: its expect is the test's assertion"
+)]
 fn suggested(work: &Path, shown: &mut BTreeMap<String, String>) {
     let run = ran(work, &["run", "fixtures/suggestions", "--report=none"]);
     let ids = ids_of(work, "suggestions", "late_fee", "mutastic/boundary");
@@ -1015,6 +1039,10 @@ const FAST_PATH_REASON: &str = "Differs only when the fast way and the safe way 
 /// The fastpath fixture: a check that only picks between a fast way and a safe way. Its two
 /// mutants, `>` made `>=` and the check made always true, are the run's only misses, on one card
 /// as a person sees it; then the first is recorded as equivalent, as the page says to.
+#[expect(
+    clippy::expect_used,
+    reason = "a test's helper: its expect is the test's assertion"
+)]
 fn fast_path(work: &Path, shown: &mut BTreeMap<String, String>) {
     let run = ran(work, &["run", "fixtures/fastpath", "--report=none"]);
     let found = found_in(work, "fastpath");
@@ -1220,6 +1248,10 @@ fn red(work: &Path, test: &str) -> String {
 
 /// A cycle's run that misses what its code ran ahead of: the run, and the ids its card's `verify`
 /// names, which `page` must show that command for.
+#[expect(
+    clippy::expect_used,
+    reason = "a test's helper: its expect is the test's assertion"
+)]
 fn missed(work: &Path, page: &str) -> (Ran, String) {
     let run = ran(work, &["run", "fixtures/pricing", "--since=HEAD"]);
     assert_eq!(run.code, 1, "{}", run.stdout);
@@ -1488,6 +1520,10 @@ fn llvm_cov(work: &Path) -> Option<String> {
 /// check the results: `cargo llvm-cov` measures the same coverage for both, and mutastic misses
 /// mutants of the first that the second catches, all but the boundary. The edge's tests catch that,
 /// and `stronger` finds what every test buying one item hides, which the page's last test catches.
+#[expect(
+    clippy::expect_used,
+    reason = "a test's helper: its expect is the test's assertion"
+)]
 fn coverage(work: &Path, shown: &mut BTreeMap<String, String>) {
     let steps = coverage_steps();
     let kinds: Vec<&str> = steps.iter().map(|(kind, _)| kind.as_str()).collect();
@@ -1970,6 +2006,10 @@ fn courier_progress(work: &Path, progress: &str, heartbeat: Option<&str>) -> Str
 /// every permanent line so far, then that frame's block. Each write is a frame, between the
 /// synchronized output's marks: what clears the last block, any permanent lines, then the block,
 /// drawn with wrapping off.
+#[expect(
+    clippy::expect_used,
+    reason = "a test's helper: its expect is the test's assertion"
+)]
 fn screen_at_slow(stderr: &str) -> String {
     let clearing =
         regex::Regex::new(r"\r\x1b\[2K|\x1b\[1A\x1b\[2K|\x1b\]9;4;[^\x1b]*\x1b\\").unwrap();
@@ -1993,6 +2033,10 @@ fn screen_at_slow(stderr: &str) -> String {
 /// mutant runs past what its test took; in a log, from the first file's line on, the heartbeat
 /// that fills the silence while that mutant runs. Each mutant runs the test's second and a half, so
 /// the heartbeat, every six and a half seconds, comes inside the slow mutant's seven and a half.
+#[expect(
+    clippy::expect_used,
+    reason = "a test's helper: its expect is the test's assertion"
+)]
 fn progress(work: &Path, shown: &mut BTreeMap<String, String>) {
     let live = courier_progress(work, "bar", None);
     shown.insert("concepts/run-live".into(), screen_at_slow(&live));

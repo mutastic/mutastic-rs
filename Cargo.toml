@@ -33,10 +33,12 @@ unsafe_code = "forbid"
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 # What the code already does, kept so: no `unwrap` outside tests (clippy.toml allows it there),
-# every `#[allow]` says why beside it, and a set's `insert` answers whether it was new.
+# every `#[allow]` says why beside it, and a set's `insert` answers whether it was new; an
+# `expect` outside tests says beside it why the value is always there.
 unwrap_used = "warn"
 allow_attributes_without_reason = "warn"
 set_contains_or_insert = "warn"
+expect_used = "warn"
 
 # Dependencies optimised in dev and test builds, mutastic's own crate not: the integration tests
 # run mutastic hundreds of times, and its parsing, regexes and JSON unoptimised made each run five

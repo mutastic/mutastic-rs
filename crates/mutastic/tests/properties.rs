@@ -2,6 +2,7 @@
 //! inputs at random, so mutastic seeds the frameworks it can, runs a mutant's properties without
 //! shrinking, names the input that caught each mutant, and says which frameworks it can't seed.
 
+#![expect(clippy::disallowed_methods, reason = "runs mutastic as a user does")]
 #![allow(
     clippy::unwrap_used,
     reason = "a helper here asserts as the tests it serves do: a value that isn't there fails the test"

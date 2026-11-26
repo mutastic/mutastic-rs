@@ -4,6 +4,11 @@
 //! `target/` and its lock are never used and the copy stays warm from run to run. A file in the
 //! copy is written only when its bytes change, because Cargo judges freshness by mtime.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "runs cargo metadata, with the Cargo that started mutastic"
+)]
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 

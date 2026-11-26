@@ -3,6 +3,7 @@
 //! own, `rstest_tests::adds::case_1`, and no function has that name, so wherever mutastic maps a
 //! test back to its source, it must map it to the function the case is written as.
 
+#![expect(clippy::disallowed_methods, reason = "runs mutastic as a user does")]
 #![allow(
     clippy::unwrap_used,
     reason = "a helper here asserts as the tests it serves do: a value that isn't there fails the test"

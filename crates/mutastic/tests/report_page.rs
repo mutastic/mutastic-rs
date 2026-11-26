@@ -3,6 +3,8 @@
 //! holds the vendored copy to the pin's sha256; this holds the pin to the checksum mutastic
 //! committed with the page at that commit, fetched once and kept under the target directory.
 
+#![expect(clippy::disallowed_methods, reason = "asks git for the page's commit")]
+
 use std::path::Path;
 use std::process::Command;
 
