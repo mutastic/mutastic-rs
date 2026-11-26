@@ -48,7 +48,7 @@ jobs:
         with:
           tool: just@1.59.0
       # Only the crate that keeps the unsafe code.
-      - run: just miri --target ${{ matrix.target }}
+      - run: just sanitize miri --target ${{ matrix.target }}
 
   asan:
     runs-on: ubuntu-latest
@@ -66,5 +66,5 @@ jobs:
       # recipe sets RUSTFLAGS and targets the host, x86_64-unknown-linux-gnu here.
       - name: Test under AddressSanitizer, on a terminal
         run: >
-          script -qec "test -t 0 && test -t 2 && stty cols 120 rows 40 && just asan"
+          script -qec "test -t 0 && test -t 2 && stty cols 120 rows 40 && just sanitize address"
           /dev/null
