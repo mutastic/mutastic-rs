@@ -129,6 +129,16 @@ pub fn code(project: &Project) -> Result<String, Failure> {
         .collect())
 }
 
+/// What a share ran on: the code, and the features the build's arguments turned on.
+pub fn share_code(project: &Project) -> Result<String, Failure> {
+    let code = code(project)?;
+    let features = crate::build_args::share_features(project);
+    if features.is_empty() {
+        return Ok(code);
+    }
+    Ok(crate::record::code_without(&code, &[features]))
+}
+
 /// Every `.rs` file and `Cargo.toml` under `relative`, by its path with `/` between the parts.
 fn sources(
     root: &Path,
@@ -326,7 +336,7 @@ impl Shares {
             if read.tag.code != first.tag.code {
                 return Err(format!(
                     "{} and {} ran on different code: every share of a run runs on the same \
-                     commit",
+                     commit, built the same way",
                     first.named(),
                     read.named()
                 ));
@@ -385,7 +395,7 @@ impl Shares {
         if first.tag.code != code {
             return Err(Code::Shards.with(format!(
                 "the shares in {} ran on other code than this: put them together on the commit \
-                 they ran on",
+                 they ran on, built the same way",
                 self.directory.display()
             )));
         }

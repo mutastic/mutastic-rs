@@ -387,8 +387,13 @@ fn print_cfg() -> Option<String> {
 /// The features a plain build of a package turns on: `default`, and everything it enables, from
 /// the package's `features` in `cargo metadata`.
 pub fn default_features(table: &Value) -> BTreeSet<String> {
+    enabled(table, vec!["default".to_string()])
+}
+
+/// The features `named` turns on: themselves, those the package has, and everything they enable.
+pub fn enabled(table: &Value, named: Vec<String>) -> BTreeSet<String> {
     let mut on = BTreeSet::new();
-    let mut queue = vec!["default".to_string()];
+    let mut queue = named;
     while let Some(feature) = queue.pop() {
         let Some(enables) = table.get(&feature).and_then(Value::as_array) else {
             continue;

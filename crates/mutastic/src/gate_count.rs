@@ -70,6 +70,7 @@ pub fn start(dir: &Path, work: &Path, tree: &str) -> String {
         .arg(&dir)
         .arg(tree)
         .env(MARKER, &token)
+        .env(crate::build_args::FOR_COUNT, crate::build_args::for_count())
         .current_dir(&dir)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -191,6 +192,7 @@ pub fn run(args: &[std::ffi::OsString]) -> std::process::ExitCode {
     let (Some(dir), Some(tree)) = (args.get(1), args.get(2)) else {
         return std::process::ExitCode::FAILURE;
     };
+    crate::build_args::from_gate();
     let dir = PathBuf::from(dir);
     let tree = tree.to_string_lossy().into_owned();
     let Ok(project) = workspace::read(&dir.display().to_string()) else {

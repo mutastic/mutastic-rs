@@ -137,7 +137,7 @@ that has everything it uses.
 | output | `report`, `progress`, `nextrun`, `records`, `help`, `operator_docs` | What a run prints and writes: the formats, the progress line, `next`'s queue, help and the operators' docs |
 | run | `engine`, `guard`, `likely`, `watch`, `suggest`, `baseline`, `cases`, `flaky`, `record`, `shares` | A run: coverage, the mutants side by side, the false-catch guard and the likely-flaky tests it leaves out, suggested tests, and what a run keeps and compares |
 | build and tests | `compile`, `testrun`, `schema`, `wrapper`, `test_times`, `test_files`, `words`, `origin`, `at` | The one build, the test binaries and their times, and what a card says of a mutant |
-| project | `workspace`, `sites`, `arid`, `callrules`, `cfg`, `config`, `edition`, `locate`, `properties`, `java`, `since` | The package, its mutants, its settings and the frameworks it uses |
+| project | `workspace`, `sites`, `arid`, `callrules`, `cfg`, `config`, `edition`, `locate`, `properties`, `java`, `since`, `build_args` | The package, its mutants, its settings and the frameworks it uses |
 | base | `failure`, `commands`, `mistyped`, `ignores`, `amounts`, `id`, `limits`, `slept` | Errors, the commands' declarations, and text, ids and times as mutastic writes them |
 | kit | `similar`, `untrusted` | The output kit's modules, from `crates/mutastic-output`, which `lib.rs` re-exports |
 

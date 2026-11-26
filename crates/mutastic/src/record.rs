@@ -140,6 +140,15 @@ pub fn code_without(code: &str, left_out: &[String]) -> String {
         .collect()
 }
 
+/// The hash `code`, of a run whose build got arguments, which `key` stands for: a run built with
+/// others is never the same code. Empty for none, and then it's as it was.
+pub fn code_built_with(code: &str, key: &str) -> String {
+    if key.is_empty() {
+        return code.to_string();
+    }
+    code_without(code, &[format!("build arguments {key}")])
+}
+
 /// Caught, by a test or a timeout: what a flip turns on.
 fn detected(status: Status) -> bool {
     matches!(status, Status::Killed | Status::Timeout)
