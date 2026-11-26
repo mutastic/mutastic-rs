@@ -8,6 +8,206 @@ newest come first.
 What's merged since the last release waits in [`changes/`](changes/), one file for each entry,
 until the next release gathers it here.
 
+## 1.4.0 (2026-11-26)
+
+### Scoring changes
+
+- **A property test runs unshrunk on a mutant, and the run says which frameworks it can't seed.**
+  A mutant's run now sets `PROPTEST_MAX_SHRINK_ITERS=0`: proptest's first counterexample catches the
+  mutant, and shrinking it, often the costly part of a failing property, no longer runs. A mutant
+  caught the same way has the same status, but one whose property ran out of time or crashed
+  while shrinking is now caught by the property's failure, so a timeout or a crash can become a
+  plain catch, and a crash where a crash proves nothing, out of the score, can come back into it.
+  proptest's seed was already pinned, but only proptest 1.7.0 and later read `PROPTEST_RNG_SEED`:
+  an older one, as winnow locks, drew afresh in every run. quickcheck, arbtest and bolero seed
+  themselves from the system with no variable to pin it. A run of a package that uses any of these
+  now ends with a note on stderr, `note: property tests in proptest 1.6.0 run with their own seeds,
+  which mutastic can't set: …`, as a mutant only some of their inputs catch can flip from run to
+  run, and a property that fails before any mutant no longer offers a `PROPTEST_RNG_SEED=0`
+  command that can't repeat its draw. See [Tables of cases and property
+  tests](docs/troubleshooting.md#tables-of-cases-and-property-tests).
+- **Modules a macro of the crate's declares are mutated.** A crate that declares its modules from
+  a `macro_rules!` of its own, as serde and serde_core do with `crate_root!()`, had none of their
+  files read: a run found no mutant, and passed with no score and no word of why. mutastic now
+  follows a `mod name;` in the expansion of a macro the crate defines, in the file that calls it or
+  in a `#[macro_use] mod` it declares, where the call is an item, and reads the file as rustc
+  would. Their mutants are new, so a score can move either way.
+- **A mutant is timed out by its tests' own time, side by side and under a ceiling, so a loop that
+  never ends is always stopped.** Its tests could run for five times their coverage-pass times
+  added up, and the coverage pass records every call's whole numbers: a test of 10.8s took minutes
+  there, and a base64 mutant reached by 86 tests ran for over 40 minutes before its run was killed.
+  Each test now has five times its own time and a second, timed again without the recording when
+  that made 100,000 calls; a binary's tests share their limits out as they run side by side, never
+  under ten seconds; and no mutant's tests run past ten minutes, or twenty times the suite's own
+  time, which `timeout-ceiling:` sets. Twenty one-second tests and a fast one that a mutant makes
+  loop are stopped after 21s on 8 cores, not 1m42s. A slow mutant whose tests would have finished
+  can now be timed out, which counts as caught: no fixture's mutant moved, but check a threshold on
+  a suite with tests that make millions of calls. The coverage pass skips calls a thread has
+  recorded, 7 to 10 times faster on such a test, and the time left counts what a slow mutant has
+  left of its limit
+  ([docs/troubleshooting.md](docs/troubleshooting.md#how-long-a-mutants-tests-may-run)).
+- **A likely flaky test's catches don't count, and the next runs check it harder.** A test was named
+  likely flaky (`! likely flaky:`) when a mutant it caught changed result with the code unchanged,
+  or a catch of it didn't repeat, but its catches still counted in that run, so a run could pass
+  its threshold on them. Now, in the run that names it, each mutant it reached runs again without
+  it. `last-runs/flaky-watch.tsv` remembers it, and later runs confirm each catch it makes 3 more
+  times (`! watched:`), until its catches have held for 3 full runs. A score can fall where a flaky
+  test's catches were counted. See [Flaky
+  tests](https://docs.mutastic.io/concepts/flaky-tests/#when-a-test-is-named-likely-flaky).
+
+### Score corrections
+
+- **Code the build doesn't compile is not built here, whatever its `cfg`.** mutastic judged a `cfg`
+  from its text, and took any name it didn't know as on: code under `cfg(docsrs)`, `cfg(loom)`, a
+  build script's `cfg` it didn't set, or `cfg(not(..))` of one it did, was mutated, and counted as
+  not covered though it never compiles, so anyhow scored 60.4% where 72.5% was right. Now the build
+  says: as it compiles your package, mutastic asks the same rustc which `cfg`s it has, the features,
+  the build script's `cargo::rustc-cfg` and the `--cfg`s from `RUSTFLAGS` and `.cargo/config.toml`
+  included, and a name nothing set is off, as rustc has it. Only mutants that could never run go,
+  so a score can only rise. See `docs/troubleshooting.md`.
+
+### Additions
+
+- **`--at` runs, or lists, the mutants on a line.** Checking one line took listing the mutants,
+  finding their ids and passing them to `--only`, though a person fixing a line, an agent on one
+  function or an editor has a file and a line, not ids. `mutastic run --at=<file>:<line>`, or
+  `<file>:<from>-<to>`, runs the mutants whose cards point at those lines, under the run's
+  operators, and says each one's fate after a line that counts them:
+  `lines 26–29 of lib.rs: 6 mutants, 5 caught, 1 missed`. `mutastic mutants --at` lists them.
+  Lines with none are an error naming the nearest that have one, never a run of none. At a
+  workspace's root the file picks its member. As in the Java edition. See `docs/scoping.md`.
+- **A card names the input a property caught a mutant with.** When a proptest, quickcheck or
+  bolero property catches a mutant, `verify`, `explain` and the card say which input it failed on,
+  ``caught by props::reverses_twice with `xs = [0]` ``, and `mutant-finished` has it as
+  `caughtInput`, as `mutation.json` has `mutastic.caughtInput`. In a run of every mutant it's the
+  first case that failed, unshrunk; a run of mutants named by id runs the catching proptest once
+  more with shrinking on, for the smallest. `run-started` says which property-testing frameworks
+  the package uses in `propertyTests`, with the seed mutastic drew proptest's cases from and the
+  frameworks it couldn't seed.
+- **`timeout-ceiling:` in `mutastic.yaml` sets the most one mutant's tests may take.** Without it,
+  the ceiling is ten minutes, or twenty times the suite's own time when that's longer. It takes a
+  whole number with its unit, `timeout-ceiling: 30m`, `90s` or `2h`, and a mutant stopped there is
+  timed out with a note that says so: `its tests ran for the most a mutant's tests may, 30m00s
+  (timeout-ceiling:)`. The Java edition doesn't read it yet
+  ([docs/reference/configuration.md](docs/reference/configuration.md)).
+- **Arguments for Cargo.** What follows `--` goes to Cargo on each build call, and never to the
+  tests: `mutastic run -- --features postgres`. The features it turns on choose the code mutated
+  too, and each command a run offers keeps it. `MUTASTIC_BUILD_ARGS`, or `build:`'s `args:` in
+  `mutastic.yaml`, gives the same to every run, and no command repeats those, so a secret goes
+  there. An argument that fights how mutastic drives Cargo is refused, with the reason.
+
+### Fixes
+
+- **A share stopped part way keeps what it finished.** A share's `events.jsonl` was written only
+  at the end, so one stopped by a job's time limit, `timeout` or Ctrl-C left nothing: base64's share
+  ran 35 of its 36 mutants, then lost them all. The file is now written as the run goes, each
+  mutant as it finishes, and has no `run-finished` until the share does, so `--from-shards` still
+  refuses it, now saying how many mutants it holds. A mutant whose tests the same Ctrl-C or kill
+  ended isn't kept as caught ([docs/concepts/how-a-run-works.md](docs/concepts/how-a-run-works.md)).
+- **The agent format's docs say what it prints at 100%.** With nothing missed and nothing
+  unreached, it's the verdict, `vs last run:`, `reports:`, `rules:` and `decline:`, with no
+  fence: `docs/concepts/output.md` now says so, and `docs/differences-from-java.md` that the Java
+  edition leaves out `rules:` and `decline:` there.
+- **`gate check` and `next` confirm a watched test's catches, as `run` does.** A test an earlier run
+  named likely flaky has each catch it makes run 3 more times, and a catch that doesn't repeat
+  doesn't count, so the gate no longer passes a task on a lucky catch, and `next` queues a mutant
+  only such a catch hid. `explain` and `baseline` confirm the same way. None of them writes the
+  watch.
+- **A mutant only a likely flaky test reached says so, not that no test reaches it.** Once that
+  test is left out, nothing reaches the mutant, and it's not covered: `verify`, the cards and the
+  agent entry now say `only <test> reached it, and it's likely flaky: its catch didn't count`, or
+  `…: it was left out` when the test hadn't caught it, and the same for several tests. A run put
+  together with `--from-shards` says it too.
+- **A name given to `--exclude-tests` that matches no test says so.** One that named none of the
+  package's tests, mistyped or since renamed, was taken, left nothing out and said nothing. Now
+  the run says so in every format, `! left out nothing: tests::big_order names no test of pricing.
+  There's one called tests::big_orders.`, with `matched: false` and the close name as `maybe` in
+  `run-finished`, and the Score row doesn't count it among the tests left out. It's a warning, as
+  in the Java edition: a test renamed since it was listed under `exclude-tests:` doesn't stop the
+  run.
+
+### Internal
+
+- **The build's everyday commands are one word each, with [just](https://just.systems).** `just`
+  lists them; `just check` is everything a pull request needs to pass (the format, clippy and the
+  tests), and `just ci` is what CI runs. The words mean the same in the Java edition, and a move off
+  cargo changes the recipes beneath them, not the words people and agents type.
+- **A release is checked before it's tagged, and its draft has notes.** 1.2.0, 1.2.1 and 1.3.0
+  were drafted with empty notes; the draft's are now the release's section of `CHANGELOG.md`
+  (`scripts/changelog.sh notes X.Y.Z`), and a tag without one fails within a minute.
+  `scripts/release-check.sh X.Y.Z` checks what a release needs at once and lists what's wrong: no
+  scoring change in a patch and no release without entries (`scripts/changelog.sh check --for
+  X.Y.Z`), the version in `Cargo.toml`, only the newest contract pin, and ids all kept. CI runs it
+  on a release pull request.
+- **A release is checked once it's out, and its candidate before it's tagged.**
+  `release-verify.yml` installs the published release with mutastic.io's `install.sh` and
+  `install.ps1` and with Scoop, on Linux, macOS and Windows, then runs it on a crate and, through
+  the Java edition it fetches, on a Gradle project; `candidate-run.yml` runs the native `mutastic`
+  built from the tree over a share of every fixture, and fails on a crash, a run that can't run, or
+  tests that fail without any mutant.
+- **The contributor docs and AGENTS.md say `just <verb>`.** CONTRIBUTING, AGENTS.md, the README's
+  contributing part and the pull request template name the recipes (`just check`, `just fmt`,
+  `just docs-output`, `just ids`, `just merge`, `just setup`) instead of cargo and scripts, so
+  people and agents type the same words in both editions. A test that says how to write its copy
+  again, or how to pin the contract or the report page, names the recipe and the command beneath.
+- **Every release asset is attested, and checked against its attestation once it's out.** The
+  release workflow attests each archive, `SHA256SUMS`, Scoop's `mutastic.json` and the SBOM as
+  built by `release.yml` at the release's tag, and the SBOM as what each archive is made of,
+  before the draft is made; `release-verify.yml` runs `gh attestation verify` on every asset it
+  downloads. RELEASING.md's *Checking a download* says how to check one.
+- **CI runs the build through `just`.** Each job calls a recipe, `just lint`, `just test`, `just
+  clippy`, `just msrv`, `just fuzz`, `just miri`, `just asan`, `just contract`, and Self's `just
+  self-build`, `just self-shard`, `just self-merge` and `just self-terminal`, in place of cargo
+  commands written into the workflows, so CI and a contributor type the same words and a job that
+  fails can be run as CI ran it. Commits checks the justfile's format and its list of verbs, so
+  none goes unseen.
+- **mutastic runs on a corpus of real crates every night.** The fixtures hold the shapes we thought
+  of, and the bugs that mattered turned up in real crates instead: a crate its own dev-dependencies
+  pulled in again, modules declared inside a macro, a mutant no limit stopped. `corpus/corpus.yaml`
+  pins 24 packages, each to a commit, with what a healthy run does on it: a score, or the refusal
+  that's right today. `.github/workflows/corpus.yml` runs a share of each one's mutants nightly and
+  on demand before a release (`scripts/corpus-run.sh`, through `just corpus`), checks the agent
+  format's head on each score, and tables the results on the run's page against the last good
+  night's: the run is red when a crate that passed then fails now. CONTRIBUTING.md says how to add
+  a crate, and that each corpus failure becomes a fixture in the pull request that fixes it.
+- **Releases leave on a train.** From 1.4.0, a minor release leaves every second Tuesday, with the
+  Java edition's `X.Y.0` before it, once the corpus, `release-check` and the candidate run pass;
+  entries merged by the day before go with it. Patches between trains are for regressions and
+  security fixes only, a release candidate is a GitHub pre-release and never reaches Central, and
+  Brian decides each patch. RELEASING.md's *The release train* has the rules, as the Java
+  edition's does.
+- **A release is published with one approval.** After the tag, the release workflow drafts the
+  release and writes a summary for its approver, from the draft as it is on GitHub: the version,
+  each asset with its digest and its attestation checked, the notes and the Java edition it pairs
+  with. Its `publish` job waits in the `release` environment; once approved, it checks again that
+  the Java edition `X.Y.*` is published with its CLI, publishes the draft as the latest release and
+  starts `release-verify.yml`. It refuses while the environment has no required reviewer, so
+  nothing is published unapproved. Publishing a draft by hand is no longer a step.
+- **A release is a list of `just` recipes.** `just release-prepare X.Y.Z` makes the release commit
+  on a branch (the version in Cargo.toml and Cargo.lock, the changelog's section, the docs' kept
+  outputs, what the release takes for compat, and the contract's pins pruned) and opens its pull
+  request, through `scripts/release-prepare.sh`, whose `--dry-run` stops before the push.
+  `release-check`, `candidate` and `release-verify` wrap the scripts and workflows that were typed
+  by hand. `release`, Brian's, asks first, then tags main's release commit and pushes the tag
+  (`scripts/release-tag.sh`, which for `X.Y.0` first checks the Java edition is out). RELEASING.md
+  opens with the release as these recipes in order, and AGENTS.md says which an agent may run. The
+  `release` environment's approval stays what guards a publish: `just --yes` skips a recipe's
+  question.
+- **Each module keeps to its layer, and a test holds it there.** ARCHITECTURE.md's Layers puts
+  every module of `crates/mutastic` in one of six layers, and `tests/layers.rs` fails on a
+  `crate::` path that reaches a layer above its own. `engine` and `compile` no longer reach into
+  `report`: the helpers they used for paths, shell words, counts and durations moved below it.
+- **The output kit is a crate of its own.** Colour roles, glyphs and labels, escaping and the
+  agent's fence, close names, help's layout, progress's bar and heartbeat, and the events' envelope
+  moved to `crates/mutastic-output`, which depends on none of the workspace's crates, as
+  `tests/layers.rs` checks, so proptastic can share them without mutastic. What mutastic prints is
+  unchanged.
+- **Clippy holds processes, the environment, printing and `expect` to where they're used today.**
+  `Command::new`, `env::var` and `env::var_os` are disallowed in `clippy.toml`, and each file that
+  may use them says why in an `#![expect]` at its top, as Clippy can't allow a method by path. The
+  library denies `println!` and `eprintln!`, which panic on a closed stream, and `expect_used` warns
+  outside tests, each use outside them with its reason.
+
 ## 1.3.1 (2026-11-23)
 
 ### Security
