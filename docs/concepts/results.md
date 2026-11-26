@@ -79,6 +79,12 @@ table is written:
   and a caught mutant's card names the input that caught it, ``with `xs = [0]` ``, as
   `mutant-finished`'s `caughtInput` does. quickcheck, arbtest and bolero seed themselves, and a run
   of a package that uses them says so.
+- **A proptastic property draws the same inputs every run too.** mutastic finds proptastic in the
+  package's `Cargo.lock`, depended on directly or through a crate that wraps it, and gives every
+  test process `PROPTASTIC_SEED`, the run's seed as proptastic reads seeds, `0x0`, unless you set
+  your own. proptastic's events, saved failures, corpus and colour are off, so a run writes none of
+  your files; a mutant's run stops at the first counterexample (`PROPTASTIC_SHRINK=false`), and the
+  card names it from proptastic's report, its stacked form too, ``with `xs = [0, 0]` ``.
 
 See [Tables of cases and property tests](../troubleshooting.md#tables-of-cases-and-property-tests).
 

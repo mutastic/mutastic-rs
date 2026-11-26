@@ -1,0 +1,17 @@
+[package]
+name = "lists"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# One workspace, so testkit and the stand-in build with the package, in its copy too.
+[workspace]
+members = ["testkit", "surface"]
+
+[dependencies]
+
+# The tests use proptastic only through testkit, a crate that wraps it, as a project's own test
+# kit might: mutastic finds proptastic in Cargo.lock, not in this manifest. surface/ stands in for
+# proptastic until it's published (see its lib.rs).
+[dev-dependencies]
+testkit = { path = "testkit" }

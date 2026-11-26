@@ -436,6 +436,18 @@ costly part of a failing property: the input it names is the first case that fai
 characters. A run of mutants named by id, `run --only`, `verify` or `explain`, runs the catching
 property once more with shrinking on, and names the smallest input proptest shrinks it to.
 
+**proptastic is seeded and read the same way.** proptastic takes its seed, its shrinking and where
+it writes from the environment, so mutastic sets all three and you set nothing. It finds proptastic
+in the package's `Cargo.lock`, whether the package depends on it or on a crate of its own that
+wraps it, and gives every test process `PROPTASTIC_SEED`, the run's seed as proptastic reads seeds,
+`0x0`, unless you've set it: yours, `0x` and hex digits, is passed on as it is, and one proptastic
+can't read fails the tests with proptastic's own error. `PROPTASTIC_EVENTS`, `PROPTASTIC_REPLAY`
+and `PROPTASTIC_CORPUS` are off for every test process, so nothing is written to your tree and two
+runs of the same code draw the same inputs, and `PROPTASTIC_COLOR=never` keeps its report plain. A
+mutant's run sets `PROPTASTIC_SHRINK=false`. The card's input comes from the counterexample line
+under proptastic's header for that test, or, when the value is wide, the stacked lines below it,
+joined onto one.
+
 **Some frameworks can't be seeded.** proptest reads `PROPTEST_RNG_SEED` from 1.7.0 on; an older
 one seeds each test from the system and only warns about the variable, so `cargo update -p
 proptest` to a later 1.x is what pins it. quickcheck seeds itself from the system in every run, with
