@@ -7,6 +7,11 @@
 //! with rust-analyzer's parser, comments left out, macros' tokens in, and fails on each one that
 //! names a module in a higher layer, with its file and line. It fails too on a module `lib.rs`
 //! declares that the table doesn't place, and on one the table names that isn't there.
+//!
+//! The output kit, `crates/mutastic-output`, is a crate of its own so that it can't reach up at
+//! all: `lib.rs` re-exports its modules (`pub use mutastic_output::{…}`), which count as declared,
+//! and the table places them in the lowest layer, `kit`. This holds the kit to knowing nothing of
+//! mutastic's: no dependency on another of the workspace's crates, and no path into one.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -107,16 +112,95 @@ fn src() -> PathBuf {
 }
 
 /// The modules `lib.rs` declares, `pub mod engine;`.
+/// The modules `lib.rs` declares, and those it re-exports from the kit.
 fn declared() -> Vec<String> {
     let text = std::fs::read_to_string(src().join("lib.rs")).expect("lib.rs reads");
-    SourceFile::parse(&text, Edition::CURRENT)
+    let mut declared: Vec<String> = SourceFile::parse(&text, Edition::CURRENT)
         .tree()
         .syntax()
         .children()
         .filter_map(Module::cast)
         .filter_map(|module| module.name())
         .map(|name| name.text().to_string())
+        .collect();
+    declared.extend(kit_modules(&text));
+    declared
+}
+
+/// The modules `text` re-exports from the kit: `pub use mutastic_output::{similar, untrusted};`.
+fn kit_modules(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| line.trim().strip_prefix("pub use mutastic_output::"))
+        .flat_map(|names| {
+            names
+                .trim_end_matches(';')
+                .trim_matches(|c| c == '{' || c == '}')
+                .split(',')
+                .map(|name| name.trim().to_string())
+                .filter(|name| !name.is_empty())
+                .collect::<Vec<_>>()
+        })
         .collect()
+}
+
+#[test]
+fn the_kit_is_the_lowest_layer() {
+    let layers = layers();
+    let text = std::fs::read_to_string(src().join("lib.rs")).expect("lib.rs reads");
+    let kit = kit_modules(&text);
+    assert!(!kit.is_empty(), "lib.rs re-exports the kit's modules");
+    let (lowest, modules) = layers.last().expect("the layers' table has its rows");
+    assert_eq!(lowest, "kit", "the kit is the layers' table's last row");
+    assert_eq!(
+        modules.iter().collect::<BTreeSet<_>>(),
+        kit.iter().collect::<BTreeSet<_>>(),
+        "the kit's row places what lib.rs re-exports from it, and only that"
+    );
+}
+
+#[test]
+fn the_kit_knows_nothing_of_mutastic() {
+    let kit = Path::new(env!("CARGO_MANIFEST_DIR")).join("../mutastic-output");
+    let manifest = std::fs::read_to_string(kit.join("Cargo.toml")).expect("the kit's manifest");
+    let mut tables = Vec::new();
+    let mut table = String::new();
+    for line in manifest.lines().map(str::trim) {
+        if line.starts_with('[') {
+            table = line.to_string();
+        } else if table.ends_with("dependencies]")
+            && (line.starts_with("mutastic") || line.contains("path"))
+        {
+            tables.push(format!("{table} {line}"));
+        }
+    }
+    assert!(
+        tables.is_empty(),
+        "the kit depends on none of the workspace's crates, so it can't reach mutastic or carry \
+         it: {tables:?}"
+    );
+    let mut paths = Vec::new();
+    let mut dirs = vec![kit.join("src"), kit.join("tests")];
+    while let Some(dir) = dirs.pop() {
+        for path in std::fs::read_dir(&dir)
+            .expect("the kit's directory lists")
+            .map(|entry| entry.expect("a directory lists").path())
+        {
+            if path.is_dir() {
+                dirs.push(path);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                let text = std::fs::read_to_string(&path).expect("a kit file reads");
+                for (at, line) in text.lines().enumerate() {
+                    if line.contains("mutastic::") || line.contains("mutastic_terminal::") {
+                        paths.push(format!("{}:{}", path.display(), at + 1));
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        paths.is_empty(),
+        "the kit names mutastic's crates: {paths:?}"
+    );
 }
 
 /// A module's files: `src/<module>.rs`, and every file under `src/<module>/`.

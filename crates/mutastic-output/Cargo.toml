@@ -1,0 +1,23 @@
+[package]
+name = "mutastic-output"
+description = "The output kit: colour, glyphs, labels, escaping and the fence, close names, help's layout, progress's bar and the events' envelope: nothing of mutastic's"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+publish = false
+
+# Never `mutastic`, nor another of the workspace's crates: the kit is what a sibling tool shares,
+# so it knows no mutants, cards or scores. `mutastic`'s `tests/layers.rs` holds it to that.
+[dependencies]
+# An event's fields in the order they're written, as the events' schema shows them.
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[lints]
+workspace = true

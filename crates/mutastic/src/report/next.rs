@@ -333,16 +333,18 @@ fn jsonl(view: &View, queue: &Queue, asked: &Asked) -> String {
 /// `next-finished`: how many items and mutants are queued, how many items were shown, how many of
 /// the queued items the baseline already has, and how many missed mutants wait on a person.
 fn finished(queued: usize, mutants: usize, shown: usize, legacy: usize, waiting: usize) -> Value {
-    json!({
-        "schema": SCHEMA,
-        "edition": EDITION,
-        "reason": "next-finished",
-        "queued": queued,
-        "mutants": mutants,
-        "shown": shown,
-        "legacy": legacy,
-        "waiting": waiting,
-    })
+    mutastic_output::envelope::event(
+        SCHEMA,
+        EDITION,
+        "next-finished",
+        json!({
+            "queued": queued,
+            "mutants": mutants,
+            "shown": shown,
+            "legacy": legacy,
+            "waiting": waiting,
+        }),
+    )
 }
 
 /// `1 of 12 lines with missed mutants in pricing`, or `the first 2 of 12 …`, how many are new where
