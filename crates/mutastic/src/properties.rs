@@ -27,14 +27,16 @@ pub enum Framework {
     Quickcheck,
     Arbtest,
     Bolero,
+    Proptastic,
 }
 
 impl Framework {
-    const ALL: [Framework; 4] = [
+    const ALL: [Framework; 5] = [
         Framework::Proptest,
         Framework::Quickcheck,
         Framework::Arbtest,
         Framework::Bolero,
+        Framework::Proptastic,
     ];
 
     /// Its crate's name, as a package depends on it.
@@ -44,6 +46,7 @@ impl Framework {
             Framework::Quickcheck => "quickcheck",
             Framework::Arbtest => "arbtest",
             Framework::Bolero => "bolero",
+            Framework::Proptastic => "proptastic",
         }
     }
 }
@@ -78,19 +81,69 @@ pub fn proptest_seed() -> Option<String> {
     }
 }
 
+/// The seed proptastic draws from in this run: the person's `PROPTASTIC_SEED`, else the run's,
+/// proptest's ([`proptest_seed`]), as proptastic reads seeds: `0x` and hex digits, as its
+/// failures print them, so `0` is `0x0`. `None` when theirs isn't one proptastic reads: it fails
+/// every property with its own error, and mutastic doesn't guess.
+pub fn proptastic_seed() -> Option<String> {
+    match std::env::var("PROPTASTIC_SEED") {
+        Ok(set) => hex_seed(&set).map(|_| set.trim().to_string()),
+        Err(std::env::VarError::NotPresent) => {
+            let run = proptest_seed().and_then(|seed| seed.parse::<u64>().ok());
+            Some(format!("{:#x}", run.unwrap_or(0)))
+        }
+        Err(std::env::VarError::NotUnicode(_)) => None,
+    }
+}
+
+/// A seed as proptastic reads one, `0x` and one to 16 hex digits, as a number.
+fn hex_seed(said: &str) -> Option<u64> {
+    let digits = said.trim().strip_prefix("0x")?;
+    if digits.is_empty() || digits.len() > 16 || !digits.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    u64::from_str_radix(digits, 16).ok()
+}
+
+/// What a test process is given to seed the frameworks that take a seed from the environment,
+/// where the person hasn't set it: theirs is inherited as it is.
+pub fn seeds() -> Vec<(&'static str, String)> {
+    let mut seeds = Vec::new();
+    if std::env::var_os("PROPTEST_RNG_SEED").is_none() {
+        seeds.push(("PROPTEST_RNG_SEED", PROPTEST_SEED.to_string()));
+    }
+    if let (None, Some(seed)) = (std::env::var_os("PROPTASTIC_SEED"), proptastic_seed()) {
+        seeds.push(("PROPTASTIC_SEED", seed));
+    }
+    seeds
+}
+
 /// The first proptest that reads `PROPTEST_RNG_SEED`: before it, every runner seeds itself from
 /// the system, and the variable is only warned about.
 const SEEDED_FROM: (u64, u64) = (1, 7);
 
-/// What every test process of a run is given: proptest's seed, unless the person set one, and
-/// its saved failures off. A failing proptest saves its case, and every later run replays it
-/// first: a run's own failures would decide its next runs, the flaky check's and the guard's
-/// among them.
-pub const EVERY_RUN: [(&str, &str); 1] = [("PROPTEST_DISABLE_FAILURE_PERSISTENCE", "1")];
+/// What every test process of a run is given besides the [`seeds`]:
+/// - proptest's saved failures off. A failing proptest saves its case, and every later run
+///   replays it first: a run's own failures would decide its next runs, the flaky check's and the
+///   guard's among them.
+/// - proptastic's saved failures, events, corpus and colour off, for the same reason and so a run
+///   writes none of the person's files: a mutant's event would overwrite theirs, and a corpus that
+///   grew between two runs would make them draw differently with the code unchanged. Plain, its
+///   counterexample line reads as text.
+pub const EVERY_RUN: [(&str, &str); 5] = [
+    ("PROPTEST_DISABLE_FAILURE_PERSISTENCE", "1"),
+    ("PROPTASTIC_REPLAY", "false"),
+    ("PROPTASTIC_EVENTS", "false"),
+    ("PROPTASTIC_CORPUS", "off"),
+    ("PROPTASTIC_COLOR", "never"),
+];
 
 /// What a mutant's test process is given besides: no shrinking, as the first counterexample
 /// already catches the mutant.
-pub const MUTANT_RUN: [(&str, &str); 1] = [("PROPTEST_MAX_SHRINK_ITERS", "0")];
+pub const MUTANT_RUN: [(&str, &str); 2] = [
+    ("PROPTEST_MAX_SHRINK_ITERS", "0"),
+    ("PROPTASTIC_SHRINK", "false"),
+];
 
 /// One framework the package uses that mutastic can't seed, and the version that's why, when it's
 /// a proptest from before [`SEEDED_FROM`].
@@ -109,15 +162,16 @@ impl Unseeded {
     }
 }
 
-/// The frameworks the package uses whose seeds mutastic can't set. Only proptest takes one from
-/// the environment for its whole search, and only from 1.7.0: quickcheck seeds each run from the
-/// system, and arbtest's and bolero's variables replay one case rather than seed the search.
+/// The frameworks the package uses whose seeds mutastic can't set. proptest takes one from the
+/// environment for its whole search, from 1.7.0, and proptastic does, as `0x` and hex digits:
+/// quickcheck seeds each run from the system, and arbtest's and bolero's variables replay one case
+/// rather than seed the search.
 fn unseeded(project: &Project) -> Vec<Unseeded> {
-    let old_proptest = old_proptest(&lock(project));
-    project
-        .properties
-        .iter()
-        .filter_map(|&framework| match framework {
+    let lock = lock(project);
+    let old_proptest = old_proptest(&lock);
+    in_use(project, &lock)
+        .into_iter()
+        .filter_map(|framework| match framework {
             Framework::Proptest if proptest_seed().is_none() => Some(Unseeded {
                 framework,
                 version: None,
@@ -125,6 +179,10 @@ fn unseeded(project: &Project) -> Vec<Unseeded> {
             Framework::Proptest => old_proptest.clone().map(|version| Unseeded {
                 framework,
                 version: Some(version),
+            }),
+            Framework::Proptastic => proptastic_seed().is_none().then_some(Unseeded {
+                framework,
+                version: None,
             }),
             _ => Some(Unseeded {
                 framework,
@@ -138,6 +196,106 @@ fn unseeded(project: &Project) -> Vec<Unseeded> {
 /// from before [`SEEDED_FROM`].
 pub fn seeds_proptest(project: &Project) -> bool {
     old_proptest(&lock(project)).is_none()
+}
+
+/// The frameworks the package's tests use: those its manifest names, and proptastic wherever the
+/// package's resolved dependencies hold it, depended on directly or through a crate that wraps it.
+fn in_use(project: &Project, lock: &str) -> BTreeSet<Framework> {
+    let mut frameworks = project.properties.clone();
+    if links(
+        lock,
+        &project.package,
+        &project.version,
+        Framework::Proptastic.name(),
+    ) {
+        frameworks.insert(Framework::Proptastic);
+    }
+    frameworks
+}
+
+/// One `[[package]]` of a `Cargo.lock`: its name, version and dependencies, each `name` or `name
+/// version`, with a source after when two versions are locked.
+struct Locked<'a> {
+    name: &'a str,
+    version: &'a str,
+    dependencies: Vec<&'a str>,
+}
+
+/// The packages `lock` locks.
+fn locked(lock: &str) -> Vec<Locked<'_>> {
+    let mut packages = Vec::new();
+    let mut lines = lock.lines().map(str::trim).peekable();
+    while let Some(line) = lines.next() {
+        if line != "[[package]]" {
+            continue;
+        }
+        let mut package = Locked {
+            name: "",
+            version: "",
+            dependencies: Vec::new(),
+        };
+        while let Some(&line) = lines.peek() {
+            if line.starts_with("[[") {
+                break;
+            }
+            lines.next();
+            if let Some(name) = quoted(line, "name = ") {
+                package.name = name;
+            } else if let Some(version) = quoted(line, "version = ") {
+                package.version = version;
+            } else if line == "dependencies = [" {
+                for dependency in lines.by_ref() {
+                    if dependency == "]" {
+                        break;
+                    }
+                    if let Some(named) = dependency.strip_suffix(',').and_then(|d| quoted(d, "")) {
+                        package.dependencies.push(named);
+                    }
+                }
+            }
+        }
+        packages.push(package);
+    }
+    packages
+}
+
+/// The string `line` gives after `key`, without its quotes.
+fn quoted<'a>(line: &'a str, key: &str) -> Option<&'a str> {
+    line.strip_prefix(key)?.strip_prefix('"')?.strip_suffix('"')
+}
+
+/// Whether the package `name` at `version` depends on the package `wanted` in `lock`, itself or
+/// through any of its dependencies.
+fn links(lock: &str, name: &str, version: &str, wanted: &str) -> bool {
+    let packages = locked(lock);
+    let find = |dependency: &str| {
+        let mut words = dependency.split(' ');
+        let (name, version) = (words.next().unwrap_or_default(), words.next());
+        packages
+            .iter()
+            .position(|p| p.name == name && version.is_none_or(|v| p.version == v))
+    };
+    let Some(start) = packages
+        .iter()
+        .position(|p| p.name == name && p.version == version)
+    else {
+        return false;
+    };
+    let mut seen = BTreeSet::from([start]);
+    let mut next = vec![start];
+    while let Some(at) = next.pop() {
+        for dependency in &packages[at].dependencies {
+            if let Some(found) = find(dependency) {
+                if packages[found].name == wanted {
+                    return true;
+                }
+                if seen.insert(found) {
+                    next.push(found);
+                }
+            }
+        }
+    }
+    false
 }
 
 /// The package's `Cargo.lock`, as mutastic's copy of it builds with: Cargo writes one there when
@@ -170,21 +328,30 @@ fn old_proptest(lock: &str) -> Option<String> {
 /// `run-started`'s `propertyTests`, for a package that uses a framework: which, the seed of those
 /// mutastic seeds, and those it can't.
 pub fn started(project: &Project) -> Option<Value> {
-    if project.properties.is_empty() {
+    let frameworks = in_use(project, &lock(project));
+    if frameworks.is_empty() {
         return None;
     }
     let unseeded = unseeded(project);
     let unseeded: Vec<&str> = unseeded.iter().map(|f| f.framework.name()).collect();
     let mut started = json!({
-        "frameworks": project.properties.iter().map(|f| f.name()).collect::<Vec<_>>(),
+        "frameworks": frameworks.iter().map(|f| f.name()).collect::<Vec<_>>(),
     });
-    let seeded: Vec<&str> = project
-        .properties
+    let seeded: Vec<&str> = frameworks
         .iter()
         .map(|f| f.name())
         .filter(|name| !unseeded.contains(name))
         .collect();
-    if let (false, Some(seed)) = (seeded.is_empty(), proptest_seed()) {
+    // The run's seed, in decimal: proptest's, or proptastic's when it's the one seeded.
+    let seed = if seeded == [Framework::Proptastic.name()] {
+        proptastic_seed()
+            .as_deref()
+            .and_then(hex_seed)
+            .map(|seed| seed.to_string())
+    } else {
+        proptest_seed()
+    };
+    if let (false, Some(seed)) = (seeded.is_empty(), seed) {
         started["seed"] = json!(seed);
         started["seeded"] = json!(seeded);
     }
@@ -224,9 +391,60 @@ pub fn said(input: Option<&str>) -> String {
 }
 
 /// Whether a test's output is a failure of a framework whose shrinking a mutant's run turns off,
-/// proptest's: its input is the first that failed, which a run with shrinking on makes smaller.
+/// proptest's or proptastic's: its input is the first that failed, which a run with shrinking on
+/// makes smaller. A proptastic property that failed on a pinned example, or flakily, never shrinks.
 pub fn unshrunk(output: &str) -> bool {
     output.contains(PROPTEST_FAILURE)
+        || output.lines().collect::<Vec<_>>().windows(2).any(|pair| {
+            proptastic_header(pair[0], None).is_some_and(|tried| tried)
+                && pair[1].starts_with(PROPTASTIC_UNSHRUNK)
+        })
+}
+
+/// proptastic's counterexample fact, with shrinking off or on: `  counterexample: n = 7`, or
+/// `  shrunk counterexample: xs = [0, 0]`. The key is always its report's longest, so its line
+/// keeps a two-space indent however the keys are aligned.
+const PROPTASTIC_UNSHRUNK: &str = "  counterexample:";
+const PROPTASTIC_SHRUNK: &str = "  shrunk counterexample:";
+
+/// Whether `line` is the header of proptastic's report for the test `name` (its last `::` part,
+/// as proptastic names it; any test when `None`): `sort_keeps_size failed after 2 tries (seed
+/// 0x5eed)`, or `… failed on example 1 of 2 (via "…")` and the like. `Some(true)` when it failed
+/// after random tries, the one form a run with shrinking on makes smaller. A test's own output can
+/// say `counterexample:` too, but not under this line.
+fn proptastic_header(line: &str, name: Option<&str>) -> Option<bool> {
+    let (named, how) = line.split_once(" failed ")?;
+    let named_ok = match name {
+        Some(name) => named == name.rsplit("::").next().unwrap_or(name),
+        None => !named.is_empty() && !named.contains(char::is_whitespace),
+    };
+    if !named_ok {
+        return None;
+    }
+    if how.starts_with("after ") && how.contains(" (seed 0x") {
+        return Some(true);
+    }
+    how.starts_with("on ").then_some(false)
+}
+
+/// The input on proptastic's counterexample fact at `at`, which follows its header for `test`:
+/// the rest of the line, or, stacked, the lines below the bare key, four spaces in.
+fn proptastic_input(lines: &[&str], at: usize, test: &str) -> Option<String> {
+    let line = lines[at];
+    let rest = line
+        .strip_prefix(PROPTASTIC_SHRUNK)
+        .or_else(|| line.strip_prefix(PROPTASTIC_UNSHRUNK))?;
+    proptastic_header(lines[at.checked_sub(1)?], Some(test))?;
+    if let Some(value) = rest
+        .strip_prefix(' ')
+        .filter(|value| !value.trim().is_empty())
+    {
+        return Some(value.to_string());
+    }
+    let block = lines[at + 1..]
+        .iter()
+        .take_while(|line| line.starts_with("    "));
+    Some(one_line(block.copied()))
 }
 
 /// What proptest's failure says before its input.
@@ -237,11 +455,15 @@ const LONGEST: usize = 300;
 
 /// The input the failing property `test` (libtest's name) says it failed on, from a test
 /// process's output, on one line: `xs = [0, 0]`. Only from the frameworks that print one:
-/// proptest's `minimal failing input:`, quickcheck's `Arguments: (…)` and bolero's `Input:`.
+/// proptest's `minimal failing input:`, quickcheck's `Arguments: (…)`, bolero's `Input:` and
+/// proptastic's `counterexample:`.
 pub fn failing_input(output: &str, test: &str) -> Option<String> {
     let section = section(output, test);
     let lines: Vec<&str> = section.lines().collect();
     let input = lines.iter().enumerate().find_map(|(at, line)| {
+        if let Some(input) = proptastic_input(&lines, at, test) {
+            return Some(input);
+        }
         if let Some(first) = line.strip_prefix(PROPTEST_FAILURE) {
             // `{:#?}`, a line to each field, then the runner's counts, each after a tab.
             let rest = lines[at + 1..]
@@ -419,6 +641,174 @@ mod tests {
             failing_input("arbtest failed!\n    Seed: 0xa88e234400000020\n", "t"),
             None
         );
+    }
+
+    #[test]
+    fn proptastic_is_found_by_its_crate() {
+        let dependencies = json!([{"name": "proptastic", "kind": "dev"}]);
+        assert_eq!(used(&dependencies), BTreeSet::from([Framework::Proptastic]));
+    }
+
+    /// A lock where `lists` depends on `testkit`, which wraps proptastic, and `other` doesn't.
+    const WRAPPED: &str = r#"version = 4
+
+[[package]]
+name = "lists"
+version = "0.1.0"
+dependencies = [
+ "serde 1.0.0",
+ "testkit",
+]
+
+[[package]]
+name = "other"
+version = "0.1.0"
+dependencies = [
+ "serde 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "proptastic"
+version = "0.3.0"
+
+[[package]]
+name = "serde"
+version = "1.0.0"
+
+[[package]]
+name = "serde"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
+name = "testkit"
+version = "0.1.0"
+dependencies = [
+ "proptastic",
+]
+"#;
+
+    #[test]
+    fn proptastic_is_found_through_a_crate_that_wraps_it() {
+        assert!(links(WRAPPED, "lists", "0.1.0", "proptastic"));
+        assert!(links(WRAPPED, "testkit", "0.1.0", "proptastic"));
+        assert!(!links(WRAPPED, "other", "0.1.0", "proptastic"));
+        assert!(
+            !links(WRAPPED, "lists", "9.9.9", "proptastic"),
+            "another version"
+        );
+        assert!(!links("", "lists", "0.1.0", "proptastic"), "no lock yet");
+    }
+
+    #[test]
+    fn proptastics_seed_is_hex_only() {
+        assert_eq!(hex_seed("0x0"), Some(0));
+        assert_eq!(hex_seed(" 0x2A "), Some(42));
+        assert_eq!(hex_seed("0xffffffffffffffff"), Some(u64::MAX));
+        for refused in [
+            "12345",
+            "0x",
+            "0x1_000",
+            "0x10000000000000000",
+            "0X5",
+            "-0x1",
+        ] {
+            assert_eq!(hex_seed(refused), None, "{refused}");
+        }
+    }
+
+    /// libtest's section for a failing proptastic property: the user's message, a blank line,
+    /// then the report.
+    fn proptastic_section(test: &str, report: &str) -> String {
+        let short = test.rsplit("::").next().unwrap();
+        format!(
+            "---- {test} stdout ----\n\nthread '{test}' (14816735) panicked at tests/lists.rs:7:39:\n\
+             assertion `left == right` failed\n  left: [0, 1]\n right: [1, 0]\n\n{short} {report}\n\n"
+        )
+    }
+
+    #[test]
+    fn proptastics_counterexample_line_is_read() {
+        let shrunk = proptastic_section(
+            "props::reverses_twice",
+            "failed after 2 tries (seed 0x0)\n  shrunk counterexample: xs = [0, 1]\n\
+             \x20                pin it: .example(vec![0, 1])\n\
+             \x20             failed at: tests/lists.rs:7:50\n\
+             \x20                 rerun: PROPTASTIC_SEED=0x0 cargo test --test lists props::reverses_twice",
+        );
+        let first = proptastic_section(
+            "transfers_conserve_money",
+            "failed after 1 try (seed 0x0)\n  counterexample: a = 812, b = 47, amount = 1203\n\
+             \x20        pin it: .example((812, 47, 1203))",
+        );
+        let output = format!("running 2 tests\n\nfailures:\n\n{shrunk}{first}failures:\n");
+        assert_eq!(
+            failing_input(&output, "props::reverses_twice").unwrap(),
+            "xs = [0, 1]"
+        );
+        assert_eq!(
+            failing_input(&output, "transfers_conserve_money").unwrap(),
+            "a = 812, b = 47, amount = 1203"
+        );
+        assert!(unshrunk(&output), "the bank's ran with shrinking off");
+        assert!(!unshrunk(&shrunk));
+    }
+
+    #[test]
+    fn proptastics_stacked_counterexample_is_joined() {
+        let report = "failed after 2 tries (seed 0x7230fdb2af471e0e)\n  shrunk counterexample:\n\
+            \x20   t = Trade {\n            symbol: \"AAPL\",\n            quantity: 1000,\n\
+            \x20           side: Buy,\n        }\n  pin it:\n\
+            \x20   .example(Trade { symbol: \"AAPL\".to_string(), quantity: 1000, side: Side::Buy })\n\
+            \x20 failed at:\n    tests/showcase.rs:201:33";
+        let output = proptastic_section("round_trips", report);
+        assert_eq!(
+            failing_input(&output, "round_trips").unwrap(),
+            "t = Trade { symbol: \"AAPL\", quantity: 1000, side: Buy }"
+        );
+        let draws = proptastic_section(
+            "two",
+            "failed after 1 try (seed 0x0)\n  counterexample:\n    a = [\n        0,\n        1,\n    ],\n\
+             \x20   b = 0\n  pin it:\n    .example((vec![0, 1], 0))",
+        );
+        assert_eq!(failing_input(&draws, "two").unwrap(), "a = [0, 1], b = 0");
+        assert!(unshrunk(&draws));
+        let wide = proptastic_section(
+            "wide",
+            &format!(
+                "failed after 1 try (seed 0x0)\n  counterexample:\n    xs = {:?}\n  pin it:\n    .seed(0x0)",
+                vec![7; 400]
+            ),
+        );
+        let input = failing_input(&wide, "wide").unwrap();
+        assert_eq!(input.chars().count(), LONGEST + 1);
+        assert!(input.ends_with('…'));
+    }
+
+    #[test]
+    fn a_counterexample_line_outside_proptastics_report_is_not_read() {
+        let mimic = "---- t stdout ----\n\nthread 't' panicked at src/lib.rs:3:5:\n\
+            not equal\n  counterexample: from the user\n\n";
+        assert_eq!(failing_input(mimic, "t"), None);
+        assert!(!unshrunk(mimic));
+        let other = proptastic_section(
+            "a",
+            "failed after 1 try (seed 0x0)\n  counterexample: n = 3",
+        );
+        assert_eq!(failing_input(&other, "b"), None, "another test's report");
+        let example = proptastic_section(
+            "p",
+            "failed on example 2 of 2 (via \"mutastic: proposal 7\")\n  counterexample: n = 200\n\
+             \x20     failed at: src/lib.rs:9:5",
+        );
+        assert_eq!(failing_input(&example, "p").unwrap(), "n = 200");
+        assert!(!unshrunk(&example), "a pinned example never shrinks");
+        let flaky = proptastic_section(
+            "f",
+            "failed on try 4, then passed when that input ran again (seed 0x1f)\n  counterexample: n = 9",
+        );
+        assert_eq!(failing_input(&flaky, "f").unwrap(), "n = 9");
+        assert!(!unshrunk(&flaky), "a flaky input isn't shrunk");
     }
 
     #[test]

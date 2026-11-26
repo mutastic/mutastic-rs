@@ -199,9 +199,7 @@ pub fn run(
         .stderr(Stdio::piped());
     // The same cases in every run, unless the person picked a seed: drawn afresh, a property's
     // cases would make a mutant caught in one run and missed in the next.
-    if std::env::var_os("PROPTEST_RNG_SEED").is_none() {
-        command.env("PROPTEST_RNG_SEED", crate::properties::PROPTEST_SEED);
-    }
+    command.envs(crate::properties::seeds());
     if let Some(temp) = &temp {
         temp.set_on(&mut command);
     }
