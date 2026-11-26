@@ -2,6 +2,7 @@
 members = [
     "crates/mutastic",
     "crates/mutastic-terminal",
+    "crates/mutastic-output",
     "crates/cargo-mutastic",
     "crates/mutastic-rs",
 ]

@@ -105,16 +105,12 @@ pub fn heartbeat() -> Duration {
     std::env::var("MUTASTIC_HEARTBEAT")
         .ok()
         .and_then(|value| seconds(&value))
-        .unwrap_or(Duration::from_secs(30))
+        .unwrap_or(mutastic_output::progress::HEARTBEAT)
 }
 
 /// `value` as a number of seconds above 0, as `MUTASTIC_HEARTBEAT` takes it: `30`, `0.5`.
 pub fn seconds(value: &str) -> Option<Duration> {
-    value
-        .parse::<f64>()
-        .ok()
-        .filter(|seconds| seconds.is_finite() && *seconds > 0.0)
-        .map(Duration::from_secs_f64)
+    mutastic_output::progress::seconds(value)
 }
 
 impl Counts {
@@ -622,21 +618,25 @@ impl Inner {
             return;
         }
         if let Some((phase, at)) = state.event_phase.take() {
-            self.event(&serde_json::json!({
-                "schema": report::SCHEMA,
-                "edition": report::EDITION,
-                "reason": "phase-finished",
-                "phase": phase,
-                "durationMs": u64::try_from(at.elapsed().as_millis()).unwrap_or(u64::MAX),
-            }));
+            self.event(&mutastic_output::envelope::event(
+                report::SCHEMA,
+                report::EDITION,
+                "phase-finished",
+                serde_json::json!({
+                    "phase": phase,
+                    "durationMs": u64::try_from(at.elapsed().as_millis()).unwrap_or(u64::MAX),
+                }),
+            ));
         }
         if let Some(phase) = next {
-            self.event(&serde_json::json!({
-                "schema": report::SCHEMA,
-                "edition": report::EDITION,
-                "reason": "phase-started",
-                "phase": phase,
-            }));
+            self.event(&mutastic_output::envelope::event(
+                report::SCHEMA,
+                report::EDITION,
+                "phase-started",
+                serde_json::json!({
+                    "phase": phase,
+                }),
+            ));
             state.event_phase = Some((phase, Instant::now()));
             state.evented = Instant::now();
         }
@@ -646,13 +646,15 @@ impl Inner {
     fn progress_event(state: &State) -> Option<serde_json::Value> {
         let (phase, at) = state.event_phase?;
         let millis = |took: Duration| u64::try_from(took.as_millis()).unwrap_or(u64::MAX);
-        let mut event = serde_json::json!({
-            "schema": report::SCHEMA,
-            "edition": report::EDITION,
-            "reason": "progress",
-            "phase": phase,
-            "elapsedMs": millis(at.elapsed()),
-        });
+        let mut event = mutastic_output::envelope::event(
+            report::SCHEMA,
+            report::EDITION,
+            "progress",
+            serde_json::json!({
+                "phase": phase,
+                "elapsedMs": millis(at.elapsed()),
+            }),
+        );
         match &state.phase {
             Phase::Building { round, crates, .. } => {
                 event["round"] = (*round).into();

@@ -24,6 +24,9 @@ path = "src/bin/cargo-mutastic.rs"
 [dependencies]
 # The terminal's width, its input mode and signals: the workspace's one crate with unsafe code.
 mutastic-terminal = { path = "../mutastic-terminal" }
+# The output kit: colour, glyphs, labels, escaping and the fence, close names, help's layout and
+# progress's bar. It knows nothing of mutastic's, for a sibling tool to share.
+mutastic-output = { path = "../mutastic-output" }
 # rust-analyzer's parser: error-tolerant and lossless. Pinned, and moved forward on purpose,
 # because it ships about weekly as 0.0.x.
 ra_ap_syntax = "=0.0.331"

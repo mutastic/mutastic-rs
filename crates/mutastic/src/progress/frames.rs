@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use crate::amounts::count;
 use crate::report::Style;
+pub use mutastic_output::progress::{fit, width};
 
 /// What the run is doing now.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -69,19 +70,11 @@ pub struct View<'a> {
     pub keys: bool,
 }
 
-const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-const GREEN: &str = "32";
-const RED: &str = "1;31";
-const AMBER: &str = "33";
-const BOLD: &str = "1";
-const DIM: &str = "2";
+use mutastic_output::glyphs::SPINNER;
+use mutastic_output::paint::{AMBER, BOLD, DIM, GREEN, RED};
 
 pub fn paint(style: Style, code: &str, text: &str) -> String {
-    if style.color {
-        format!("\x1b[{code}m{text}\x1b[0m")
-    } else {
-        text.to_string()
-    }
+    mutastic_output::paint::paint(style.color, code, text)
 }
 
 /// A phase's word, in a column of its own: `building  `.
@@ -153,76 +146,9 @@ pub fn fates(counts: &Counts, style: Style, tier: usize) -> String {
     }
 }
 
-/// The width a terminal gives `text`: its characters, without colour or links.
-pub fn width(text: &str) -> usize {
-    let mut width = 0;
-    let mut chars = text.chars();
-    while let Some(c) = chars.next() {
-        if c != '\x1b' {
-            width += 1;
-            continue;
-        }
-        match chars.next() {
-            Some('[') => {
-                for c in chars.by_ref() {
-                    if ('@'..='~').contains(&c) {
-                        break;
-                    }
-                }
-            }
-            Some(']') => {
-                while let Some(c) = chars.next() {
-                    if c == '\x07' || (c == '\x1b' && chars.next().is_some()) {
-                        break;
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    width
-}
-
-/// `text` cut to `columns`, ending in `…` when cut, its colour closed.
-pub fn fit(text: &str, columns: usize) -> String {
-    if width(text) <= columns {
-        return text.to_string();
-    }
-    let mut out = String::new();
-    let mut shown = 0;
-    let mut chars = text.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c == '\x1b' {
-            out.push(c);
-            for c in chars.by_ref() {
-                out.push(c);
-                if ('@'..='~').contains(&c) && c != '[' {
-                    break;
-                }
-            }
-            continue;
-        }
-        if shown + 1 >= columns {
-            break;
-        }
-        out.push(c);
-        shown += 1;
-    }
-    out.push('…');
-    if text.contains('\x1b') {
-        out.push_str("\x1b[0m");
-    }
-    out
-}
-
 /// A bar `columns` wide, filled to `fraction`.
 fn bar(fraction: f64, columns: usize, style: Style) -> String {
-    let full = ((fraction.clamp(0.0, 1.0) * columns as f64).round() as usize).min(columns);
-    format!(
-        "{}{}",
-        paint(style, GREEN, &"━".repeat(full)),
-        paint(style, DIM, &"─".repeat(columns - full))
-    )
+    mutastic_output::progress::bar(fraction, columns, style.color)
 }
 
 /// The phase's first line: the spinner and the phase's word, then for coverage and mutants a bar,

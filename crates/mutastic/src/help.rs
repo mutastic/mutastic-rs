@@ -5,6 +5,8 @@
 //! option the parser doesn't take, nor leave one out.
 
 use crate::commands::{self, CliOption, Command, Entry};
+use mutastic_output::layout;
+pub use mutastic_output::layout::wrapped;
 
 /// The widest a line of help is, as the Java edition's.
 pub const WIDTH: usize = 100;
@@ -141,93 +143,14 @@ fn entries(listed: &[Entry]) -> Vec<String> {
         .collect()
 }
 
-/// `name`, then `text` from `column` on, wrapped there; a name too wide for the column has a line
-/// of its own.
+/// `name`, then `text` from `column` on, as wide as help is.
 fn hanging(name: &str, text: &str, column: usize) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut first = name.to_string();
-    if first.chars().count() + 1 > column {
-        out.push(first);
-        first = String::new();
-    }
-    for line in wrapped(text, WIDTH - column) {
-        out.push(format!("{first:<column$}{line}"));
-        first = String::new();
-    }
-    out
+    layout::hanging(name, text, column, WIDTH)
 }
 
-/// An example as it's shown, set in by two spaces. One too long for a line is broken between its
-/// words, outside quotes, each line but the last ending in ` \` so the whole still pastes into a
-/// shell as one command.
+/// An example as it's shown, set in by two spaces, broken as wide as help is.
 fn example_lines(example: &str) -> Vec<String> {
-    const INDENT: &str = "  ";
-    const MORE: &str = "      ";
-    const BREAK: &str = " \\";
-    if INDENT.len() + example.chars().count() <= WIDTH {
-        return vec![format!("{INDENT}{example}")];
-    }
-    let mut lines: Vec<String> = Vec::new();
-    let mut line = String::new();
-    for word in shell_words(example) {
-        let lead = if lines.is_empty() { INDENT } else { MORE };
-        let longer = lead.len() + line.chars().count() + 1 + word.chars().count() + BREAK.len();
-        if !line.is_empty() && longer > WIDTH {
-            lines.push(std::mem::take(&mut line));
-        }
-        if !line.is_empty() {
-            line.push(' ');
-        }
-        line.push_str(word);
-    }
-    lines.push(line);
-    let last = lines.len() - 1;
-    lines
-        .into_iter()
-        .enumerate()
-        .map(|(at, line)| {
-            let lead = if at == 0 { INDENT } else { MORE };
-            let more = if at < last { BREAK } else { "" };
-            format!("{lead}{line}{more}")
-        })
-        .collect()
-}
-
-/// `line`'s words, split at spaces outside double quotes.
-fn shell_words(line: &str) -> Vec<&str> {
-    let mut words = Vec::new();
-    let mut quoted = false;
-    let mut start = 0;
-    for (at, character) in line.char_indices() {
-        match character {
-            '"' => quoted = !quoted,
-            ' ' if !quoted => {
-                words.push(&line[start..at]);
-                start = at + 1;
-            }
-            _ => {}
-        }
-    }
-    words.push(&line[start..]);
-    words.retain(|word| !word.is_empty());
-    words
-}
-
-/// `text` in lines of at most `width` characters, broken between words.
-pub fn wrapped(text: &str, width: usize) -> Vec<String> {
-    let mut lines = Vec::new();
-    let mut line = String::new();
-    for word in text.split(' ') {
-        if !line.is_empty() && line.chars().count() + 1 + word.chars().count() > width {
-            lines.push(std::mem::take(&mut line));
-        }
-        if !line.is_empty() {
-            line.push(' ');
-        }
-        line.push_str(word);
-    }
-    lines.push(line);
-    lines
+    layout::example_lines(example, WIDTH)
 }
 
 #[cfg(test)]

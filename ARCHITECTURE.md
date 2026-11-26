@@ -77,7 +77,7 @@ All the code is in `crates/mutastic/src`:
 | `commands` | Every command, option, environment variable and exit status, declared once: what the parser takes, `gate --help`, `docs/commands.json` and `docs/reference/commands.md` |
 | `workspace` | Reads the package from `cargo metadata`; keeps mutastic's copy in step |
 | `locate` | Checks the directory a command names before anything runs there, finds the package that holds it, and says what's wrong with the command to run instead |
-| `similar` | The one name close to a mistyped one, offered and never acted on |
+| `similar` | The one name close to a mistyped one, offered and never acted on: the output kit's |
 | `cfg` | Which `cfg` predicates hold in mutastic's build: built, not built, or not known |
 | `sites` | Finds mutants with rust-analyzer's parser; the operators, their sets, and unsafe fencing; `sites/callable.rs`, whether a test can call a function, and how |
 | `id` | Mutant ids and fingerprints |
@@ -109,6 +109,15 @@ terminal, the C calls included. The tests also hold each struct and constant dec
 `libc` and `windows-sys` crates', its only dependencies, and only its tests'. `tests/docs.rs` keeps
 the unsafe code there. It's `publish = false`, as `mutastic` is.
 
+`crates/mutastic-output` is the output kit, carved out for the other tools in the family to share:
+colour roles, glyphs and labels (`paint`, `glyphs`), escaping and the agent's fence (`untrusted`),
+the one name close to a mistyped one (`similar`), help's layout (`layout`), and a progress line's
+bar, width and heartbeat (`progress`), and the events' envelope (`envelope`). It knows nothing of mutastic: it depends on none of the
+workspace's crates, so it can't reach up, and `tests/layers.rs` holds it to that. `mutastic`
+re-exports `similar` and `untrusted` whole, as `mutastic::similar` and `mutastic::untrusted`, and
+draws its report, progress and help with the rest. It's `publish = false`, and moves to a library
+of the family's own when a sibling tool first uses it.
+
 `crates/cargo-mutastic` and `crates/mutastic-rs` hold the other two names reserved on crates.io.
 They're empty, and `publish = false`.
 
@@ -129,7 +138,8 @@ that has everything it uses.
 | run | `engine`, `guard`, `likely`, `watch`, `suggest`, `baseline`, `cases`, `flaky`, `record`, `shares` | A run: coverage, the mutants side by side, the false-catch guard and the likely-flaky tests it leaves out, suggested tests, and what a run keeps and compares |
 | build and tests | `compile`, `testrun`, `schema`, `wrapper`, `test_times`, `test_files`, `words`, `origin`, `at` | The one build, the test binaries and their times, and what a card says of a mutant |
 | project | `workspace`, `sites`, `arid`, `callrules`, `cfg`, `config`, `edition`, `locate`, `properties`, `java`, `since`, `build_args` | The package, its mutants, its settings and the frameworks it uses |
-| base | `failure`, `commands`, `mistyped`, `ignores`, `similar`, `untrusted`, `amounts`, `id`, `limits`, `slept` | Errors, the commands' declarations, and text, ids and times as mutastic writes them |
+| base | `failure`, `commands`, `mistyped`, `ignores`, `amounts`, `id`, `limits`, `slept` | Errors, the commands' declarations, and text, ids and times as mutastic writes them |
+| kit | `similar`, `untrusted` | The output kit's modules, from `crates/mutastic-output`, which `lib.rs` re-exports |
 
 `commands` is in the base, not beside `cli`: every error that names an option, and the help, read
 its declarations.

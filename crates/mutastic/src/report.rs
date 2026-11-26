@@ -97,33 +97,8 @@ pub struct Style {
 }
 
 /// How a label such as `MISSED` is drawn in colour (`MUTASTIC_PILLS`), as the Java edition draws
-/// it: a block with square ends, the default; with rounded ends, which need a Nerd Font, or the
-/// ends show as boxes; or no block at all, only the label's words in its colour.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Labels {
-    #[default]
-    Square,
-    Rounded,
-    Off,
-}
-
-impl Labels {
-    /// The choices `MUTASTIC_PILLS` takes.
-    pub const CHOICES: &[&str] = &["square", "rounded", "off"];
-
-    pub fn parse(name: &str) -> Option<Labels> {
-        match name {
-            "square" => Some(Labels::Square),
-            "rounded" => Some(Labels::Rounded),
-            "off" => Some(Labels::Off),
-            _ => None,
-        }
-    }
-}
-
-/// Nerd Font half-circles, for rounded label ends.
-const ROUND_LEFT: &str = "\u{e0b6}";
-const ROUND_RIGHT: &str = "\u{e0b4}";
+/// it: the output kit's.
+pub use mutastic_output::paint::Labels;
 
 /// The words people read for a mutant's fate, as the Java edition has them. `plain` (caught, missed)
 /// is the default, because "your tests missed this" needs no metaphor explained; `classic` (killed,
@@ -284,9 +259,7 @@ fn link_ids_in(text: &str, pages: &std::path::Path, ids: &BTreeSet<&str>, style:
 }
 
 /// Label backgrounds.
-const RED: &str = "41";
-const GREEN: &str = "42";
-const CYAN: &str = "46";
+use mutastic_output::paint::{self, CYAN_LABEL as CYAN, GREEN_LABEL as GREEN, RED_LABEL as RED};
 
 impl Style {
     /// `text` linking to `file`, when links are on, as the Java edition writes them: the line
@@ -297,57 +270,34 @@ impl Style {
 
     /// `text` linking to `url`, when links are on.
     fn link_url(self, url: &str, text: &str) -> String {
-        if self.links {
-            format!("\x1b]8;;{url}\x1b\\{text}\x1b]8;;\x1b\\")
-        } else {
-            text.to_string()
-        }
+        mutastic_output::paint::link(self.links, url, text)
     }
 
     fn paint(self, code: &str, text: &str) -> String {
-        if self.color {
-            format!("\x1b[{code}m{text}\x1b[0m")
-        } else {
-            text.to_string()
-        }
+        mutastic_output::paint::paint(self.color, code, text)
     }
     fn red(self, text: &str) -> String {
-        self.paint("1;31", text)
+        self.paint(paint::RED, text)
     }
     fn green(self, text: &str) -> String {
-        self.paint("32", text)
+        self.paint(paint::GREEN, text)
     }
     fn amber(self, text: &str) -> String {
-        self.paint("33", text)
+        self.paint(paint::AMBER, text)
     }
     fn blue(self, text: &str) -> String {
-        self.paint("1;34", text)
+        self.paint(paint::BLUE, text)
     }
     fn dim(self, text: &str) -> String {
-        self.paint("2", text)
+        self.paint(paint::DIM, text)
     }
     fn bold(self, text: &str) -> String {
-        self.paint("1", text)
+        self.paint(paint::BOLD, text)
     }
     /// A label, `MISSED` on red: black bold text on a block of colour, `[MISSED]` without colour.
     /// With rounded ends the ends are drawn in the label's colour; with none, the words are.
     fn label(self, text: &str, background: &str) -> String {
-        if !self.color {
-            return format!("[{text}]");
-        }
-        // 41, a red background, is 31 for red text.
-        let edge = background
-            .parse::<u8>()
-            .map_or_else(|_| background.to_string(), |code| (code - 10).to_string());
-        match self.labels {
-            Labels::Square => format!("\x1b[{background};30;1m {text} \x1b[0m"),
-            Labels::Rounded => format!(
-                "{}\x1b[{background};30;1m{text}\x1b[0m{}",
-                self.paint(&edge, ROUND_LEFT),
-                self.paint(&edge, ROUND_RIGHT)
-            ),
-            Labels::Off => self.paint(&format!("1;{edge}"), text),
-        }
+        mutastic_output::paint::label(self.color, self.labels, text, background)
     }
     /// Backticks mark code in the words; at a terminal code is bold instead.
     fn code(self, text: &str) -> String {
@@ -1044,17 +994,19 @@ pub fn run_failed(failure: &Failure, directory: &str, exit: u8) -> Value {
             })
         })
         .collect();
-    json!({
-        "schema": SCHEMA,
-        "edition": EDITION,
-        "reason": "run-failed",
-        "code": failure.code.name(),
-        "message": message.lines().next().unwrap_or_default(),
-        "where": {"directory": directory, "path": path},
-        "help": help,
-        "exitCode": exit,
-        "rendered": format!("mutastic: {message}\n"),
-    })
+    mutastic_output::envelope::event(
+        SCHEMA,
+        EDITION,
+        "run-failed",
+        json!({
+            "code": failure.code.name(),
+            "message": message.lines().next().unwrap_or_default(),
+            "where": {"directory": directory, "path": path},
+            "help": help,
+            "exitCode": exit,
+            "rendered": format!("mutastic: {message}\n"),
+        }),
+    )
 }
 
 /// The whole result in `format`.
@@ -3141,16 +3093,18 @@ pub fn run_started(
     at: &[String],
     properties: Option<serde_json::Value>,
 ) -> serde_json::Value {
-    let mut started = json!({
-        "schema": SCHEMA,
-        "edition": EDITION,
-        "reason": "run-started",
-        "project": package,
-        "rule": RULE,
-        "decline": DECLINE,
-        "profile": { "name": "mutastic" },
-        "unsafe": unsafe_mode.name(),
-    });
+    let mut started = mutastic_output::envelope::event(
+        SCHEMA,
+        EDITION,
+        "run-started",
+        json!({
+            "project": package,
+            "rule": RULE,
+            "decline": DECLINE,
+            "profile": { "name": "mutastic" },
+            "unsafe": unsafe_mode.name(),
+        }),
+    );
     // A run with nothing to build has no opt-level from Cargo: what isn't known is left out.
     for (key, setting) in [
         ("optLevel", "opt_level"),
@@ -3209,13 +3163,15 @@ fn jsonl(report: &Report) -> String {
             lines.push(revised);
         }
     }
-    let mut finished = json!({
-        "schema": SCHEMA,
-        "edition": EDITION,
-        "reason": "run-finished",
-        "toolchain": { "name": "rustc", "version": report.rustc },
-        "mutants": report.results.len(),
-    });
+    let mut finished = mutastic_output::envelope::event(
+        SCHEMA,
+        EDITION,
+        "run-finished",
+        json!({
+            "toolchain": { "name": "rustc", "version": report.rustc },
+            "mutants": report.results.len(),
+        }),
+    );
     for status in [
         Status::Killed,
         Status::Survived,
@@ -3448,25 +3404,27 @@ fn mutant_event(view: &View, result: &MutantResult) -> Value {
         "level": "source",
         "text": format!("{} -> {}", sites_plain(&text[mutant.site.clone()]), mutant.replacement),
     });
-    let mut event = json!({
-        "schema": SCHEMA,
-        "edition": EDITION,
-        "reason": "mutant-finished",
-        "id": mutant.id,
-        "fingerprint": mutant.fingerprint,
-        "status": result.status.schema_name(),
-        "operator": mutant.operator,
-        "location": {
-            "file": view.file(mutant),
-            "line": at["line"],
-            "column": at["column"],
-            // The schema's names: the item that holds the function (`pricing::Pricing`), and
-            // the function.
-            "class": function.path.rsplit_once("::").map_or(view.project.crate_name.as_str(), |(holder, _)| holder),
-            "method": function.name,
-        },
-        "mutation": mutation,
-    });
+    let mut event = mutastic_output::envelope::event(
+        SCHEMA,
+        EDITION,
+        "mutant-finished",
+        json!({
+            "id": mutant.id,
+            "fingerprint": mutant.fingerprint,
+            "status": result.status.schema_name(),
+            "operator": mutant.operator,
+            "location": {
+                "file": view.file(mutant),
+                "line": at["line"],
+                "column": at["column"],
+                // The schema's names: the item that holds the function (`pricing::Pricing`), and
+                // the function.
+                "class": function.path.rsplit_once("::").map_or(view.project.crate_name.as_str(), |(holder, _)| holder),
+                "method": function.name,
+            },
+            "mutation": mutation,
+        }),
+    );
     if let (Some(docs), Some(fields)) = (
         crate::operator_docs::url(mutant.operator),
         event.as_object_mut(),
@@ -4036,26 +3994,28 @@ pub fn explained_jsonl(report: &Report, last: Option<LastRun>) -> String {
         return out;
     };
     let about = About::of(&view, result, last);
-    let mut event = json!({
-        "schema": SCHEMA,
-        "edition": EDITION,
-        "reason": "mutant-explained",
-        "id": view.id(result),
-        // As `mutation.applied` has it, at the source level, with what that level adds: the
-        // Java edition's has the bytecode's.
-        "applied": {
-            "level": "source",
-            "text": format!("{} -> {}", about.from, about.to),
-            "original": about.from,
-            "replacement": about.to,
-            "description": CHANGE_NOTE,
-        },
-        "operator": { "id": about.operator, "description": about.operator_description },
-        "fingerprint": about.fingerprint,
-        "idDescription": about.id,
-        "idNote": about.id_note,
-        "site": { "ordinal": about.ordinal, "method": about.function, "description": about.site },
-    });
+    let mut event = mutastic_output::envelope::event(
+        SCHEMA,
+        EDITION,
+        "mutant-explained",
+        json!({
+            "id": view.id(result),
+            // As `mutation.applied` has it, at the source level, with what that level adds: the
+            // Java edition's has the bytecode's.
+            "applied": {
+                "level": "source",
+                "text": format!("{} -> {}", about.from, about.to),
+                "original": about.from,
+                "replacement": about.to,
+                "description": CHANGE_NOTE,
+            },
+            "operator": { "id": about.operator, "description": about.operator_description },
+            "fingerprint": about.fingerprint,
+            "idDescription": about.id,
+            "idNote": about.id_note,
+            "site": { "ordinal": about.ordinal, "method": about.function, "description": about.site },
+        }),
+    );
     if let Some((rule, bring_back)) = &about.arid {
         event["arid"] = json!({
             "id": rule.id,
