@@ -79,16 +79,15 @@ audit:
 fuzz TARGET *args:
     cargo +nightly fuzz run "$@"
 
-# Runs the terminal crate's tests under Miri, on nightly
+# Runs the unsafe code's tests under a sanitizer, on nightly: just sanitize miri, or just sanitize
+# address (AddressSanitizer, from a terminal). Each edition's `sanitize` names its own tools.
 [group('unsafe')]
-miri *args:
-    cargo +nightly miri test -p mutastic-terminal --locked "$@"
-
-# Runs the terminal crate's tests under AddressSanitizer, on nightly, from a terminal
-[env('RUSTFLAGS', '-Zsanitizer=address')]
-[group('unsafe')]
-asan:
-    cargo +nightly test -p mutastic-terminal --locked --lib --target "$(rustc -vV | sed -n 's/^host: //p')"
+sanitize TOOL *args:
+    case "$1" in \
+      miri) shift; cargo +nightly miri test -p mutastic-terminal --locked "$@" ;; \
+      address) shift; RUSTFLAGS=-Zsanitizer=address cargo +nightly test -p mutastic-terminal --locked --lib --target "$(rustc -vV | sed -n 's/^host: //p')" "$@" ;; \
+      *) echo "sanitize: '$1' isn't a sanitizer here; try: just sanitize miri, or just sanitize address" >&2; exit 2 ;; \
+    esac
 
 # Checks this edition against the editions' contract at its newest pin
 [group('contract')]

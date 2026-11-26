@@ -58,9 +58,9 @@ the justfile shows (`just test` is `cargo test --locked`), so the work can still
 it. Call `cargo` directly only for a job no recipe covers.
 
 CI calls the same recipes: `just lint` and `just test` on Linux and macOS, `just clippy` and `just
-test --no-fail-fast` on Windows, `just msrv`, and the scheduled runs' `just fuzz`, `just miri`,
-`just asan`, `just contract`, and the `ci` group's `self-` recipes and `just corpus`, so a job
-that fails can be run here as CI ran it. Commits checks the justfile's format and that its verbs
+test --no-fail-fast` on Windows, `just msrv`, and the scheduled runs' `just fuzz`, `just sanitize
+miri`, `just sanitize address`, `just contract`, and the `ci` group's `self-` recipes and `just
+corpus`, so a job that fails can be run here as CI ran it. Commits checks the justfile's format and that its verbs
 are those [.github/just-verbs.txt](.github/just-verbs.txt) lists: after adding or removing a
 recipe, run `just --summary | tr ' ' '\n' > .github/just-verbs.txt`.
 
