@@ -167,8 +167,8 @@
           "description": "For a project whose tests use a property-testing framework (decision 25): which, and the seed the run drew their inputs from, so runs can be compared: a run with another seed is another draw.",
           "required": ["frameworks"],
           "properties": {
-            "frameworks": { "type": "array", "items": { "type": "string" }, "description": "The frameworks the project's tests use, by name: in Rust `proptest`, `quickcheck`, `arbtest`, `bolero`; in Java `junit-quickcheck`, `quicktheories`, `kotest`, `jqwik`." },
-            "seed": { "type": "string", "pattern": "^[0-9]+$", "description": "The seed every test process of the run was given, in decimal: the person's, else `0`. Only when a framework took it." },
+            "frameworks": { "type": "array", "items": { "type": "string" }, "description": "The frameworks the project's tests use, by name: in Rust `proptest`, `quickcheck`, `arbtest`, `bolero`, `proptastic`; in Java `junit-quickcheck`, `quicktheories`, `kotest`, `proptastic`, `jqwik`." },
+            "seed": { "type": "string", "pattern": "^[0-9]+$", "description": "The seed every test process of the run was given, in decimal: the person's, else `0`. proptastic is given it as `0x` and hex digits, as it reads seeds (decision 31). Only when a framework took it." },
             "seeded": { "type": "array", "items": { "type": "string" }, "description": "The frameworks that drew from `seed`." },
             "unseeded": { "type": "array", "items": { "type": "string" }, "description": "The frameworks whose seed can't be set from outside the test: their inputs are their own draw's, and the run's note on stderr names them." }
           }
@@ -338,6 +338,10 @@
         "flakyCatchBy": {
           "$ref": "#/$defs/test",
           "description": "A test named likely flaky in this run that had caught the mutant, so its catch doesn't count (decision 27): the mutant ran again without it, and this result is what the other covering tests made of it. In `mutant-revised`; `falseCatchBy` instead when the test failed on its own."
+        },
+        "duplicateClassBy": {
+          "$ref": "#/$defs/test",
+          "description": "A test that failed against the mutant only because the JVM refused a class as defined twice, which the Java edition's class loaders cause and the build never sees: that failure judged nothing, so it isn't a catch, and the mutant's other covering tests decided this result (decision 30)."
         },
         "falseCatchBy": {
           "$ref": "#/$defs/test",
