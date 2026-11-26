@@ -342,7 +342,7 @@ six seconds at a door. Here's the terminal while that mutant runs, with one work
 
 <!-- output: concepts/run-live -->
 ```text
-mutastic 1.2.1 · reading the Cargo package…
+mutastic 1.4.0 · reading the Cargo package…
 building  13 mutants in one build · 1 worker
 built     13 mutants in 1.2s · 2 rounds (check and build), none withdrawn
 coverage  1 test on rustc 1.94.0 in 1.5s · 13 mutants
