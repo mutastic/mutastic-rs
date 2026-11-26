@@ -1,2 +1,14 @@
-# A test's `unwrap` is its assertion that the value is there; elsewhere `unwrap_used` holds.
+# A test's `unwrap` or `expect` is its assertion that the value is there; elsewhere `unwrap_used`
+# and `expect_used` hold.
 allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+
+# Each place that starts a process or reads the environment is one we chose: a process can hang,
+# outlive the run or differ by platform, and the environment changes a run without a word in the
+# command. Clippy can't allow a method by path, so each file that may has its own
+# `#![expect(clippy::disallowed_methods, reason = "…")]`, and a new file that does fails.
+disallowed-methods = [
+    { path = "std::process::Command::new", reason = "start a process only where we chose to" },
+    { path = "std::env::var", reason = "read the environment only where we chose to" },
+    { path = "std::env::var_os", reason = "read the environment only where we chose to" },
+]

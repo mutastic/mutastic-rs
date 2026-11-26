@@ -10,6 +10,10 @@
 //! To write the list: `just ids` (`MUTASTIC_IDS_WRITE=1 cargo test --test ids`), then read the
 //! diff: lines may be added, never changed or removed.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "writes the ids list again when asked"
+)]
 #![allow(
     clippy::unwrap_used,
     reason = "a helper here asserts as the tests it serves do: a value that isn't there fails the test"

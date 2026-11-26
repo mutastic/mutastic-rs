@@ -1,5 +1,10 @@
 //! The `mutastic` command, also run as `cargo mutastic`.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "reads the variables the command declares: the format, the colour, the agent"
+)]
+
 use std::ffi::OsString;
 use std::io::IsTerminal;
 use std::process::ExitCode;

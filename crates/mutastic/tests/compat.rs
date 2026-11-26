@@ -16,6 +16,7 @@
 //! To keep a release's copy: `MUTASTIC_RELEASED_WRITE=1 cargo test --test compat`, at the release's
 //! version (RELEASING.md).
 
+#![expect(clippy::disallowed_methods, reason = "where the kept projects are")]
 #![allow(
     clippy::unwrap_used,
     reason = "a helper here asserts as the tests it serves do: a value that isn't there fails the test"

@@ -12,6 +12,8 @@
 //! shrinking it, often the costly part, is turned off where the framework lets it be. The input
 //! that failed goes on the card, as the evidence a property gives that no other test does.
 
+#![expect(clippy::disallowed_methods, reason = "a seed the user set is kept")]
+
 use std::collections::BTreeSet;
 
 use serde_json::{json, Value};

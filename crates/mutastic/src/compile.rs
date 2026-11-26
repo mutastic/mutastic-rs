@@ -9,6 +9,11 @@
 //! Flags reach the user's crate only through `RUSTC_WORKSPACE_WRAPPER` (this binary), never
 //! `RUSTFLAGS`, which would replace the project's own flags and rebuild every dependency.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "runs Cargo for the one build, with mutastic as its wrapper"
+)]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};

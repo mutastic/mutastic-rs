@@ -1,6 +1,11 @@
 //! A run: find the mutants, build them all at once, record what each test reaches, then run each
 //! mutant against only the tests that reach it.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "the summary's time of day from date, and the version of the RUSTC Cargo runs"
+)]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};

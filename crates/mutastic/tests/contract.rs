@@ -17,6 +17,10 @@
 //! The Java edition runs the same checks on its own binary and sample (its `ContractTest`), and
 //! neither shares the other's code, so an edition in another language can pass them too.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "runs both editions, from where the Java one is"
+)]
 // On Linux and macOS: the contract is about what mutastic says, which is the same on Windows, and
 // the checks compare paths as they print there.
 #![cfg(unix)]
@@ -1334,6 +1338,10 @@ fn twins() -> &'static (PathBuf, Vec<Value>) {
 }
 
 /// A twin whose partner is missed, and that partner.
+#[expect(
+    clippy::expect_used,
+    reason = "a test's helper: its expect is the test's assertion"
+)]
 fn missed_twin() -> (&'static Value, &'static Value) {
     let (_, events) = twins();
     events

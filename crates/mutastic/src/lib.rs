@@ -6,6 +6,10 @@
 //! withdrawing mutants that don't compile; [`engine`] records what each test reaches and runs
 //! each mutant against those tests; [`report`] prints the result.
 
+// `println!` and `eprintln!` panic when the stream has closed (`mutastic run | head`): write
+// through `stdout_line!` and `stderr_line!`, which drop what can't be shown.
+#![deny(clippy::print_stdout, clippy::print_stderr)]
+
 /// A line to stderr that can't panic. Progress and notes go to stderr, and stderr can close mid-run
 /// (`mutastic run … 2>&1 | head`): `eprintln!` would panic there, in a worker thread, and take its
 /// results with it. What can't be shown is dropped; the run goes on.

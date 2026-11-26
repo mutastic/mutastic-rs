@@ -10,6 +10,11 @@
 //! [`crate::gate_budget`] allows, and falls back on the source's test attributes, saying so, when it failed or isn't done. `gate close`, and
 //! a new `gate open`, stop it and remove what it made.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "the gate's count runs mutastic in the background, and git"
+)]
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};

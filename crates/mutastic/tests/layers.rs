@@ -83,6 +83,10 @@ fn a_path_from_the_crate_names_its_first_module() {
 }
 
 /// The layers, top first, each its name and its modules, from ARCHITECTURE.md's table.
+#[expect(
+    clippy::expect_used,
+    reason = "a test's helper: its expect is the test's assertion"
+)]
 fn layers() -> Vec<(String, Vec<String>)> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ARCHITECTURE.md");
     let text = std::fs::read_to_string(path).expect("ARCHITECTURE.md reads");
@@ -113,6 +117,10 @@ fn src() -> PathBuf {
 
 /// The modules `lib.rs` declares, `pub mod engine;`.
 /// The modules `lib.rs` declares, and those it re-exports from the kit.
+#[expect(
+    clippy::expect_used,
+    reason = "a test's helper: its expect is the test's assertion"
+)]
 fn declared() -> Vec<String> {
     let text = std::fs::read_to_string(src().join("lib.rs")).expect("lib.rs reads");
     let mut declared: Vec<String> = SourceFile::parse(&text, Edition::CURRENT)
@@ -204,6 +212,10 @@ fn the_kit_knows_nothing_of_mutastic() {
 }
 
 /// A module's files: `src/<module>.rs`, and every file under `src/<module>/`.
+#[expect(
+    clippy::expect_used,
+    reason = "a test's helper: its expect is the test's assertion"
+)]
 fn files(module: &str) -> Vec<PathBuf> {
     let mut found = vec![src().join(format!("{module}.rs"))];
     let mut dirs = vec![src().join(module)];

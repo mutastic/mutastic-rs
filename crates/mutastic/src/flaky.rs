@@ -3,6 +3,11 @@
 //! run goes on without it, and says so, since which of its own code or the code it runs varies
 //! changes what to do about it.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "a seed the user set means a property's failure isn't flaky"
+)]
+
 use std::collections::BTreeSet;
 use std::path::Path;
 

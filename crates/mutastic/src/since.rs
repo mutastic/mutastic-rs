@@ -3,6 +3,11 @@
 //! files included, as the Java edition reads it. Lines a change only deleted aren't there: nothing
 //! is left on them to mutate.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "asks git for the lines a change touched"
+)]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;

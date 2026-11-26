@@ -3,6 +3,7 @@
 //! time one is needed. These run the built binary with a stand-in Java edition, a shell script that
 //! writes down what it was given, and a release directory on disk: never the network.
 
+#![expect(clippy::disallowed_methods, reason = "runs mutastic as a user does")]
 #![allow(
     clippy::unwrap_used,
     reason = "a helper here asserts as the tests it serves do: a value that isn't there fails the test"

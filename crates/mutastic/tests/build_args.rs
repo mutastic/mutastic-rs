@@ -2,6 +2,7 @@
 //! choose the code mutated with its features, and are told apart in the run record; only those typed
 //! are repeated.
 
+#![expect(clippy::disallowed_methods, reason = "runs mutastic as a user does")]
 #![allow(
     clippy::unwrap_used,
     reason = "a helper here asserts as the tests it serves do: a value that isn't there fails the test"

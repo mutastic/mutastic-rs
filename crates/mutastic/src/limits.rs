@@ -16,6 +16,11 @@
 //! all, ten minutes or twenty times the whole suite's own time, or `timeout-ceiling:` in
 //! `mutastic.yaml`. A mutant stopped there is timed out with a note that says so.
 
+#![expect(
+    clippy::disallowed_methods,
+    reason = "the test threads the user asked for"
+)]
+
 use std::time::Duration;
 
 /// No run of a mutant's tests is stopped sooner.
