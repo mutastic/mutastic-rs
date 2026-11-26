@@ -76,7 +76,8 @@ jobs:
   #
   # A release, "chore(release): version X.Y.Z", is checked as one before it can merge, by
   # scripts/release-check.sh: here what takes seconds, the changelog's rules for that version, the
-  # version and the contract's pins; the ids, which need a build, in ci.yml.
+  # version, the contract's pins and its release rule at the pin; the ids, which need a build, in
+  # ci.yml.
   #
   # And the justfile, whose recipes CI runs: formatted as `just --fmt` writes it, and with the
   # verbs .github/just-verbs.txt lists, so none goes or comes unseen.

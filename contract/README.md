@@ -46,6 +46,23 @@ A pin to a mutastic pull request's head, not yet merged, holds only while it is 
 that pull request merges, move the pin to its merge commit, by running the script again with the
 same slug. That changes your own file and no one else's.
 
+## The shared tooling
+
+The pin logic isn't this repository's own: `scripts/pin-contract.sh` fetches the contract's
+tooling, `docs/scripts/contract.mjs` in the Java repository (`tool` in
+[`source.json`](source.json)), from its main and runs it here, so every edition pins the same way.
+It needs node. The newest pin is read in `tests/contract.rs` itself, as the check runs inside
+`cargo test`.
+
+## What this edition claims
+
+The contract states each behaviour once. This edition follows every shared entry, fills each slot
+(a difference with `each`) with its binding's `says`, and keeps only the deviations that name
+`rust`. One that is `pending` has an issue and a target release, and `scripts/release-check.sh`
+refuses a release while any such entry has no issue or target, or a target gone by, or a `dated`
+one has reached its `until`: the shared `contract.mjs release rust X.Y.Z`, on the contract at the
+pin.
+
 ## At a release
 
 The pins older than the newest can go: `scripts/pin-contract.sh prune` deletes them.
