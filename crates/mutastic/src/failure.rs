@@ -43,6 +43,8 @@ pub enum Code {
     /// The tests ran and passed, and reached none of the code with mutants.
     NothingCovered,
     JavaEdition,
+    /// A Swift project, which the Swift edition reads once it's released.
+    SwiftEdition,
     ProcMacro,
     /// A file mutastic reads or writes couldn't be: a full disk, a directory that isn't writable, a
     /// file where it keeps a directory.
@@ -83,6 +85,7 @@ impl Code {
         Code::NoTests,
         Code::NothingCovered,
         Code::JavaEdition,
+        Code::SwiftEdition,
         Code::ProcMacro,
         Code::Disk,
         Code::Other,
@@ -119,6 +122,7 @@ impl Code {
             Code::NoTests => "no-tests",
             Code::NothingCovered => "nothing-covered",
             Code::JavaEdition => "java-edition",
+            Code::SwiftEdition => "swift-edition",
             Code::ProcMacro => "proc-macro",
             Code::Disk => "disk",
             Code::Other => "other",

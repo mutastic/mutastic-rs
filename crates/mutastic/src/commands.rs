@@ -695,9 +695,10 @@ pub const OPTIONS: &[CliOption] = &[
         value: "EDITION",
         kind: Kind::Value,
         group: "Editions",
-        choices: &["rust", "java"],
+        choices: &["rust", "java", "swift"],
         help: "Which edition runs; unless set, the build file in DIR, or the nearest above it: \
-               Cargo.toml for rust, pom.xml, build.gradle or settings.gradle for java",
+               Cargo.toml for rust, pom.xml, build.gradle or settings.gradle for java, \
+               Package.swift, an .xcodeproj or an .xcworkspace for swift",
         commands: EVERY_COMMAND,
         environment: "",
         example: "--edition=rust",
@@ -862,6 +863,13 @@ pub const ENVIRONMENT: &[Entry] = &[
         name: "MUTASTIC_JAVA_RELEASES",
         meaning: "Where the Java edition's releases are downloaded from, for a mirror",
         detail: "GitHub's releases of `mutastic/mutastic` unless set.",
+    },
+    Entry {
+        name: "MUTASTIC_SWIFT_ENGINE",
+        meaning: "A Swift edition's mutastic to run in a Swift project, such as one built from \
+                  its source",
+        detail: "The Swift edition isn't released yet: without this, a Swift package or Xcode \
+                 project is refused.",
     },
     Entry {
         name: "MUTASTIC_JAVA_HOME",

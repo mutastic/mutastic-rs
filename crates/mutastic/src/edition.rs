@@ -1,14 +1,18 @@
-//! Which edition runs a command: this one, the Rust edition, or the Java edition, which [`java`]
-//! finds or fetches and hands the command to unchanged.
+//! Which edition runs a command: this one, the Rust edition; the Java edition, which [`java`]
+//! finds or fetches and hands the command to unchanged; or the Swift edition, which [`swift`]
+//! refuses until it's released.
 //!
 //! The directory a command points at decides, by its build file: `Cargo.toml` is the Rust
-//! edition's, and `pom.xml`, `build.gradle(.kts)` or `settings.gradle(.kts)` the Java edition's.
-//! A directory with neither is decided by the nearest one above it that has one. A directory with
-//! both is a question only the person can answer, with `--edition`. One build nested in another of
+//! edition's, `pom.xml`, `build.gradle(.kts)` or `settings.gradle(.kts)` the Java edition's, and
+//! `Package.swift`, an `.xcworkspace` or an `.xcodeproj` the Swift edition's. A directory with none
+//! is decided by the nearest one above it that has one. A directory with the build files of more
+//! than one edition, `Cargo.toml` beside `Package.swift` say, is a question only the person can
+//! answer, with `--edition`. One build nested in another of
 //! the other edition, such as a Rust crate inside a Gradle build, is its own project: pointing at
 //! the outer one runs the outer one's edition, and `run` says how to point at the inner one.
 //!
 //! [`java`]: crate::java
+//! [`swift`]: crate::swift
 
 use std::path::{Path, PathBuf};
 
@@ -26,6 +30,10 @@ pub const JVM_BUILDS: &[&str] = &[
 /// The Rust edition's build file.
 pub const CARGO_BUILD: &str = "Cargo.toml";
 
+/// The Swift edition's builds: a SwiftPM package's manifest, then an Xcode workspace or project,
+/// each a directory whose name ends so.
+pub const SWIFT_BUILDS: &[&str] = &["Package.swift", ".xcworkspace", ".xcodeproj"];
+
 /// Directories never searched for a nested build: build output, dependencies and hidden ones.
 const NOT_SEARCHED: &[&str] = &["target", "build", "node_modules", "out"];
 
@@ -36,14 +44,26 @@ const NESTED_DEPTH: usize = 6;
 pub enum Edition {
     Rust,
     Java,
+    Swift,
 }
 
 impl Edition {
+    /// Every edition, in the order a choice of them is offered.
+    pub const ALL: &[Edition] = &[Edition::Rust, Edition::Java, Edition::Swift];
+
     pub fn parse(name: &str) -> Option<Edition> {
-        match name {
-            "rust" => Some(Edition::Rust),
-            "java" => Some(Edition::Java),
-            _ => None,
+        Edition::ALL
+            .iter()
+            .copied()
+            .find(|edition| edition.name() == name)
+    }
+
+    /// As `--edition` takes it: `rust`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Edition::Rust => "rust",
+            Edition::Java => "java",
+            Edition::Swift => "swift",
         }
     }
 }
@@ -68,23 +88,84 @@ fn builds_in(dir: &Path) -> (Option<&'static str>, bool) {
     (jvm, dir.join(CARGO_BUILD).is_file())
 }
 
+/// The Swift build in `dir`, if there is one: its kind, one of [`SWIFT_BUILDS`], and its name,
+/// `Package.swift` or `Shop.xcodeproj`. A workspace inside a project (`project.xcworkspace`) is
+/// the project's, and isn't in `dir` itself.
+pub fn swift_build_in(dir: &Path) -> Option<(&'static str, String)> {
+    let manifest = SWIFT_BUILDS[0];
+    if dir.join(manifest).is_file() {
+        return Some((manifest, manifest.to_string()));
+    }
+    let mut names: Vec<String> = std::fs::read_dir(dir)
+        .ok()?
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    SWIFT_BUILDS[1..].iter().find_map(|&kind| {
+        names
+            .iter()
+            .find(|name| name.len() > kind.len() && name.ends_with(kind))
+            .map(|name| (kind, name.clone()))
+    })
+}
+
+/// `--edition=rust or --edition=java`, for the editions given, in [`Edition::ALL`]'s order.
+fn choose_among(editions: &[Edition]) -> String {
+    let named: Vec<String> = Edition::ALL
+        .iter()
+        .filter(|edition| editions.contains(edition))
+        .map(|edition| format!("--edition={}", edition.name()))
+        .collect();
+    match named.split_last() {
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} or {last}", rest.join(", ")),
+        None => String::new(),
+    }
+}
+
 /// Which edition reads `dir`: its own build file's, or the nearest one above it. With no build
 /// file anywhere above, the Rust edition, which says there's no project here as it always has.
 pub fn route(dir: &Path) -> Result<Route, Failure> {
     let start = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
     for here in start.ancestors() {
         let (jvm, cargo) = builds_in(here);
-        let (edition, build) = match (jvm, cargo) {
-            (Some(jvm), true) => {
+        let swift = swift_build_in(here);
+        let mut found: Vec<(Edition, &'static str, String)> = Vec::new();
+        if cargo {
+            found.push((Edition::Rust, CARGO_BUILD, CARGO_BUILD.to_string()));
+        }
+        if let Some(jvm) = jvm {
+            found.push((Edition::Java, jvm, jvm.to_string()));
+        }
+        if let Some((kind, name)) = swift {
+            found.push((Edition::Swift, kind, name));
+        }
+        let (edition, build) = match found.as_slice() {
+            [] => continue,
+            [(edition, build, _)] => (*edition, *build),
+            [(_, _, first), (_, _, second)] => {
+                let editions: Vec<Edition> = found.iter().map(|(edition, ..)| *edition).collect();
                 return Err(Code::BothEditions.with(format!(
-                    "{} has both {CARGO_BUILD} and {jvm}, so either edition could read it: say \
-                     which with --edition=rust or --edition=java",
-                    here.display()
-                )))
+                    "{} has both {first} and {second}, so either edition could read it: say \
+                     which with {}",
+                    here.display(),
+                    choose_among(&editions)
+                )));
             }
-            (Some(jvm), false) => (Edition::Java, jvm),
-            (None, true) => (Edition::Rust, CARGO_BUILD),
-            (None, false) => continue,
+            _ => {
+                let editions: Vec<Edition> = found.iter().map(|(edition, ..)| *edition).collect();
+                let names: Vec<&str> = found.iter().map(|(_, _, name)| name.as_str()).collect();
+                let (last, rest) = names.split_last().unwrap_or((&"", &[]));
+                return Err(Code::BothEditions.with(format!(
+                    "{} has {} and {last}, so any of {} editions could read it: say which with {}",
+                    here.display(),
+                    rest.join(", "),
+                    editions.len(),
+                    choose_among(&editions)
+                )));
+            }
         };
         return Ok(Route {
             edition,
@@ -108,12 +189,15 @@ pub fn chosen(args: &[String]) -> Result<(Option<Edition>, Vec<String>), Failure
         match arg.strip_prefix("--edition=") {
             Some(name) => {
                 edition = Some(Edition::parse(name).ok_or_else(|| {
-                    Code::OptionValue.with(format!("--edition: {name} isn't one of java or rust"))
+                    Code::OptionValue.with(format!(
+                        "--edition: {name} isn't one of java, rust or swift"
+                    ))
                 })?)
             }
             None if arg == "--edition" => {
-                return Err(Code::OptionValue
-                    .with("--edition needs a value: --edition=java or --edition=rust"))
+                return Err(Code::OptionValue.with(
+                    "--edition needs a value: --edition=java, --edition=rust or --edition=swift",
+                ))
             }
             None => rest.push(arg.clone()),
         }
@@ -159,7 +243,7 @@ pub fn nested(project: &Path, edition: Edition) -> Vec<PathBuf> {
             for dir in dirs {
                 let (jvm, cargo) = builds_in(&project.join(&dir));
                 let other = match edition {
-                    Edition::Java => cargo,
+                    Edition::Java | Edition::Swift => cargo,
                     Edition::Rust => jvm.is_some(),
                 };
                 if other {
@@ -208,10 +292,13 @@ pub fn nested_note(given: &str, route: &Route) -> Option<String> {
         Edition::Java if route.build == Some("pom.xml") => ("a Maven project", "Rust", "crate"),
         Edition::Java => ("a Gradle build", "Rust", "crate"),
         Edition::Rust => ("a Cargo project", "Java", "project"),
+        // The Swift edition isn't released, so a run there is refused before any note.
+        Edition::Swift => return None,
     };
     let edition = match route.edition {
         Edition::Java => "Java",
         Edition::Rust => "Rust",
+        Edition::Swift => "Swift",
     };
     let dirs: Vec<String> = inner
         .iter()

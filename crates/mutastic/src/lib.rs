@@ -82,6 +82,7 @@ pub mod since;
 pub mod sites;
 pub mod slept;
 pub mod suggest;
+pub mod swift;
 pub mod test_files;
 pub mod test_times;
 pub mod testrun;

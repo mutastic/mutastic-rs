@@ -19,8 +19,8 @@ use crate::shares::EVENTS;
 use crate::sites::UnsafeMode;
 use crate::test_times::{self, TestTimes};
 use crate::{
-    baseline, commands, gate, gate_budget, gate_count, ignores, java, sites, testrun, untrusted,
-    workspace, wrapper,
+    baseline, commands, gate, gate_budget, gate_count, ignores, java, sites, swift, testrun,
+    untrusted, workspace, wrapper,
 };
 
 pub fn main(args: Vec<OsString>) -> ExitCode {
@@ -239,7 +239,9 @@ fn directory_typed(args: &[String]) -> String {
 }
 
 /// Hands the command to the Java edition when the project it points at is a Maven or Gradle
-/// project, or `--edition=java` says, and returns its exit status. `None` when this edition runs it.
+/// project, or `--edition=java` says, and returns its exit status; to the Swift edition likewise,
+/// for a Swift package or an Xcode project, which is refused until it's released. `None` when this
+/// edition runs it.
 fn front_door(
     chosen: Option<Edition>,
     args: &[String],
@@ -268,13 +270,19 @@ fn front_door(
             stderr_line!("{note}");
         }
     }
-    if route.edition == Edition::Rust {
+    // A coding agent's gate in a Swift project, with no Swift edition to run, is the gate in a
+    // project mutastic can't read: this edition's, which lets the agent go.
+    let unread = route.edition == Edition::Swift && command == "gate" && !swift::given();
+    if route.edition == Edition::Rust || unread {
         return Ok(None);
     }
     let mut line = args.to_vec();
     if let Some(build) = build {
         line.push("--".to_string());
         line.extend_from_slice(build);
+    }
+    if route.edition == Edition::Swift {
+        return Ok(Some(swift::forward(&swift::engine(&route)?, &line)));
     }
     Ok(Some(java::forward(&java::engine()?, &line)))
 }
@@ -614,7 +622,7 @@ fn set(parsed: &mut Parsed, name: &str, value: &str) -> Result<bool, String> {
         // Which edition runs is decided before this one reads its options.
         "edition" => {
             Edition::parse(value).ok_or_else(|| {
-                crate::mistyped::not_one_of("--edition", value, &["java", "rust"])
+                crate::mistyped::not_one_of("--edition", value, &["java", "rust", "swift"])
             })?;
         }
         "fraction" => {

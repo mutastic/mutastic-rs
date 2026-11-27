@@ -1792,6 +1792,7 @@ const ERRORS: &[Error] = &[
         &[],
     ),
     ("both-editions", &["run", "both"], &[]),
+    ("swift-edition", &["run", "shop"], &[]),
 ];
 
 /// `said` as a Unix machine prints it, run in `/home/you/project` where it ran in `looked`: the
@@ -1820,6 +1821,12 @@ fn errors(work: &Path, shown: &mut BTreeMap<String, String>) {
     std::fs::create_dir_all(work.join("both")).unwrap();
     std::fs::write(work.join("both/Cargo.toml"), "[package]\nname = \"both\"\n").unwrap();
     std::fs::write(work.join("both/pom.xml"), "<project/>\n").unwrap();
+    std::fs::create_dir_all(work.join("shop")).unwrap();
+    std::fs::write(
+        work.join("shop/Package.swift"),
+        "// swift-tools-version:6.0\n",
+    )
+    .unwrap();
     let validator = common::schema();
     let looked = std::fs::canonicalize(work).unwrap().display().to_string();
     let mut codes = BTreeSet::new();

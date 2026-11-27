@@ -18,16 +18,20 @@ is, or the nearest directory above it with a build file.
 | `build.gradle` | Java |
 | `settings.gradle.kts` | Java |
 | `settings.gradle` | Java |
+| `Package.swift` | Swift, not released yet |
+| an `.xcworkspace` or `.xcodeproj` directory | Swift, not released yet |
 
 With no build file in the directory or above it, the Rust edition answers, and says there's no
-project there. `--edition=rust` or `--edition=java` decides instead, for any command:
+project there. `--edition=rust`, `--edition=java` or `--edition=swift` decides instead, for any
+command:
 
 ```sh
 mutastic run --edition=java
 ```
 
-A directory with both kinds of build file could be either edition's, so mutastic doesn't guess: it
-stops, and asks for `--edition`.
+A directory with the build files of two editions, `Cargo.toml` beside `pom.xml` or beside
+`Package.swift`, could be either edition's, so mutastic doesn't guess: it stops, and asks for
+`--edition`.
 
 ## A Rust crate inside a Gradle build
 
@@ -106,6 +110,27 @@ uses the newest release it has kept, and fetches the latest when it has none.
 From 1.0.0, a Java edition patch reaches you within a day of its release, and a new minor version
 comes with the `mutastic` of that minor version. To use another, or before 1.0.0, set
 `MUTASTIC_VERSION` to it. Removing a release's directory from `~/.mutastic` removes it.
+
+## The Swift edition
+
+The Swift edition, for SwiftPM packages and Xcode projects, isn't released yet: it's planned for
+1.5. Until then, `mutastic` in a Swift project stops with
+[`swift-edition`](reference/errors.md#swift-edition), and says so, rather than look for a Cargo
+project that isn't there:
+
+<!-- output: errors/swift-edition -->
+```text
+mutastic: shop is a Swift package, and the Swift edition isn't released yet: it's planned for 1.5. Until then mutastic tests Rust, Maven and Gradle projects. To run a Swift edition built from its source, name its mutastic in MUTASTIC_SWIFT_ENGINE:
+  MUTASTIC_SWIFT_ENGINE=<path to its mutastic> mutastic run
+```
+
+To try a Swift edition built from its source, name its `mutastic` in `MUTASTIC_SWIFT_ENGINE`.
+mutastic hands it the command exactly as it was typed, without `--edition`, as it does the Java
+edition, and its output and exit status are the command's. Nothing is fetched.
+
+```sh
+MUTASTIC_SWIFT_ENGINE=~/Code/mutastic-swift/.build/release/mutastic mutastic run
+```
 
 ## Which versions
 
