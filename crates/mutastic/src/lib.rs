@@ -39,7 +39,6 @@ macro_rules! stdout_text {
     }};
 }
 
-pub mod amounts;
 pub mod arid;
 pub mod at;
 pub mod baseline;
@@ -62,7 +61,6 @@ pub mod gate_count;
 pub mod guard;
 pub mod help;
 pub mod id;
-pub mod ignores;
 pub mod java;
 pub mod likely;
 pub mod limits;
@@ -80,7 +78,6 @@ pub mod schema;
 pub mod shares;
 pub mod since;
 pub mod sites;
-pub mod slept;
 pub mod suggest;
 pub mod swift;
 pub mod test_files;
@@ -91,5 +88,6 @@ pub mod words;
 pub mod workspace;
 pub mod wrapper;
 
+pub use mutastic_core::{amounts, ignores, slept};
 pub use mutastic_output::{similar, untrusted};
 pub use mutastic_terminal as terminal;

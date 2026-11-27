@@ -24,6 +24,9 @@ path = "src/bin/cargo-mutastic.rs"
 [dependencies]
 # The terminal's width, its input mode and signals: the workspace's one crate with unsafe code.
 mutastic-terminal = { path = "../mutastic-terminal" }
+# What every edition shares and no language's: errors and their codes, ids, ignores, the lines a
+# change touched, and amounts and times. It knows no Cargo, rustc or Rust parser.
+mutastic-core = { path = "../mutastic-core" }
 # The output kit: colour, glyphs, labels, escaping and the fence, close names, help's layout and
 # progress's bar. It knows nothing of mutastic's, for a sibling tool to share.
 mutastic-output = { path = "../mutastic-output" }

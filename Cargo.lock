@@ -529,11 +529,20 @@ name = "mutastic"
 version = "1.4.0"
 dependencies = [
  "jsonschema",
+ "mutastic-core",
  "mutastic-output",
  "mutastic-terminal",
  "ra_ap_syntax",
  "regex",
  "serde_json",
+ "sha2",
+]
+
+[[package]]
+name = "mutastic-core"
+version = "1.4.0"
+dependencies = [
+ "mutastic-output",
  "sha2",
 ]
 
