@@ -1240,12 +1240,7 @@ fn history(
     );
     let code =
         crate::record::code_built_with(&code, &crate::build_args::key(&project.mutastic_dir())?);
-    let now = crate::record::RunRecord::before(
-        project,
-        &options.operators,
-        &code,
-        &crate::record::tool(),
-    );
+    let now = crate::record::before(project, &options.operators, &code, &crate::record::tool());
     let last = crate::records::RunRecords::new(records)
         .comparable_to(&now)
         .filter(|last| now.same_code_and_tool_as(last));
@@ -1763,7 +1758,7 @@ fn recorded(
         &code,
         &crate::build_args::key(&report.project.mutastic_dir())?,
     );
-    let record = crate::record::RunRecord::of(report, &code, &crate::record::tool());
+    let record = crate::record::of(report, &code, &crate::record::tool());
     let records = crate::records::RunRecords::new(folder);
     // When the last run used other operators, it's said so instead.
     let comparison = records

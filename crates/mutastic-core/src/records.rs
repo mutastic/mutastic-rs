@@ -1,6 +1,6 @@
-//! The run records of a package's `target/mutastic`, one for each set of operators, as the Java
-//! edition keeps them, so that a run under another set doesn't leave the next run under the first
-//! with nothing to compare with.
+//! The run records of a project's work directory (`target/mutastic`), one for each set of
+//! operators, as the Java edition keeps them, so that a run under another set doesn't leave the
+//! next run under the first with nothing to compare with.
 //!
 //! `last-run.tsv` is the latest run, under whatever operators. When a run replaces it, it moves to
 //! `last-runs/<hash of its operators>.tsv` unless the new run is under the same ones. A file's name

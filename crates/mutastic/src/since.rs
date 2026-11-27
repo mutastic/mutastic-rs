@@ -5,13 +5,13 @@ pub use mutastic_core::since::*;
 
 use std::path::Path;
 
-use crate::failure::Failure;
+use mutastic_core::edition::Edition as _;
 
-/// The Rust edition's source files, as git's pathspecs.
-pub const SOURCES: &[&str] = &["*.rs"];
+use crate::failure::Failure;
+use crate::rust_edition::Rust;
 
 /// The Rust lines changed in the repository holding `dir` since `since`, or since its default
 /// branch for `""`.
 pub fn changed_since(dir: &Path, since: &str) -> Result<ChangedLines, Failure> {
-    changed_since_in(dir, since, SOURCES)
+    changed_since_in(dir, since, Rust::SOURCES)
 }

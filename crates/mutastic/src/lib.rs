@@ -72,8 +72,8 @@ pub mod origin;
 pub mod progress;
 pub mod properties;
 pub mod record;
-pub mod records;
 pub mod report;
+pub mod rust_edition;
 pub mod schema;
 pub mod shares;
 pub mod since;
@@ -88,6 +88,6 @@ pub mod words;
 pub mod workspace;
 pub mod wrapper;
 
-pub use mutastic_core::{amounts, ignores, slept};
+pub use mutastic_core::{amounts, ignores, records, slept};
 pub use mutastic_output::{similar, untrusted};
 pub use mutastic_terminal as terminal;

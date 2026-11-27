@@ -4,19 +4,17 @@
 
 pub use mutastic_core::failure::*;
 
-/// Where a bug in the Rust edition is reported.
-pub const ISSUES: &str = "https://github.com/mutastic/mutastic-rs/issues";
+use mutastic_core::edition::Edition as _;
 
-/// The tools a command an error ends in runs: mutastic, Cargo or git.
-pub const TOOLS: &[&str] = &["mutastic ", "cargo ", "git "];
+use crate::rust_edition::Rust;
 
 /// The failure a panic is: a bug in mutastic, with where it panicked and where to report it.
 pub fn internal(panic: &std::panic::PanicHookInfo<'_>) -> Failure {
-    internal_at(panic, ISSUES)
+    internal_at(panic, Rust::ISSUES)
 }
 
 /// The commands `message` ends in: each line of it set in by two spaces that runs mutastic, Cargo
 /// or git.
 pub fn help(message: &str) -> Vec<String> {
-    help_among(message, TOOLS)
+    help_among(message, Rust::TOOLS)
 }

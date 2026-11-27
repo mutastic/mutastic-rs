@@ -121,13 +121,19 @@ of the family's own when a sibling tool first uses it.
 `crates/mutastic-core` is what every edition shares and no language's, carved out for the Swift
 edition to depend on: errors and their codes (`failure`), the command line written back to copy
 (`command_line`), mutant ids (`id`), the project's ignores and proposals (`ignores`), the lines a
-change touched (`since`), and amounts and times as mutastic writes them (`amounts`, `slept`). It
+change touched (`since`), a mutant's fate (`status`), the run records and their comparison
+(`record`, `records`), the tests watched since a run named them likely flaky (`watch`), the
+baseline's file (`baseline`), and amounts and times as mutastic writes them (`amounts`, `slept`). It
 knows no Cargo, rustc or Rust parser: where an edition's own words go in, the edition gives them,
-as `since::changed_since_in` takes the source files' pathspecs and `id::of` the edition's name.
+as `since::changed_since_in` takes the source files' pathspecs and `id::of` the edition's name,
+each one of the words an `edition::Edition` names (`NAME`, `ISSUES`, `TOOLS`, `SOURCES`), which
+the Rust edition gives as `rust_edition::Rust`.
 `mutastic` re-exports the modules that need nothing of Rust's whole (`amounts`, `ignores`,
-`slept`), and wraps the others in modules of the same name with Rust's words: `failure` (where to
-report a bug, and that Cargo is a tool a command it offers runs), `id` (`rust`), `since` (`*.rs`)
-and `mistyped` (`command_line`'s line and shell). The core depends on the output kit alone of the
+`records`, `slept`), and wraps the others in modules of the same name with Rust's words: `failure`
+(where to report a bug, and that Cargo is a tool a command it offers runs), `id` (`rust`), `since`
+(`*.rs`) and `mistyped` (`command_line`'s line and shell); and `record`, `baseline` and `watch`
+with what they make of a Rust run's `engine::Report`, which the core doesn't know yet. `engine`
+re-exports `Status`. The core depends on the output kit alone of the
 workspace's crates, and `tests/layers.rs` holds it to that and to naming nothing only Rust's
 edition knows. It's `publish = false`.
 
@@ -164,12 +170,12 @@ that has everything it uses.
 | Layer | Modules | What they are |
 |---|---|---|
 | command | `cli`, `environment`, `gate`, `gate_budget`, `gate_count` | The commands, the variables that stand in for options, and `gate`, which holds an agent's task |
-| output | `report`, `progress`, `nextrun`, `records`, `help`, `operator_docs` | What a run prints and writes: the formats, the progress line, `next`'s queue, help and the operators' docs |
+| output | `report`, `progress`, `nextrun`, `help`, `operator_docs` | What a run prints and writes: the formats, the progress line, `next`'s queue, help and the operators' docs |
 | run | `engine`, `guard`, `likely`, `watch`, `suggest`, `baseline`, `cases`, `flaky`, `record`, `shares` | A run: coverage, the mutants side by side, the false-catch guard and the likely-flaky tests it leaves out, suggested tests, and what a run keeps and compares |
 | build and tests | `compile`, `testrun`, `schema`, `wrapper`, `test_times`, `test_files`, `words`, `origin`, `at` | The one build, the test binaries and their times, and what a card says of a mutant |
 | project | `workspace`, `sites`, `arid`, `callrules`, `cfg`, `config`, `edition`, `locate`, `properties`, `java`, `swift`, `build_args` | The package, its mutants, its settings and the frameworks it uses |
-| base | `failure`, `commands`, `mistyped`, `id`, `limits`, `since` | Errors, the commands' declarations, and text, ids and times as mutastic writes them, with the Rust edition's words for the core's |
-| core | `amounts`, `ignores`, `slept` | The editions' core's modules, from `crates/mutastic-core`, which `lib.rs` re-exports |
+| base | `failure`, `commands`, `mistyped`, `id`, `limits`, `since`, `rust_edition` | Errors, the commands' declarations, and text, ids and times as mutastic writes them, with the Rust edition's words for the core's |
+| core | `amounts`, `ignores`, `records`, `slept` | The editions' core's modules, from `crates/mutastic-core`, which `lib.rs` re-exports |
 | kit | `similar`, `untrusted` | The output kit's modules, from `crates/mutastic-output`, which `lib.rs` re-exports |
 
 `commands` is in the base, not beside `cli`: every error that names an option, and the help, read
