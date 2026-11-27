@@ -1,339 +1,51 @@
-//! What a run found, kept for the next run to compare with, as the Java edition keeps it: each
-//! mutant's status and catching test, the score, and hashes of the code and of the mutastic that
-//! ran.
-//!
-//! The file is one entry per line, tab-separated, so it diffs well: `project <package directory>`,
-//! `operators <ids>`, `code <hash>`, `tool <hash>`, `score <score>`, then `<id> <status> <caught
-//! by or ->`.
-//!
-//! With the code and mutastic unchanged, a mutant is caught or missed the same way every time
-//! unless a test behaves differently between runs. So a mutant caught last run and missed now, or
-//! the other way round, points at the test that caught it: likely flaky. With either changed, a
-//! flip is just the change at work.
+//! What a run found, kept for the next run to compare with, as `mutastic-core`'s
+//! [`record`](mutastic_core::record) keeps it for every edition: here, a Rust package's run, and
+//! the hash of the mutastic that ran it.
+
+pub use mutastic_core::record::*;
 
 use std::collections::BTreeMap;
-use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
-use crate::engine::{Report, Status};
+use crate::engine::Report;
 use crate::workspace::Project;
 
-/// One mutant's result, as the next run compares with it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Entry {
-    pub status: Status,
-    /// The test that caught it; none for a timeout, or a mutant not caught.
-    pub caught_by: Option<String>,
-}
-
-/// A run, as it's kept.
-#[derive(Clone, Debug, PartialEq)]
-pub struct RunRecord {
-    /// Which package it's of, by its directory, so a run is only ever compared with an earlier run
-    /// of the same package, in the same place.
-    pub project: String,
-    /// The ids of the operators the run used, sorted: a score is a share of what they make, so it
-    /// says nothing about a run under others.
-    pub operators: String,
-    /// The hash of every Rust file and Cargo manifest in the workspace: the code and its tests.
-    pub code: String,
-    /// The hash of the mutastic that ran: a new mutastic can change results too.
-    pub tool: String,
-    pub score: Option<f64>,
-    /// Each mutant's result, by id.
-    pub results: BTreeMap<String, Entry>,
-}
-
-/// This run against the last one.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Comparison {
-    /// The last run's score; none when it had no mutants to score.
-    pub previous_score: Option<f64>,
-    /// Whether the code and tests are byte for byte what the last run had.
-    pub same_code: bool,
-    /// Whether the same mutastic ran.
-    pub same_tool: bool,
-    /// Mutants caught in one run and not the other, by id.
-    pub flips: Vec<Flip>,
-    /// The operators the last run used, `defaults`, when they weren't this run's: then nothing is
-    /// compared, as a score is a share of what its operators make, and it's said so.
-    pub other_operators: Option<String>,
-}
-
-/// A mutant caught in one run and not the other.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Flip {
-    pub id: String,
-    pub before: Status,
-    pub after: Status,
-    /// The test that caught it, in whichever run it was caught; none for a timeout.
-    pub caught_by: Option<String>,
-}
-
-impl Comparison {
-    /// No comparison: the last run used other operators, `last`.
-    pub fn under_other_operators(last: &str) -> Comparison {
-        Comparison {
-            previous_score: None,
-            same_code: false,
-            same_tool: false,
-            flips: Vec::new(),
-            other_operators: Some(last.to_string()),
-        }
-    }
-
-    /// `not compared with the last run, which used other operators (defaults)`, when it wasn't.
-    pub fn not_compared(&self) -> Option<String> {
-        self.other_operators.as_ref().map(|last| {
-            format!("not compared with the last run, which used other operators ({last})")
-        })
-    }
-
-    /// `same code`, `code changed` or `mutastic changed`: what explains a difference.
-    pub fn sameness(&self) -> &'static str {
-        if !self.same_code {
-            "code changed"
-        } else if !self.same_tool {
-            "mutastic changed"
-        } else {
-            "same code"
-        }
-    }
-
-    /// Each likely flaky test and the mutants whose results it changed: empty unless the code and
-    /// mutastic are the same.
-    pub fn likely_flaky(&self) -> BTreeMap<String, Vec<String>> {
-        let mut tests: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        if self.same_code && self.same_tool {
-            for flip in &self.flips {
-                if let Some(test) = &flip.caught_by {
-                    tests.entry(test.clone()).or_default().push(flip.id.clone());
-                }
-            }
-        }
-        tests
-    }
-}
-
-/// The hash of the code a run tested, `code`, when it left out the tests `left_out`
-/// (`--exclude-tests`): the tests that ran are part of what it ran, so a run with other tests is
-/// never "the same code", and a mutant only a test left out caught doesn't make that test look
-/// flaky. `code` itself with none left out.
-pub fn code_without(code: &str, left_out: &[String]) -> String {
-    if left_out.is_empty() {
-        return code.to_string();
-    }
-    let mut names: Vec<&str> = left_out.iter().map(String::as_str).collect();
-    names.sort_unstable();
-    names.dedup();
-    let mut hasher = Sha256::new();
-    hasher.update(code.as_bytes());
-    for name in names {
-        hasher.update([0u8]);
-        hasher.update(name.as_bytes());
-    }
-    hasher
-        .finalize()
+/// The record of `report`, run on code whose hash is `code` by a mutastic whose hash is `tool`.
+pub fn of(report: &Report, code: &str, tool: &str) -> RunRecord {
+    let results = report
+        .results
         .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
-
-/// The hash `code`, of a run whose build got arguments, which `key` stands for: a run built with
-/// others is never the same code. Empty for none, and then it's as it was.
-pub fn code_built_with(code: &str, key: &str) -> String {
-    if key.is_empty() {
-        return code.to_string();
-    }
-    code_without(code, &[format!("build arguments {key}")])
-}
-
-/// Caught, by a test or a timeout: what a flip turns on.
-fn detected(status: Status) -> bool {
-    matches!(status, Status::Killed | Status::Timeout)
-}
-
-/// Out of the score, so not caught or missed either: skipped, or crashed where a crash proves
-/// nothing.
-fn unscored(status: Status) -> bool {
-    matches!(status, Status::Ignored | Status::RuntimeError)
-}
-
-/// Caught in one run and not the other, as a comparison of the two runs counts it.
-pub(crate) fn flipped(before: Status, now: Status) -> bool {
-    detected(before) != detected(now) && !unscored(before) && !unscored(now)
-}
-
-impl RunRecord {
-    /// The record of `report`, run on code whose hash is `code` by a mutastic whose hash is `tool`.
-    pub fn of(report: &Report, code: &str, tool: &str) -> RunRecord {
-        let results = report
-            .results
-            .iter()
-            .map(|result| {
-                let entry = Entry {
-                    status: result.status,
-                    caught_by: result.killed_by.clone(),
-                };
-                (report.found.mutants[result.mutant].id.clone(), entry)
-            })
-            .collect();
-        let mut operators: Vec<&str> = report.operators.clone();
-        operators.sort_unstable();
-        RunRecord {
-            project: project_of(&report.project),
-            operators: operators.join(","),
-            code: code.to_string(),
-            tool: tool.to_string(),
-            score: report.score(),
-            results,
-        }
-    }
-
-    /// What a run of `project` under `operators` will be compared by, before it runs: its code and
-    /// mutastic, with no results yet. What an earlier run found is then known before this one's
-    /// mutants run.
-    pub fn before(project: &Project, operators: &[&str], code: &str, tool: &str) -> RunRecord {
-        let mut operators = operators.to_vec();
-        operators.sort_unstable();
-        RunRecord {
-            project: project_of(project),
-            operators: operators.join(","),
-            code: code.to_string(),
-            tool: tool.to_string(),
-            score: None,
-            results: BTreeMap::new(),
-        }
-    }
-
-    /// Whether nothing `previous` ran has changed since: the code, the tests and mutastic.
-    pub fn same_code_and_tool_as(&self, previous: &RunRecord) -> bool {
-        self.code == previous.code && self.tool == previous.tool
-    }
-
-    /// Whether `previous` is of the same package, in the same place: else comparing the two says
-    /// nothing.
-    pub fn same_project_as(&self, previous: &RunRecord) -> bool {
-        !self.project.is_empty() && self.project == previous.project
-    }
-
-    /// Whether a comparison with `previous` means anything: the same package, under the same
-    /// operators.
-    pub fn compares_with(&self, previous: &RunRecord) -> bool {
-        self.same_project_as(previous)
-            && !self.operators.is_empty()
-            && self.operators == previous.operators
-    }
-
-    /// How this run differs from `previous`.
-    pub fn against(&self, previous: &RunRecord) -> Comparison {
-        let flips = self
-            .results
-            .iter()
-            .filter_map(|(id, now)| {
-                let before = previous.results.get(id)?;
-                flipped(before.status, now.status).then(|| {
-                    let caught = if detected(now.status) { now } else { before };
-                    Flip {
-                        id: id.clone(),
-                        before: before.status,
-                        after: now.status,
-                        caught_by: caught.caught_by.clone(),
-                    }
-                })
-            })
-            .collect();
-        Comparison {
-            previous_score: previous.score,
-            same_code: previous.code == self.code,
-            same_tool: previous.tool == self.tool,
-            flips,
-            other_operators: None,
-        }
-    }
-
-    /// The record in `file`, whatever it's of: none if there's none, or it can't be read, as an
-    /// unreadable record is no record and the next run writes a new one.
-    pub fn read(file: &Path) -> Option<RunRecord> {
-        let text = std::fs::read_to_string(file).ok()?;
-        let mut fields = BTreeMap::new();
-        let mut results = BTreeMap::new();
-        for line in text.lines() {
-            let parts: Vec<&str> = line.split('\t').collect();
-            match parts.as_slice() {
-                [name, value] if HEADERS.contains(name) => {
-                    fields.insert(*name, value.to_string());
-                }
-                [id, status, caught_by] => {
-                    let entry = Entry {
-                        status: status_named(status)?,
-                        caught_by: (*caught_by != "-").then(|| caught_by.to_string()),
-                    };
-                    results.insert(id.to_string(), entry);
-                }
-                _ => return None,
-            }
-        }
-        let field = |name: &str| fields.get(name).cloned().unwrap_or_default();
-        Some(RunRecord {
-            project: field("project"),
-            operators: field("operators"),
-            code: fields.get("code")?.clone(),
-            tool: field("tool"),
-            score: match fields.get("score").map(String::as_str) {
-                None | Some("-") => None,
-                Some(score) => Some(score.parse().ok()?),
-            },
-            results,
+        .map(|result| {
+            let entry = Entry {
+                status: result.status,
+                caught_by: result.killed_by.clone(),
+            };
+            (report.found.mutants[result.mutant].id.clone(), entry)
         })
-    }
-
-    /// Writes it to `file`, through a file beside it renamed into place, so a run reading it
-    /// meanwhile reads the last record or this one, never half of one.
-    pub fn write(&self, file: &Path) -> std::io::Result<()> {
-        if let Some(parent) = file.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let partial = file.with_extension(format!("tsv.{}", std::process::id()));
-        std::fs::write(&partial, self.lines())?;
-        std::fs::rename(&partial, file)
-    }
-
-    fn lines(&self) -> String {
-        let score = self
-            .score
-            .map_or("-".to_string(), |score| score.to_string());
-        let mut out = format!(
-            "project\t{}\noperators\t{}\ncode\t{}\ntool\t{}\nscore\t{score}\n",
-            self.project, self.operators, self.code, self.tool
-        );
-        for (id, entry) in &self.results {
-            let caught_by = entry.caught_by.as_deref().unwrap_or("-");
-            out.push_str(&format!(
-                "{id}\t{}\t{caught_by}\n",
-                entry.status.schema_name()
-            ));
-        }
-        out
-    }
+        .collect();
+    RunRecord::new(
+        project_of(&report.project),
+        &report.operators,
+        code,
+        tool,
+        report.score(),
+        results,
+    )
 }
 
-/// The lines before the results, by their first field.
-const HEADERS: &[&str] = &["project", "operators", "code", "tool", "score"];
-
-/// A status from the name a record keeps it by, the report schema's: `Killed`.
-fn status_named(name: &str) -> Option<Status> {
-    [
-        Status::Killed,
-        Status::Survived,
-        Status::Timeout,
-        Status::NoCoverage,
-        Status::Ignored,
-        Status::RuntimeError,
-    ]
-    .into_iter()
-    .find(|status| status.schema_name() == name)
+/// What a run of `project` under `operators` will be compared by, before it runs: its code and
+/// mutastic, with no results yet. What an earlier run found is then known before this one's
+/// mutants run.
+pub fn before(project: &Project, operators: &[&str], code: &str, tool: &str) -> RunRecord {
+    RunRecord::new(
+        project_of(project),
+        operators,
+        code,
+        tool,
+        None,
+        BTreeMap::new(),
+    )
 }
 
 /// `/code/shop`: which package a record is of, by its directory.
@@ -358,131 +70,5 @@ pub fn tool() -> String {
             .map(|byte| format!("{byte:02x}"))
             .collect(),
         Err(_) => env!("CARGO_PKG_VERSION").to_string(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn record(code: &str, results: &[(&str, Status, Option<&str>)]) -> RunRecord {
-        RunRecord {
-            project: "/code/shop".into(),
-            operators: "boundary,comparison".into(),
-            code: code.into(),
-            tool: "t".into(),
-            score: Some(50.0),
-            results: results
-                .iter()
-                .map(|(id, status, caught_by)| {
-                    let entry = Entry {
-                        status: *status,
-                        caught_by: caught_by.map(str::to_string),
-                    };
-                    (id.to_string(), entry)
-                })
-                .collect(),
-        }
-    }
-
-    #[test]
-    fn a_record_reads_back_as_it_was_written() {
-        let kept = record(
-            "c",
-            &[
-                ("m1", Status::Killed, Some("tests::caught")),
-                ("m2", Status::Survived, None),
-            ],
-        );
-        let file = std::env::temp_dir().join(format!("mutastic-record-{}.tsv", std::process::id()));
-        kept.write(&file).unwrap();
-        let read = RunRecord::read(&file);
-        std::fs::remove_file(&file).ok();
-        assert_eq!(read, Some(kept));
-    }
-
-    #[test]
-    fn an_unreadable_record_is_none() {
-        let file = std::env::temp_dir().join(format!("mutastic-bad-{}.tsv", std::process::id()));
-        std::fs::write(&file, "code\tc\nm1\tNotAStatus\t-\n").unwrap();
-        assert_eq!(RunRecord::read(&file), None);
-        std::fs::write(&file, "score\t1\n").unwrap();
-        assert_eq!(RunRecord::read(&file), None, "no code hash");
-        std::fs::remove_file(&file).ok();
-    }
-
-    #[test]
-    fn with_the_same_code_a_flip_names_its_catching_test() {
-        let before = record(
-            "c",
-            &[
-                ("m1", Status::Killed, Some("tests::sometimes")),
-                ("m2", Status::Survived, None),
-                ("m3", Status::Ignored, None),
-            ],
-        );
-        let now = record(
-            "c",
-            &[
-                ("m1", Status::Survived, None),
-                ("m2", Status::Killed, Some("tests::sometimes")),
-                ("m3", Status::Killed, Some("tests::other")),
-            ],
-        );
-        let compared = now.against(&before);
-        assert_eq!(compared.sameness(), "same code");
-        assert_eq!(
-            compared
-                .flips
-                .iter()
-                .map(|f| f.id.as_str())
-                .collect::<Vec<_>>(),
-            ["m1", "m2"],
-            "a mutant out of the score doesn't flip"
-        );
-        assert_eq!(
-            compared.likely_flaky(),
-            BTreeMap::from([(
-                "tests::sometimes".to_string(),
-                vec!["m1".into(), "m2".into()]
-            )])
-        );
-    }
-
-    /// A run that left tests out isn't of the same code as one that ran them, or as one that
-    /// left out others; the same tests left out, in any order, are.
-    #[test]
-    fn a_run_without_some_tests_is_of_other_code() {
-        let out = |names: &[&str]| -> Vec<String> { names.iter().map(|n| n.to_string()).collect() };
-        assert_eq!(code_without("c", &[]), "c");
-        let without = code_without("c", &out(&["tests::races", "ports"]));
-        assert_ne!(without, "c");
-        assert_eq!(without, code_without("c", &out(&["ports", "tests::races"])));
-        assert_ne!(without, code_without("c", &out(&["ports"])));
-        assert_ne!(without, code_without("d", &out(&["tests::races", "ports"])));
-    }
-
-    #[test]
-    fn with_the_code_or_mutastic_changed_nothing_is_named() {
-        let before = record("c", &[("m1", Status::Killed, Some("tests::t"))]);
-        let changed = record("d", &[("m1", Status::Survived, None)]);
-        assert_eq!(changed.against(&before).sameness(), "code changed");
-        assert!(changed.against(&before).likely_flaky().is_empty());
-        let mut rebuilt = record("c", &[("m1", Status::Survived, None)]);
-        rebuilt.tool = "u".into();
-        assert_eq!(rebuilt.against(&before).sameness(), "mutastic changed");
-        assert!(rebuilt.against(&before).likely_flaky().is_empty());
-    }
-
-    #[test]
-    fn only_the_same_package_under_the_same_operators_compares() {
-        let base = record("c", &[]);
-        let mut other_operators = base.clone();
-        other_operators.operators = "boundary".into();
-        let mut elsewhere = base.clone();
-        elsewhere.project = "/code/other".into();
-        assert!(base.compares_with(&base));
-        assert!(!base.compares_with(&other_operators));
-        assert!(!base.compares_with(&elsewhere));
     }
 }

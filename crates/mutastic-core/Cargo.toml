@@ -1,6 +1,6 @@
 [package]
 name = "mutastic-core"
-description = "What every edition of mutastic shares and no language's: errors and their codes, ids, ignores, the lines a change touched, and amounts and times as mutastic writes them"
+description = "What every edition of mutastic shares and no language's: errors and their codes, ids, ignores, the lines a change touched, the run records, baseline, flaky watch and next's queue, and amounts and times as mutastic writes them"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -19,7 +19,7 @@ publish = false
 [dependencies]
 # The output kit: the one name close to a mistyped one.
 mutastic-output = { path = "../mutastic-output" }
-# Mutant ids, a SHA-256 over what the mutant is.
+# Mutant ids, a SHA-256 over what the mutant is, and the hashes the run records keep.
 sha2 = "0.10"
 
 [lints]
