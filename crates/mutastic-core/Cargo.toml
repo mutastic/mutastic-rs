@@ -1,0 +1,26 @@
+[package]
+name = "mutastic-core"
+description = "What every edition of mutastic shares and no language's: errors and their codes, ids, ignores, the lines a change touched, and amounts and times as mutastic writes them"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+publish = false
+
+# Never `mutastic`, nor anything that knows a language: no Cargo, no rustc, no Rust parser. Another
+# edition, mutastic-swift first, depends on this crate by a git tag of mutastic-rs, so what it
+# holds is the editions' shared behaviour. `mutastic`'s `tests/layers.rs` holds it to that.
+[dependencies]
+# The output kit: the one name close to a mistyped one.
+mutastic-output = { path = "../mutastic-output" }
+# Mutant ids, a SHA-256 over what the mutant is.
+sha2 = "0.10"
+
+[lints]
+workspace = true

@@ -118,6 +118,36 @@ re-exports `similar` and `untrusted` whole, as `mutastic::similar` and `mutastic
 draws its report, progress and help with the rest. It's `publish = false`, and moves to a library
 of the family's own when a sibling tool first uses it.
 
+`crates/mutastic-core` is what every edition shares and no language's, carved out for the Swift
+edition to depend on: errors and their codes (`failure`), the command line written back to copy
+(`command_line`), mutant ids (`id`), the project's ignores and proposals (`ignores`), the lines a
+change touched (`since`), and amounts and times as mutastic writes them (`amounts`, `slept`). It
+knows no Cargo, rustc or Rust parser: where an edition's own words go in, the edition gives them,
+as `since::changed_since_in` takes the source files' pathspecs and `id::of` the edition's name.
+`mutastic` re-exports the modules that need nothing of Rust's whole (`amounts`, `ignores`,
+`slept`), and wraps the others in modules of the same name with Rust's words: `failure` (where to
+report a bug, and that Cargo is a tool a command it offers runs), `id` (`rust`), `since` (`*.rs`)
+and `mistyped` (`command_line`'s line and shell). The core depends on the output kit alone of the
+workspace's crates, and `tests/layers.rs` holds it to that and to naming nothing only Rust's
+edition knows. It's `publish = false`.
+
+### Another edition's dependency
+
+mutastic-rs publishes nothing to crates.io. Another edition, such as `mutastic/mutastic-swift`,
+takes the core and the kit from git, at a release's tag, so it moves to a new core on purpose:
+
+```toml
+[dependencies]
+mutastic-core = { git = "https://github.com/mutastic/mutastic-rs", tag = "v1.5.0" }
+mutastic-output = { git = "https://github.com/mutastic/mutastic-rs", tag = "v1.5.0" }
+```
+
+Cargo finds each crate in the workspace at that tag by its name. Both at the same tag, as the core
+depends on the kit by path; Cargo.lock then pins the commit the tag named. Until a tag holds what
+an edition needs, `rev = "<commit on main>"` in place of `tag`, moved to a tag before that edition
+releases. A change to the core is a change to every edition that takes it: its pull request says
+so, and the next tag carries it.
+
 `crates/cargo-mutastic` and `crates/mutastic-rs` hold the other two names reserved on crates.io.
 They're empty, and `publish = false`.
 
@@ -137,8 +167,9 @@ that has everything it uses.
 | output | `report`, `progress`, `nextrun`, `records`, `help`, `operator_docs` | What a run prints and writes: the formats, the progress line, `next`'s queue, help and the operators' docs |
 | run | `engine`, `guard`, `likely`, `watch`, `suggest`, `baseline`, `cases`, `flaky`, `record`, `shares` | A run: coverage, the mutants side by side, the false-catch guard and the likely-flaky tests it leaves out, suggested tests, and what a run keeps and compares |
 | build and tests | `compile`, `testrun`, `schema`, `wrapper`, `test_times`, `test_files`, `words`, `origin`, `at` | The one build, the test binaries and their times, and what a card says of a mutant |
-| project | `workspace`, `sites`, `arid`, `callrules`, `cfg`, `config`, `edition`, `locate`, `properties`, `java`, `swift`, `since`, `build_args` | The package, its mutants, its settings and the frameworks it uses |
-| base | `failure`, `commands`, `mistyped`, `ignores`, `amounts`, `id`, `limits`, `slept` | Errors, the commands' declarations, and text, ids and times as mutastic writes them |
+| project | `workspace`, `sites`, `arid`, `callrules`, `cfg`, `config`, `edition`, `locate`, `properties`, `java`, `swift`, `build_args` | The package, its mutants, its settings and the frameworks it uses |
+| base | `failure`, `commands`, `mistyped`, `id`, `limits`, `since` | Errors, the commands' declarations, and text, ids and times as mutastic writes them, with the Rust edition's words for the core's |
+| core | `amounts`, `ignores`, `slept` | The editions' core's modules, from `crates/mutastic-core`, which `lib.rs` re-exports |
 | kit | `similar`, `untrusted` | The output kit's modules, from `crates/mutastic-output`, which `lib.rs` re-exports |
 
 `commands` is in the base, not beside `cli`: every error that names an option, and the help, read

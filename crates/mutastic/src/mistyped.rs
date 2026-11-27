@@ -6,34 +6,13 @@
 use crate::commands::{self, CliOption, Kind};
 use crate::similar;
 
+/// The line to copy, and a word as a shell takes it: the editions' own, in `mutastic-core`.
+pub use mutastic_core::command_line::{line, shell};
+
 /// The commands, as typed after `mutastic`.
 pub const COMMANDS: &[&str] = &[
     "run", "verify", "explain", "ignore", "gate", "mutants", "next", "baseline", "help",
 ];
-
-/// `mutastic` and the words after it, with `args[at]` replaced by `with`, and the `taken` words
-/// after it left out, as a shell takes them.
-pub fn line(args: &[String], at: usize, with: &str, taken: usize) -> String {
-    let words: Vec<String> = args
-        .iter()
-        .enumerate()
-        .filter(|(index, _)| !(at + 1..=at + taken).contains(index))
-        .map(|(index, word)| if index == at { with } else { word })
-        .map(shell)
-        .collect();
-    format!("  mutastic {}", words.join(" "))
-}
-
-/// A word as a shell takes it: in double quotes when it has a space or a quote.
-pub fn shell(word: &str) -> String {
-    match word.split_once('=') {
-        Some((flag, value)) if value.contains([' ', '\'', '"']) => {
-            format!("{flag}=\"{}\"", value.replace('"', "\\\""))
-        }
-        _ if word.contains([' ', '\'', '"']) => format!("\"{}\"", word.replace('"', "\\\"")),
-        _ => word.to_string(),
-    }
-}
 
 /// `args[0]` isn't a command: a close one, the command typed after an option, or the commands.
 pub fn command(args: &[String]) -> String {

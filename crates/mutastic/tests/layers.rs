@@ -12,6 +12,12 @@
 //! all: `lib.rs` re-exports its modules (`pub use mutastic_output::{…}`), which count as declared,
 //! and the table places them in the lowest layer, `kit`. This holds the kit to knowing nothing of
 //! mutastic's: no dependency on another of the workspace's crates, and no path into one.
+//!
+//! The editions' core, `crates/mutastic-core`, is a crate of its own for the same reason, and for
+//! another edition to depend on: what it holds every edition shares, so it knows no language. The
+//! modules `lib.rs` re-exports from it (`pub use mutastic_core::{…}`) are the `core` layer, just
+//! above the kit. This holds it to depending on the kit alone of the workspace's crates, and on
+//! nothing of Cargo's, rustc's or Rust's own: no parser, no build tool run, no Rust source file.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -131,14 +137,23 @@ fn declared() -> Vec<String> {
         .filter_map(|module| module.name())
         .map(|name| name.text().to_string())
         .collect();
-    declared.extend(kit_modules(&text));
+    declared.extend(reexported(&text, KIT));
+    declared.extend(reexported(&text, CORE));
     declared
 }
 
-/// The modules `text` re-exports from the kit: `pub use mutastic_output::{similar, untrusted};`.
-fn kit_modules(text: &str) -> Vec<String> {
+/// The output kit's crate, as `lib.rs` names it.
+const KIT: &str = "mutastic_output";
+
+/// The editions' core's crate, as `lib.rs` names it.
+const CORE: &str = "mutastic_core";
+
+/// The modules `text` re-exports from `from`, a crate: `pub use mutastic_output::{similar,
+/// untrusted};`.
+fn reexported(text: &str, from: &str) -> Vec<String> {
+    let lead = format!("pub use {from}::");
     text.lines()
-        .filter_map(|line| line.trim().strip_prefix("pub use mutastic_output::"))
+        .filter_map(|line| line.trim().strip_prefix(lead.as_str()))
         .flat_map(|names| {
             names
                 .trim_end_matches(';')
@@ -155,7 +170,7 @@ fn kit_modules(text: &str) -> Vec<String> {
 fn the_kit_is_the_lowest_layer() {
     let layers = layers();
     let text = std::fs::read_to_string(src().join("lib.rs")).expect("lib.rs reads");
-    let kit = kit_modules(&text);
+    let kit = reexported(&text, KIT);
     assert!(!kit.is_empty(), "lib.rs re-exports the kit's modules");
     let (lowest, modules) = layers.last().expect("the layers' table has its rows");
     assert_eq!(lowest, "kit", "the kit is the layers' table's last row");
@@ -163,6 +178,89 @@ fn the_kit_is_the_lowest_layer() {
         modules.iter().collect::<BTreeSet<_>>(),
         kit.iter().collect::<BTreeSet<_>>(),
         "the kit's row places what lib.rs re-exports from it, and only that"
+    );
+}
+
+#[test]
+fn the_core_is_the_layer_above_the_kit() {
+    let layers = layers();
+    let text = std::fs::read_to_string(src().join("lib.rs")).expect("lib.rs reads");
+    let core = reexported(&text, CORE);
+    assert!(!core.is_empty(), "lib.rs re-exports the core's modules");
+    let (name, modules) = &layers[layers.len() - 2];
+    assert_eq!(
+        name, "core",
+        "the core is the layers' table's row above the kit's"
+    );
+    assert_eq!(
+        modules.iter().collect::<BTreeSet<_>>(),
+        core.iter().collect::<BTreeSet<_>>(),
+        "the core's row places what lib.rs re-exports from it, and only that"
+    );
+}
+
+/// What the core may depend on: the kit, of the workspace's crates, and crates that know no
+/// language.
+const CORE_DEPENDENCIES: &[&str] = &["mutastic-output", "sha2", "serde_json"];
+
+/// Words in the core's code that only one language's edition has: Cargo, rustc and its tests, the
+/// Rust parser, and Rust source files.
+const LANGUAGE_WORDS: &[&str] = &[
+    "mutastic::",
+    "mutastic_terminal",
+    "ra_ap_syntax",
+    "Cargo.toml",
+    "rustc",
+    "RUST_",
+    "libtest",
+    "\"cargo\"",
+    "\"*.rs\"",
+];
+
+#[test]
+fn the_core_knows_no_language() {
+    let core = Path::new(env!("CARGO_MANIFEST_DIR")).join("../mutastic-core");
+    let manifest = std::fs::read_to_string(core.join("Cargo.toml")).expect("the core's manifest");
+    let mut table = String::new();
+    let mut taken = Vec::new();
+    for line in manifest.lines().map(str::trim) {
+        if line.starts_with('[') {
+            table = line.to_string();
+        } else if table.ends_with("dependencies]") && !line.is_empty() && !line.starts_with('#') {
+            let name = line.split(['=', ' ', '.']).next().unwrap_or_default();
+            if !CORE_DEPENDENCIES.contains(&name) {
+                taken.push(format!("{table} {line}"));
+            }
+        }
+    }
+    assert!(
+        taken.is_empty(),
+        "the core depends only on the kit and crates that know no language, {CORE_DEPENDENCIES:?}, \
+         so another edition can take it: {taken:?}"
+    );
+    let mut said = Vec::new();
+    let mut dirs = vec![core.join("src")];
+    while let Some(dir) = dirs.pop() {
+        for path in std::fs::read_dir(&dir)
+            .expect("the core's directory lists")
+            .map(|entry| entry.expect("a directory lists").path())
+        {
+            if path.is_dir() {
+                dirs.push(path);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                let text = std::fs::read_to_string(&path).expect("a core file reads");
+                for (at, line) in text.lines().enumerate() {
+                    for word in LANGUAGE_WORDS.iter().filter(|word| line.contains(*word)) {
+                        said.push(format!("{}:{}: {word}", path.display(), at + 1));
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        said.is_empty(),
+        "the core names what only the Rust edition knows; an edition gives its own words to the \
+         core instead (see `since::changed_since_in`): {said:?}"
     );
 }
 
