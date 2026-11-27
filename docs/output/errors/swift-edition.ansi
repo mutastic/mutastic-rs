@@ -1,0 +1,2 @@
+mutastic: shop is a Swift package, and the Swift edition isn't released yet: it's planned for 1.5. Until then mutastic tests Rust, Maven and Gradle projects. To run a Swift edition built from its source, name its mutastic in MUTASTIC_SWIFT_ENGINE:
+  MUTASTIC_SWIFT_ENGINE=<path to its mutastic> mutastic run

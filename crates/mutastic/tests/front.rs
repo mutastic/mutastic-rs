@@ -533,3 +533,136 @@ fn the_installer_checks_the_native_command_and_links_it() {
     assert!(text(&output.stderr).contains("doesn't match its checksum: not installed"));
     assert!(!bin.join("mutastic").exists());
 }
+
+/// A Swift package or an Xcode project is the Swift edition's, which isn't released: refused with
+/// what to do, unless `MUTASTIC_SWIFT_ENGINE` names one, which gets the command as the Java edition
+/// does.
+#[test]
+fn a_swift_project_is_refused_until_a_swift_edition_is_named() {
+    let root = scratch("swift");
+    let package = root.join("shop");
+    write(
+        &package.join("Package.swift"),
+        "// swift-tools-version:6.0\n",
+    );
+    let app = root.join("App");
+    std::fs::create_dir_all(app.join("App.xcodeproj")).unwrap();
+    let workspace = root.join("Suite");
+    std::fs::create_dir_all(workspace.join("Suite.xcworkspace")).unwrap();
+    std::fs::create_dir_all(workspace.join("Suite.xcodeproj/project.xcworkspace")).unwrap();
+    for (dir, said_first) in [
+        (
+            &package,
+            "mutastic: shop is a Swift package, and the Swift edition isn't released yet",
+        ),
+        (
+            &app,
+            "mutastic: App is an Xcode project, and the Swift edition isn't released yet",
+        ),
+        (
+            &workspace,
+            "mutastic: Suite is an Xcode workspace, and the Swift edition isn't released yet",
+        ),
+    ] {
+        let output = output_of(mutastic(dir, &["run"]).env_remove("MUTASTIC_SWIFT_ENGINE"));
+        assert_eq!(output.status.code(), Some(2), "{}", said(&output));
+        let stderr = text(&output.stderr);
+        assert!(stderr.starts_with(said_first), "{stderr}");
+        assert!(
+            stderr.contains("\n  MUTASTIC_SWIFT_ENGINE=<path to its mutastic> mutastic run"),
+            "{stderr}"
+        );
+        let event = output_of(
+            mutastic(dir, &["run", "--format=jsonl"]).env_remove("MUTASTIC_SWIFT_ENGINE"),
+        );
+        assert!(
+            text(&event.stdout).contains("\"code\":\"swift-edition\""),
+            "{}",
+            said(&event)
+        );
+    }
+    // A source directory below the package is the package's.
+    std::fs::create_dir_all(package.join("Sources/Shop")).unwrap();
+    let below = output_of(
+        mutastic(&package.join("Sources/Shop"), &["mutants"]).env_remove("MUTASTIC_SWIFT_ENGINE"),
+    );
+    assert!(text(&below.stderr).starts_with("mutastic: shop is a Swift package"));
+
+    // The plugins' gate, with no Swift edition: as in any project mutastic can't read, it lets
+    // the agent go.
+    let gate = output_of(
+        mutastic(&package, &["gate", "open", ".", "--hook=claude"])
+            .env_remove("MUTASTIC_SWIFT_ENGINE"),
+    );
+    assert_eq!(gate.status.code(), Some(0), "{}", said(&gate));
+
+    // A Swift edition built from its source gets every argument, but --edition, and its exit
+    // status is the command's.
+    let engine = root.join("swift-engine/mutastic");
+    executable(&engine, ENGINE);
+    let record = root.join("record");
+    for (args, given) in [
+        (&["run", "--since=main"][..], &["run", "--since=main"][..]),
+        (
+            &["gate", "check", "--hook=claude"][..],
+            &["gate", "check", "--hook=claude"][..],
+        ),
+        (&["run", "--edition=swift"][..], &["run"][..]),
+    ] {
+        std::fs::remove_file(&record).ok();
+        let output = busy_again(|| {
+            output_of(
+                mutastic(&package, args)
+                    .env("MUTASTIC_SWIFT_ENGINE", &engine)
+                    .env("RECORD", &record)
+                    .env("FAKE_EXIT", "3"),
+            )
+        });
+        assert_eq!(output.status.code(), Some(3), "{args:?}: {}", said(&output));
+        assert_eq!(recorded(&record).unwrap(), given, "{args:?}");
+    }
+    let missing =
+        output_of(mutastic(&package, &["run"]).env("MUTASTIC_SWIFT_ENGINE", root.join("nowhere")));
+    assert_eq!(missing.status.code(), Some(2));
+    assert!(
+        text(&missing.stderr).contains("which isn't a file: it names a Swift edition's mutastic"),
+        "{}",
+        said(&missing)
+    );
+}
+
+/// `Cargo.toml` beside `Package.swift` could be either edition's: the person says which.
+#[test]
+fn a_rust_crate_beside_a_swift_package_is_the_persons_to_choose() {
+    let root = scratch("rust-and-swift");
+    let both = root.join("both");
+    write(&both.join("Cargo.toml"), "[package]\nname = \"both\"\n");
+    write(&both.join("Package.swift"), "// swift-tools-version:6.0\n");
+    let output = output_of(mutastic(&both, &["run"]).env_remove("MUTASTIC_SWIFT_ENGINE"));
+    assert_eq!(output.status.code(), Some(2), "{}", said(&output));
+    let stderr = text(&output.stderr);
+    assert!(
+        stderr.contains(
+            "has both Cargo.toml and Package.swift, so either edition could read it: say which \
+             with --edition=rust or --edition=swift"
+        ),
+        "{stderr}"
+    );
+    let swift =
+        output_of(mutastic(&both, &["run", "--edition=swift"]).env_remove("MUTASTIC_SWIFT_ENGINE"));
+    assert!(
+        text(&swift.stderr).starts_with("mutastic: the Swift edition isn't released yet"),
+        "{}",
+        said(&swift)
+    );
+    write(&both.join("pom.xml"), "<project/>");
+    let three = output_of(&mut mutastic(&both, &["run"]));
+    assert!(
+        text(&three.stderr).contains(
+            "has Cargo.toml, pom.xml and Package.swift, so any of 3 editions could read it: say \
+             which with --edition=rust, --edition=java or --edition=swift"
+        ),
+        "{}",
+        said(&three)
+    );
+}

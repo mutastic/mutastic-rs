@@ -322,6 +322,23 @@ mutastic run both
 mutastic: /home/you/project/both has both Cargo.toml and pom.xml, so either edition could read it: say which with --edition=rust or --edition=java
 ```
 
+## `swift-edition`
+
+A Swift package (`Package.swift`), an Xcode project (`.xcodeproj`) or an Xcode workspace
+(`.xcworkspace`), which the Swift edition reads, and it isn't released yet: it's planned for 1.5.
+`MUTASTIC_SWIFT_ENGINE` names a Swift edition's `mutastic` built from its source, which then runs
+the command, or says why it can't. See [One command, two editions](../editions.md#the-swift-edition).
+
+```sh
+mutastic run shop
+```
+
+<!-- output: errors/swift-edition -->
+```text
+mutastic: shop is a Swift package, and the Swift edition isn't released yet: it's planned for 1.5. Until then mutastic tests Rust, Maven and Gradle projects. To run a Swift edition built from its source, name its mutastic in MUTASTIC_SWIFT_ENGINE:
+  MUTASTIC_SWIFT_ENGINE=<path to its mutastic> mutastic run
+```
+
 ## `build-failed`
 
 The package doesn't build before any mutant is in it. mutastic checks the package as you wrote it
