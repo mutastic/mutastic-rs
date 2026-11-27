@@ -199,21 +199,32 @@ fn names(patterns: &[String], item: &str) -> bool {
     patterns.iter().any(|pattern| glob(pattern).is_match(item))
 }
 
+/// This edition's binding block, `editions.rust`: what is its language's own.
+fn binding() -> &'static Value {
+    &contract()["editions"][EDITION]
+}
+
+/// The differences this edition has: every slot (`each`), which each edition fills its own way,
+/// and each deviation that names it. A deviation that doesn't name it is one whose shared text it
+/// follows.
+fn mine() -> Vec<&'static Value> {
+    contract()["differences"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|difference| {
+            difference["each"].as_bool().unwrap_or(false)
+                || difference["editions"].get(EDITION).is_some()
+        })
+        .collect()
+}
+
 /// What fails: each item found that no difference for this edition names, and each difference for
 /// this edition with items on one of `surfaces` (`help`, `error`) none of which was found. Java's
 /// `EditionContract` judges the same way.
 fn unrecorded(found: &[Found], surfaces: &[&str]) -> Vec<String> {
     let file = "docs/public/contract/v1.json in mutastic/mutastic";
-    let mine: Vec<&Value> = contract()["differences"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|difference| {
-            strings(&difference["editions"])
-                .iter()
-                .any(|e| e == EDITION)
-        })
-        .collect();
+    let mine = mine();
     let mut failures = Vec::new();
     for each in found {
         if !mine
@@ -477,8 +488,10 @@ fn two_commits_at_one_position_and_date_fail_and_one_commit_pinned_twice_passes(
 }
 #[test]
 fn the_contract_names_this_edition_and_its_ids_are_one_each() {
-    let editions = strings(&contract()["editions"]);
-    assert!(editions.iter().any(|edition| edition == EDITION));
+    assert!(
+        contract()["editions"].get(EDITION).is_some(),
+        "the contract has no binding for {EDITION}"
+    );
     let mut ids: Vec<&str> = contract()["differences"]
         .as_array()
         .unwrap()
@@ -495,19 +508,21 @@ fn the_contract_names_this_edition_and_its_ids_are_one_each() {
 /// reasons and its example, and no rule the contract doesn't give this edition.
 #[test]
 fn the_arid_rules_are_the_contracts() {
+    let bound = &binding()["arid"];
     let theirs: Vec<String> = contract()["arid"]
         .as_array()
         .unwrap()
         .iter()
-        .filter(|rule| strings(&rule["editions"]).iter().any(|e| e == EDITION))
+        .filter(|rule| bound.get(text(rule, "id")).is_some())
         .map(|rule| {
+            let mine = &bound[text(rule, "id")];
             format!(
                 "{} | {} | {} | {} | {}",
                 text(rule, "id"),
                 text(rule, "scope"),
                 text(rule, "description"),
-                strings(&rule["reasons"][EDITION]).join(" / "),
-                text(&rule["examples"], EDITION)
+                strings(&mine["reasons"]).join(" / "),
+                text(mine, "example")
             )
         })
         .collect();
@@ -622,8 +637,8 @@ fn commands(found: &mut Vec<Found>, model: &BTreeMap<String, &Value>) {
 fn command(found: &mut Vec<Found>, command: &Value, mine: &Value) {
     let name = text(command, "name");
     let mut synopsis = text(mine, "synopsis").to_string();
-    for slot in contract()["engineSlots"].as_array().unwrap() {
-        synopsis = synopsis.replace(&format!(" {}", text(slot, "slot")), "");
+    if let Some(slot) = binding()["selector"]["slot"].as_str() {
+        synopsis = synopsis.replace(&format!(" {slot}"), "");
     }
     if synopsis != text(command, "synopsis") {
         found.push(self::found(

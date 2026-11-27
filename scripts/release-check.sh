@@ -8,6 +8,8 @@
 # - the changelog: X.Y.Z has entries, and a patch has no scoring changes (changelog.sh check --for);
 # - the version: Cargo.toml and Cargo.lock say X.Y.Z, as the tag must;
 # - the contract's pins: only the newest is left (scripts/pin-contract.sh prune);
+# - the contract at that pin: Rust has no pending entry without an issue and a target, or with a
+#   target gone by, and no dated one at its end (the shared docs/scripts/contract.mjs release);
 # - ids: MUTASTIC_IDS_WRITE=1 cargo test --test ids leaves tests/ids as committed.
 #
 # The ids build, so take minutes: --no-build skips them, --build runs only them. With --subject,
@@ -109,6 +111,21 @@ if [ "$checks" != build ]; then
     problem "contract/pins has $pins pins: scripts/pin-contract.sh prune keeps only the newest"
   elif [ "$pins" -eq 0 ]; then
     problem "contract/pins has no pin: the contract tests need the newest"
+  else
+    step "the contract at the pin: no pending entry for rust that isn't registered"
+    if command -v node > /dev/null; then
+      commit=$(jq -r .commit contract/pins/*.json)
+      raw=$(jq -r .raw contract/source.json)
+      if curl --fail --silent --show-error --location "$raw/$commit/$(jq -r .path contract/source.json)" -o "$tmp/contract.json" \
+        && curl --fail --silent --show-error --location "$raw/$commit/$(jq -r .tool contract/source.json)" -o "$tmp/contract.mjs"; then
+        # Its problems are its "  - " lines; no line starts with the prefix, so its count isn't one.
+        run 'contract-release' node "$tmp/contract.mjs" release rust "$version" --contract "$tmp/contract.json"
+      else
+        problem "couldn't fetch the contract and its tooling at the pin, $commit"
+      fi
+    else
+      problem "node isn't on the PATH, and the contract's release rule needs it"
+    fi
   fi
 fi
 
